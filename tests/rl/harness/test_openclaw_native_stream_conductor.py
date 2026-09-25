@@ -30,6 +30,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerDependencyError,
     RunnerEventSink,
     RunnerOpenRequest,
+    RunnerProtocolError,
     RunnerTermination,
     RunnerToolBinding,
     thaw_json,
@@ -439,11 +440,21 @@ class _Cancellation:
         return None
 
 
+# Pinned buildOpenAICompletionsParams emits max_completion_tokens and
+# tool_choice "auto" and no store member.
+_SUPPLIER_WIRE_POLICY: Mapping[str, Any] = {
+    "request_policy": {"max_token_field": "max_completion_tokens", "tool_choice": "auto"},
+    "capabilities": {"supports_max_completion_tokens": True},
+    "request_features": ("max_completion_tokens", "tool_choice"),
+}
+
+
 async def _run_episode(
     tmp_path: Path,
     responses: list[list[tuple[str, str, Mapping[str, Any]]]] | Callable[[int, list[dict[str, Any]]], list[tuple[str, str, Mapping[str, Any]]]],
     *,
     worker_factory: Callable[[Path, tuple[RunnerToolBinding, ...]], _NativeWorkerPort] | None = None,
+    wire_policy: Mapping[str, Any] = _SUPPLIER_WIRE_POLICY,
 ):
     with _scripted_server(responses) as (base_url, requests):
         profile = OpenAICompletionsProviderProfile(
@@ -458,8 +469,9 @@ async def _run_episode(
                 "include_usage": True,
                 "strict_tools": None,
                 "enable_thinking": None,
+                **wire_policy["request_policy"],
             },
-            capabilities={"supports_store": True},
+            capabilities=dict(wire_policy["capabilities"]),
         )
         projection, semantics, manifest = _compile_target(
             tmp_path, profile_digest=profile_identity_digest(profile)
@@ -474,13 +486,13 @@ async def _run_episode(
             credential_handle_id="credential-a",
             protocol_abi="responses-v1",
             capabilities=_policy_capabilities(
-                request_features=[
+                request_features=sorted([
                     "json_mode",
-                    "max_tokens",
                     "seed",
                     "stream_options",
                     "streaming",
-                ]
+                    *wire_policy["request_features"],
+                ])
             ),
         )
         tools = tuple(
@@ -567,8 +579,16 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
         "edit", "exec", "ls", "process", "read", "write",
     ]
     assert all(request.get("stream_options") == {"include_usage": True} for request in requests)
-    assert all(request.get("store") is False for request in requests)
-    assert all("n" not in request and "strict" not in request for request in requests)
+    # Pinned buildOpenAICompletionsParams wire members (no store, n or max_tokens).
+    assert all(
+        sorted(request) == [
+            "max_completion_tokens", "messages", "model", "stream",
+            "stream_options", "tool_choice", "tools",
+        ]
+        and request["tool_choice"] == "auto"
+        and request["max_completion_tokens"] == 2048
+        for request in requests
+    )
     assert operations[-5:] == ("classify_result", "close", "retire_runtime", "measure_effects", "finalize_command_result")
     replay_trace = result.response["replay_trace"]
     assert replay_trace["refusal"] == {
@@ -606,6 +626,25 @@ def _supplier_sanitize_tool_call_id(raw_id: str, dist_path: Path = _NODE_DIST) -
         check=True,
     )
     return proc.stdout.strip()
+
+
+@pytest.mark.asyncio
+async def test_openclaw_request_members_must_match_pinned_source_builder(tmp_path: Path) -> None:
+    # A profile whose wire differs from buildOpenAICompletionsParams
+    # (max_tokens plus store, no tool_choice) fails before any tool effect.
+    divergent = {
+        "request_policy": {"max_token_field": "max_tokens"},
+        "capabilities": {"supports_store": True},
+        "request_features": ("max_tokens",),
+    }
+    with pytest.raises(RunnerProtocolError) as exc:
+        await _run_episode(
+            tmp_path,
+            [[("call-0", "write", {"path": "never.txt", "content": "x\n"})]],
+            wire_policy=divergent,
+        )
+    assert exc.value.code == "native_request_members_mismatch"
+    assert not (tmp_path / "never.txt").exists()
 
 
 @pytest.mark.asyncio

@@ -2338,6 +2338,19 @@ class _ConductorSession:
                     "native provider receipt lacks the exact sent request body",
                     code="native_response_invalid", **self._context(),
                 )
+            expected_members = projected.get("request_members")
+            if expected_members is not None and (
+                not isinstance(expected_members, (list, tuple))
+                or any(type(member) is not str for member in expected_members)
+                or len(set(expected_members)) != len(expected_members)
+                or set(expected_members) != set(request_body)
+            ):
+                # The native worker reports the member set its pinned source
+                # request builder produces; the sent body must carry exactly it.
+                raise RunnerProtocolError(
+                    "native provider request members differ from the pinned source request",
+                    code="native_request_members_mismatch", **self._context(),
+                )
             trace_requests.append(dict(request_body))
             await self._emit(PolicyRuntimeResponseEvent(
                 0, self._open_request.episode_id, self._open_request.effective_plan_digest,

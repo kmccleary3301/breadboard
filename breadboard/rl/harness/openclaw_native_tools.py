@@ -347,6 +347,8 @@ class _OpenClawWorkerClient:
         )
         native_config = json.loads(native_config_path.read_text(encoding="utf-8"))
         advertisement = native_config["advertisement"]
+        # No compat override: the supplier's provider config declares none, so
+        # the pinned getCompat(model) derives it from provider and baseUrl.
         model_config = {
             "id": "openclaw-tool-client",
             "name": "openclaw-tool-client",
@@ -356,12 +358,6 @@ class _OpenClawWorkerClient:
             "input": ["text"],
             "contextWindow": 32_768,
             "maxTokens": 2_048,
-            "compat": {
-                "supportsStore": True,
-                "supportsDeveloperRole": True,
-                "supportsUsageInStreaming": True,
-                "supportsStrictMode": False,
-            },
         }
         initialized = self._request(
             {

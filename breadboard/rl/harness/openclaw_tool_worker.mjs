@@ -42,6 +42,7 @@ const MODULE_DIGESTS = Object.freeze({
   "history-image-prune-BCKEHO6_.mjs": "33ae7d0ea60b3c0f77732bab06facc97a96fff3dcfe8ea742fb3a8346ec161c3",
   "helpers-C__iuzW9.mjs": "97f912914ff788bde4fb842a1ba4db16576c244ac633023a6d7ab1013a216a13",
   "session-transcript-repair-BqMz_6TX.mjs": "e4cf82d1d5e235e2d16549285c5c97f9b756f3b17cca95e4f3646b3c80eebac1",
+  "model.inline-provider-BOrD-NlO.mjs": "8feef4dde90987e08cf6abdfdd0d42333b9e0f4f36a763b62aecd163eae746c2",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -120,6 +121,7 @@ async function verifyAndLoad() {
     createCoreCodingTools: core.t,
     resolveBootstrapContextForRun: sourceBootstrapFiles.a,
     buildOpenAICompletionsParams: sourceTransport.t,
+    buildInlineProviderModels: (await import(bytes["model.inline-provider-BOrD-NlO.mjs"])).t,
   };
 }
 function exactKeys(value, expected, label) {
@@ -131,6 +133,23 @@ function exactKeys(value, expected, label) {
   if (keys.length !== wanted.length || keys.some((key, index) => key !== wanted[index])) {
     throw new Error(`${label} keys are not the admitted set`);
   }
+}
+// OpenClaw resolves its model from a models.providers entry; the entry's
+// declared members (no compat) reach the pinned resolver, so the pinned
+// getCompat derives request compat from provider and baseUrl.
+const SOURCE_MODEL_MEMBERS = Object.freeze(["id", "name", "contextWindow", "maxTokens", "input"]);
+function resolveSourceModel(declared, buildInlineProviderModels) {
+  if (!declared) return null;
+  const provider = declared.provider;
+  if (typeof provider !== "string" || !provider) throw new Error("model_config provider and id are required for pinned prompt");
+  const model = {};
+  for (const name of SOURCE_MODEL_MEMBERS) if (declared[name] !== undefined) model[name] = declared[name];
+  const entry = { models: [model] };
+  if (declared.baseUrl !== undefined) entry.baseUrl = declared.baseUrl;
+  if (declared.api !== undefined) entry.api = declared.api;
+  const resolved = buildInlineProviderModels({ [provider]: entry });
+  if (resolved.length !== 1) throw new Error("model_config does not resolve to one source model");
+  return resolved[0];
 }
 
 function validateAdvertisement(value) {
@@ -302,6 +321,8 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     return {
       messages: params.messages || [],
       tools: params.tools || [],
+      // Wire body members of the pinned supplier buildOpenAICompletionsParams.
+      request_members: Object.keys(params).sort(),
     };
   }
   return {
@@ -701,7 +722,7 @@ async function handle(message) {
     if (message.model_config && (typeof message.model_config !== "object" || Array.isArray(message.model_config))) {
       throw new Error("model_config must be an object");
     }
-    modelConfig = message.model_config || null;
+    const declaredModel = message.model_config || null;
     let assets = message.bootstrap_assets;
     const packageDir = typeof message.package_dir === "string" && message.package_dir ? message.package_dir : runtimeInputs.package_dir || DIST;
     if (!Array.isArray(assets) && typeof packageDir === "string") {
@@ -717,6 +738,7 @@ async function handle(message) {
     }
     await materializeBootstrapAssets(assets);
     const source = await verifyAndLoad();
+    modelConfig = resolveSourceModel(declaredModel, source.buildInlineProviderModels);
     const ordered = makeTools(source.createCoreCodingTools);
     const modelId = modelConfig?.id;
     const provider = modelConfig?.provider;

@@ -496,8 +496,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             else self._convert_tools_to_openai(tools),
         )
         if consumer_id in {PI_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
-            # Source buildParams omits n and disables provider-side storage.
+            # Source buildParams omits n.
             request.pop("n")
+        if consumer_id == PI_RESPONSE_CONSUMER_ID:
+            # Pi's buildParams disables provider-side storage; OpenClaw's
+            # buildOpenAICompletionsParams emits no store member.
             request["store"] = False
         return request
 
