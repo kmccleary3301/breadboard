@@ -5426,17 +5426,6 @@ class SandboxRuntimeManager:
                     ):
                         raise ValueError("malformed native_scratch_identity")
                     payload["native_scratch_identity"] = (scratch_id[0], scratch_id[1])
-            if "scratch_identity" in payload:
-                scratch_id = payload["scratch_identity"]
-                if scratch_id is not None:
-                    if (
-                        (type(scratch_id) is not list and type(scratch_id) is not tuple)
-                        or len(scratch_id) != 2
-                        or any(type(item) is not int or item < 0 for item in scratch_id)
-                    ):
-                        raise ValueError("malformed scratch_identity")
-                    if "native_scratch_identity" not in payload or payload["native_scratch_identity"] is None:
-                        payload["native_scratch_identity"] = (scratch_id[0], scratch_id[1])
             return MappingProxyType(payload)
         except Exception as exc:
             raise WorkspaceStateError("workspace lease record is corrupt", code="stale_identity_uncertain") from exc
