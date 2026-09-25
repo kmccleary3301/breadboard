@@ -38,6 +38,10 @@ const MODULE_DIGESTS = Object.freeze({
   "runtime-context-prompt-DWIcn5Yx.mjs": "66cd0b276bb1b2f7625aae77e1a9e0890fbcc06e249be5f6f0f7cab51692ea84",
   "assistant-request-failure-copy-CeEzc8UX.mjs": "b954236ee1e913406607fea854b2daaf99dcd8049b6faecb978dcca56a020a56",
   "session-DVbOtm8K.mjs": "1e00c482e6fc7333173da95f436ee7ebb8b6975646e2c74a4162f4920fa4c0f7",
+  "tool-call-id-CnwowhSs.mjs": "df7cb4ad7daf3cf2a5e85436c83ae2867e5044a53b97b6f8deed57276906c2e7",
+  "history-image-prune-BCKEHO6_.mjs": "33ae7d0ea60b3c0f77732bab06facc97a96fff3dcfe8ea742fb3a8346ec161c3",
+  "helpers-C__iuzW9.mjs": "97f912914ff788bde4fb842a1ba4db16576c244ac633023a6d7ab1013a216a13",
+  "session-transcript-repair-BqMz_6TX.mjs": "e4cf82d1d5e235e2d16549285c5c97f9b756f3b17cca95e4f3646b3c80eebac1",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -65,6 +69,11 @@ let sourceSessionKey = null;
 let sourceInitialTimestamp = null;
 let sourceExecutionContext = null;
 let sourceAcknowledgeResult = null;
+let resolveAttemptTranscriptPolicy = null;
+let shouldAllowProviderOwnedThinkingReplay = null;
+let collectAllowedToolNames = null;
+let sanitizeToolUseResultPairing = null;
+let sanitizeToolCallIdsForCloudCodeAssist = null;
 let builtTools = [];
 let verifiedRegistryUrl = null;
 let prepared = null;
@@ -102,6 +111,11 @@ async function verifyAndLoad() {
   renderSourceFailureCopy = (await import(bytes["assistant-request-failure-copy-CeEzc8UX.mjs"])).t;
   ({ buildAttemptSystemPrompt: sourceAttemptPrompt, normalizeMessagesForLlmBoundary: normalizeSourceMessages, projectRuntimeContextFragments: projectSourceRuntimeFragments } = await import(pinnedAttemptPrompt));
   sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
+  resolveAttemptTranscriptPolicy = (await import(bytes["history-image-prune-BCKEHO6_.mjs"])).s;
+  shouldAllowProviderOwnedThinkingReplay = (await import(bytes["helpers-C__iuzW9.mjs"])).S;
+  collectAllowedToolNames = (await import(bytes["builtin-openclaw-B-H-7lKk.mjs"])).s;
+  sanitizeToolUseResultPairing = (await import(bytes["session-transcript-repair-BqMz_6TX.mjs"])).i;
+  sanitizeToolCallIdsForCloudCodeAssist = (await import(bytes["tool-call-id-CnwowhSs.mjs"])).o;
   return {
     createCoreCodingTools: core.t,
     resolveBootstrapContextForRun: sourceBootstrapFiles.a,
@@ -228,10 +242,61 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     const overlay = advertisedTools.get(tool.name);
     return overlay ? { ...tool, description: overlay.description } : tool;
   });
+  // Supplier transcript policy resolution:
+  // builtin-openclaw-B-H-7lKk.mjs:18430 transcriptPolicy = resolveAttemptTranscriptPolicy({...})
+  // (history-image-prune-BCKEHO6_.mjs:268) -> resolveTranscriptPolicy (helpers-C__iuzW9.mjs:183)
+  const transcriptPolicy = resolveAttemptTranscriptPolicy({
+    runtimePlan: undefined,
+    runtimePlanModelContext: {
+      workspaceDir: workspace,
+      modelApi: modelConfig?.api,
+      model: modelConfig,
+    },
+    provider: modelConfig?.provider,
+    modelId: modelConfig?.id,
+    config: sourceConfig,
+    env: process.env,
+  });
+  // builtin-openclaw-B-H-7lKk.mjs:18442: isOpenAIResponsesApi from attempt.model.api
+  const isOpenAIResponsesApi = Boolean(
+    modelConfig &&
+    (modelConfig.api === "openai-responses" ||
+     modelConfig.api === "azure-openai-responses" ||
+     modelConfig.api === "openai-chatgpt-responses")
+  );
+  // builtin-openclaw-B-H-7lKk.mjs:13915-13916: shouldApplyReplayToolCallIdSanitizer
+  const shouldApplyReplayToolCallIdSanitizer = Boolean(
+    transcriptPolicy?.sanitizeToolCallIds &&
+    Boolean(transcriptPolicy?.toolCallIdMode) &&
+    !isOpenAIResponsesApi
+  );
+  // builtin-openclaw-B-H-7lKk.mjs:13919-13925: sanitizeReplayToolCallIdsForStream
+  // builtin-openclaw-B-H-7lKk.mjs:15268-15287
+  let projectedHistory = sourceHistory;
+  if (shouldApplyReplayToolCallIdSanitizer) {
+    // builtin-openclaw-B-H-7lKk.mjs:13920
+    const paired = transcriptPolicy.repairToolUseResultPairing
+      ? sanitizeToolUseResultPairing(sourceHistory)
+      : sourceHistory;
+    projectedHistory = sanitizeToolCallIdsForCloudCodeAssist(
+      paired,
+      transcriptPolicy.toolCallIdMode,
+      {
+        preserveNativeAnthropicToolUseIds: transcriptPolicy.preserveNativeAnthropicToolUseIds,
+        duplicateToolCallIdStyle: transcriptPolicy.duplicateToolCallIdStyle,
+        preserveReplaySafeThinkingToolCallIds: shouldAllowProviderOwnedThinkingReplay({
+          modelApi: modelConfig?.api,
+          provider: modelConfig?.provider,
+          policy: transcriptPolicy,
+        }),
+        allowedToolNames: collectAllowedToolNames({ tools: baseTools }),
+      }
+    );
+  }
   if (typeof buildOpenAICompletionsParams === "function" && systemPrompt) {
     const params = buildOpenAICompletionsParams(
       modelConfig,
-      { systemPrompt, messages: sourceHistory, tools: sourceTools },
+      { systemPrompt, messages: projectedHistory, tools: sourceTools },
       undefined,
     );
     return {
@@ -240,7 +305,7 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     };
   }
   return {
-    messages: sourceHistory,
+    messages: projectedHistory,
     tools: baseTools.map(schemaFor),
   };
 }

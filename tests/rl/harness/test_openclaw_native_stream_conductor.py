@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import struct
+import subprocess
 import threading
 from typing import Any, Callable, Mapping
 from datetime import datetime, timezone
@@ -584,13 +585,39 @@ async def test_openclaw_native_stream_cap_refuses_ninth_http_request(tmp_path: P
     assert replay_trace["termination"]["isError"] is True
     assert all((tmp_path / f"turn-{index}.txt").read_text() == "ok\n" for index in range(8))
 
+
+def _supplier_sanitize_tool_call_id(raw_id: str, dist_path: Path = _NODE_DIST) -> str:
+    """Return the wire id the pinned supplier sanitizer assigns to a paired replay call."""
+    history = [
+        {"role": "assistant", "content": [{"type": "toolCall", "id": raw_id, "name": "exec", "arguments": {}}]},
+        {"role": "toolResult", "toolCallId": raw_id, "content": []},
+    ]
+    script = (
+        'import { o } from "./tool-call-id-CnwowhSs.mjs";\n'
+        f"const res = o({json.dumps(history)}, \"strict\");\n"
+        "if (res[0].content[0].id !== res[1].toolCallId) throw new Error('unpaired');\n"
+        "process.stdout.write(res[0].content[0].id);\n"
+    )
+    proc = subprocess.run(
+        [shutil.which("node") or "node", "--input-type=module", "-e", script],
+        cwd=str(dist_path),
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return proc.stdout.strip()
+
+
 @pytest.mark.asyncio
 async def test_openclaw_conductor_commits_poll_before_ack(tmp_path: Path) -> None:
+    exec_wire_id = _supplier_sanitize_tool_call_id("exec-1")
+    poll_wire_id = _supplier_sanitize_tool_call_id("poll-1")
+
     def responses(ordinal: int, requests: list[dict[str, Any]]) -> list[tuple[str, str, Mapping[str, Any]]]:
         if ordinal == 0:
             return [("exec-1", "exec", {"command": "printf ACK_MARKER", "background": True})]
         if ordinal == 1:
-            output = next(msg["content"] for msg in requests[-1]["messages"] if msg.get("tool_call_id") == "exec-1")
+            output = next(msg["content"] for msg in requests[-1]["messages"] if msg.get("tool_call_id") == exec_wire_id)
             session = re.search(r"session ([^,]+), pid ", output)
             assert session is not None
             return [("poll-1", "process", {"action": "poll", "sessionId": session[1], "timeout": 500})]
@@ -600,8 +627,36 @@ async def test_openclaw_conductor_commits_poll_before_ack(tmp_path: Path) -> Non
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
     assert len(requests) == 3
     assert operations.index("ack") > operations.index("execute_batch", operations.index("execute_batch") + 1)
-    assert any("ACK_MARKER" in str(msg.get("content")) for msg in requests[-1]["messages"] if msg.get("tool_call_id") == "poll-1")
+    assert any("ACK_MARKER" in str(msg.get("content")) for msg in requests[-1]["messages"] if msg.get("tool_call_id") == poll_wire_id)
 
+
+@pytest.mark.asyncio
+async def test_openclaw_replay_tool_call_id_sanitizes_long_id_on_wire(tmp_path: Path) -> None:
+    raw_tool_id = "very_long_tool_call_id_that_exceeds_forty_characters_1234567890"
+    assert len(raw_tool_id) > 40
+    expected_wire_id = _supplier_sanitize_tool_call_id(raw_tool_id)
+    assert len(expected_wire_id) <= 40
+    assert expected_wire_id != raw_tool_id
+
+    def responses(ordinal: int, requests: list[dict[str, Any]]) -> list[tuple[str, str, Mapping[str, Any]]]:
+        if ordinal == 0:
+            return [(raw_tool_id, "write", {"path": "long_id.txt", "content": "verified\n"})]
+        return []
+
+    result, requests, _, _, operations = await _run_episode(tmp_path, responses)
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert len(requests) == 2
+
+    # Wire assistant tool_calls[].id and tool tool_call_id equal supplier sanitizer output
+    turn1_messages = requests[1]["messages"]
+    assistant_wire = next(m for m in turn1_messages if m.get("role") == "assistant")
+    assert assistant_wire["tool_calls"][0]["id"] == expected_wire_id
+    tool_wire = next(m for m in turn1_messages if m.get("role") == "tool")
+    assert tool_wire["tool_call_id"] == expected_wire_id
+
+    # Internal history ids unchanged (passed as raw_tool_id to execute_batch)
+    assert (tmp_path / "long_id.txt").read_text(encoding="utf-8") == "verified\n"
+    assert operations.count("execute_batch") == 1
 
 async def _invoke_finalize_only(payload: Mapping[str, Any]) -> Mapping[str, Any]:
     process = await asyncio.create_subprocess_exec(
