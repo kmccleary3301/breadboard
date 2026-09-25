@@ -80,12 +80,17 @@ from breadboard.rl.harness.runners.terminal import (
     TerminalRunRequest,
 )
 from breadboard.rl.harness.sandbox import (
+    SandboxAttestationError,
     SandboxExecutionPlan,
     SandboxFault,
     SandboxRuntimeManager,
     SandboxWorkspaceLease,
     VerifierWorkspaceLease,
     build_sandbox_execution_plan,
+)
+from breadboard.rl.harness.lease_envelope import (
+    ContainmentReceiptError,
+    verify_containment_receipt,
 )
 from breadboard.artifacts.references import ArtifactRef
 
@@ -1481,6 +1486,29 @@ class BreadBoardV2EpisodeService:
                 self._observe_episode_authority(coordinator)
                 self._raise_fault_injection(coordinator, V2FaultBoundary.PRE_ALLOCATION)
             lease = await self._dependencies.sandbox_runtime.open(workspace_request)
+            if sandbox_plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+                receipt = getattr(lease, "containment_receipt", None)
+                authenticator = getattr(
+                    self._dependencies.sandbox_runtime,
+                    "_containment_authenticator",
+                    None,
+                )
+                try:
+                    if receipt is None or authenticator is None:
+                        raise ContainmentReceiptError("containment receipt is missing")
+                    verify_containment_receipt(
+                        receipt,
+                        lease_id=lease.lease_id,
+                        runtime_id=sandbox_plan.runtime.runtime_id,
+                        authenticator=authenticator,
+                    )
+                except ContainmentReceiptError as exc:
+                    await lease.close()
+                    raise SandboxAttestationError(
+                        "trusted process containment receipt was rejected",
+                        code="containment_receipt_invalid",
+                        lease_id=lease.lease_id,
+                    ) from exc
         except BaseException as exc:
             failure = _failure_from_exception(exc, "allocation")
             coordinator.primary_disposition = (
@@ -1951,6 +1979,25 @@ class BreadBoardV2EpisodeService:
                 coordinator.lease, snapshot
             )
             coordinator.verifier_lease_id = getattr(verifier, "lease_id", None)
+            if verifier.plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+                authenticator = getattr(
+                    self._dependencies.sandbox_runtime, "_containment_authenticator", None
+                )
+                try:
+                    if authenticator is None:
+                        raise ContainmentReceiptError("containment authenticator is missing")
+                    verify_containment_receipt(
+                        verifier.containment_receipt,
+                        lease_id=verifier.lease_id,
+                        runtime_id=verifier.plan.runtime.runtime_id,
+                        authenticator=authenticator,
+                    )
+                except (ContainmentReceiptError, TypeError, AttributeError) as exc:
+                    raise SandboxAttestationError(
+                        "trusted verifier containment receipt was rejected",
+                        code="containment_receipt_invalid",
+                        lease_id=verifier.lease_id,
+                    ) from exc
             verifier_result = await verifier.execute()
             coordinator.verifier_result = verifier_result
         except BaseException as exc:
@@ -1969,6 +2016,23 @@ class BreadBoardV2EpisodeService:
                 ) = await _observe_owned_task(coordinator.verifier_cleanup_task)
                 if receipt is not None:
                     coordinator.verifier_cleanup_receipt = receipt
+                if verifier.plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+                    try:
+                        verify_containment_receipt(
+                            verifier.teardown_receipt,
+                            lease_id=verifier.lease_id,
+                            runtime_id=verifier.plan.runtime.runtime_id,
+                            authenticator=self._dependencies.sandbox_runtime._containment_authenticator,
+                            require_teardown=True,
+                        )
+                    except (ContainmentReceiptError, TypeError, AttributeError) as exc:
+                        coordinator.verifier_cleanup_failure = _failure_from_exception(
+                            SandboxAttestationError(
+                                "trusted verifier teardown receipt was rejected",
+                                code="containment_receipt_invalid",
+                                lease_id=verifier.lease_id,
+                            ), "verifier_cleanup"
+                        )
                 if close_error is not None:
                     coordinator.verifier_cleanup_failure = _failure_from_exception(
                         close_error, "verifier_cleanup"
@@ -1983,6 +2047,7 @@ class BreadBoardV2EpisodeService:
         verifier_cleanup_bad = verifier is not None and (
             verifier_receipt is None
             or verifier_cleanup_lease_mismatch
+            or coordinator.verifier_cleanup_failure is not None
             or not _cleanup_released(
                 verifier_receipt,
                 required={"runtime", "workspace", "snapshot", "lease_record"},
@@ -2097,13 +2162,14 @@ class BreadBoardV2EpisodeService:
             )
         finally:
             await self._close_owner(coordinator, None)
+        succeeded = coordinator.state is EpisodeLifecycleState.CLOSED
         result = V2RunResult(
             coordinator.request.episode_id,
             coordinator.create_fingerprint,
             coordinator.run_fingerprint or "",
-            EpisodePrimaryDisposition.SUCCEEDED,
-            MappingProxyType(dict(runner_result.response)),
-            runner_result.termination.value,
+            EpisodePrimaryDisposition.SUCCEEDED if succeeded else EpisodePrimaryDisposition.FAILED,
+            MappingProxyType(dict(runner_result.response)) if succeeded else None,
+            runner_result.termination.value if succeeded else None,
             runner_result.turn_count,
             completed.envelope_ref,
             coordinator.closed.envelope_ref if coordinator.closed else None,
@@ -2119,6 +2185,7 @@ class BreadBoardV2EpisodeService:
             verifier_measurement_digest=completed.verifier_measurement_digest,
             verifier_result_digest=completed.verifier_result_digest,
             workspace_diff=coordinator.workspace_diff,
+            primary_failure=coordinator.primary_failure,
         )
         coordinator.run_result = result
         return result
@@ -2827,6 +2894,27 @@ class BreadBoardV2EpisodeService:
                 None,
             )
         coordinator.cleanup_receipt = receipt
+        if coordinator.create_result.sandbox_preflight.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            try:
+                verify_containment_receipt(
+                    coordinator.lease.teardown_receipt,
+                    lease_id=coordinator.lease.lease_id,
+                    runtime_id=coordinator.create_result.sandbox_preflight.runtime,
+                    authenticator=self._dependencies.sandbox_runtime._containment_authenticator,
+                    require_teardown=True,
+                )
+            except (ContainmentReceiptError, TypeError, AttributeError):
+                failure = _v2_failure(
+                    "cleanup", "containment_receipt_invalid", "reconcile", "cleanup",
+                    lease_id=coordinator.lease.lease_id,
+                )
+                coordinator.primary_disposition = EpisodePrimaryDisposition.FAILED
+                coordinator.primary_failure = failure
+                await self._quarantine(coordinator, failure, independent_cleanup=True)
+                return V2CloseResult(
+                    coordinator.request.episode_id, coordinator.state,
+                    coordinator.cleanup_disposition, None,
+                )
         return await self._finish_cleanup(coordinator, receipt, primary_failure)
 
     async def _finish_cleanup(
@@ -2843,6 +2931,7 @@ class BreadBoardV2EpisodeService:
                 "cleanup",
                 lease_id=receipt.lease_id,
             )
+            coordinator.primary_failure = primary_failure or failure
             await self._quarantine(
                 coordinator,
                 failure,
@@ -2865,6 +2954,7 @@ class BreadBoardV2EpisodeService:
                 "cleanup",
                 lease_id=coordinator.primary_lease_id,
             )
+            coordinator.primary_failure = primary_failure or failure
             await self._quarantine(
                 coordinator,
                 failure,
@@ -2882,6 +2972,21 @@ class BreadBoardV2EpisodeService:
             # evidence root; it remains quarantined rather than manufacturing one.
             failure = primary_failure or _v2_failure(
                 "primary", "completed_evidence_missing", "none", "cleanup"
+            )
+            await self._quarantine(coordinator, failure)
+            return V2CloseResult(
+                coordinator.request.episode_id,
+                coordinator.state,
+                coordinator.cleanup_disposition,
+                None,
+            )
+        if coordinator.verifier_cleanup_failure is not None or (
+            coordinator.verifier_lease_id is not None
+            and coordinator.verifier_cleanup_receipt is None
+        ):
+            failure = coordinator.verifier_cleanup_failure or _v2_failure(
+                "cleanup", "verifier_cleanup_not_released", "reconcile",
+                "verifier_cleanup", lease_id=coordinator.verifier_lease_id,
             )
             await self._quarantine(coordinator, failure)
             return V2CloseResult(

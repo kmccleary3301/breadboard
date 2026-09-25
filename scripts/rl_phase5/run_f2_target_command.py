@@ -228,15 +228,15 @@ def _prebind_gateway_socket(gateway: str, *, role: str) -> tuple[socket.socket, 
             raise RuntimeError("prebound gateway socket identity mismatch")
         metadata = os.fstat(candidate.fileno())
         unsigned = {
-            "schema_version": "bb.rl.harness-prebound-service-socket-plan.v1",
+            "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
             "role": role,
             "gateway": gateway,
             "observed_port": local[1],
             "family": "AF_INET",
             "socket_type": "SOCK_STREAM",
             "protocol": "IPPROTO_TCP",
-            "socket_device": metadata.st_dev,
-            "socket_inode": metadata.st_ino,
+            "socket_device": str(metadata.st_dev),
+            "socket_inode": str(metadata.st_ino),
             "socket_mode": metadata.st_mode,
             "socket_owner_uid": metadata.st_uid,
             "getsockname_host": local[0],

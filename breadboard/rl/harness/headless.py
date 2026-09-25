@@ -38,6 +38,7 @@ from .policy_provider import (
 from .runner_identity import measure_module_artifact
 from .runners.base import freeze_json_object, thaw_json
 from .service import EpisodePrimaryDisposition, V2RunResult
+from .lease_envelope import RuntimeContainment
 
 
 _MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -47,6 +48,9 @@ _GIT_COMMIT_PATTERN = r"^[0-9a-f]{40}$"
 _HEADLESS_MODULE_IDENTITY = measure_module_artifact(__file__)
 _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
+
+class ObsoleteOuterIsolationError(TypeError):
+    """Raised when an obsolete outer_isolation declaration is supplied."""
 
 
 class HeadlessWorkspaceInput(BaseModel):
@@ -60,7 +64,16 @@ class HeadlessWorkspaceInput(BaseModel):
     )
     base_commit: str | None = Field(default=None, pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
-    outer_isolation: Literal["apptainer"] | None = None
+    containment: Literal["attested", "unconfined_test_only"] = "attested"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_obsolete_outer_isolation(cls, data: Any) -> Any:
+        if isinstance(data, Mapping) and "outer_isolation" in data:
+            raise ObsoleteOuterIsolationError(
+                "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+            )
+        return data
 
     @model_validator(mode="after")
     def _workspace_authority_is_exact(self) -> HeadlessWorkspaceInput:
@@ -94,7 +107,6 @@ class HeadlessWorkspaceInput(BaseModel):
             identity.pop("workspace_directory_mode", None)
             identity.pop("workspace_seed_digest", None)
         return identity
-
 
 class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -263,6 +275,20 @@ class HeadlessRunRequest(BaseModel):
     event_log_path: str
     patch_path: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_obsolete_outer_isolation(cls, data: Any) -> Any:
+        if isinstance(data, Mapping):
+            if "outer_isolation" in data:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+            ws = data.get("workspace")
+            if isinstance(ws, Mapping) and "outer_isolation" in ws:
+                raise ObsoleteOuterIsolationError(
+                    "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+                )
+        return data
     @field_validator("result_path", "event_log_path")
     @classmethod
     def _path_is_absolute(cls, value: str) -> str:
@@ -449,10 +475,11 @@ async def run_headless_request(
     try:
         if (
             request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
-            and request.workspace.outer_isolation != "apptainer"
+            and request.workspace.containment
+            != RuntimeContainment.ATTESTED.value
         ):
             raise ValueError(
-                "headless trusted-process execution requires outer Apptainer isolation"
+                "headless trusted-process execution rejects the unconfined lane"
             )
         composition_secrets = _secret_file_bindings(
             secret_files,
@@ -1428,6 +1455,7 @@ __all__ = [
     "HeadlessRunFailed",
     "HeadlessRunRequest",
     "HeadlessWorkspaceInput",
+    "ObsoleteOuterIsolationError",
     "load_headless_request",
     "load_headless_provider_route_authority",
     "run_headless_request",

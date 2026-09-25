@@ -9,7 +9,7 @@ import zipfile
 
 MANIFEST_MEMBER = "payload_manifest.json"
 MANIFEST_SCHEMA = "bb.rl.phase5.runtime-preflight-capability-payload.v1"
-REPORT_SCHEMA = "bb.rl.phase5.runtime-preflight-capability.v1"
+REPORT_SCHEMA = "bb.rl.phase5.runtime-preflight-capability.v2"
 REPORT_ID = "rc4-linux-capability-v1"
 COMPONENT = "runtime_preflight_capability"
 FIXED_NONCE = bytes.fromhex(
@@ -228,8 +228,8 @@ def binary_observation(name, argv, cwd, env):
             "sha256": executable_sha256,
             "size_bytes": metadata.st_size,
             "mode": format(metadata.st_mode & 0o7777, "04o"),
-            "device": metadata.st_dev,
-            "inode": metadata.st_ino,
+            "device": str(metadata.st_dev),
+            "inode": str(metadata.st_ino),
             "execution_path": "retained_proc_self_fd",
             "version_argv": argv,
             "version_exit_code": completed.returncode,
@@ -281,8 +281,8 @@ def descriptor_exec_observation(cwd, env):
         return {{
             "executable": str(executable),
             "executable_sha256": executable_sha256,
-            "device": metadata.st_dev,
-            "inode": metadata.st_ino,
+            "device": str(metadata.st_dev),
+            "inode": str(metadata.st_ino),
             "exit_code": completed.returncode,
             "stdout_sha256": sha256_bytes(stdout_raw),
             "stderr_sha256": sha256_bytes(stderr_raw),
