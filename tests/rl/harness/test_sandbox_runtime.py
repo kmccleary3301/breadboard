@@ -1725,8 +1725,9 @@ def test_create_native_scratch_rejects_swapped_directory_identity(tmp_path: Path
     scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
     os.mkdir(scratch_dir, mode=0o700)
     original_identity = (scratch_dir.stat().st_dev, scratch_dir.stat().st_ino)
-    # Swap scratch: remove original and recreate directory with same mode
-    os.rmdir(scratch_dir)
+    # Swap scratch: move the original aside (keeping its inode allocated, so
+    # the filesystem cannot reuse its number) and recreate the directory.
+    os.rename(scratch_dir, tmp_path / "original-scratch")
     os.mkdir(scratch_dir, mode=0o700)
     with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
         sandbox_module._create_native_scratch(
@@ -1800,7 +1801,8 @@ async def test_primary_close_rejects_replaced_scratch_and_preserves_replacement(
     original_identity = (original_stat.st_dev, original_stat.st_ino)
     lease._runtime.native_scratch_identity = original_identity
 
-    scratch.rmdir()
+    # Keep the original inode allocated so the replacement's number differs.
+    scratch.rename(tmp_path / "original-scratch")
     scratch.mkdir(mode=0o700)
     sentinel = scratch / "replacement_sentinel.txt"
     sentinel.write_text("must-survive", encoding="utf-8")
@@ -2640,7 +2642,8 @@ async def test_stale_reconciliation_quarantines_and_preserves_replaced_scratch(
     original.manager._record_scratch_identity(
         lease.lease_id, (scratch_stat.st_dev, scratch_stat.st_ino)
     )
-    scratch_path.rmdir()
+    # Keep the original inode allocated so the replacement's number differs.
+    scratch_path.rename(tmp_path / "original-scratch")
     scratch_path.mkdir(mode=0o700)
     sentinel = scratch_path / "replacement.txt"
     sentinel.write_text("must-survive", encoding="utf-8")
