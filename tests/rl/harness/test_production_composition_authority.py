@@ -62,8 +62,8 @@ def test_openhands_adapter_rejects_missing_terminal_during_descriptor_admission(
         "runtime_root": {
             "authority_id": "native-runtime",
             "path": str(native),
-            "device": metadata.st_dev,
-            "inode": metadata.st_ino,
+            "device": str(metadata.st_dev),
+            "inode": str(metadata.st_ino),
             "owner_uid": metadata.st_uid,
             "mode": "0700",
         },
@@ -86,6 +86,51 @@ def test_openhands_adapter_rejects_missing_terminal_during_descriptor_admission(
     descriptor["tool_ids"].remove("terminal")
     with pytest.raises(ValueError):
         composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+
+def test_native_adapter_squashfs_inode_round_trips_canonical_descriptor(tmp_path: Path) -> None:
+    from breadboard_engine.compilation.contracts import canonical_json_bytes
+
+    root = tmp_path / "native"
+    root.mkdir()
+    descriptor = {
+        "adapter_id": "native-adapter",
+        "tool_ids": ("terminal",),
+        "runtime_root": {
+            "authority_id": "native-root",
+            "path": str(root),
+            "device": "8",
+            "inode": "9223372036854805903",
+            "owner_uid": 0,
+            "mode": "0700",
+        },
+        "manifest_ref": {
+            "path": str(tmp_path / "manifest.json"),
+            "sha256": "sha256:" + "a" * 64,
+            "size_bytes": 1,
+            "media_type": "application/vnd.breadboard.native-tool-source+json;version=1",
+        },
+        "executable_relative_path": "bin/python",
+        "entrypoint_relative_path": "worker.py",
+    }
+    parsed = composition.InstalledToolAdapterV1.model_validate(descriptor, strict=True)
+    encoded = canonical_json_bytes(parsed.model_dump(mode="json"))
+    assert json.loads(encoded)["runtime_root"]["inode"] == "9223372036854805903"
+
+
+@pytest.mark.parametrize("inode", ["0123", "", "-1", "1e3", 123])
+def test_native_adapter_rejects_noncanonical_inode(tmp_path: Path, inode: object) -> None:
+    with pytest.raises(ValueError):
+        composition.DirectoryAuthorityRefV1.model_validate(
+            {
+                "authority_id": "native-root",
+                "path": str(tmp_path),
+                "device": "0",
+                "inode": inode,
+                "owner_uid": 0,
+                "mode": "0700",
+            },
+            strict=True,
+        )
 
 
 def test_project_quota_seccomp_rejects_inode_owner_escape_authority() -> None:
@@ -219,15 +264,15 @@ def _socket_plan(
     gateway: str, port: int, *, role: str = "harness", inode: int = 42
 ) -> PreboundServiceSocketPlanV1:
     values = {
-        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v1",
+        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
         "role": role,
         "gateway": gateway,
         "observed_port": port,
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": 8,
-        "socket_inode": inode,
+        "socket_device": "8",
+        "socket_inode": str(inode),
         "socket_mode": stat.S_IFSOCK | 0o600,
         "socket_owner_uid": 0,
         "getsockname_host": gateway,
@@ -391,11 +436,11 @@ def _manifest_cross_bind(
         server=server,
         openssl_authority=(
             OpenSslAuthorityV1(
-                schema_version="bb.rl.harness-openssl-authority.v1",
+                schema_version="bb.rl.harness-openssl-authority.v2",
                 path="/usr/bin/openssl",
                 sha256="sha256:" + "d" * 64,
-                device=8,
-                inode=42,
+                device="8",
+                inode="42",
                 ctime_ns="123",
                 size_bytes=1024,
                 mode=0o755,

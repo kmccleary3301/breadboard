@@ -1945,8 +1945,8 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             return DirectoryAuthorityRefV1(
                 authority_id=f"production-{name}",
                 path=str(path),
-                device=current.st_dev,
-                inode=current.st_ino,
+                device=str(current.st_dev),
+                inode=str(current.st_ino),
                 owner_uid=current.st_uid,
                 mode="0700",
             )
@@ -1975,7 +1975,7 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
             for role in capability.artifacts.allowed_roles
         )
         manifest = HarnessCompositionManifestV1(
-            schema_version="bb.rl.harness-composition.v1",
+            schema_version="bb.rl.harness-composition.v3",
             composition_id="production-fixture-composition",
             authority_bundle_ref=authority_ref,
             config_bundle_ref=config_bundle_ref,
@@ -2032,11 +2032,11 @@ printf '{"effective_plan_digest":"%s","episode_id":"%s","score":1.0,"snapshot_di
         manifest_bytes = manifest.canonical_bytes()
         manifest_path.write_bytes(manifest_bytes)
         manifest_ref = CompositionRefV1(
-            schema_version="bb.rl.harness-composition-ref.v1",
+            schema_version="bb.rl.harness-composition-ref.v3",
             manifest_path=str(manifest_path.resolve()),
             manifest_sha256="sha256:" + hashlib.sha256(manifest_bytes).hexdigest(),
             manifest_size_bytes=len(manifest_bytes),
-            manifest_media_type="application/vnd.breadboard.harness-composition+json;version=1",
+            manifest_media_type="application/vnd.breadboard.harness-composition+json;version=2",
         )
         composition_ref_path = artifacts / "composition-ref.json"
         composition_ref_path.write_bytes(manifest_ref.canonical_bytes())

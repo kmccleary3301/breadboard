@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
@@ -22,6 +22,8 @@ from breadboard.rl.harness.materialization import (
     SandboxCleanupReceipt,
     VerifierSnapshotReceipt,
 )
+from breadboard.rl.harness.lease_envelope import ContainmentReceipt, RuntimeContainment, WritableMount, add_teardown_outcome
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.sandbox import RuntimeClass
 from breadboard.rl.harness.runners.conductor import CONDUCTOR_IMPLEMENTATION_DIGEST
 from breadboard.rl.harness.runners.base import (
@@ -134,9 +136,32 @@ def cleanup_receipt_projection(
     }
 
 
+
+def signed_containment_receipt(
+    lease_id: str, runtime_id: str, authenticator: HmacSha256ReceiptAuthenticator
+) -> ContainmentReceipt:
+    unsigned = ContainmentReceipt(
+        schema_version="bb.containment-receipt.v2",
+        lease_id=lease_id,
+        runtime_id=runtime_id,
+        mode="userns",
+        pid_namespace_inode=1,
+        mount_namespace_inode=2,
+        user_namespace_inode=3,
+        network_namespace_inode=4,
+        mountinfo_sha256="sha256:" + "0" * 64,
+        writable_mounts=(WritableMount("/workspace", "bind", None, "workspace_bind"),),
+        created_at="2026-09-24T00:00:00Z",
+        key_id=authenticator.key_id,
+        algorithm=authenticator.algorithm,
+        signature=b"\0" * 32,
+    )
+    return replace(unsigned, signature=authenticator.sign(unsigned.canonical_bytes()))
+
 def deterministic_sandbox_plan() -> Any:
     return SimpleNamespace(
         runtime_class=RuntimeClass.TRUSTED_PROCESS,
+        containment=RuntimeContainment.ATTESTED,
         runtime=SimpleNamespace(
             runtime_id="deterministic_fake",
             runtime_class=RuntimeClass.TRUSTED_PROCESS,
@@ -431,6 +456,12 @@ class DeterministicVerifier:
             "lease_record",
             lease_id="verifier-lease",
         )
+        self.plan = SimpleNamespace(runtime=SimpleNamespace(
+            runtime_class=RuntimeClass.TRUSTED_PROCESS, runtime_id="deterministic_fake"
+        ))
+        self.emit_teardown_receipt = True
+        self.containment_receipt: ContainmentReceipt | None = None
+        self.teardown_receipt: ContainmentReceipt | None = None
         self.measurement = {"measurement": ref("verifier-measurement").sha256}
 
     async def execute(self) -> dict[str, Any]:
@@ -441,6 +472,11 @@ class DeterministicVerifier:
 
     async def close(self) -> SandboxCleanupReceipt:
         self.calls.append("verifier.close")
+        if self.containment_receipt is not None and self.emit_teardown_receipt:
+            self.teardown_receipt = add_teardown_outcome(
+                self.containment_receipt, pid1_reaped=True, all_dead=True,
+                authenticator=self._containment_authenticator,
+            )
         if self.close_error is not None:
             raise self.close_error
         return self.close_receipt
@@ -457,6 +493,9 @@ class DeterministicLease:
             receipt={"receipt": ref("materialized").sha256}
         )
         self.close_receipt = released_receipt(self.lease_id)
+        self.containment_receipt: ContainmentReceipt | None = None
+        self.emit_teardown_receipt = True
+        self.teardown_receipt: ContainmentReceipt | None = None
         self.close_error: BaseException | None = None
         self.close_entered = asyncio.Event()
         self.close_release: asyncio.Event | None = None
@@ -502,6 +541,11 @@ class DeterministicLease:
             await self.close_release.wait()
         if self.close_error is not None:
             raise self.close_error
+        if self.containment_receipt is not None and self.emit_teardown_receipt:
+            self.teardown_receipt = add_teardown_outcome(
+                self.containment_receipt, pid1_reaped=True, all_dead=True,
+                authenticator=self._containment_authenticator,
+            )
         return self.close_receipt
 
 
@@ -546,7 +590,18 @@ class DeterministicSandboxRuntime:
             calls,
             resolved.effective_plan.canonical_digest(),
         )
+        self._containment_authenticator = HmacSha256ReceiptAuthenticator(
+            key_id="deterministic-containment", key=b"deterministic-containment-key-32!!"
+        )
+        self.lease._containment_authenticator = self._containment_authenticator
+        self.lease.containment_receipt = signed_containment_receipt(
+            self.lease.lease_id, "deterministic_fake", self._containment_authenticator
+        )
         self.verifier = DeterministicVerifier(calls)
+        self.verifier._containment_authenticator = self._containment_authenticator
+        self.verifier.containment_receipt = signed_containment_receipt(
+            self.verifier.lease_id, "deterministic_fake", self._containment_authenticator
+        )
         self.reconcile_receipts: tuple[SandboxCleanupReceipt, ...] = ()
         self.registries = SimpleNamespace(
             evidence_policies=(

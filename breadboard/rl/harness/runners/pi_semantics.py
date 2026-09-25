@@ -90,89 +90,11 @@ class PiRequestRecord:
 
 
 
-def repair_json(value: str) -> str:
-    """Repair control chars and invalid backslash escapes as Pi does."""
-    escapes = set('"\\/bfnrtu')
-    out: list[str] = []
-    in_string = False
-    index = 0
-    while index < len(value):
-        char = value[index]
-        if not in_string:
-            out.append(char)
-            if char == '"':
-                in_string = True
-            index += 1
-            continue
-        if char == '"':
-            out.append(char)
-            in_string = False
-            index += 1
-            continue
-        if char == "\\":
-            nxt = value[index + 1] if index + 1 < len(value) else None
-            if nxt == "u" and re.match(r"^[0-9a-fA-F]{4}$", value[index + 2 : index + 6]):
-                out.append(value[index : index + 6])
-                index += 6
-                continue
-            if nxt in escapes:
-                out.extend(("\\", nxt))
-                index += 2
-                continue
-            out.extend(("\\", "\\"))
-            index += 1
-            continue
-        if ord(char) <= 0x1F:
-            out.append({"\n": "\\n", "\r": "\\r", "\t": "\\t"}.get(char, f"\\u{ord(char):04x}"))
-        else:
-            out.append(char)
-        index += 1
-    return "".join(out)
+async def parse_streaming_json(partial_json: str | None) -> Any:
+    """Parse one argument text with the pinned Pi ``parseStreamingJson``."""
+    from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
 
-
-def _close_partial_json(value: str) -> str:
-    """Close the common object/array/string prefixes accepted by partial-json."""
-    stack: list[str] = []
-    in_string = False
-    escaped = False
-    for char in value:
-        if in_string:
-            if escaped:
-                escaped = False
-            elif char == "\\":
-                escaped = True
-            elif char == '"':
-                in_string = False
-            continue
-        if char == '"':
-            in_string = True
-        elif char == "{":
-            stack.append("}")
-        elif char == "[":
-            stack.append("]")
-        elif char in "}]" and stack and stack[-1] == char:
-            stack.pop()
-    repaired = repair_json(value)
-    if in_string:
-        repaired += '"'
-    repaired += "".join(reversed(stack))
-    return repaired
-
-
-def parse_streaming_json(value: str | None) -> dict[str, Any]:
-    if not value or not value.strip():
-        return {}
-    candidates = (value, repair_json(value), _close_partial_json(value), _close_partial_json(repair_json(value)))
-    for candidate in candidates:
-        try:
-            parsed = json.loads(candidate)
-        except (ValueError, TypeError):
-            continue
-        if isinstance(parsed, dict):
-            return parsed
-    return {}
-
-
+    return (await parse_streaming_json_batch([partial_json]))[0]
 
 
 def execute_pi_tool(
@@ -200,7 +122,7 @@ def execute_pi_tool(
         return PiToolResult(call_id, name, str(exc), True)
 
 
-def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
+async def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, ...]:
     """Project decoder-finalized tool calls without reassembling fragments.
 
     ``NativeStreamFragment.index`` is a global fragment ordinal.  The native
@@ -208,10 +130,14 @@ def _fragment_tool_calls(response: NativeProviderResponse) -> tuple[PiToolCall, 
     delayed IDs before constructing ``response.tool_calls``; rejoining here
     would misassign same-name calls and reorder the model's batch.
     """
-    result: list[PiToolCall] = []
-    for call in response.tool_calls:
-        result.append(PiToolCall(call.id, call.name, parse_streaming_json(call.arguments)))
-    return tuple(result)
+    from breadboard.rl.harness.pi_native_tools import parse_streaming_json_batch
+
+    calls = tuple(response.tool_calls)
+    parsed = await parse_streaming_json_batch([call.arguments for call in calls])
+    return tuple(
+        PiToolCall(call.id, call.name, arguments)
+        for call, arguments in zip(calls, parsed, strict=True)
+    )
 
 
 def _content_from_response(response: NativeProviderResponse) -> str:
@@ -242,14 +168,26 @@ class PiSemanticsState:
         request_cap: int = DEFAULT_REQUEST_CAP,
         image_delivery: bool = False,
         case_id: str | None = None,
+        model_id: str,
+        provider: str,
+        api: str = "openai-completions",
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
+        if not isinstance(model_id, str) or not model_id:
+            raise ValueError("model_id must be non-empty text")
+        if not isinstance(provider, str) or not provider:
+            raise ValueError("provider must be non-empty text")
+        if not isinstance(api, str) or not api:
+            raise ValueError("api must be non-empty text")
         self.task = task
         self.system_prompt = system_prompt
         self.request_cap = request_cap
         self.image_delivery = image_delivery
         self.case_id = case_id
+        self.model_id = model_id
+        self.provider = provider
+        self.api = api
         self.request_count = 0
         self.stream_fn_issued = 0
         self.request_records: list[PiRequestRecord] = []
@@ -263,7 +201,15 @@ class PiSemanticsState:
         return self.exit_status is not None
 
     def _cap_response(self) -> PiResponseResult:
-        assistant = {"role": "assistant", "content": [], "stopReason": "error", "text": ""}
+        assistant = {
+            "role": "assistant",
+            "content": [{"type": "text", "text": ""}],
+            "stopReason": "error",
+            "api": self.api,
+            "provider": self.provider,
+            "model": self.model_id,
+            "text": "",
+        }
         self.messages.append(assistant)
         self.exit_status = "RequestLimitExceeded"
         self.native_stop_reason = "error"
@@ -284,25 +230,40 @@ class PiSemanticsState:
             return self._cap_response()
         return None
 
-    def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
-        """Commit an admitted assistant response without executing its tools."""
+    async def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
+        """Commit an admitted assistant response without executing its tools.
+
+        Argument parsing runs in the pinned worker without blocking the event
+        loop; cancellation kills the worker before any state is committed.
+        """
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.stream_fn_issued <= self.request_count:
             raise PiSemanticsError("response has no admitted provider query")
         if self.request_count >= self.request_cap:
             return self._cap_response()
+        calls = (
+            ()
+            if response.finish_reason in {"error", "aborted"}
+            else await _fragment_tool_calls(response)
+        )
         self.request_count += 1
         self.request_records.append(PiRequestRecord(self.stream_fn_issued, True, response.request_digest))
         stop_reason = _native_stop_reason(response.finish_reason)
-        calls = () if response.finish_reason in {"error", "aborted"} else _fragment_tool_calls(response)
         content = _content_from_response(response)
         blocks: list[dict[str, Any]] = []
         if content:
             blocks.append({"type": "text", "text": content})
         for call in calls:
             blocks.append({"type": "toolCall", "id": call.id, "name": call.name, "arguments": call.arguments})
-        assistant = {"role": "assistant", "content": blocks, "stopReason": stop_reason}
+        assistant = {
+            "role": "assistant",
+            "content": blocks,
+            "stopReason": stop_reason,
+            "api": self.api,
+            "provider": self.provider,
+            "model": self.model_id,
+        }
         self.messages.append(assistant)
         self.native_stop_reason = stop_reason
         if not calls:
@@ -395,5 +356,4 @@ __all__ = [
     "PiToolResult",
     "execute_pi_tool",
     "parse_streaming_json",
-    "repair_json",
 ]

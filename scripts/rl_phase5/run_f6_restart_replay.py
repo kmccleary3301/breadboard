@@ -5,6 +5,7 @@ import asyncio
 import dataclasses
 import hashlib
 import os
+import re
 import shutil
 import socket
 import stat
@@ -18,7 +19,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from breadboard_engine.compilation.contracts import canonical_json_bytes, canonical_json_loads
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
@@ -147,14 +148,22 @@ def _without_key(value: BaseModel, key: str) -> dict[str, Any]:
 
 
 class F6FileIdentity(_ExactModel):
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     size_bytes: int = Field(ge=0)
     mtime_ns: str
     ctime_ns: str
     owner_uid: int = Field(ge=0)
     mode: Literal[256]
     nlink: Literal[1]
+
+    @field_validator("device", "inode")
+    @classmethod
+    def decimal_identity(cls, value: str, info: ValidationInfo) -> str:
+        pattern = r"(0|[1-9][0-9]*)" if info.field_name == "device" else r"[1-9][0-9]*"
+        if type(value) is not str or re.fullmatch(pattern, value) is None:
+            raise ValueError("canonical decimal filesystem identity required")
+        return value
 
     @field_validator("mtime_ns", "ctime_ns")
     @classmethod
@@ -221,8 +230,8 @@ def _matches_file_identity(
     expected: F6FileIdentity,
 ) -> bool:
     return (
-        metadata.st_dev == expected.device
-        and metadata.st_ino == expected.inode
+        metadata.st_dev == int(expected.device)
+        and metadata.st_ino == int(expected.inode)
         and metadata.st_size == expected.size_bytes
         and metadata.st_mtime_ns == int(expected.mtime_ns)
         and metadata.st_ctime_ns == int(expected.ctime_ns)
@@ -335,7 +344,7 @@ class F6ImmutableIdentity(_ExactModel):
 
 
 class F6RestartReplayInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f6-restart-replay-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f6-restart-replay-input.v2"]
     production: F6ProductionBinding
     target: F6TargetIdentity
     immutable_identity: F6ImmutableIdentity
@@ -2009,8 +2018,8 @@ def main() -> int:
     )
     parser.add_argument("--input", required=True)
     parser.add_argument("--expected-input-sha256", required=True)
-    parser.add_argument("--expected-input-device", required=True, type=int)
-    parser.add_argument("--expected-input-inode", required=True, type=int)
+    parser.add_argument("--expected-input-device", required=True)
+    parser.add_argument("--expected-input-inode", required=True)
     parser.add_argument("--expected-input-size-bytes", required=True, type=int)
     parser.add_argument("--expected-input-mtime-ns", required=True)
     parser.add_argument("--expected-input-ctime-ns", required=True)
