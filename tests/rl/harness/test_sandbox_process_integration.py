@@ -156,7 +156,7 @@ def test_launch_envelope_scratch_identity_mismatch_fails_before_fork(
     try:
         real_stat = os.fstat(scratch_fd)
         mismatched_identity = (real_stat.st_dev, real_stat.st_ino + 1)
-        authenticator = HmacSha256ReceiptAuthenticator(b"k" * 32)
+        authenticator = HmacSha256ReceiptAuthenticator(key_id="test-containment", key=b"k" * 32)
         with pytest.raises(lease_envelope.EnvelopeLaunchError) as exc_info:
             lease_envelope.launch_envelope(
                 lease_id="test-lease-id",

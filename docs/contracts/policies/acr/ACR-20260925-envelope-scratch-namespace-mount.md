@@ -27,6 +27,9 @@ Since PR #145 (commit cc2eaf21), every Linux envelope launch fails in `_setup_mo
   - `test_envelope_mounts_scratch_on_bounded_private_tmpfs` asserts that the scratch tmpfs targets a descriptor reopened after namespace entry, not the inherited one, and that the descriptor names the verified scratch inode.
   - `test_envelope_refuses_scratch_replaced_before_its_mount[directory|symlink]` asserts that a scratch replaced after the pre-mount check is refused before any scratch mount.
   - Both tests are Linux-only (`O_PATH`).
+  - Four Linux-only tests from #145 had never run on a sealed-execution host. They are corrected here:
+    - `test_launch_envelope_scratch_identity_mismatch_fails_before_fork` constructed `HmacSha256ReceiptAuthenticator` positionally (a `TypeError`).
+    - `test_create_native_scratch_rejects_swapped_directory_identity`, `test_primary_close_rejects_replaced_scratch_and_preserves_replacement` and `test_stale_reconciliation_quarantines_and_preserves_replaced_scratch` simulated a swap with `rmdir` + `mkdir`. ext4 can reuse the freed inode number, and it did in DO-2 job 1338 (`(64769, 22571436) != (64769, 22571436)`). Each test now renames the original out of the lease root, which keeps its inode allocated, before recreating the directory.
 - Kernel danger-zone: yes, `breadboard/rl/harness/lease_envelope.py` is under the kernel protected surface (`breadboard/**`).
 
 ## 3) Coupling and Generalization Impact
@@ -43,9 +46,17 @@ Since PR #145 (commit cc2eaf21), every Linux envelope launch fails in `_setup_mo
 ## 5) Evidence and Validation Plan
 
 - **Local (macOS):** `test_sandbox_process_integration.py` gives 23 passed and 52 skipped. The new tests are Linux-only.
-- **DO-2 Linux gate, required:**
-  - Run `test_sandbox_runtime.py` and `test_sandbox_process_integration.py` as root and as an unprivileged user, at base cfa558eb and at this head. At the base, the real-launch tests are expected to fail with EINVAL; at this head, all must pass.
-  - Rerun the Hermes installed replay on a SIF built from a lane that contains this change.
+- **DO-2 Linux gate, job 1338** (kit `do2-envns-gate-w92.sh`): `test_sandbox_runtime.py` + `test_sandbox_process_integration.py`, run as root (tmp under `/tmp`) and as uid 65534 (tmp under `/var/tmp`).
+
+  | Commit | Root | Unprivileged |
+  |---|---|---|
+  | Base cfa558eb | 37 failed, 177 passed | 34 failed, 38 passed |
+  | 1f9adf09 (first head) | 4 failed, 212 passed | 1 failed, 73 passed |
+
+  - At the base, the real-launch failures are `mount_view: [Errno 22] Invalid argument`.
+  - At 1f9adf09, the remaining failures are exactly the four test defects listed in section 2, and all four also fail at the base.
+  - A rerun at the corrected head is required.
+- **Still required:** rerun the Hermes installed replay on a SIF built from a lane that contains this change.
 
 ## 6) Rollout Plan
 
