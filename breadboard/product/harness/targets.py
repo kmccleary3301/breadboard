@@ -28,6 +28,22 @@ from .validate import (
 )
 
 
+_NATIVE_WORKER_RECIPES = MappingProxyType({
+    "openhands-sdk@1.47.0": (
+        "breadboard.openhands-sdk.v1.47.0",
+        "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910",
+    ),
+    "pi@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
+    ),
+    "hermes-agent@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88",
+    ),
+})
+
+
 class E4TargetCapabilityError(HarnessCompileError):
     def __init__(self, renderer_id: str, required_capabilities: tuple[str, ...]) -> None:
         self.renderer_id = renderer_id
@@ -260,35 +276,32 @@ def _lower_worker_target(
     harness: Mapping[str, Any],
     dynamic_fields: Mapping[str, Any],
 ) -> E4TargetRendering:
-    """Bind source assets; the owned worker renders runtime-dependent fields."""
-    recipes = {
-        "openhands-sdk@1.47.0": (
-            "breadboard.openhands-sdk.v1.47.0",
-            "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910",
-        ),
-        "pi@0.73.1": (
-            "breadboard.pi-coding-agent.v0.73.1",
-            "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
-        ),
-    }
-    recipe = recipes.get(package.target_id)
+    """Bind source assets; the owned source worker renders runtime-dependent fields."""
+    recipe = _NATIVE_WORKER_RECIPES.get(package.target_id)
     if (
         recipe is None
         or sha256(package.descriptor_bytes).hexdigest() != recipe[1]
         or harness["renderer"]["selector"] != recipe[0]
         or dynamic_fields
     ):
-        raise HarnessCompileError("native worker requires its pinned recipe and no caller template inputs")
+        raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
     order = tuple(surface["ordered_tools"])
     compiler_tools = []
     for name in order:
         tool = {"name": name, **surface["tools"][name]}
-        # The registry emits an empty required list. Native HTTP uses the
-        # untouched source schemas in runtime_profile, including omissions.
+        # The compiler encodes required order through parameter order; the
+        # native HTTP path retains the untouched schemas in runtime_profile.
+        parameters = tool["parameters"]
+        required = parameters.get("required", [])
+        properties = parameters["properties"]
+        if [key for key in properties if key in required] != required:
+            ordered_properties = {key: properties[key] for key in required}
+            ordered_properties.update(properties)
+            properties = ordered_properties
         tool["parameters"] = {
-            **tool["parameters"], "required": tool["parameters"].get("required", []),
+            **parameters, "properties": properties, "required": required,
         }
         compiler_tools.append(copy_harness_json(tool, freeze=True))
     descriptor = package.descriptor
@@ -349,6 +362,7 @@ def lower_e4_target(
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.hermes-agent.v2026.9.11",
         }:
             return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
