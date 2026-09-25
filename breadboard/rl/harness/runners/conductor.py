@@ -2501,7 +2501,22 @@ class _ConductorSession:
                 )
             for event in delta:
                 kind = event.get("kind")
-                if kind == "ObservationEvent":
+                if kind == "ActionEvent":
+                    call = event.get("tool_call")
+                    arguments = call.get("arguments") if isinstance(call, Mapping) else None
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            pass
+                    elif arguments is None and event.get("action") is not None:
+                        arguments = event["action"]
+                    trace_tool_calls.append({
+                        "tool_name": event.get("tool_name"),
+                        "arguments": arguments,
+                        "security_risk": event.get("security_risk"),
+                    })
+                elif kind == "ObservationEvent":
                     observation_value = event.get("observation")
                     if not isinstance(observation_value, Mapping):
                         observation_value = {"value": observation_value}
@@ -2678,19 +2693,6 @@ class _ConductorSession:
                     "native prepared action list is invalid",
                     code="native_response_invalid", **self._context(),
                 )
-            prepared_all = prepared.get("prepared_actions", actions)
-            if not isinstance(prepared_all, tuple):
-                raise RunnerProtocolError(
-                    "native prepared action trace is invalid",
-                    code="native_response_invalid", **self._context(),
-                )
-            for action in prepared_all:
-                if isinstance(action, Mapping):
-                    trace_tool_calls.append({
-                        "tool_name": action.get("tool_id"),
-                        "arguments": action.get("arguments"),
-                        "security_risk": action.get("security_risk", "UNKNOWN"),
-                    })
             observations: list[FrozenJsonObject] = []
             finished = False
             for ordinal, action in enumerate(actions):

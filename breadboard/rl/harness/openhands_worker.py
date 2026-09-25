@@ -562,9 +562,8 @@ class OpenHandsActor:
                 "arguments": json.loads(action.tool_call.arguments),
                 "security_risk": risk if isinstance(risk, str) else "UNKNOWN",
             }
-        all_output = [action_dump(action, index) for index, action in enumerate(actions)]
-        prepared_output = all_output[: len(self._prepared)]
-        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output, "prepared_actions": all_output}
+        prepared_output = [action_dump(action, index) for index, action in enumerate(self._prepared)]
+        return {"schema_version": SCHEMA_VERSION, "kind": "prepared", "event_delta": self._take_events(), "status": self._status(), "iteration": self._iteration, "actions": prepared_output}
 
 
     def _execute(self, payload: Mapping[str, Any]) -> Mapping[str, Any]:

@@ -24,6 +24,8 @@ Danger-zone: yes. The same delta reseals the versioned target and native configu
 
 The Conductor passes the already compiled OpenHands source profile and `limits.max_turns` into the existing native worker phase. The worker still requires its admitted OpenAI-compatible model route; it constructs the SDK model from the sealed native configuration, including the declared capability overrides and pinned dependency versions. Its IPC transport forwards `request.content` as base64 without rewriting JSON; it omits authorization from public evidence and adjusts transport headers for the unchanged body length. The registered comparator reads the supplier ID from the captured `state.py:592` stderr line and BB's independently recorded `conversation_id` from the replay trace; it binds each raw request key to that side's ID before UUID normalization. Merely supplying a different UUID no longer passes. That key rule applies to these default captured conversations, not every possible SDK sub-agent override. Shared target lowering and Conductor code make non-OpenHands regression possible, but the changed loop is `_loop_openhands` and the target recipe remains digest-bound.
 
+The replay trace now projects ordered `ActionEvent` tool calls from the worker's committed event deltas, including SDK-rejected calls. Only the separately returned validated `actions` are dispatched. This keeps the rejected call and its `AgentErrorEvent` visible without treating a validation failure as an executable tool call.
+
 ## 4) Change Classification
 
 - Classification: `additive`.

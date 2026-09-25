@@ -4246,7 +4246,14 @@ class _OpenHandsTracePort(RecordingToolPort):
                     "method": "POST",
                     "url": "https://provider.invalid/chat",
                     "headers": {},
-                    "body_b64": base64.b64encode(b'{"messages":[],"prompt_cache_key":"56351706-00f7-47c5-98d0-7145da8af641"}').decode(),
+                    "body_b64": base64.b64encode(json.dumps({
+                        "messages": [],
+                        "prompt_cache_key": "56351706-00f7-47c5-98d0-7145da8af641",
+                        "tools": [{"type": "function", "function": {
+                            "name": "file_editor",
+                            "description": "Your current working directory is: /opt/openhands/workspace",
+                        }}],
+                    }).encode()).decode(),
                 },
                 "event_delta": (),
                 "status": "RUNNING",
@@ -4272,8 +4279,12 @@ class _OpenHandsTracePort(RecordingToolPort):
                 "schema_version": "bb.openhands-native.v1",
                 "kind": "prepared",
                 "actions": (action,),
-                "prepared_actions": (action,),
-                "event_delta": (),
+                "event_delta": ({
+                    "kind": "ActionEvent",
+                    "tool_name": "finish",
+                    "tool_call": {"arguments": "{}"},
+                    "security_risk": "LOW",
+                },),
                 "status": "RUNNING",
                 "iteration": 1,
             }
@@ -4505,6 +4516,77 @@ async def test_openhands_native_errors_are_preserved_in_replay_trace() -> None:
         "invalid command",
         "invalid command",
     ]
+
+
+async def test_openhands_rejected_action_is_traced_but_not_dispatched() -> None:
+    captured = json.loads((
+        Path(__file__).resolve().parents[2]
+        / "fixtures" / "openhands_rerun2" / "captures"
+        / "OH-02-invalid-call-continues" / "trace.json"
+    ).read_text(encoding="utf-8"))
+    actions = [event for event in captured["events"] if event.get("kind") == "ActionEvent"]
+    invalid = actions[1]
+    assert json.loads(invalid["tool_call"]["arguments"])["command"] == "not-a-real-command"
+    executable = (actions[0], actions[2])
+
+    class _RejectedActionPort(_OpenHandsTracePort):
+        def __init__(self) -> None:
+            super().__init__()
+            self.executed: list[tuple[int, str]] = []
+
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "prepare":
+                reply["event_delta"] = tuple(captured["events"][2:6])
+                reply["actions"] = tuple({
+                    "index": index,
+                    "call_id": event["tool_call"]["id"],
+                    "tool_id": event["tool_name"],
+                    "arguments": json.loads(event["tool_call"]["arguments"]),
+                    "security_risk": event["security_risk"],
+                } for index, event in enumerate(executable))
+            elif operation == "execute":
+                self.executed.append((payload["index"], payload["tool_id"]))
+                reply.update(index=payload["index"], tool_id=payload["tool_id"], observations=())
+            elif operation == "commit":
+                reply["event_delta"] = ()
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    tools = _RejectedActionPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=_OpenHandsTraceClient(observation),
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+
+    trace = thaw_json(result.response["replay_trace"])
+    assert [call["arguments"]["command"] for call in trace["tool_calls"]] == [
+        "create", "not-a-real-command", "create",
+    ]
+    assert [call["security_risk"] for call in trace["tool_calls"]] == [
+        event["security_risk"] for event in actions[:3]
+    ]
+    assert tools.executed == [(0, "file_editor"), (1, "file_editor")]
+    assert any(
+        event["event_kind"] == "AgentErrorEvent" and event["is_error"]
+        for event in trace["observations"]
+    )
 
 
 @pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
