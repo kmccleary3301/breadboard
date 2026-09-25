@@ -31,6 +31,7 @@ NATIVE_CHAT_RESPONSE_TARGETS: Final = MappingProxyType({
     OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
     HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
 })
+OPENCLAW_RESPONSE_CONSUMER_ID: Final = "breadboard.openclaw.native-chat.v1"
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
@@ -43,6 +44,7 @@ _NATIVE_RESPONSE_CONSUMER_MODES: Final = {
     OMP_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     HERMES_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
+    OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
 }
 
 
@@ -469,6 +471,7 @@ __all__ = [
     "OPENHANDS_RESPONSE_CONSUMER_ID",
     "HERMES_RESPONSE_CONSUMER_ID",
     "NATIVE_CHAT_RESPONSE_TARGETS",
+    "OPENCLAW_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
     "NativeResponseBindingError",
     "NativeResponsePolicy",

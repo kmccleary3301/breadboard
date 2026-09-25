@@ -5,6 +5,7 @@ import importlib
 import json
 from copy import deepcopy
 from pathlib import Path
+import shutil
 from typing import Any, Mapping
 from conformance.comparators.stored_report import compare
 from conformance.comparators.hermes_agent import project_supplier_case as project_hermes_supplier_case
@@ -12,12 +13,16 @@ from conformance.comparators.openhands_sdk import (
     compare as compare_openhands,
     project_supplier_case,
 )
+from conformance.comparators.openclaw_2026_9_4 import (
+    project_supplier_case as project_openclaw_supplier_case,
+)
 from scripts.validate_e4_c4_chain import _diff_comparator_reports
 
 ROOT = Path(__file__).resolve().parents[2]
 INVENTORY_PATH = ROOT / "docs" / "conformance" / "e4_lane_inventory.json"
 REGISTRY_PATH = ROOT / "conformance" / "comparators" / "registry.json"
 OPENHANDS_CASE = ROOT / "tests" / "fixtures" / "openhands_rerun2" / "captures" / "OH-01-normal-file-effect"
+OPENCLAW_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "openclaw_packet_640"
 HERMES_CASE = ROOT / "tests" / "e4_parity" / "fixtures" / "hermes_agent" / "H-01-normal-memory-skill-write"
 
 def _load_json(path: Path) -> Any:
@@ -201,6 +206,12 @@ def _registered_comparator_input(
         from tests.e4_parity.test_omp_18_1_17_comparator import _trace as omp_trace
 
         return {"capture": omp_trace(), "replay": omp_trace()}
+    if comparator_id == "openclaw_2026_9_4_trace_v1":
+        return {
+            "capture": str(OPENCLAW_CASE),
+            "replay": project_openclaw_supplier_case(OPENCLAW_CASE),
+            "scope": {},
+        }
     if comparator_id == "semantic_replay_v1":
         return {
             "capture": {"captured_artifacts": []},
@@ -281,6 +292,44 @@ def test_each_registered_comparator_entrypoint_conforms_to_protocol(tmp_path: Pa
         assert {"assertion_id", "status", "observed", "expected"} <= set(report["assertions"][0])
         if entry["comparator_id"] == "oh_my_pi_18_1_17_trace_v1":
             assert report["ok"] is True
+        if entry["comparator_id"] == "openclaw_2026_9_4_trace_v1":
+            assert report["ok"] is True
+            # Positive mutation: replay carrying envelope/classification keys compares equal with gap recorded
+            positive_replay = json.loads(json.dumps(comparator_input["replay"]))
+            positive_replay["classification"] = {"verdict": "success"}
+            positive_replay["envelope"] = {"turn_count": 3, "status": "completed"}
+            positive_replay["final_envelope"] = {"turn_count": 3, "status": "completed"}
+            positive_report = comparator({**comparator_input, "replay": positive_replay})
+            assert positive_report["ok"] is True
+            assert any(
+                assertion["assertion_id"] == "episode_equal"
+                and assertion["status"] == "passed"
+                for assertion in positive_report["assertions"]
+            )
+            assert any(
+                gap.get("gap_id") == "openclaw-supplier-envelope-unrecorded"
+                for gap in positive_report.get("declared_gaps", [])
+            )
+            # Negative mutation 1: tampered effects fail episode equality
+            tampered = json.loads(json.dumps(comparator_input["replay"]))
+            tampered["effects"]["marker.txt"] = None
+            rejected = comparator({**comparator_input, "replay": tampered})
+            assert rejected["ok"] is False
+            assert any(
+                assertion["assertion_id"] == "effects_equal"
+                and assertion["status"] == "failed"
+                for assertion in rejected["assertions"]
+            )
+            # Negative mutation 2: supplier receipt carrying classification fails closed
+            mutated_supplier = tmp_path / "mutated_openclaw_supplier"
+            shutil.copytree(comparator_input["capture"], mutated_supplier)
+            receipt_path = mutated_supplier / "case-receipt.json"
+            receipt_data = json.loads(receipt_path.read_text(encoding="utf-8"))
+            receipt_data["classification"] = {"unexpected": True}
+            receipt_path.write_text(json.dumps(receipt_data), encoding="utf-8")
+            closed_report = comparator({**comparator_input, "capture": str(mutated_supplier)})
+            assert closed_report["ok"] is False
+            assert any("classification" in err for err in closed_report.get("errors", []))
         if entry["comparator_id"] == "hermes_agent_trace_v1":
             tampered = deepcopy(comparator_input["bb_trace"])
             effect = next(iter(tampered["file_effects"]))

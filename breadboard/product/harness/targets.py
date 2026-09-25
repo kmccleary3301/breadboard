@@ -46,6 +46,10 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.oh-my-pi.v18.1.17",
         "fe47b49bc0d5ff05e981559d2f3f87070b816e3f3ba263b70f6ad4e7554b8a4f",
     ),
+    "openclaw@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a",
+    ),
 })
 
 
@@ -388,12 +392,16 @@ def lower_e4_target(
         raise ValueError("E4 target execution and overlay descriptors are required")
     config_asset = execution.get("config_asset")
     prompt_asset = execution.get("system_prompt_asset")
+    prompt_source = execution.get("system_prompt_source")
     tool_asset = execution.get("tool_surface_asset")
-    if not all(
-        type(value) is str and value
-        for value in (config_asset, prompt_asset, tool_asset)
+    if (
+        any(type(value) is not str or not value for value in (config_asset, tool_asset))
+        or (
+            (type(prompt_asset) is not str or not prompt_asset)
+            and (type(prompt_source) is not str or not prompt_source)
+        )
     ):
-        raise ValueError("E4 target execution assets are invalid")
+        raise ValueError("E4 target execution assets or prompt source are invalid")
     from breadboard_engine.compilation.server_compiler import strict_parse_payload
 
     harness = strict_parse_payload(
@@ -408,6 +416,8 @@ def lower_e4_target(
             raise HarnessDefinitionValidationError(findings)
         if harness["schema_version"] != "bb.e4.target_config.v2":
             raise HarnessCompileError("E4 target configuration revision does not match")
+        if prompt_asset is None and harness["renderer"]["selector"] != "breadboard.openclaw.native-chat.v1":
+            raise HarnessCompileError("only the pinned OpenClaw worker may render a source prompt")
         if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
             return _lower_mini_target(package, harness, dynamic_fields)
         if harness["renderer"]["selector"] in {
@@ -415,6 +425,7 @@ def lower_e4_target(
             "breadboard.pi-coding-agent.v0.73.1",
             "breadboard.oh-my-pi.v18.1.17",
             "breadboard.hermes-agent.v2026.9.11",
+            "breadboard.openclaw.native-chat.v1",
         }:
             return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
@@ -586,14 +597,15 @@ def lower_e4_harness(
     for ordinal, tool in enumerate(rendered.tools):
         schema = tool["parameters"]
         if (
-            set(schema) - {"type", "properties", "required", "additionalProperties"}
+            set(schema) - {"type", "properties", "patternProperties", "required", "additionalProperties"}
             or schema.get("type") != "object"
             or not isinstance(schema.get("properties"), Mapping)
-            or not isinstance(schema.get("required"), tuple)
         ):
             raise HarnessCompileError("target tool schema cannot be represented by the compiler")
         properties = schema["properties"]
-        required = schema["required"]
+        required = schema.get("required", ())
+        if not isinstance(required, tuple):
+            raise HarnessCompileError("target required-parameter order cannot be preserved")
         if (
             any(type(name) is not str or name not in properties for name in required)
             or tuple(name for name in properties if name in required) != required

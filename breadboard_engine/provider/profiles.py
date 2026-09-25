@@ -85,6 +85,7 @@ class OpenAICompletionsRequestPolicy:
     max_token_field: Literal["max_tokens", "max_completion_tokens"] = "max_tokens"
     strict_tools: bool | None = False
     enable_thinking: bool | None = False
+    tool_choice: Literal["auto"] | None = None
     # A source-declared body key carrying one per-episode conversation identity.
     conversation_key_field: Literal["prompt_cache_key"] | None = None
 
@@ -112,6 +113,8 @@ class OpenAICompletionsRequestPolicy:
             raise ProviderContractError(
                 "request_policy.enable_thinking must be boolean or null"
             )
+        if self.tool_choice is not None and self.tool_choice != "auto":
+            raise ProviderContractError("request_policy.tool_choice is unsupported")
         if (
             self.conversation_key_field is not None
             and self.conversation_key_field != "prompt_cache_key"
@@ -153,6 +156,7 @@ class OpenAICompletionsRequestPolicy:
             "max_token_field": self.max_token_field,
             "strict_tools": self.strict_tools,
             "enable_thinking": self.enable_thinking,
+            "tool_choice": self.tool_choice,
         }
         # Omitted when unset so existing profile identities are unchanged.
         if self.conversation_key_field is not None:
@@ -473,6 +477,13 @@ class OpenAICompletionsProviderProfile:
         if not token_capability:
             raise ProviderContractError("max-token field is not supported by the profile")
         if (
+            self.request_policy.tool_choice is not None
+            and not self.capabilities.supports_tools
+        ):
+            raise ProviderContractError(
+                "capabilities.supports_tools must be true for tool_choice"
+            )
+        if (
             self.request_policy.stream
             and self.request_policy.include_usage
             and not self.capabilities.supports_stream_options
@@ -610,6 +621,8 @@ class OpenAICompletionsProviderProfile:
                 copied["function"] = function_copy
                 copied_tools.append(copied)
             request["tools"] = copied_tools
+            if self.request_policy.tool_choice is not None:
+                request["tool_choice"] = self.request_policy.tool_choice
         request["stream"] = self.request_policy.stream
         if self.request_policy.stream and self.request_policy.include_usage:
             request["stream_options"] = {"include_usage": True}
@@ -642,6 +655,8 @@ class OpenAICompletionsProviderProfile:
             features.add("enable_thinking")
         if tools and self.request_policy.strict_tools is not None:
             features.add("strict_tools")
+        if tools and self.request_policy.tool_choice is not None:
+            features.add("tool_choice")
         for name in ("temperature", "top_p", "seed", "frequency_penalty", "presence_penalty"):
             if getattr(self.sampling, name) is not None:
                 features.add(name)
@@ -746,6 +761,13 @@ class OpenAICompletionsProviderProfile:
                 "status": "effective",
                 "source": f"{policy_source}.enable_thinking",
                 "effective": request["enable_thinking"],
+                "uncertainty": None,
+            }
+        if "tool_choice" in request:
+            provenance["tool_choice"] = {
+                "status": "effective",
+                "source": f"{policy_source}.tool_choice",
+                "effective": request["tool_choice"],
                 "uncertainty": None,
             }
         for field_name in (

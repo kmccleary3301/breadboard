@@ -25,6 +25,7 @@ from breadboard_engine.compilation.provider_response import (
     OPENHANDS_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
+from breadboard_engine.provider.contracts import NativeProviderRequestFailure
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
@@ -47,6 +48,7 @@ from breadboard.rl.harness.runners.base import (
     MiniTemplateFramePort,
     NativeHTTPPolicyRuntimeClientPort,
     NativeSourceSessionPort,
+    NativeFinalizationPhasePort,
     NativeRuntimeInputPort,
     NativeWorkspaceEffectsPort,
     FrozenJsonObject,
@@ -143,6 +145,12 @@ class _NativePhaseSteps:
         [Mapping[str, Mapping[str, Any]], Mapping[str, Any]], Mapping[str, Any]
     ]
     max_steps: int
+    # Runs after close and effect measurement. A profile with this hook owns
+    # the close failure: it is passed in instead of raised.
+    after_close: Callable[
+        [Mapping[str, Any], Exception | None, Mapping[str, Mapping[str, Any]]],
+        Awaitable[None],
+    ] | None = None
 
 @dataclass(frozen=True, slots=True)
 class ConductorRunRequest:
@@ -1123,7 +1131,7 @@ def _resolve_pointer(value: Mapping[str, Any], pointer: str, request: RunnerOpen
 
 
 _SCHEMA_KEYWORDS = frozenset({
-    "type", "properties", "required", "additionalProperties", "items", "enum",
+    "type", "properties", "patternProperties", "required", "additionalProperties", "items", "enum",
     "const", "minLength", "maxLength", "pattern", "minimum", "maximum",
     "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minItems",
     "maxItems", "uniqueItems", "description", "default", "examples", "title",
@@ -1163,7 +1171,7 @@ def _admit_schema(
         ):
             raise _plan_error(request, "compiled tool schema enum is invalid", "compiled_ir_mismatch")
 
-    object_keywords = {"properties", "required", "additionalProperties"} & set(schema)
+    object_keywords = {"properties", "patternProperties", "required", "additionalProperties"} & set(schema)
     array_keywords = {"items", "minItems", "maxItems", "uniqueItems"} & set(schema)
     string_keywords = {"minLength", "maxLength", "pattern"} & set(schema)
     numeric_keywords = {
@@ -1179,19 +1187,32 @@ def _admit_schema(
 
     if object_keywords or schema_type == "object":
         properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
         required = schema.get("required", ())
         additional = schema.get("additionalProperties", False)
         if (
             not isinstance(properties, Mapping)
+            or not isinstance(pattern_properties, Mapping)
             or not isinstance(required, (list, tuple))
             or any(type(name) is not str or name not in properties for name in required)
             or len(set(required)) != len(required)
             or (type(additional) is not bool and not isinstance(additional, Mapping))
+            or any(type(pattern) is not str for pattern in pattern_properties)
         ):
             raise _plan_error(request, "compiled object schema is invalid", "compiled_ir_mismatch")
         for child in properties.values():
             if not isinstance(child, Mapping):
                 raise _plan_error(request, "compiled object property schema is invalid", "compiled_ir_mismatch")
+            _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
+        for pattern, child in pattern_properties.items():
+            if not isinstance(child, Mapping):
+                raise _plan_error(request, "compiled pattern property schema is invalid", "compiled_ir_mismatch")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error = _plan_error(request, "compiled pattern property is invalid", "compiled_ir_mismatch")
+                error.__cause__ = exc
+                raise error
             _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
         if isinstance(additional, Mapping):
             _admit_schema(additional, request, _depth=_depth + 1, _budget=_budget)
@@ -2180,6 +2201,8 @@ class _ConductorSession:
                 profile.state_factory is None
                 or not isinstance(tools, NativeRuntimeInputPort)
                 or not isinstance(advertisement, Mapping)
+                or profile.finalize_result_phase is not None
+                and not isinstance(tools, NativeFinalizationPhasePort)
             )
         ):
             raise _plan_error(self._open_request, "native source runtime controls differ", "compiled_ir_mismatch")
@@ -2216,8 +2239,17 @@ class _ConductorSession:
                 "native runtime close was not registered",
                 code="native_response_invalid", **self._context(),
             )
-        closed = await callback()
+        close_error: Exception | None = None
+        if steps.after_close is None:
+            closed = await callback()
+        else:
+            try:
+                closed = await callback()
+            except Exception as exc:
+                closed, close_error = {}, exc
         effects = await self._native_effects()
+        if steps.after_close is not None:
+            await steps.after_close(closed, close_error, effects)
         if profile.phase_mode == "checkpointed":
             await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
@@ -2420,10 +2452,39 @@ class _ConductorSession:
                 "messages": projected.get("messages"),
                 "tools": projected.get("tools"),
             }, field_name="native policy request")
-            response, request_body = await self._native_policy_exchange(
-                frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
-            )
+            failure: NativeProviderRequestFailure | None = None
+            try:
+                response, request_body = await self._native_policy_exchange(
+                    frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                )
+            except RunnerDependencyError as exc:
+                failure = (
+                    _find_native_provider_failure(exc)
+                    if profile.provider_failure_terminates else None
+                )
+                if failure is None:
+                    raise
+                request_body = thaw_json(failure.request_body)
+            expected_members = projected.get("request_members")
+            if expected_members is not None and (
+                not isinstance(expected_members, (list, tuple))
+                or any(type(member) is not str for member in expected_members)
+                or len(set(expected_members)) != len(expected_members)
+                or set(expected_members) != set(request_body)
+            ):
+                # The native worker reports the member set its pinned source
+                # request builder produces; the sent body must carry exactly it.
+                raise RunnerProtocolError(
+                    "native provider request members differ from the pinned source request",
+                    code="native_request_members_mismatch", **self._context(),
+                )
             trace_requests.append(dict(request_body))
+            if failure is not None:
+                before = len(state.messages)
+                state.commit_provider_failure(str(failure))
+                await commit(before, "exit", turn)
+                self._turns.append(RunnerTurn(turn, (), ()))
+                return RunnerTermination.POLICY_INCOMPLETE
             native = native_stream_consumers.native_response_from_dict(
                 thaw_json(response["native_response"])
             )
@@ -2617,20 +2678,126 @@ class _ConductorSession:
                 )
             return None
 
+        result: dict[str, Any] = {}
+        # Mirrors the loop's termination: MAX_TURNS unless a step returned one.
+        final_termination = [RunnerTermination.MAX_TURNS]
+
+        async def recorded_step(turn: int) -> RunnerTermination | None:
+            outcome = await step(turn)
+            if outcome is not None:
+                final_termination[0] = outcome
+            return outcome
+
+        async def classify() -> None:
+            payload = state.to_classification_payload(
+                termination=final_termination[0],
+                model_config=thaw_json(self._binding.source_model_config),
+                session_id=self._open_request.episode_id,
+            )
+            raw_classified = await phase(profile.classify_result_phase, payload)
+            if (
+                raw_classified.get("kind") != "classified_result"
+                or not isinstance(raw_classified.get("envelope"), Mapping)
+            ):
+                raise RunnerProtocolError(
+                    "native stream classification is malformed",
+                    code="native_response_invalid", **self._context(),
+                )
+            result["classification"] = raw_classified
+
+        async def finalize(
+            closed: Mapping[str, Any], close_error: Exception | None,
+            effects: Mapping[str, Mapping[str, Any]],
+        ) -> None:
+            del effects
+            cleanup = closed.get("cleanup")
+            cleanup_ok = (
+                close_error is None
+                and isinstance(cleanup, Mapping)
+                and cleanup.get("all_dead") is True
+                and self._native_cleanup_outcome.all_dead is True
+                and self._native_cleanup_outcome.error_code is None
+            )
+            cleanup_msg = (
+                None if cleanup_ok else (
+                    str(close_error)
+                    if close_error is not None
+                    else "native process scope did not reach independently observed death"
+                )
+            )
+            try:
+                raw_finalized = await tools.invoke_native_finalization_phase(
+                    profile.finalize_result_phase,
+                    {
+                        "envelope": result["classification"]["envelope"],
+                        "sessionId": self._open_request.episode_id,
+                        "toolCalls": state.tool_admissions,
+                        "cleanup_error_message": cleanup_msg,
+                    },
+                    timeout_ms=limits.action_timeout_ms,
+                )
+            except Exception as exc:
+                raise RunnerDependencyError(
+                    "native command finalization failed",
+                    code="native_finalization_failed",
+                    **self._context(),
+                ) from exc
+            if (
+                not isinstance(raw_finalized, Mapping)
+                or raw_finalized.get("schema_version") != profile.phase_schema_version
+                or raw_finalized.get("kind") != "finalized_command_result"
+                or not isinstance(raw_finalized.get("command_result"), Mapping)
+                or not isinstance(raw_finalized["command_result"].get("envelope"), Mapping)
+                or type(raw_finalized["command_result"].get("exitCode")) is not int
+                or type(raw_finalized["command_result"].get("toolCalls")) is not int
+                or raw_finalized["command_result"]["toolCalls"] != state.tool_admissions
+                or "runtime_error" not in raw_finalized
+                or raw_finalized.get("runtime_error") is not None
+                and type(raw_finalized.get("runtime_error")) is not str
+            ):
+                raise RunnerProtocolError(
+                    "native command finalization is malformed",
+                    code="native_response_invalid", **self._context(),
+                )
+            command_result = thaw_json(raw_finalized["command_result"])
+            result["final_envelope"] = command_result["envelope"]
+            result["command_result"] = command_result
+            result["runtime_error"] = raw_finalized.get("runtime_error")
+
         def build_response(effects: Mapping[str, Mapping[str, Any]], closed: Mapping[str, Any]) -> Mapping[str, Any]:
             replay_trace = state.to_trace(
                 requests=trace_requests,
                 runtime_inputs=runtime_inputs,
                 effects=effects,
+                **result,
             )
-            return {
+            response: dict[str, Any] = {
                 "source_id": consumer_id,
                 "replay_trace": replay_trace,
                 "bootstrap": bootstrap,
-                "cleanup": closed["cleanup"],
+                "cleanup": closed["cleanup"] if closed else None,
             }
+            if "classification" in result:
+                response["classification"] = result["classification"]
+            if "final_envelope" in result:
+                response["final_envelope"] = result["final_envelope"]
+                response["envelope"] = result["final_envelope"]
+                response["command_result"] = result["command_result"]
+            if result.get("runtime_error") is not None:
+                response["runtime_error"] = result["runtime_error"]
+            return response
 
-        return _NativePhaseSteps(step, None, build_response, profile.max_turns + 1)
+        finalizes = (
+            profile.classify_result_phase is not None
+            and profile.finalize_result_phase is not None
+        )
+        return _NativePhaseSteps(
+            recorded_step,
+            classify if profile.classify_result_phase is not None else None,
+            build_response,
+            profile.max_turns + 1,
+            finalize if finalizes else None,
+        )
     async def _checkpointed_native_steps(
         self, profile: native_stream_profiles.NativeStreamProfile,
         tools: NativeSourceSessionPort, limits: Any, model: _ModelProjection,
@@ -3832,6 +3999,18 @@ class _ConductorSession:
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
 
+
+
+def _find_native_provider_failure(error: BaseException) -> NativeProviderRequestFailure | None:
+    """Return the explicitly chained native request failure, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, NativeProviderRequestFailure):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return None
 
 
 def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:

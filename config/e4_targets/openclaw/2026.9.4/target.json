@@ -1,0 +1,74 @@
+{
+  "assets": [
+    {
+      "bytes": 3465,
+      "path": "harness.yaml",
+      "sha256": "sha256:ad9dc986262fa02acd6966843e6c637fae679f66c338a32c3b2e115d1e383f9c"
+    },
+    {
+      "bytes": 8562,
+      "path": "tool-surface.json",
+      "sha256": "sha256:4b7a0fbb2ef2bbefa279cf50b6ed98b63ec9c2fa0f1044b5b165935dd2bdf010"
+    },
+    {
+      "bytes": 4991,
+      "path": "native-config.json",
+      "sha256": "sha256:58e0c067e20b6dc159b5a90df16a261f1ff80dccbc3e7f4266aed434aa21a9b3"
+    },
+    {
+      "bytes": 80,
+      "path": "bootstrap/AGENTS.md",
+      "sha256": "sha256:43c62b9d91029fc1f7b74bc8d4656e9b0d11f99459e726bf88a47a2b52ce7ade"
+    },
+    {
+      "bytes": 33,
+      "path": "bootstrap/SOUL.md",
+      "sha256": "sha256:a60657b2e241add05aefb2bd3fbb6c2fbb2209f62eb3a46e7c4cc381541e4080"
+    },
+    {
+      "bytes": 1078,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:5095e5b99bcf0e0cab95b905f24bbac0d9ef65b3772785b9bb0194af76f11239"
+    },
+    {
+      "bytes": 1565,
+      "path": "source.json",
+      "sha256": "sha256:7fabd48a20a68143a5d9afd6ca212f7c0d1aaa2bbeed8c512276ac6db276ceb7"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_source": "openclaw:pinned-attempt-prompt",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "openclaw",
+  "overlay": {
+    "argv": [],
+    "overlay_id": "breadboard.openclaw.headless.v2026.9.4",
+    "settings": [
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "episode.deadline_seconds",
+        "value": 120
+      },
+      {
+        "name": "model.compaction",
+        "value": false
+      },
+      {
+        "name": "tools.exec_yield_ms",
+        "value": 10000
+      },
+      {
+        "name": "tools.process_poll_max_ms",
+        "value": 30000
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "openclaw@2026.9.4",
+  "version": "2026.9.4"
+}

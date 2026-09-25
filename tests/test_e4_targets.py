@@ -82,6 +82,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",
@@ -134,11 +135,25 @@ def test_distribution_owner_match_does_not_resolve_symlink_aliases(
     assert _location_key(alias) != _location_key(loader)
 
 
+def test_openclaw_sealed_package_has_one_pinned_source_prompt_and_bootstrap() -> None:
+    package = load_e4_target("openclaw@2026.9.4")
+    assert package.descriptor["execution"]["system_prompt_source"] == "openclaw:pinned-attempt-prompt"
+    assert "system_prompt_asset" not in package.descriptor["execution"]
+    assert "prompts/system.j2" not in package.assets
+    advertisement = json.loads(package.read_asset_bytes("native-config.json"))["advertisement"]
+    assert "system_prompt" not in advertisement
+    assert hashlib.sha256(package.read_asset_bytes("bootstrap/AGENTS.md")).hexdigest() == (
+        "43c62b9d91029fc1f7b74bc8d4656e9b0d11f99459e726bf88a47a2b52ce7ade"
+    )
+
+
+def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi@0.57.1",
         "pi@0.73.1",

@@ -1022,6 +1022,19 @@ class NativeSourceSessionPort(Protocol):
         package_subpath: str | None = None,
     ) -> Mapping[str, Any]: ...
 
+@runtime_checkable
+class NativeFinalizationPhasePort(Protocol):
+    """Lease-owned one-shot phase after native runtime retirement."""
+
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
+
+
 
 @runtime_checkable
 class NativeRuntimeInputPort(Protocol):

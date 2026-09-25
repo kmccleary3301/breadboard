@@ -19,6 +19,8 @@ from breadboard.rl.harness.runners.base import JsonSnapshotError, RunnerToolBind
 from breadboard.rl.harness.sandbox import (
     InstalledToolAdapter,
     OMP_NATIVE_LOCAL_ADAPTER_ID,
+    OPENCLAW_LOCAL_ADAPTER_ID,
+    OPENCLAW_NATIVE_TOOL_IDS,
     OPENHANDS_SDK_LOCAL_ADAPTER_ID,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID,
     SandboxLaunchError,
@@ -489,6 +491,161 @@ async def test_close_native_runtime_drains_real_process_group_before_effect_scan
                 os.killpg(process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
+
+
+class _LaunchCaptured(Exception):
+    pass
+
+
+def _openclaw_native_handle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> tuple[InstalledToolAdapter, SimpleNamespace, tuple[RunnerToolBinding, ...], object]:
+    root = tmp_path / "openclaw"
+    (root / "bin").mkdir(parents=True)
+    (root / "bin/node").write_bytes(b"node")
+    (root / "worker.mjs").write_bytes(b"worker")
+    metadata = root.stat()
+    manifest = "sha256:" + ("2" * 64)
+    adapter = InstalledToolAdapter(
+        adapter_id=OPENCLAW_LOCAL_ADAPTER_ID,
+        tool_ids=OPENCLAW_NATIVE_TOOL_IDS,
+        runtime_root_path=str(root),
+        runtime_root_device=metadata.st_dev,
+        runtime_root_inode=metadata.st_ino,
+        runtime_root_owner_uid=metadata.st_uid,
+        runtime_root_mode=f"{metadata.st_mode & 0o777:04o}",
+        manifest_digest=manifest,
+        executable_relative_path="bin/node",
+        entrypoint_relative_path="worker.mjs",
+        executable_digest="sha256:" + hashlib.sha256(b"node").hexdigest(),
+        entrypoint_digest="sha256:" + hashlib.sha256(b"worker").hexdigest(),
+    )
+    bindings = tuple(
+        RunnerToolBinding(tool_id, manifest, ()) for tool_id in OPENCLAW_NATIVE_TOOL_IDS
+    )
+    plan = SimpleNamespace(
+        effective_plan_digest="plan",
+        tool_bindings=bindings,
+        installed_tool_adapters=(adapter,),
+        # The installed image declares the loader path the pinned node needs.
+        runtime=SimpleNamespace(
+            runtime_class=sandbox_module.RuntimeClass.TRUSTED_PROCESS,
+            fixed_environment=(
+                ("LD_LIBRARY_PATH", "/opt/openclaw/lib"),
+                ("PATH", "/usr/bin:/bin"),
+            ),
+        ),
+        limits=SimpleNamespace(
+            action_timeout_ms=5_000, setup_timeout_ms=5_000, observation_bytes=4096,
+        ),
+    )
+    monkeypatch.setattr(
+        sandbox_module,
+        "_snapshot_installed_executable",
+        lambda _path, _digest: SimpleNamespace(
+            fd=-1, proc_fd_path="/pinned/node", close=lambda: None,
+        ),
+    )
+    handle = sandbox_module.TrustedProcessHandle(
+        plan, tmp_path, "lease", SimpleNamespace(proc_fd_path="/pinned/sh"),
+        "/usr/bin/git", -1, (0, 0),
+    )
+    return adapter, plan, bindings, handle
+
+
+@pytest.mark.asyncio
+async def test_openclaw_finalizer_launch_receives_native_session_environment(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter, plan, bindings, handle = _openclaw_native_handle(tmp_path, monkeypatch)
+    root = Path(adapter.runtime_root_path)
+    session_launch: dict[str, str] = {}
+
+    async def capture_session(self, argv, *, timeout_ms, extra_fds=(), environment=None):
+        del self, argv, timeout_ms, extra_fds
+        session_launch.update(environment)
+        raise _LaunchCaptured
+
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle, "_start_stopped_process", capture_session,
+    )
+    with pytest.raises(_LaunchCaptured):
+        await handle.invoke_native_phase(adapter, "initialize", {}, timeout_ms=1_000)
+
+    finalizer_launch: dict[str, object] = {}
+
+    async def capture_exec(*argv, **kwargs):
+        finalizer_launch.update(kwargs, argv=argv)
+        raise _LaunchCaptured
+
+    async def noop() -> None:
+        return None
+
+    async def terminate() -> tuple[object, ...]:
+        return (
+            sandbox_module.CleanupStepReceipt(
+                "runtime", sandbox_module.CleanupState.RELEASED
+            ),
+        )
+
+    lease = SimpleNamespace(
+        lease_id="lease",
+        plan=plan,
+        _runtime=SimpleNamespace(terminate=terminate),
+        _assert_active=lambda: None,
+        _begin_operation=noop,
+        _end_operation=noop,
+    )
+    workspace = sandbox_module.LeaseBackedRunnerWorkspace(lease, "plan", bindings)
+    await workspace.close_native_runtime()
+    monkeypatch.setattr(sandbox_module.asyncio, "create_subprocess_exec", capture_exec)
+    with pytest.raises(_LaunchCaptured):
+        await workspace.invoke_native_finalization_phase(
+            "finalize_command_result", {}, timeout_ms=1_000,
+        )
+
+    assert finalizer_launch["argv"][-1] == "--finalize-only"
+    assert finalizer_launch["env"] == session_launch
+    assert session_launch["LD_LIBRARY_PATH"] == "/opt/openclaw/lib"
+    assert session_launch["OPENCLAW_DIST"] == str(root / "dist")
+
+
+@pytest.mark.asyncio
+async def test_native_worker_shell_wrapper_keeps_the_admitted_path(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Skill eligibility reads PATH in the worker; a login shell would let the
+    # image's /etc/profile reset or reorder it before the worker starts.
+    adapter, _plan, _bindings, handle = _openclaw_native_handle(tmp_path, monkeypatch)
+    launch: dict[str, object] = {}
+
+    async def capture_session(self, argv, *, timeout_ms, extra_fds=(), environment=None):
+        del self, timeout_ms, extra_fds
+        launch.update(argv=tuple(argv), environment=dict(environment))
+        raise _LaunchCaptured
+
+    monkeypatch.setattr(
+        sandbox_module.TrustedProcessHandle, "_start_stopped_process", capture_session,
+    )
+    with pytest.raises(_LaunchCaptured):
+        await handle.invoke_native_phase(adapter, "initialize", {}, timeout_ms=1_000)
+
+    argv = launch["argv"]
+    environment = launch["environment"]
+    assert argv[0] == "/pinned/sh" and argv[3] == "breadboard-native-worker"
+    home = tmp_path / "home"
+    home.mkdir()
+    shown = subprocess.run(
+        ("/bin/sh", *argv[1:4], "/usr/bin/printenv", "PATH"),
+        env={**environment, "HOME": str(home)},
+        capture_output=True, text=True, check=True,
+    )
+    assert shown.stdout.rstrip("\n") == environment["PATH"]
+    assert environment["PATH"].split(os.pathsep)[0] == str(
+        Path(adapter.runtime_root_path) / "bin"
+    )
 
 
 _SCAN_BOUNDS = {"max_total_bytes": 1 << 30, "max_inodes": 1 << 16, "max_depth": 64}

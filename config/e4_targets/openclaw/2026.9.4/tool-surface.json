@@ -1,0 +1,285 @@
+{
+  "target_id": "openclaw@2026.9.4",
+  "ordered_tools": [
+    "edit",
+    "exec",
+    "ls",
+    "process",
+    "read",
+    "write"
+  ],
+  "prompt_order": [
+    "edit",
+    "exec",
+    "ls",
+    "process",
+    "read",
+    "write"
+  ],
+  "optional_title": {
+    "maxLength": 120,
+    "required": false
+  },
+  "tools": {
+    "ls": {
+      "description": "List directory entries in binary filename order, including dotfiles and links. Names are JSON-quoted; / marks actual directories. Pass the returned after cursor with the same path to continue.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Directory; default cwd."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max entries; default 500."
+          },
+          "after": {
+            "type": "string",
+            "description": "Filename cursor returned by the previous page."
+          }
+        }
+      }
+    },
+    "read": {
+      "description": "Read text/image file (jpg/png/gif/webp/bmp); images attach to model context. Text caps 2000 lines or 50KB. Continue with offset/limit, or cursor within a long line.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path; relative/absolute."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Start line; 1-based."
+          },
+          "limit": {
+            "type": "number",
+            "description": "Max lines."
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Character position within the start line; 0-based."
+          },
+          "optional": {
+            "type": "boolean",
+            "const": true,
+            "description": "Missing paths return structured not_found instead of failing."
+          }
+        }
+      }
+    },
+    "edit": {
+      "description": "Exact single-file replacements. oldText unique/non-overlapping against original. Merge nearby changes; omit large unchanged spans.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "edits"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path; relative/absolute."
+          },
+          "edits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "oldText",
+                "newText"
+              ],
+              "properties": {
+                "oldText": {
+                  "type": "string",
+                  "description": "Exact original text; unique and non-overlapping in this call."
+                },
+                "newText": {
+                  "type": "string",
+                  "description": "Replacement text."
+                }
+              }
+            },
+            "description": "Targeted replacements against original file; no overlap/nesting. Merge nearby changes."
+          }
+        }
+      }
+    },
+    "write": {
+      "description": "Write/overwrite file; creates parent directories.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "File path; relative/absolute."
+          },
+          "content": {
+            "type": "string",
+            "description": "File content."
+          }
+        }
+      }
+    },
+    "exec": {
+      "description": "Run shell now; background continuation supported. Use yieldMs/background, then process for logs/status/input/intervention. Process confirms completion. TTY CLI/UI: pty=true. Quote arguments containing shell metacharacters, including URL query strings with `?` or `&`.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "title": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Every call: short purpose; never claim success. No secrets."
+          },
+          "command": {
+            "type": "string",
+            "description": "Shell command."
+          },
+          "workdir": {
+            "type": "string",
+            "description": "Omit/empty string: default; whitespace-only invalid."
+          },
+          "env": {
+            "type": "object",
+            "patternProperties": {
+              "^.*$": {
+                "type": "string"
+              }
+            },
+            "description": "Literal overrides; no expansion. Omit to inherit."
+          },
+          "yieldMs": {
+            "type": "number",
+            "description": "Milliseconds before backgrounding; default 10000."
+          },
+          "background": {
+            "type": "boolean",
+            "description": "Background now; timeoutSeconds applies."
+          },
+          "timeoutSeconds": {
+            "type": "number",
+            "description": "Process lifetime in seconds; 0 disables."
+          },
+          "pty": {
+            "type": "boolean",
+            "description": "PTY for TTY-required CLIs/coding agents."
+          },
+          "elevated": {
+            "type": "boolean",
+            "description": "Host elevation if allowed."
+          },
+          "host": {
+            "enum": [
+              "auto",
+              "sandbox",
+              "gateway",
+              "node"
+            ],
+            "type": "string",
+            "description": "Omit/auto: inherit configured host."
+          },
+          "ask": {
+            "type": "string",
+            "description": "Requests stricter approvals under tools.exec.mode and host policy; channel-origin calls cannot override host ask=off."
+          },
+          "node": {
+            "type": "string",
+            "description": "Node id/name for host=node."
+          }
+        }
+      }
+    },
+    "process": {
+      "description": "Control existing exec: list, poll, log, write, send-keys, submit, paste, kill. poll/log: status, output, quiet success, completion without auto-wake, input hints. Others: input/intervention.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "poll",
+              "log",
+              "write",
+              "send-keys",
+              "submit",
+              "paste",
+              "kill",
+              "clear",
+              "remove"
+            ],
+            "description": "Process action (list|poll|log|write|send-keys|submit|paste|kill|clear|remove)"
+          },
+          "sessionId": {
+            "type": "string",
+            "description": "Required for every action except list."
+          },
+          "data": {
+            "type": "string",
+            "description": "Data to write for write"
+          },
+          "keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Key tokens to send for send-keys"
+          },
+          "hex": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Hex bytes to send for send-keys"
+          },
+          "literal": {
+            "type": "string",
+            "description": "Literal string for send-keys"
+          },
+          "text": {
+            "type": "string",
+            "description": "Text to paste for paste"
+          },
+          "bracketed": {
+            "type": "boolean",
+            "description": "Wrap paste in bracketed mode"
+          },
+          "eof": {
+            "type": "boolean",
+            "description": "Close stdin after write"
+          },
+          "offset": {
+            "type": "number",
+            "description": "Log offset"
+          },
+          "limit": {
+            "type": "number",
+            "description": "Log length"
+          },
+          "timeout": {
+            "type": "number",
+            "description": "For poll: wait up to this many milliseconds before returning; max 30000 ms, higher values are clamped to 30000",
+            "minimum": 0
+          }
+        }
+      }
+    }
+  }
+}

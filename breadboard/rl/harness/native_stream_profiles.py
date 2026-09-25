@@ -17,7 +17,7 @@ from breadboard_engine.compilation.provider_response import (
     HERMES_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
 )
 from breadboard.rl.harness import hermes_worker
-from breadboard.rl.harness.runners import omp_semantics, pi_semantics
+from breadboard.rl.harness.runners import omp_semantics, openclaw_semantics, pi_semantics
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +53,12 @@ class NativeStreamProfile:
     # A begun stream ending without a finish_reason reaches the semantics as a
     # typed termination instead of failing in the decoder.
     accepts_truncated_stream: bool = False
+    classify_result_phase: str | None = None
+    finalize_result_phase: str | None = None
+    # The source ends its episode on a provider's refusal of a sent request
+    # (no retry) and still classifies and finalizes it; the state commits the
+    # failure through ``commit_provider_failure``.
+    provider_failure_terminates: bool = False
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -86,6 +92,10 @@ def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> A
         capability_denials=bootstrap.get("capability_denials"),
         cwd=bootstrap.get("cwd"),
     )
+
+
+def _openclaw_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    return openclaw_semantics.OpenClawSemanticsState(task, system_prompt, bootstrap)
 
 
 NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
@@ -165,6 +175,26 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         state_factory=_omp_state,
         accepts_truncated_stream=True,
         sealed_initialize_fields=("route_classifier",),
+    ),
+    openclaw_semantics.OPENCLAW_CONSUMER_ID: NativeStreamProfile(
+        consumer_id=openclaw_semantics.OPENCLAW_CONSUMER_ID,
+        target_id="openclaw@2026.9.4",
+        target_version=3,
+        api_variant="responses",
+        phase_schema_version="bb.openclaw-native.v1",
+        tool_order=openclaw_semantics.OpenClawSemanticsState.tool_order,
+        max_turns=8,
+        action_timeout_ms=35_000,
+        episode_timeout_seconds=120,
+        ack_policy="after_history_commit",
+        incomplete_stop_reasons=frozenset({"error", "aborted", "length"}),
+        runtime_input_names=("cwd", "home", "current_date", "message_timestamp_ms", "package_dir", "session_id"),
+        package_subpath=".",
+        state_module=openclaw_semantics,
+        state_factory=_openclaw_state,
+        classify_result_phase="classify_result",
+        finalize_result_phase="finalize_command_result",
+        provider_failure_terminates=True,
     ),
 })
 

@@ -295,9 +295,25 @@ class InstalledToolAdapterV1(_ExactModel):
     manifest_ref: ArtifactFileRefV1
     executable_relative_path: str
     entrypoint_relative_path: str
+    argv: tuple[str, ...] | None = None
 
     _executable_path = field_validator("executable_relative_path")(_relative)
     _entrypoint_path = field_validator("entrypoint_relative_path")(_relative)
+    @model_validator(mode="after")
+    def exact_argv(self) -> "InstalledToolAdapterV1":
+        if self.argv is None:
+            return self
+        if not self.argv or self.argv[0] != PurePosixPath(self.executable_relative_path).name:
+            raise ValueError("native tool argv must begin with its admitted executable")
+        if self.argv[-1] != self.entrypoint_relative_path:
+            raise ValueError("native tool argv must end with its admitted entrypoint")
+        index = 1
+        while index < len(self.argv) - 1:
+            if self.argv[index] != "--import" or index + 1 >= len(self.argv) - 1:
+                raise ValueError("native tool argv contains an unsupported interpreter flag")
+            _relative(self.argv[index + 1].removeprefix("./"))
+            index += 2
+        return self
 
     @model_validator(mode="after")
     def exact_tools(self) -> "InstalledToolAdapterV1":
@@ -3742,6 +3758,12 @@ def _validate_native_tool_closure(
             or entrypoint.kind != "file"
         ):
             raise ValueError("native tool executable or entrypoint is not covered")
+        for argument in (descriptor.argv or ())[1:-1]:
+            if argument == "--import":
+                continue
+            member = entries.get(argument.removeprefix("./"))
+            if member is None or member.kind != "file" or not member.content_digest:
+                raise ValueError("native tool argv import is not covered by its sealed manifest")
         return executable.content_digest or "", entrypoint.content_digest or ""
     finally:
         os.close(root_fd)
@@ -3750,6 +3772,7 @@ def _validate_native_tool_closure(
 def _load_native_tool_bindings(
     installed: InstalledV1,
     receipts: Sequence[c.AdmissionReceipt],
+    compiled_manifests: Mapping[str, CompiledConfigManifest],
 ) -> tuple[InstalledToolAdapter, ...]:
     reachable: dict[str, set[str]] = {}
     for receipt in receipts:
@@ -3757,6 +3780,44 @@ def _load_native_tool_bindings(
             reachable.setdefault(tool.tool_id, set()).add(tool.implementation_digest)
     bindings: list[InstalledToolAdapter] = []
     for descriptor in installed.tool_adapters:
+        matching_receipts = tuple(
+            receipt for receipt in receipts
+            if all(
+                any(
+                    tool.tool_id == tool_id
+                    and tool.implementation_digest == descriptor.manifest_ref.sha256
+                    for tool in receipt.effective_capabilities.tools
+                )
+                for tool_id in descriptor.tool_ids
+            )
+        )
+        declared_argv: set[tuple[str, ...]] = set()
+        for receipt in matching_receipts:
+            compiled = compiled_manifests.get(receipt.compiled.manifest_digest)
+            if compiled is None:
+                raise ValueError("native tool compiled manifest is not pinned")
+            target = compiled.semantic.to_canonical_obj().get("metadata", {}).get("e4_target")
+            if not isinstance(target, Mapping):
+                continue
+            profile = target.get("runtime_profile")
+            worker = profile.get("native_worker") if isinstance(profile, Mapping) else None
+            if not isinstance(worker, Mapping) or "argv" not in worker:
+                continue
+            argv = worker["argv"]
+            if not isinstance(argv, list) or not argv or any(type(arg) is not str for arg in argv):
+                raise ValueError("sealed native worker argv is invalid")
+            declared_argv.add(tuple(argv))
+        if len(declared_argv) > 1:
+            raise ValueError("sealed native worker argv conflicts across receipts")
+        sealed_argv = next(iter(declared_argv), None)
+        if sealed_argv is not None and descriptor.argv is not None and descriptor.argv != sealed_argv:
+            raise ValueError("sealed native worker argv differs from installed descriptor")
+        effective = (
+            InstalledToolAdapterV1.model_validate({
+                **descriptor.model_dump(mode="python"), "argv": sealed_argv,
+            })
+            if sealed_argv is not None and descriptor.argv is None else descriptor
+        )
         digests = {digest for tool_id in descriptor.tool_ids for digest in reachable.get(tool_id, set())}
         if len(digests) != 1 or next(iter(digests), None) != descriptor.manifest_ref.sha256:
             raise ValueError("native tool binding is unadmitted or implementation-mismatched")
@@ -3765,7 +3826,7 @@ def _load_native_tool_bindings(
             payload, expected_digest=descriptor.manifest_ref.sha256
         )
         executable_digest, entrypoint_digest = _validate_native_tool_closure(
-            descriptor, source_manifest
+            effective, source_manifest
         )
         bindings.append(
             InstalledToolAdapter(
@@ -3781,6 +3842,11 @@ def _load_native_tool_bindings(
                 entrypoint_relative_path=descriptor.entrypoint_relative_path,
                 executable_digest=executable_digest,
                 entrypoint_digest=entrypoint_digest,
+                argv=effective.argv,
+                argv_file_digests=tuple(
+                    (argument.removeprefix("./"), next(item.content_digest or "" for item in source_manifest.entries if item.logical_path == argument.removeprefix("./")))
+                    for argument in (effective.argv or ())[1:-1] if argument != "--import"
+                ),
             )
         )
     return tuple(bindings)
@@ -4354,6 +4420,7 @@ def _build_runtime_graph(
     native_tool_adapters = _load_native_tool_bindings(
         manifest.installed,
         admission_receipts,
+        graph.compiler.pinned_manifests,
     )
     _validate_installed_registry_graph(
         manifest.installed,

@@ -2316,6 +2316,39 @@ async def test_conductor_accepts_nested_compiler_schema_and_invokes_only_valid_a
     await session.close()
 
 
+async def test_conductor_preserves_pattern_properties_order_in_compiled_tool_schema() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(
+        observation,
+        parameters=[
+            _parameter(
+                "environment",
+                {
+                    "type": "object",
+                    "properties": {},
+                    "patternProperties": {
+                        "^B_": {"type": "string"},
+                        "^A_": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            )
+        ],
+    )
+    client = RecordingPolicyClient(observation, responses=[_response("done")])
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=_plan_with_tools(observation, semantics=semantic),
+        client=client,
+        tools=RecordingToolPort((_tool_binding(),)),
+    )
+    result = await session.run(ConductorRunRequest({"query": "preserve schema"}))
+    request = thaw_json(client.requests[0].request_payload)
+    projected = request["tools"][0]["parameters"]["properties"]["environment"]
+    assert list(projected["patternProperties"]) == ["^B_", "^A_"]
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    await session.close()
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [

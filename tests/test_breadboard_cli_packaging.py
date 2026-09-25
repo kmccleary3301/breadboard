@@ -170,6 +170,8 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "breadboard/rl/harness/SANDBOX_CAPABILITY_MATRIX.json",
         "breadboard/rl/harness/runners/omp_native_tool_worker.ts",
         "breadboard/rl/harness/resources/qualification/canonical_artifact_vectors_v1.json",
+        "breadboard/rl/harness/openclaw_tool_worker.mjs",
+        "breadboard/rl/harness/openclaw_classifier_loader.mjs",
         "breadboard/rl/harness/resources/qualification/tls/authority.json",
         "breadboard/rl/harness/resources/qualification/tls/ca.cert.pem",
         "breadboard/rl/harness/resources/qualification/tls/server.cert.pem",
@@ -180,6 +182,14 @@ def test_built_wheel_owns_runtime_resources_and_excludes_repository_debris(
         "config/e4_targets/oh_my_pi/18.1.17/native-worker.json",
         "config/e4_targets/oh_my_pi/18.1.17/semantic-policy.json",
         "config/e4_targets/oh_my_pi/18.1.17/prompts/source-system-prompt.md",
+        "config/e4_targets/openclaw/2026.9.4/target.json",
+        "config/e4_targets/openclaw/2026.9.4/harness.yaml",
+        "config/e4_targets/openclaw/2026.9.4/tool-surface.json",
+        "config/e4_targets/openclaw/2026.9.4/native-config.json",
+        "config/e4_targets/openclaw/2026.9.4/bootstrap/AGENTS.md",
+        "config/e4_targets/openclaw/2026.9.4/bootstrap/SOUL.md",
+        "config/e4_targets/openclaw/2026.9.4/LICENSE.txt",
+        "config/e4_targets/openclaw/2026.9.4/source.json",
         "config/e4_targets/notices/pi-0.57.1.txt",
         "config/e4_targets/hermes_agent/2026.9.11/harness.yaml",
         "config/e4_targets/hermes_agent/2026.9.11/native-config.json",
@@ -349,12 +359,22 @@ generated = json.loads(
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
-assert target_ids == ("hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+assert target_ids == ("hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
 for target_id in target_ids:
     target = load_e4_target(target_id)
     for asset in target.descriptor["assets"]:
         asset_path = asset["path"]
         assert isinstance(target.read_asset_bytes(asset_path), bytes)
+openclaw_root = target_resource_root / "openclaw" / "2026.9.4"
+openclaw_descriptor = (openclaw_root / "target.json").resolve()
+assert openclaw_descriptor.is_file() and openclaw_descriptor.is_relative_to(site_root)
+openclaw_target = load_e4_target("openclaw@2026.9.4")
+for asset in openclaw_target.descriptor["assets"]:
+    asset_path = (openclaw_root / asset["path"]).resolve()
+    assert asset_path.is_file() and asset_path.is_relative_to(site_root)
+for worker in ("openclaw_tool_worker.mjs", "openclaw_classifier_loader.mjs"):
+    worker_path = Path(files("breadboard.rl.harness").joinpath(worker)).resolve()
+    assert worker_path.is_file() and worker_path.is_relative_to(site_root)
 pi_target = load_e4_target("pi@0.57.1")
 pi_073_worker = Path(_WORKER).resolve()
 assert pi_073_worker.is_file() and pi_073_worker.is_relative_to(site_root)
@@ -395,7 +415,7 @@ print(json.dumps({{
         ),
         "profile_id": "daily_driver.v1",
         "e4_import_count": 0,
-        "e4_target_ids": ["hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
+        "e4_target_ids": ["hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
     }
 
     help_result = subprocess.run(

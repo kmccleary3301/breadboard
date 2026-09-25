@@ -53,6 +53,7 @@ from .runners.base import (
     JsonSnapshotError,
     RunnerToolBinding,
     freeze_json_object,
+    thaw_json,
 )
 from .native_session import NativeSession, NativeSessionError
 from .native_worker import MAX_FRAME_BYTES
@@ -116,6 +117,8 @@ PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
 OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
 OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
+OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
 HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
 HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
     "patch", "read_file", "search_files", "skill_view",
@@ -126,6 +129,7 @@ NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
     HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
     OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
+    OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
 MINI_SWE_AGENT_TOOL_ID: str = "bash"
@@ -922,6 +926,8 @@ class InstalledToolAdapter:
     entrypoint_relative_path: str
     executable_digest: str
     entrypoint_digest: str
+    argv: tuple[str, ...] | None = None
+    argv_file_digests: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -956,6 +962,25 @@ class InstalledToolAdapter:
             raise ValueError("native tool adapter authority is not exact")
         if self.executable_relative_path == self.entrypoint_relative_path:
             raise ValueError("native tool executable and entrypoint must be distinct")
+        if self.argv is not None:
+            if (
+                type(self.argv) is not tuple
+                or not self.argv
+                or self.argv[0] != Path(self.executable_relative_path).name
+                or self.argv[-1] != self.entrypoint_relative_path
+                or len(self.argv[1:-1]) != 2 * len(self.argv_file_digests)
+                or any(
+                    self.argv[index] != "--import"
+                    or not _exact_relative_path(self.argv[index + 1].removeprefix("./"))
+                    for index in range(1, len(self.argv) - 1, 2)
+                )
+                or tuple(path for path, _ in self.argv_file_digests)
+                != tuple(self.argv[index].removeprefix("./") for index in range(2, len(self.argv) - 1, 2))
+                or any(not _exact_sha256_digest(digest) for _, digest in self.argv_file_digests)
+            ):
+                raise ValueError("native tool argv authority is not exact")
+        elif self.argv_file_digests:
+            raise ValueError("native tool argv digest has no declared argument")
 
 
 @dataclass(frozen=True, slots=True)
@@ -993,6 +1018,75 @@ def _native_member_path(binding: InstalledToolAdapter, relative_path: str) -> st
             code="runtime_preflight_failed",
         )
     return str(Path(binding.runtime_root_path) / relative_path)
+
+
+def _native_worker_argv(binding: InstalledToolAdapter, executable: str) -> tuple[str, ...]:
+    """Resolve admitted interpreter flags and sealed import files at launch."""
+    if binding.argv is None:
+        return executable, _native_member_path(binding, binding.entrypoint_relative_path)
+    arguments: list[str] = [executable]
+    for path, digest in binding.argv_file_digests:
+        member = _native_member_path(binding, path)
+        _measure_native_file(member, digest)
+        arguments.extend(("--import", member))
+    arguments.append(_native_member_path(binding, binding.entrypoint_relative_path))
+    return tuple(arguments)
+
+
+def _native_worker_environment(
+    plan: SandboxExecutionPlan, binding: InstalledToolAdapter, *, lease_id: str
+) -> dict[str, str]:
+    """Build the admitted environment for every launch of a native worker."""
+    runtime_root = Path(binding.runtime_root_path)
+    environment = dict(plan.runtime.fixed_environment)
+    if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+        # Pinned framed worker imports Pi only from the sealed root.
+        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+    elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
+        # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
+        pass
+    elif binding.adapter_id == OPENCLAW_LOCAL_ADAPTER_ID:
+        environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
+        # The pinned supplier capture environment
+        # (kit/openclaw_capture_supplier.py:123) disables bundled plugins
+        # and leads PATH with node's own directory. Skill eligibility
+        # (config-eval hasBinary) reads both, so the sealed node's
+        # directory takes that place here.
+        environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
+        # The supplier's exec shim raises each child's oom_score_adj through
+        # /proc/self, which the envelope mounts read-only; the failed write
+        # would surface in tool output. The supplier's opt-out keeps the
+        # command output its capture recorded.
+        environment["OPENCLAW_CHILD_OOM_SCORE_ADJ"] = "0"
+        if "PATH" not in environment:
+            raise SandboxLaunchError(
+                "OpenClaw native worker runtime declares no PATH",
+                code="runtime_preflight_failed",
+                lease_id=lease_id,
+            )
+        environment["PATH"] = os.pathsep.join((
+            str(Path(_native_member_path(binding, binding.executable_relative_path)).parent),
+            environment["PATH"],
+        ))
+    elif binding.adapter_id in {
+        OPENHANDS_SDK_LOCAL_ADAPTER_ID, HERMES_AGENT_LOCAL_ADAPTER_ID,
+    }:
+        environment["PYTHONHOME"] = str(runtime_root / "python")
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+        if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
+            # Hermes requires canonical identity despite sealed descriptor execution.
+            environment["PYTHONEXECUTABLE"] = str(
+                _native_member_path(binding, binding.executable_relative_path)
+            )
+    else:
+        raise SandboxLaunchError(
+            f"native tool adapter {binding.adapter_id!r} is unsupported",
+            code="runtime_unsupported",
+            lease_id=lease_id,
+        )
+    return environment
 
 
 def _validate_native_root(binding: InstalledToolAdapter) -> None:
@@ -2237,40 +2331,18 @@ class TrustedProcessHandle:
                 node = _snapshot_installed_executable(
                     node_path, binding.executable_digest
                 )
-                runtime_root = Path(binding.runtime_root_path)
-                environment = dict(self.plan.runtime.fixed_environment)
-                if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
-                    # Pinned framed worker imports Pi only from the sealed root.
-                    environment["PI_NATIVE_WORKER_FRAMED"] = "1"
-                    environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
-                elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
-                    # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
-                    pass
-                elif binding.adapter_id in {
-                    OPENHANDS_SDK_LOCAL_ADAPTER_ID, HERMES_AGENT_LOCAL_ADAPTER_ID,
-                }:
-                    environment["PYTHONHOME"] = str(runtime_root / "python")
-                    environment["PYTHONNOUSERSITE"] = "1"
-                    environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
-                    if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
-                        # Hermes requires canonical identity despite sealed descriptor execution.
-                        environment["PYTHONEXECUTABLE"] = str(node_path)
-                else:
-                    raise SandboxLaunchError(
-                        f"native tool adapter {binding.adapter_id!r} is unsupported",
-                        code="runtime_unsupported",
-                        lease_id=self.lease_id,
-                    )
+                environment = _native_worker_environment(self.plan, binding, lease_id=self.lease_id)
                 process: asyncio.subprocess.Process | None = None
                 try:
                     process = await self._start_stopped_process(
                         (
                             self._executable.proc_fd_path,
-                            "-lc",
+                            # Not a login shell: the image's /etc/profile would
+                            # replace the admitted worker PATH.
+                            "-c",
                             'exec "$@"',
                             "breadboard-native-worker",
-                            node.proc_fd_path,
-                            entrypoint_path,
+                            *_native_worker_argv(binding, node.proc_fd_path),
                         ),
                         timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
                         extra_fds=(node.fd,),
@@ -2464,6 +2536,10 @@ class TrustedProcessHandle:
                     launch_environment["HOME"] = str(
                         Path(self._envelope.scratch) / "home"
                     )
+                    # The composed TMPDIR names a runtime path outside the
+                    # envelope's read-only view; the envelope's lease-private
+                    # /tmp tmpfs (lease_envelope._setup_mount_view) replaces it.
+                    launch_environment["TMPDIR"] = "/tmp"
                 if self._envelope is not None:
                     process = await spawn_envelope_process(
                         self._envelope,
@@ -3833,6 +3909,7 @@ class LeaseBackedRunnerWorkspace:
         self.__effects_exclude_root_git = False
         self.__effects_baseline: dict[str, tuple[int, str]] | None = None
         self.__effects_root_identity: tuple[int, int] | None = None
+        self.__native_runtime_retired = False
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
     @property
@@ -3937,7 +4014,96 @@ class LeaseBackedRunnerWorkspace:
                 },
             }
         finally:
+            self.__native_runtime_retired = True
             await lease._end_operation()
+
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        """Run a sealed, credential-free phase after cleanup has settled."""
+        lease = self.__lease
+        lease._assert_active()
+        if not self.__native_runtime_retired:
+            raise WorkspaceStateError(
+                "native runtime cleanup must settle before finalization",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise WorkspaceStateError(
+                "native finalization operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(timeout_ms) is not int or not 0 < timeout_ms <= lease.plan.limits.action_timeout_ms:
+            raise WorkspaceStateError(
+                "native finalization timeout is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        frozen_payload = freeze_json_object(
+            payload,
+            field_name="native finalization payload",
+            max_depth=8,
+            max_nodes=lease.plan.limits.observation_bytes + 1,
+            max_encoded_bytes=lease.plan.limits.observation_bytes,
+        )
+        adapters = tuple(
+            adapter for adapter in lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native finalizer adapter is unavailable",
+                code="runtime_unsupported",
+                lease_id=lease.lease_id,
+            )
+        binding = adapters[0]
+        TrustedProcessHandle._validate_native_binding(lease.plan, binding)
+        _validate_native_root(binding)
+        entrypoint = _native_member_path(binding, binding.entrypoint_relative_path)
+        _measure_native_file(entrypoint, binding.entrypoint_digest)
+        node = _snapshot_installed_executable(
+            _native_member_path(binding, binding.executable_relative_path),
+            binding.executable_digest,
+        )
+        session: NativeSession | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *_native_worker_argv(binding, node.proc_fd_path),
+                "--finalize-only",
+                cwd=binding.runtime_root_path,
+                env=_native_worker_environment(lease.plan, binding, lease_id=lease.lease_id),
+                pass_fds=(node.fd,),
+                start_new_session=True,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            session = NativeSession(process, max_frame_bytes=MAX_FRAME_BYTES)
+            return await session.invoke_native_phase(
+                operation, thaw_json(frozen_payload), timeout_ms=timeout_ms,
+            )
+        except NativeSessionError as exc:
+            raise WorkspaceStateError(
+                "native finalization failed",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "native finalizer could not launch",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        finally:
+            if session is not None:
+                await session.close()
+            node.close()
 
     def native_runtime_inputs(
         self,
@@ -3977,12 +4143,15 @@ class LeaseBackedRunnerWorkspace:
                 code="runtime_unsupported",
                 lease_id=self.__lease.lease_id,
             )
+        now = datetime.now(timezone.utc)
         scratch = _native_scratch_path(self.__lease._manager, self.__lease.lease_id)
         available = {
             "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
             "home": str(scratch / "home"),
-            "current_date": datetime.now(timezone.utc).date().isoformat(),
+            "current_date": now.date().isoformat(),
+            "message_timestamp_ms": str(int(now.timestamp() * 1000)),
             "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
+            "session_id": self.__lease.lease_id,
         }
         unknown = set(input_names) - set(available)
         if unknown:
@@ -7044,6 +7213,8 @@ __all__ = [
     "OPENHANDS_NATIVE_TOOL_IDS",
     "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
     "PI_NATIVE_TOOL_IDS",
+    "OPENCLAW_LOCAL_ADAPTER_ID",
+    "OPENCLAW_NATIVE_TOOL_IDS",
     "HERMES_AGENT_LOCAL_ADAPTER_ID",
     "HERMES_NATIVE_TOOL_IDS",
     "OMP_NATIVE_LOCAL_ADAPTER_ID",

@@ -77,6 +77,12 @@ def test_openhands_adapter_rejects_missing_terminal_during_descriptor_admission(
         "entrypoint_relative_path": "openhands_worker.py",
     }
     composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor["argv"] = ["python3.12", "--import", "./sealed-loader.mjs", "openhands_worker.py"]
+    composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor["argv"][1] = "--eval"
+    with pytest.raises(ValueError, match="unsupported interpreter flag"):
+        composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor.pop("argv")
     descriptor["tool_ids"].remove("terminal")
     with pytest.raises(ValueError):
         composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))

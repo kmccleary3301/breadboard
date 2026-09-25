@@ -365,6 +365,40 @@ def test_seeded_root_mount_is_admitted_as_workspace_seed() -> None:
         "role": "workspace_seed",
     }
 
+def test_native_worker_argv_preserves_existing_profiles_and_measures_imports(tmp_path: Path) -> None:
+    root = tmp_path.stat()
+    adapter = InstalledToolAdapter(
+        adapter_id="openhands-sdk.local.v1.47.0",
+        tool_ids=("terminal",),
+        runtime_root_path=str(tmp_path),
+        runtime_root_device=root.st_dev,
+        runtime_root_inode=root.st_ino,
+        runtime_root_owner_uid=root.st_uid,
+        runtime_root_mode=f"{stat.S_IMODE(root.st_mode):04o}",
+        manifest_digest=digest("manifest"),
+        executable_relative_path="bin/node",
+        entrypoint_relative_path="worker.mjs",
+        executable_digest=digest("node"),
+        entrypoint_digest=digest("worker"),
+    )
+    for adapter_id in ("openhands-sdk.local.v1.47.0", "pi-coding-agent.local.v0.73.1", "omp.local"):
+        assert sandbox_module._native_worker_argv(
+            replace(adapter, adapter_id=adapter_id), "/pinned/node"
+        ) == ("/pinned/node", str(tmp_path / "worker.mjs"))
+    loader = tmp_path / "loader.mjs"
+    loader.write_text("export {};\n")
+    declared = replace(
+        adapter,
+        argv=("node", "--import", "./loader.mjs", "worker.mjs"),
+        argv_file_digests=(("loader.mjs", digest(loader.read_text())),),
+    )
+    assert sandbox_module._native_worker_argv(declared, "/pinned/node") == (
+        "/pinned/node", "--import", str(loader), str(tmp_path / "worker.mjs"),
+    )
+    loader.write_text("export { unexpected };\n")
+    with pytest.raises(SandboxLaunchError):
+        sandbox_module._native_worker_argv(declared, "/pinned/node")
+
 def test_selected_plan_does_not_receive_unrelated_native_tool_authority(
     tmp_path: Path,
 ) -> None:

@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import httpx
 
 from ...contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderMessage,
     ProviderResult,
@@ -25,6 +26,7 @@ from ....compilation.provider_response import (
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
     OMP_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
@@ -371,20 +373,29 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             allow_short=True,
         ):
             if stream:
-                response = OpenAIChatStreamDecoder(self).native_stream(
-                    client.transport,
-                    model=model,
-                    messages=request_messages,
-                    tools=request_tools,
-                    context=context,
-                    binding_digest=binding.digest,
-                    request_digest=request_digest,
-                    max_response_bytes=binding.policy.max_response_bytes,
-                    max_stream_fragments=binding.policy.max_stream_fragments,
-                    extra_body=extra_body,
-                    request_options=profile_options,
-                    accept_truncated_stream=accept_truncated_stream,
-                )
+                try:
+                    response = OpenAIChatStreamDecoder(self).native_stream(
+                        client.transport,
+                        model=model,
+                        messages=request_messages,
+                        tools=request_tools,
+                        context=context,
+                        binding_digest=binding.digest,
+                        request_digest=request_digest,
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                        extra_body=extra_body,
+                        request_options=profile_options,
+                        accept_truncated_stream=accept_truncated_stream,
+                    )
+                except ProviderRuntimeError as exc:
+                    # The provider refused the sent request before any output
+                    # (e.g. HTTP 5xx): keep the exact body it received.
+                    if exc.kind != "provider" or exc.output_emitted:
+                        raise
+                    raise NativeProviderRequestFailure(
+                        exc, request_body=sent_request
+                    ) from None
             else:
                 call_kwargs: Dict[str, Any] = {
                     "model": model,
@@ -486,23 +497,28 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         *,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the exact request used by a profile-bound invocation.
-
-        Native consumers supply their source client's wire messages rather than
-        BreadBoard's canonical message shape.
-        """
         consumer_id = context.extra.get("response_consumer_id")
-        if consumer_id in {MINI_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+        if consumer_id in {
+            MINI_RESPONSE_CONSUMER_ID,
+            PI_RESPONSE_CONSUMER_ID,
+            OMP_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
             chat_messages = [dict(message) for message in messages]
         else:
             chat_messages = self._convert_messages_to_chat(messages, context=context)
         request = profile.chat_request(
             chat_messages,
-            tools if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID} else self._convert_tools_to_openai(tools),
+            tools
+            if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}
+            else self._convert_tools_to_openai(tools),
         )
-        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
-            # Pinned coding-agent SDKs omit n and disable storage for this binding.
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
+            # Pinned coding-agent SDKs omit n.
             request.pop("n")
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+            # Pi's and OMP's buildParams disable provider-side storage;
+            # OpenClaw's buildOpenAICompletionsParams emits no store member.
             request["store"] = False
         return request
 

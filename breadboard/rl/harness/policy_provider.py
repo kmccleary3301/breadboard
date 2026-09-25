@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from builtins import BaseExceptionGroup
 from dataclasses import dataclass
 from concurrent.futures import Future
@@ -27,10 +27,12 @@ from breadboard_engine.compilation.provider_response import (
     NATIVE_CHAT_RESPONSE_TARGETS,
     OMP_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
     is_native_response_consumer_registered,
 )
 from breadboard_engine.provider.contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderContractError,
     ProviderMessage,
@@ -167,6 +169,20 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
             "parameters": parameter_schema,
         },
     }
+def _openclaw_wire_tools(chat_tools: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Project compiled tools onto OpenClaw's pinned wire form.
+
+    The compiler records every tool with a ``required`` list; OpenClaw's
+    pinned tool builder omits the key when the list is empty.
+    """
+    tools = [thaw_json(tool) for tool in chat_tools]
+    for tool in tools:
+        parameters = tool["function"]["parameters"]
+        if parameters["required"] == []:
+            del parameters["required"]
+    return tools
+
+
 def _join_prompt_parts(*parts: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
@@ -254,13 +270,14 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     expected_fields = {
         *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
     }
-    renderer_id = binding.get("renderer_id")
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
         OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
+        OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
         HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
+    renderer_id = binding["renderer_id"]
     if (
         version not in (1, 2, 3)
         or set(binding) != expected_fields
@@ -317,17 +334,19 @@ def _validate_request_features(
     required = set(profile.required_request_features(tools=tools))
     if (
         target_projection is not None
-        and target_projection.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS
+        and target_projection.renderer_id in {
+            *NATIVE_CHAT_RESPONSE_TARGETS,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }
     ):
-        # The SDK supplies raw HTTP instead of profile.chat_request(), which
-        # inserts n=1. The pinned SDK omits n; native admission rejects that key.
-        required.remove("n")
+        # Native source clients emit their own wire and omit profile-inserted n.
+        required.discard("n")
     elif (
         target_projection is not None
         and target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID
     ):
         # Pi's buildParams removes n and adds store=false before transport.
-        required.remove("n")
+        required.discard("n")
         required.add("store")
     missing = required.difference(observation.capabilities.request_features)
     unsupported_tools = tools and (
@@ -632,6 +651,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 PI_RESPONSE_CONSUMER_ID,
                 *NATIVE_CHAT_RESPONSE_TARGETS,
                 OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
             or profile is None
@@ -701,7 +721,10 @@ class EpisodeOpenAICompletionsPolicyClient:
                 **dict(model_config),
                 "model_name": "openai/" + profile.model,
             }
-        elif target.renderer_id == PI_RESPONSE_CONSUMER_ID:
+        elif target.renderer_id in {
+            PI_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
             public_config = {
                 "id": profile.model,
                 "name": profile.model,
@@ -802,13 +825,22 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Seal the admitted worker's bootstrap before the first stream."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id not in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}
+            target is None
+            or target.renderer_id not in {
+                PI_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }
             or self._native_binding is None
             or self._native_stream_prompt is not None
             or self._request_attempts
             or type(system_prompt) is not str or not system_prompt
             or type(tools) is not tuple
-            or canonical_sha256(tools) != canonical_sha256(target.chat_tools)
+            or canonical_sha256(tools) != canonical_sha256(
+                _openclaw_wire_tools(target.chat_tools)
+                if target.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+                else target.chat_tools
+            )
             or type(accept_truncated_stream) is not bool
         ):
             raise RunnerPolicyBindingError(
@@ -1348,7 +1380,11 @@ class EpisodeOpenAICompletionsPolicyClient:
             result = await self.invoke_native(
                 request, binding=self._native_binding, effective_plan=self._native_plan
             )
-            if target.renderer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+            if target.renderer_id in {
+                PI_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }:
                 payload = {"native_response": result.as_dict()}
                 return PolicyRuntimeInvokeResult(
                     response_payload=payload, response_digest=canonical_sha256(payload)
@@ -1623,7 +1659,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=request.episode_id,
                     effective_plan_digest=request.effective_plan_digest,
                 )
-                if isinstance(exc, MiniProviderFailure):
+                if isinstance(exc, (MiniProviderFailure, NativeProviderRequestFailure)):
                     raise error from exc
                 raise error from None
             finally:
@@ -2010,20 +2046,34 @@ def _responses_request_to_chat(
             profile_version == 3
             and target_projection.rendered_prompt_digest is None
         )
-        if deferred_native_prompt:
+        if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+            # The OpenClaw wire system message relocates the bound prompt's
+            # runtime line; the Conductor compares it to the pinned builder.
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = None
+        elif deferred_native_prompt:
             if native_system_prompt is None:
                 raise ProviderContractError("native stream bootstrap has not been bound")
             system_prompt = native_system_prompt
         elif native_system_prompt is not None:
             raise ProviderContractError("native stream bootstrap is not admitted for this target")
+        expected_tools = (
+            _openclaw_wire_tools(target_projection.chat_tools)
+            if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+            else [thaw_json(tool) for tool in target_projection.chat_tools]
+        )
         if (
             type(messages) is not list
             or len(messages) < 2
             or any(type(message) is not dict or "extra" in message for message in messages)
-            or messages[0] != {"role": "system", "content": system_prompt}
+            or (
+                system_prompt is not None
+                and messages[0] != {"role": "system", "content": system_prompt}
+            )
             or messages[1].get("role") != "user"
             or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
-            or tools != [thaw_json(tool) for tool in target_projection.chat_tools]
+            or tools != expected_tools
         ):
             raise ProviderContractError("source-native request does not match its compiled source surface")
         if target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID:

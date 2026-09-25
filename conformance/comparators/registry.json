@@ -153,6 +153,23 @@
     },
     {
       "comparator_class": "deterministic_replay",
+      "comparator_id": "openclaw_2026_9_4_trace_v1",
+      "entrypoint": {
+        "callable": "compare",
+        "module": "conformance.comparators.openclaw_2026_9_4"
+      },
+      "input_roles": [
+        "capture_ref",
+        "replay_ref",
+        "comparator_ref"
+      ],
+      "lane_ids": [
+        "openclaw_2026_9_4_replay"
+      ],
+      "report_schema_version": "bb.e4.comparator_report.v1"
+    },
+    {
+      "comparator_class": "deterministic_replay",
       "comparator_id": "north_star_stored_report_replay",
       "entrypoint": {
         "callable": "compare",
