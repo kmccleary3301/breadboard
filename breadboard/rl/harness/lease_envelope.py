@@ -112,6 +112,23 @@ def _mount_paths(raw: bytes) -> list[tuple[str, set[bytes]]]:
     return mounts
 
 
+def _shadowed_mounts(raw: bytes) -> list[bool]:
+    """Flag mountinfo lines covered by a later mount on the same mount point.
+
+    Mounting over an existing mount, such as the /tmp a container runtime
+    already provides, keeps the covered entry in mountinfo. Only an entry that
+    no other entry names as its parent on the same point is visible.
+    """
+    entries: list[tuple[bytes, bytes, bytes]] = []
+    for line in raw.splitlines():
+        fields = line.split()
+        if len(fields) < 7 or not fields[0].isdigit() or not fields[1].isdigit():
+            raise EnvelopeMountError(errno.EINVAL, "mountinfo is malformed")
+        entries.append((fields[0], fields[1], fields[4]))
+    covered = {(parent, point) for _mount, parent, point in entries}
+    return [(mount, point) in covered for mount, _parent, point in entries]
+
+
 def _remount_tree_readonly(target: str) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     syscall = libc.syscall
@@ -693,9 +710,12 @@ def _verify_mount_view(
     sizes = {"/tmp": tmp_size, scratch: scratch_size}
     roots = {workspace, scratch, "/tmp"}
     seen_roots: set[str] = set()
-    for line, (path, options) in zip(raw.splitlines(), _mount_paths(raw), strict=True):
+    for line, (path, options), shadowed in zip(
+        raw.splitlines(), _mount_paths(raw), _shadowed_mounts(raw), strict=True,
+    ):
         fields = line.split()
-        if path in roots:
+        # A covered entry is not the lease root; it must still be read-only.
+        if path in roots and not shadowed:
             if path in seen_roots or b"rw" not in options:
                 raise EnvelopeMountError(errno.EROFS, f"envelope writable mount is invalid: {path}")
             seen_roots.add(path)
