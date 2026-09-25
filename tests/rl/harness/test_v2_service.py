@@ -2838,7 +2838,7 @@ async def test_released_native_scratch_lease_publishes_closed(
     assert not case.repository.quarantine_inputs
     assert len(case.repository.closed_inputs) == 1
     # The production closed-publication validator accepts the same receipt, and
-    # verifier leases still do not admit native_scratch.
+    # verifier leases still reject primary-only resources (cache_holder, missing snapshot).
     projected = evidence_module._json_value(receipt)
     evidence_module._validate_cleanup_projection(projected, expected_lease_id=receipt.lease_id)
     with pytest.raises(evidence_module.EvidenceValidationError):
@@ -2878,3 +2878,80 @@ async def test_unreleased_native_scratch_never_claims_closed(
     assert state.state is EpisodeLifecycleState.QUARANTINED
     assert not case.repository.closed_inputs
     assert case.repository.quarantine_inputs[-1].failure.code == "cleanup_not_released"
+
+
+
+@pytest.mark.parametrize(
+    ("scratch_state", "expected_outcome"),
+    [
+        (CleanupState.RELEASED, EpisodePrimaryDisposition.SUCCEEDED),
+        (CleanupState.QUARANTINED, EpisodePrimaryDisposition.FAILED),
+    ],
+)
+async def test_verifier_native_scratch_cleanup_admission(
+    monkeypatch: pytest.MonkeyPatch,
+    scratch_state: CleanupState,
+    expected_outcome: EpisodePrimaryDisposition,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    verifier_steps = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", scratch_state),
+        CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+        CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+    )
+    case.sandbox.verifier.close_receipt = SandboxCleanupReceipt.from_steps(
+        case.sandbox.verifier.lease_id,
+        verifier_steps,
+    )
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"cleanup-resources": f"verifier-native-scratch-{scratch_state.value}"},
+    )
+
+    assert outcome.response.primary_disposition is expected_outcome
+    if scratch_state is CleanupState.RELEASED:
+        assert outcome.response.closed_envelope_ref is not None
+        assert case.repository.closed_inputs
+        assert case.repository.closed_inputs[0].verifier_cleanup_receipt is not None
+        assert case.repository.closed_inputs[0].verifier_cleanup_receipt.lease_id == case.sandbox.verifier.lease_id
+    else:
+        assert outcome.response.closed_envelope_ref is None
+        assert case.repository.quarantine_inputs
+        assert case.repository.quarantine_inputs[-1].failure.code == "verifier_cleanup_not_released"
+
+
+async def test_verifier_cleanup_released_admissions() -> None:
+    released_receipt = SandboxCleanupReceipt.from_steps(
+        "verifier-lease",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+        ),
+    )
+    assert service_module._cleanup_released(
+        released_receipt,
+        required={"runtime", "workspace", "snapshot", "lease_record"},
+        optional={"native_scratch"},
+    )
+    quarantined_receipt = SandboxCleanupReceipt.from_steps(
+        "verifier-lease",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.QUARANTINED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+        ),
+    )
+    assert not service_module._cleanup_released(
+        quarantined_receipt,
+        required={"runtime", "workspace", "snapshot", "lease_record"},
+        optional={"native_scratch"},
+    )
