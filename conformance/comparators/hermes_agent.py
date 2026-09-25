@@ -116,18 +116,31 @@ def _request_difference(
             declaration = overlay[name]
             native_bytes = json.dumps(native, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
             approved_bytes = json.dumps(approved, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
-            if hashlib.sha256(native_bytes).hexdigest() != declaration["native_sha256"]:
-                return f"unoverlaid supplier schema differs at $.requests[{row_index}].body.tools[{tool_index}]", False, True
-            if approved_bytes == native_bytes:
-                unoverlaid = True
-                continue
-            if (
-                hashlib.sha256(approved_bytes).hexdigest() != declaration["approved_sha256"]
-                or approved_bytes != declaration["approved_schema_json"].encode()
-            ):
-                return _first_difference(left, right, "$.requests"), False, False
-            source_tools[tool_index] = candidate_tools[tool_index] = name
-            used_overlay = True
+            native_sha = hashlib.sha256(native_bytes).hexdigest()
+            approved_sha = hashlib.sha256(approved_bytes).hexdigest()
+
+            if native_sha == declaration["approved_sha256"]:
+                if approved_bytes != native_bytes:
+                    diff = _first_difference(native, approved, f"$.requests[{row_index}].body.tools[{tool_index}]")
+                    return diff or f"candidate tool schema differs at $.requests[{row_index}].body.tools[{tool_index}]", False, False
+            elif native_sha == declaration["native_sha256"]:
+                if approved_bytes == native_bytes:
+                    unoverlaid = True
+                    continue
+                if (
+                    approved_sha != declaration["approved_sha256"]
+                    or approved_bytes != declaration["approved_schema_json"].encode()
+                ):
+                    return _first_difference(left, right, "$.requests"), False, False
+                source_tools[tool_index] = candidate_tools[tool_index] = name
+                used_overlay = True
+            else:
+                return (
+                    f"supplier tool schema {name!r} sha256 mismatch at $.requests[{row_index}].body.tools[{tool_index}]: "
+                    f"expected {declaration['approved_sha256']} or {declaration['native_sha256']}, observed {native_sha}",
+                    False,
+                    False,
+                )
     difference = _first_difference(left, right, "$.requests")
     if unoverlaid and difference is None:
         difference = "unoverlaid native schemas in BreadBoard request"
@@ -255,78 +268,164 @@ def _message_projection(message: Mapping[str, Any]) -> dict[str, Any]:
             continue
         projected[str(key)] = copy.deepcopy(value)
     return projected
-def _declared_workspace_root(trace: Mapping[str, Any], *, require_runtime: bool = False) -> str:
-    runtime = trace.get("runtime")
-    if runtime is not None and not isinstance(runtime, Mapping):
-        raise ValueError("trace runtime must be an object")
-    cwd = runtime.get("cwd") if isinstance(runtime, Mapping) else None
-    if cwd is not None and (type(cwd) is not str or not cwd.startswith("/") or cwd == "/"):
-        raise ValueError("trace runtime.cwd must be an absolute workspace path")
-    if require_runtime and cwd is None:
-        raise ValueError("trace is missing declared runtime.cwd")
-
+def _declared_runtime_roots(trace: Mapping[str, Any]) -> dict[str, str]:
     rows = trace.get("requests")
     if not isinstance(rows, list) or not rows:
         raise ValueError("trace is missing workspace declarations: no requests")
-    roots: list[str] = []
+    ws_declarations: list[str] = []
+    hh_declarations: list[str] = []
+    sh_declarations: list[str] = []
     request_count = 0
     for index, row in enumerate(rows):
         if isinstance(row, Mapping) and row.get("kind") in {"served", "response"}:
             continue
-        request_count += 1
         body = row.get("body") if isinstance(row, Mapping) else None
-        messages = body.get("messages") if isinstance(body, Mapping) else None
+        if not isinstance(body, Mapping):
+            continue
+        request_count += 1
+        messages = body.get("messages")
         if not isinstance(messages, list):
             raise ValueError(f"request {index} has no messages for workspace declaration")
-        declarations: set[str] = set()
+        ws_in_req: set[str] = set()
+        hh_in_req: set[str] = set()
+        sh_in_req: set[str] = set()
         for message in messages:
             if not isinstance(message, Mapping) or message.get("role") != "system":
                 continue
             content = message.get("content")
             if not isinstance(content, str):
                 continue
-            # Pinned Hermes prompt_builder.py emits the cwd; coding_context.py
-            # emits the workspace snapshot root. Neither is a path guess.
             for line in content.splitlines():
                 for prefix in ("Current working directory: ", "- Root: "):
                     if line.startswith(prefix):
                         root = line[len(prefix):].strip()
                         if not root.startswith("/") or root == "/":
-                            raise ValueError(f"request {index} declares an invalid workspace root")
-                        declarations.add(root)
-        if len(declarations) > 1:
-            raise ValueError(f"request {index} declares inconsistent workspace roots")
-        if not declarations:
-            if cwd is None or roots:
-                raise ValueError(f"request {index} is missing a declared workspace root")
-            continue
-        roots.append(next(iter(declarations)))
-    if not request_count or roots and len(roots) != request_count:
-        raise ValueError("request is missing a declared workspace root")
-    if len(set(roots)) > 1 or cwd is not None and roots and cwd != roots[0]:
-        raise ValueError("workspace roots differ across requests or from runtime.cwd")
-    if roots:
-        return roots[0]
-    if cwd is not None:
-        return cwd
-    raise ValueError("trace is missing a declared workspace root")
+                            raise ValueError(f"request {index} declares an invalid workspace root: {root!r}")
+                        ws_in_req.add(root)
+                if "Other profiles (if any) live under " in line:
+                    match = re.search(r"Other profiles \(if any\) live under (.+?)/profiles/<name>/", line)
+                    if match:
+                        root = match.group(1).strip()
+                        if not root.startswith("/") or root == "/":
+                            raise ValueError(f"request {index} declares an invalid hermes_home root: {root!r}")
+                        hh_in_req.add(root)
+                elif line.startswith("User home directory: "):
+                    root = line[len("User home directory: "):].strip()
+                    if not root.startswith("/") or root == "/":
+                        raise ValueError(f"request {index} declares an invalid home root: {root!r}")
+                    sh_in_req.add(root)
+        if len(ws_in_req) != 1:
+            raise ValueError(
+                f"request {index} is missing a declared workspace root"
+                if not ws_in_req
+                else f"request {index} declares inconsistent workspace roots: {sorted(ws_in_req)}"
+            )
+        if len(hh_in_req) != 1:
+            raise ValueError(
+                f"request {index} is missing a declared hermes_home root"
+                if not hh_in_req
+                else f"request {index} declares inconsistent hermes_home roots: {sorted(hh_in_req)}"
+            )
+        if len(sh_in_req) != 1:
+            raise ValueError(
+                f"request {index} is missing a declared home root"
+                if not sh_in_req
+                else f"request {index} declares inconsistent home roots: {sorted(sh_in_req)}"
+            )
+        ws_declarations.append(next(iter(ws_in_req)))
+        hh_declarations.append(next(iter(hh_in_req)))
+        sh_declarations.append(next(iter(sh_in_req)))
+
+    if not request_count:
+        raise ValueError("trace has no requests")
+    if len(set(ws_declarations)) > 1:
+        raise ValueError("workspace roots differ across requests")
+    if len(set(hh_declarations)) > 1:
+        raise ValueError("hermes_home roots differ across requests")
+    if len(set(sh_declarations)) > 1:
+        raise ValueError("home roots differ across requests")
+
+    runtime = trace.get("runtime")
+    if isinstance(runtime, Mapping):
+        cwd = runtime.get("cwd") or runtime.get("workspace")
+        if cwd is not None and cwd != ws_declarations[0]:
+            raise ValueError("workspace roots differ across requests or from runtime.cwd")
+
+    return {
+        "workspace": ws_declarations[0],
+        "hermes_home": hh_declarations[0],
+        "home": sh_declarations[0],
+    }
 
 
-def _replace_workspace(value: Any, root: str, changed: list[bool]) -> Any:
-    if isinstance(value, str):
-        if value == root:
-            changed[0] = True
-            return "<WORKSPACE>"
-        prefix = root + "/"
-        if value.startswith(prefix):
-            changed[0] = True
-            return "<WORKSPACE>" + value[len(root):]
+def _declared_workspace_root(trace: Mapping[str, Any], *, require_runtime: bool = False) -> str:
+    return _declared_runtime_roots(trace)["workspace"]
+
+
+def _replace_root(
+    value: str,
+    root: str,
+    replacement: str,
+    rule: str,
+    normalizations: list[str] | None = None,
+) -> str:
+    if not isinstance(value, str) or not root:
         return value
-    if isinstance(value, list):
-        return [_replace_workspace(item, root, changed) for item in value]
-    if isinstance(value, Mapping):
-        return {key: _replace_workspace(item, root, changed) for key, item in value.items()}
+    pattern = re.compile(rf"{re.escape(root)}(?=[/'\"`\x27\s),.;:\\]|$)")
+
+    def replace(match: re.Match[str]) -> str:
+        if normalizations is not None:
+            entry = f"{rule}:{replacement}"
+            if entry not in normalizations:
+                normalizations.append(entry)
+        return replacement
+
+    return pattern.sub(replace, value)
+
+
+def _normalize_string_roots(
+    value: str,
+    ordered_roots: Sequence[tuple[str, str, str]],
+    normalizations: list[str] | None = None,
+) -> str:
+    for root, replacement, rule in ordered_roots:
+        value = _replace_root(value, root, replacement, rule, normalizations)
     return value
+
+
+def _normalize_roots_in_structure(
+    value: Any,
+    ordered_roots: Sequence[tuple[str, str, str]],
+    normalizations: list[str] | None = None,
+) -> Any:
+    if isinstance(value, str):
+        return _normalize_string_roots(value, ordered_roots, normalizations)
+    if isinstance(value, list):
+        return [_normalize_roots_in_structure(item, ordered_roots, normalizations) for item in value]
+    if isinstance(value, Mapping):
+        return {key: _normalize_roots_in_structure(item, ordered_roots, normalizations) for key, item in value.items()}
+    return value
+
+
+def _normalize_case_roots(
+    case_data: dict[str, Any],
+    roots_dict: Mapping[str, str],
+    normalizations: list[str],
+) -> None:
+    ordered_roots: list[tuple[str, str, str]] = []
+    if roots_dict.get("hermes_home"):
+        ordered_roots.append((roots_dict["hermes_home"], "<HERMES_HOME>", "hermes_home_root"))
+    if roots_dict.get("workspace"):
+        ordered_roots.append((roots_dict["workspace"], "<WORKSPACE>", "workspace_root"))
+    if roots_dict.get("home"):
+        ordered_roots.append((roots_dict["home"], "<HOME>", "home_root"))
+    ordered_roots.sort(key=lambda item: len(item[0]), reverse=True)
+    if not ordered_roots:
+        return
+
+    for key in ("context", "requests", "tool_calls", "tool_results", "visible_corrections", "runtime"):
+        if key in case_data:
+            case_data[key] = _normalize_roots_in_structure(case_data[key], ordered_roots, normalizations)
 
 
 def _body_projection(body: Mapping[str, Any]) -> dict[str, Any]:
@@ -685,7 +784,7 @@ def _report(
 
 def _supplier_input(
     supplier_case: Path | str | Mapping[str, Any],
-) -> tuple[dict[str, Any], str]:
+) -> tuple[dict[str, Any], dict[str, str]]:
     if isinstance(supplier_case, (Path, str)):
         path = Path(supplier_case)
         trace = _load_json(path / "trace.json")
@@ -693,14 +792,16 @@ def _supplier_input(
             raise ValueError("supplier trace must be an object")
         if trace.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
             raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
+        roots = _declared_runtime_roots(trace)
         canonical = _canonical_from_supplier(trace, path)
-        return canonical, canonical["runtime"]["cwd"]
+        return canonical, roots
     if not isinstance(supplier_case, Mapping):
         raise ValueError("supplier trace must be an object")
     if supplier_case.get("schema_version") != SUPPLIER_TRACE_SCHEMA_VERSION:
         raise ValueError(f"trace schema_version must be {SUPPLIER_TRACE_SCHEMA_VERSION}")
+    roots = _declared_runtime_roots(supplier_case)
     canonical = _canonical_from_supplier(supplier_case, Path("."))
-    return canonical, canonical["runtime"]["cwd"]
+    return canonical, roots
 
 
 def compare_cases(
@@ -716,7 +817,7 @@ def compare_cases(
     receiver_difference: str | None = None
     mode = "installed-replay" if installed_replay else "fixture"
     try:
-        expected, supplier_root = _supplier_input(supplier_case)
+        expected, supplier_roots = _supplier_input(supplier_case)
         if installed_replay and not isinstance(bb_trace, (Path, str)):
             raise ValueError("installed replay requires a persisted BreadBoard trace path")
         if isinstance(bb_trace, (Path, str)):
@@ -747,7 +848,7 @@ def compare_cases(
             raise ValueError("replay job_id differs from BreadBoard trace job_id")
         else:
             job_id = job_id or candidate_job
-        observed_root = _declared_workspace_root(bb_value, require_runtime=True)
+        observed_roots = _declared_runtime_roots(bb_value)
         if installed_replay:
             if receiver_transcript is None:
                 raise ValueError("installed replay requires a persisted receiver HTTP transcript path")
@@ -765,11 +866,8 @@ def compare_cases(
                 recorded, _receiver_requests(Path(receiver_transcript)), "$.receiver_http_requests",
             )
         observed = project_bb_trace(bb_value)
-        expected_changed, observed_changed = [False], [False]
-        expected = _replace_workspace(expected, supplier_root, expected_changed)
-        observed = _replace_workspace(observed, observed_root, observed_changed)
-        if expected_changed[0] or observed_changed[0]:
-            normalizations.append("workspace_root:<WORKSPACE>")
+        _normalize_case_roots(expected, supplier_roots, normalizations)
+        _normalize_case_roots(observed, observed_roots, normalizations)
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)], normalizations, bb_trace_sha256=trace_hash, job_id=job_id, mode=mode)
     assertions: list[dict[str, Any]] = []

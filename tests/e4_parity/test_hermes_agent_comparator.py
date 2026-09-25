@@ -360,6 +360,10 @@ def test_workspace_roots_are_typed_and_fail_closed() -> None:
     candidate_root = "/lease/workspace-abc/repository"
     observed["runtime"] = {"cwd": candidate_root}
     observed["tool_calls"][0]["arguments"]["path"] = candidate_root + "/normal.txt"
+    if isinstance(observed["tool_calls"][0].get("raw_arguments"), str):
+        observed["tool_calls"][0]["raw_arguments"] = observed["tool_calls"][0]["raw_arguments"].replace(original_root, candidate_root)
+    if isinstance(observed["tool_calls"][0].get("raw_sample"), dict) and isinstance(observed["tool_calls"][0]["raw_sample"].get("arguments"), str):
+        observed["tool_calls"][0]["raw_sample"]["arguments"] = observed["tool_calls"][0]["raw_sample"]["arguments"].replace(original_root, candidate_root)
     for request in observed["requests"]:
         for message in request["body"]["messages"]:
             if message.get("role") == "system":
@@ -369,7 +373,11 @@ def test_workspace_roots_are_typed_and_fail_closed() -> None:
                 ).replace(f"- Root: {original_root}", f"- Root: {candidate_root}")
     report = compare_cases(case_dir, observed)
     assert report["errors"] == []
-    assert report["normalizations"] == ["workspace_root:<WORKSPACE>"]
+    assert set(report["normalizations"]) == {
+        "workspace_root:<WORKSPACE>",
+        "hermes_home_root:<HERMES_HOME>",
+        "home_root:<HOME>",
+    }
     assert next(a for a in report["assertions"] if a["name"].endswith(".tool_calls_equal"))["status"] == "passed"
     assert next(a for a in report["assertions"] if a["name"].endswith(".requests_equal"))["status"] == "failed"
 
@@ -385,10 +393,14 @@ def test_workspace_roots_are_typed_and_fail_closed() -> None:
     inconsistent["runtime"] = {"cwd": candidate_root}
     assert "workspace roots differ" in compare_cases(case_dir, inconsistent)["errors"][0]
 
-    missing_runtime = deepcopy(supplier)
-    del missing_runtime["runtime"]
-    assert "runtime.cwd" in compare_cases(case_dir, missing_runtime)["errors"][0]
-
+    missing_decl = deepcopy(supplier)
+    for request in missing_decl["requests"]:
+        for message in request["body"]["messages"]:
+            if message.get("role") == "system":
+                message["content"] = message["content"].replace(
+                    f"Current working directory: {original_root}", ""
+                ).replace(f"- Root: {original_root}", "")
+    assert "missing a declared workspace root" in compare_cases(case_dir, missing_decl)["errors"][0]
 
 def test_comparator_rejects_name_only_tool_schemas() -> None:
     case_dir, replay = _replay("H-01-normal-memory-skill-write")
@@ -617,6 +629,110 @@ def test_unoverlaid_native_schemas_never_pass(case_dir: Path) -> None:
     report = compare_cases(case_dir, project_supplier_case(case_dir))
     assert not report["ok"]
     assert any(gap["id"] == "hermes-rerun3-unoverlaid-schemas" for gap in report["gaps"])
+
+def _rerun4_case(tmp_path: Path, case_name: str = "H-01-normal-memory-skill-write") -> Path:
+    case_dir = tmp_path / case_name
+    shutil.copytree(FIXTURES / case_name, case_dir)
+    trace = json.loads((case_dir / "trace.json").read_bytes())
+    overlay = json.loads(TARGET_CONFIG.read_bytes())["schema_overlay"]
+    for request in trace["requests"]:
+        for index, schema in enumerate((request.get("body") or {}).get("tools", [])):
+            name = schema["function"]["name"]
+            if name in overlay:
+                request["body"]["tools"][index] = json.loads(overlay[name]["approved_schema_json"])
+    (case_dir / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    return case_dir
+
+
+def test_rerun4_overlaid_supplier_schemas_pass_without_rerun3_gap(tmp_path: Path) -> None:
+    case_dir = _rerun4_case(tmp_path)
+    report = compare_cases(case_dir, project_supplier_case(case_dir))
+    assert report["ok"] is True, report
+    assert all(gap["id"] != "hermes-rerun3-unoverlaid-schemas" for gap in report["gaps"])
+
+
+def test_rerun4_candidate_schema_drift_fails(tmp_path: Path) -> None:
+    case_dir = _rerun4_case(tmp_path)
+    candidate = project_supplier_case(case_dir)
+    tool = candidate["requests"][0]["body"]["tools"][0]["function"]
+    tool["description"] = tool["description"] + " drift"
+    report = compare_cases(case_dir, candidate)
+    assert report["ok"] is False
+    assert next(a for a in report["assertions"] if a["name"].endswith(".requests_equal"))["status"] == "failed"
+
+
+def test_supplier_schema_matching_neither_declared_digest_fails(tmp_path: Path) -> None:
+    case_dir = _rerun4_case(tmp_path)
+    candidate = project_supplier_case(case_dir)
+    trace = json.loads((case_dir / "trace.json").read_bytes())
+    overlay = json.loads(TARGET_CONFIG.read_bytes())["schema_overlay"]
+    for request in trace["requests"]:
+        for schema in (request.get("body") or {}).get("tools", []):
+            if schema["function"]["name"] in overlay:
+                schema["function"]["description"] += " tampered"
+    (case_dir / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    report = compare_cases(case_dir, candidate)
+    assert report["ok"] is False
+    detail = next(a for a in report["assertions"] if a["name"].endswith(".requests_equal"))
+    assert detail["status"] == "failed"
+
+
+_H01_ROOTS = {
+    "/opt/hermes/case/workspace": "/lease/ws-1/repository",
+    "/opt/hermes/case/hermes-home": "/lease/ws-1.native-scratch/hermes-home",
+    "/opt/hermes/case/home": "/lease/ws-1.native-scratch/home",
+}
+
+
+def _relocated(value: Any) -> Any:
+    if isinstance(value, str):
+        for old, new in sorted(_H01_ROOTS.items(), key=lambda item: len(item[0]), reverse=True):
+            value = value.replace(old, new)
+        return value
+    if isinstance(value, list):
+        return [_relocated(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _relocated(item) for key, item in value.items()}
+    return value
+
+
+def test_embedded_declared_roots_normalize_symmetrically() -> None:
+    case_dir, supplier = _replay("H-01-normal-memory-skill-write")
+    observed = _relocated(supplier)
+    observed["runtime"] = {"cwd": _H01_ROOTS["/opt/hermes/case/workspace"]}
+    report = compare_cases(case_dir, observed)
+    assert report["errors"] == []
+    assert report["ok"] is True, [a for a in report["assertions"] if a["status"] != "passed"]
+    assert {"workspace_root:<WORKSPACE>", "hermes_home_root:<HERMES_HOME>", "home_root:<HOME>"} <= set(report["normalizations"])
+
+
+def test_root_replacement_is_boundary_safe_and_real_differences_fail() -> None:
+    case_dir, supplier = _replay("H-01-normal-memory-skill-write")
+    observed = _relocated(supplier)
+    observed["runtime"] = {"cwd": _H01_ROOTS["/opt/hermes/case/workspace"]}
+    # A sibling of the declared root is not the root and must not be normalized.
+    observed["tool_calls"][0]["arguments"]["path"] = "/lease/ws-1/repository2/normal.txt"
+    report = compare_cases(case_dir, observed)
+    assert next(a for a in report["assertions"] if a["name"].endswith(".tool_calls_equal"))["status"] == "failed"
+
+    observed = _relocated(supplier)
+    observed["runtime"] = {"cwd": _H01_ROOTS["/opt/hermes/case/workspace"]}
+    observed["tool_calls"][0]["arguments"]["path"] = _H01_ROOTS["/opt/hermes/case/workspace"] + "/other.txt"
+    report = compare_cases(case_dir, observed)
+    assert next(a for a in report["assertions"] if a["name"].endswith(".tool_calls_equal"))["status"] == "failed"
+
+
+def test_missing_hermes_home_declaration_fails_closed() -> None:
+    case_dir, supplier = _replay("H-01-normal-memory-skill-write")
+    observed = deepcopy(supplier)
+    for request in observed["requests"]:
+        for message in request["body"]["messages"]:
+            if message.get("role") == "system":
+                message["content"] = message["content"].replace("Other profiles (if any) live under ", "Profiles: ")
+    report = compare_cases(case_dir, observed)
+    assert report["ok"] is False
+    assert any("hermes_home" in error for error in report["errors"])
+
 
 
 def test_request_body_preserves_absent_stream_key() -> None:
