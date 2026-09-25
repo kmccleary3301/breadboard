@@ -510,8 +510,10 @@ def test_reminder_normalizes_with_declared_date_on_both_sides() -> None:
     assert report["normalizations"] == [
         {"side": "supplier", "rule": "current_date_reminder", "count": 1},
         {"side": "supplier", "rule": "workspace_root", "count": 1},
+        {"side": "supplier", "rule": "bash_wall_time", "count": 0},
         {"side": "bb", "rule": "current_date_reminder", "count": 1},
         {"side": "bb", "rule": "workspace_root", "count": 1},
+        {"side": "bb", "rule": "bash_wall_time", "count": 0},
     ]
 
 
@@ -550,6 +552,93 @@ def test_reminder_with_different_date_than_runtime_input_does_not_normalize_and_
     assert report["normalizations"] == [
         {"side": "supplier", "rule": "current_date_reminder", "count": 1},
         {"side": "supplier", "rule": "workspace_root", "count": 1},
+        {"side": "supplier", "rule": "bash_wall_time", "count": 0},
         {"side": "bb", "rule": "current_date_reminder", "count": 0},
         {"side": "bb", "rule": "workspace_root", "count": 0},
+        {"side": "bb", "rule": "bash_wall_time", "count": 0},
     ]
+
+
+def _bash_result(wall_time: str) -> str:
+    return f"(no output)\n\nWall time: {wall_time} seconds\nTimeout clamped to 30s (requested 300s; global tools.maxTimeout ceiling 30s)."
+
+
+def _wall_time_trace(wall_time: str) -> dict:
+    trace = _trace()
+    trace["requests"].append({"body": {"messages": [
+        {"role": "user", "content": "do"},
+        {"role": "tool", "tool_call_id": "c1", "content": _bash_result(wall_time)},
+    ], "tools": [{"function": {"name": "bash"}}]}})
+    trace["native_responses"].insert(0, {"choices": [{"finish_reason": "tool_calls"}]})
+    trace["results"][0]["output"] = _bash_result(wall_time)
+    trace["request_count"] = 2
+    return trace
+
+
+def test_bash_wall_time_line_is_counted_host_timing() -> None:
+    report = compare({"capture": _wall_time_trace("0.09"), "replay": _wall_time_trace("0.02")})
+    assert report["ok"] is True, [item for item in report["assertions"] if item["status"] == "failed"]
+    counts = {(item["side"], item["rule"]): item["count"] for item in report["normalizations"]}
+    assert counts[("supplier", "bash_wall_time")] == counts[("bb", "bash_wall_time")] == 2
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda text: text.replace("Wall time: 0.02 seconds", "Wall time: 0.020 seconds"),
+    lambda text: text.replace("Wall time: 0.02 seconds", "Wall time: 0.02 seconds (slow)"),
+    lambda text: text.replace("(no output)", "(no outputs)"),
+])
+def test_bash_wall_time_does_not_hide_other_result_bytes(mutate: Callable[[str], str]) -> None:
+    replay = _wall_time_trace("0.02")
+    replay["results"][0]["output"] = mutate(replay["results"][0]["output"])
+    message = replay["requests"][1]["body"]["messages"][1]
+    message["content"] = mutate(message["content"])
+    report = compare({"capture": _wall_time_trace("0.09"), "replay": replay})
+    assert report["ok"] is False
+
+
+def _guard_supplier(tmp_path: Path, guard: object) -> Path:
+    supplier_dir = tmp_path / "supplier"
+    supplier_dir.mkdir()
+    trace = _trace()
+    for name in ("termination", "stop_reason", "runtime_inputs"):
+        trace.pop(name)
+    trace.update({"exit_code": 0, "timed_out": False, "request_guard": guard})
+    trace["native_responses"] = [{"choices": [{"finish_reason": "tool_calls"}]}]
+    (supplier_dir / "trace.json").write_text(json.dumps(trace), encoding="utf-8")
+    return supplier_dir
+
+
+def _limit_replay() -> dict:
+    replay = _trace()
+    for name in ("termination", "stop_reason"):
+        replay.pop(name)
+    replay["exit"] = {"kind": "RequestLimitExceeded", "native_stop_reason": "tool_calls"}
+    replay["native_responses"] = [{"choices": [{"finish_reason": "tool_calls"}]}]
+    return replay
+
+
+def test_stopped_supplier_request_guard_is_the_request_limit(tmp_path: Path) -> None:
+    guard = {"limit": 1, "issued": 1, "stopped": True, "reason": "capture request cap"}
+    report = compare({"capture": _guard_supplier(tmp_path, guard), "replay": _limit_replay()})
+    assert report["ok"] is True, [item for item in report["assertions"] if item["status"] == "failed"]
+
+
+def test_unstopped_supplier_request_guard_is_not_a_request_limit(tmp_path: Path) -> None:
+    guard = {"limit": 8, "issued": 1, "stopped": False, "reason": None}
+    report = compare({"capture": _guard_supplier(tmp_path, guard), "replay": _limit_replay()})
+    assert report["ok"] is False
+    assert any(
+        item["assertion_id"] == "episode.termination_equal" and item["status"] == "failed"
+        for item in report["assertions"]
+    )
+
+
+@pytest.mark.parametrize("guard", [
+    {"limit": 8, "issued": 7, "stopped": True, "reason": "capture request cap"},
+    {"limit": 8, "issued": 8, "stopped": "yes", "reason": "capture request cap"},
+    ["stopped"],
+])
+def test_malformed_supplier_request_guard_fails_closed(tmp_path: Path, guard: object) -> None:
+    report = compare({"capture": _guard_supplier(tmp_path, guard), "replay": _limit_replay()})
+    assert report["ok"] is False
+    assert any("request_guard" in error for error in report["errors"])

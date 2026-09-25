@@ -18,10 +18,11 @@ COMPARATOR_ID = "oh_my_pi_18_1_17_trace_v1"
 REPORT_SCHEMA_VERSION = "bb.e4.comparator_report.v1"
 CANONICAL_SCHEMA_VERSION = "bb.e4.omp-episode.v1"
 
-RuleName = Literal["current_date_reminder", "workspace_root"]
+RuleName = Literal["current_date_reminder", "workspace_root", "bash_wall_time"]
 NORMALIZATIONS: tuple[RuleName, ...] = (
     "current_date_reminder",
     "workspace_root",
+    "bash_wall_time",
 )
 
 
@@ -170,6 +171,24 @@ def _normalize_reminder_text(
     return pattern.sub(replace, value)
 
 
+# Pinned 18.1.17 packages/coding-agent/src/tools/bash.ts:544-549 appends the
+# measured shell duration to every bash result as its own line:
+# `Wall time: ${(wallTimeMs / 1000).toFixed(2)} seconds`. The duration is a
+# host timing fact. Only a whole line in exactly that form is tokenized.
+_BASH_WALL_TIME_LINE = re.compile(r"(?m)^Wall time: \d+\.\d{2} seconds$")
+
+
+def _normalize_wall_time(value: Any, counts: _RuleCounts) -> Any:
+    if not isinstance(value, str):
+        return value
+
+    def replace(match: re.Match[str]) -> str:
+        counts.add("bash_wall_time")
+        return "Wall time: <BASH_WALL_TIME> seconds"
+
+    return _BASH_WALL_TIME_LINE.sub(replace, value)
+
+
 def _normalize_reminder(
     body: Mapping[str, Any],
     runtime: _RuntimeInputs,
@@ -211,6 +230,9 @@ def _requests(
         normalized_body = _normalize(body, declared=declared)
         _tokenize_workstation(normalized_body)
         _normalize_reminder(normalized_body, runtime, counts)
+        for message in normalized_body.get("messages", []):
+            if isinstance(message, dict) and message.get("role") == "tool":
+                message["content"] = _normalize_wall_time(message.get("content"), counts)
         result.append(
             {
                 "index": item.get("index", index) if isinstance(item, Mapping) else index,
@@ -306,7 +328,7 @@ def _tool_calls(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, 
     return output
 
 
-def _results(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any]]:
+def _results(trace: Mapping[str, Any], declared: set[str], counts: _RuleCounts) -> list[dict[str, Any]]:
     raw = trace.get("results", trace.get("tool_results"))
     candidates: list[Any] = list(raw) if isinstance(raw, list) else []
     if not candidates:
@@ -337,7 +359,10 @@ def _results(trace: Mapping[str, Any], declared: set[str]) -> list[dict[str, Any
                 "index": item.get("index", len(result)),
                 "id": result_id,
                 "name": item.get("tool_name", item.get("toolName", item.get("name"))),
-                "output": _normalize(item.get("output", item.get("content", "")), declared=declared),
+                "output": _normalize_wall_time(
+                    _normalize(item.get("output", item.get("content", "")), declared=declared),
+                    counts,
+                ),
                 "error": _normalize(error, declared=declared),
                 "skipped": bool(item.get("skipped", item.get("status") in {"skipped", "length"})),
             }
@@ -455,6 +480,23 @@ def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) ->
         exit_value = {}
     reason = exit_value.get("native_stop_reason", exit_value.get("stop_reason", trace.get("stop_reason")))
     kind = exit_value.get("kind", trace.get("termination", trace.get("termination_kind")))
+    if kind is None and supplier_capture and trace.get("request_guard") is not None:
+        # The supplier kit's request guard (kit/omp_capture_driver.ts:117-125)
+        # refuses the model call after the case's request cap and records
+        # {"limit", "issued", "stopped", "reason"} (line 162). A stopped guard is
+        # the supplier-side request limit, not a submission.
+        guard = trace["request_guard"]
+        if (
+            not isinstance(guard, Mapping)
+            or type(guard.get("stopped")) is not bool
+            or type(guard.get("issued")) is not int
+            or type(guard.get("limit")) is not int
+        ):
+            raise ValueError("supplier request_guard is malformed")
+        if guard["stopped"]:
+            if guard["issued"] != guard["limit"]:
+                raise ValueError("supplier request_guard stopped before its limit")
+            kind = "request_limit_exceeded"
     if kind is None:
         kind = "timed_out" if trace.get("timed_out") else ("submitted" if trace.get("exit_code") == 0 else "error")
     if kind == "Submitted":
@@ -537,7 +579,7 @@ def _project(
         "schema_version": CANONICAL_SCHEMA_VERSION,
         "requests": requests,
         "tool_calls": _tool_calls(trace, declared),
-        "results": _results(trace, declared),
+        "results": _results(trace, declared, counts),
         "file_effects": _effects(case_dir, trace),
         "termination": _termination(trace, supplier_capture=supplier_capture),
         "request_count": len(requests) or int(trace.get("receiver_requests", trace.get("request_count", 0)) or 0),

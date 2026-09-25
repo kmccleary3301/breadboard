@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import tarfile
 from typing import Any
 
@@ -75,6 +76,15 @@ def _without_system(body: dict[str, Any]) -> dict[str, Any]:
     return {**body, "messages": [message for message in body["messages"] if message.get("role") != "system"]}
 
 
+def _with_wall_time_token(body: dict[str, Any]) -> dict[str, Any]:
+    messages = []
+    for message in body["messages"]:
+        if message.get("role") == "tool" and isinstance(message.get("content"), str):
+            message = {**message, "content": re.sub(r"(?m)^Wall time: \d+\.\d{2} seconds$", "Wall time: <BASH_WALL_TIME> seconds", message["content"])}
+        messages.append(message)
+    return {**body, "messages": messages}
+
+
 def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> None:
     if not PACKET.is_file():
         pytest.skip("DO-2 rerun5 packet is not mounted")
@@ -131,8 +141,11 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
                 "receiver_requests": trace["receiver_requests"],
             })
             assert episode["requests"]
-            # Only the pinned workstation value spans of the system prompt are projected.
-            assert [_without_system(request["body"]) for request in episode["requests"]] == [_without_system(body) for body in request_bodies]
+            # Only the pinned workstation value spans of the system prompt and the
+            # bash wall-time line of tool results are projected.
+            assert [_without_system(request["body"]) for request in episode["requests"]] == [
+                _with_wall_time_token(_without_system(body)) for body in request_bodies
+            ]
             # A declared path the supplier found absent (null) has no entry.
             assert episode["file_effects"] == {
                 path: value["sha256"]
