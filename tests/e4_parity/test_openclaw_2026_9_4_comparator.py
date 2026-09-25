@@ -636,3 +636,43 @@ def test_exists_false_probe_equals_supplier_none(tmp_path: Path) -> None:
     # Also directly compare traces
     direct = comparator.OpenClawComparator().compare_traces(expected, candidate)
     assert direct["status"] == "passed"
+
+
+def _case_with_absent_probe(tmp_path: Path) -> Path:
+    fixture = Path(__file__).parent / "fixtures" / "openclaw_packet_640"
+    case_dir = tmp_path / "case_with_absent_probe"
+    shutil.copytree(fixture, case_dir)
+    scenario_path = case_dir / "scenario.json"
+    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+    scenario["probe_paths"].append("absent-probe.txt")
+    scenario_path.write_text(json.dumps(scenario), encoding="utf-8")
+    return case_dir
+
+
+def test_replay_omitting_absent_declared_probe_matches_supplier(tmp_path: Path) -> None:
+    case_dir = _case_with_absent_probe(tmp_path)
+    expected = project_supplier_case(case_dir)
+    candidate = json.loads(json.dumps(expected))
+    # BreadBoard measures written files only; a declared probe it never wrote is absent.
+    del candidate["effects"]["absent-probe.txt"]
+
+    report = compare({"capture": str(case_dir), "replay": candidate, "scope": {}})
+
+    assert report["errors"] == []
+    assert report["ok"] is True
+    effects_assertion = next(a for a in report["assertions"] if a["assertion_id"] == "effects_equal")
+    assert effects_assertion["observed"] == expected["effects"]
+
+
+def test_replay_writing_probe_the_supplier_left_absent_fails(tmp_path: Path) -> None:
+    case_dir = _case_with_absent_probe(tmp_path)
+    expected = project_supplier_case(case_dir)
+    candidate = json.loads(json.dumps(expected))
+    candidate["effects"]["absent-probe.txt"] = "sha256:" + "5" * 64
+
+    report = compare({"capture": str(case_dir), "replay": candidate, "scope": {}})
+
+    assert report["ok"] is False
+    effects_assertion = next(a for a in report["assertions"] if a["assertion_id"] == "effects_equal")
+    assert effects_assertion["status"] == "failed"
+    assert effects_assertion["observed"]["absent-probe.txt"] == "sha256:" + "5" * 64

@@ -473,7 +473,8 @@ def _project_effects(raw: Any) -> dict[str, str | None]:
     return dict(sorted(result.items()))
 
 
-def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | None]:
+def _declared_effect_paths(scenario: Mapping[str, Any]) -> list[str]:
+    """Return the scenario's probe paths and oracle file, normalized, in declaration order."""
     paths: list[str] = []
     raw_paths = scenario.get("probe_paths", [])
     if isinstance(raw_paths, Sequence) and not isinstance(raw_paths, (str, bytes)):
@@ -483,14 +484,17 @@ def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | No
         path = str(oracle["file"])
         if path not in paths:
             paths.append(path)
+    return list(dict.fromkeys(_normalize_effect_path(path) for path in paths))
+
+
+def _effects(workspace: Path, scenario: Mapping[str, Any]) -> dict[str, str | None]:
     effects: dict[str, str | None] = {}
-    for relative in paths:
-        norm = _normalize_effect_path(relative)
+    for norm in _declared_effect_paths(scenario):
         target = (workspace / norm).resolve()
         try:
             target.relative_to(workspace.resolve())
         except ValueError:
-            raise ComparatorError(f"effect path escapes workspace: {relative!r}")
+            raise ComparatorError(f"effect path escapes workspace: {norm!r}")
         effects[norm] = _sha256(target) if target.is_file() else None
     # Include every non-bootstrap workspace effect so unexpected writes fail.
     try:
@@ -918,6 +922,23 @@ def compare(inp: ComparatorInput) -> dict[str, Any]:
             }
         except (ComparatorError, TypeError, ValueError) as exc:
             errors.append(f"wire prompt: {exc}")
+            expected = None
+            observed = None
+    if expected is not None and observed is not None and isinstance(capture, (str, Path)):
+        # One effect scope for both sides: the supplier scenario's declared paths, absent as None.
+        try:
+            scenario = _load_json(Path(capture) / "scenario.json", {})
+            if not isinstance(scenario, Mapping):
+                raise ComparatorError("invalid supplier scenario")
+            observed = {
+                **observed,
+                "effects": _project_effects({
+                    **{path: None for path in _declared_effect_paths(scenario)},
+                    **observed["effects"],
+                }),
+            }
+        except (ComparatorError, OSError, TypeError, ValueError) as exc:
+            errors.append(f"effects scope: {exc}")
             expected = None
             observed = None
     if expected is not None and observed is not None:
