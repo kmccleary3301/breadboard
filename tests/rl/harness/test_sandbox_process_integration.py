@@ -1187,6 +1187,104 @@ def test_sealed_workspace_seed_diff_uses_real_git_without_sealed_exec(
     assert result["returncode"] == 0
     assert "diff --git a/seed.txt b/seed.txt\n" in result["stdout"]
     assert "diff --git a/marker.txt b/marker.txt\n" in result["stdout"]
+
+
+def test_sealed_workspace_seed_diff_emits_text_hunks_that_apply_to_the_seed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        proc_fd_path = git_path
+        digest = "sha256:" + "0" * 64
+
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda _path, _expected_digest: PinnedGit(),
+    )
+    plan = type(
+        "SeedDiffPlan",
+        (),
+        {
+            "runtime": type(
+                "Runtime",
+                (),
+                {"fixed_environment": (("PATH", str(Path(git_path).parent)),)},
+            )(),
+            "limits": type(
+                "Limits",
+                (),
+                {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024},
+            )(),
+        },
+    )()
+
+    def seed_patch(case: str, edits: dict[str, bytes]) -> str:
+        baseline = tmp_path / case / "baseline"
+        workspace = tmp_path / case / "workspace"
+        (baseline / "pkg").mkdir(parents=True)
+        (baseline / ".gitattributes").write_bytes(b"* binary\n")
+        (baseline / "pkg" / "module.py").write_bytes(b"value = 1\n")
+        (baseline / "icon.bin").write_bytes(b"\x00\x01\x02")
+        shutil.copytree(baseline, workspace)
+        for logical_path, content in edits.items():
+            (workspace / logical_path).write_bytes(content)
+        (tmp_path / case / "scratch").mkdir()
+        patch = _sealed_repository_diff(
+            repository=workspace,
+            scratch_directory=tmp_path / case / "scratch",
+            base_commit="sha256:" + "1" * 64,
+            plan=plan,
+            seed_baseline=baseline,
+        )["stdout"]
+        applied = tmp_path / case / "applied"
+        shutil.copytree(baseline, applied)
+        (tmp_path / case / "model.patch").write_text(patch, encoding="utf-8")
+        subprocess.run(
+            ("git", "apply", "--verbose", str(tmp_path / case / "model.patch")),
+            cwd=applied,
+            check=True,
+            capture_output=True,
+        )
+        for logical_path, content in edits.items():
+            assert (applied / logical_path).read_bytes() == content
+        return patch
+
+    text_patch = seed_patch(
+        "text",
+        {"pkg/module.py": b"value = 2\n", "pkg/new.py": b"created = True\n"},
+    )
+    assert "GIT binary patch" not in text_patch
+    assert "-value = 1\n+value = 2\n" in text_patch
+    assert "+created = True\n" in text_patch
+
+    mixed_patch = seed_patch(
+        "mixed",
+        {"pkg/module.py": b"value = 2\n", "icon.bin": b"\x00\x03"},
+    )
+    module_section, icon_section = (
+        mixed_patch.split("diff --git a/pkg/module.py b/pkg/module.py\n")[1],
+        mixed_patch.split("diff --git a/icon.bin b/icon.bin\n")[1].split("diff --git ")[0],
+    )
+    assert "-value = 1\n+value = 2\n" in module_section
+    assert "GIT binary patch" in icon_section
+
+    latin1_patch = seed_patch(
+        "latin1",
+        {"pkg/module.py": b"value = 2\n", "pkg/legacy.py": b"name = '\xe9'\n"},
+    )
+    assert "-value = 1\n" not in latin1_patch
+    assert latin1_patch.count("GIT binary patch") == 2
+
+
 @requires_sealed_execution
 def test_sealed_workspace_seed_diff_captures_modification_and_marker_addition(
     tmp_path: Path,

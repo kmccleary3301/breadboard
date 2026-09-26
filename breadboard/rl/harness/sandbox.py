@@ -1894,8 +1894,9 @@ def _sealed_repository_diff(
                 )
             attributes_directory = private_git_directory / "info"
             attributes_directory.mkdir(mode=0o700, exist_ok=True)
-            (attributes_directory / "attributes").write_text(
-                "* -text -filter -diff -working-tree-encoding -eol\n",
+            attributes_path = attributes_directory / "attributes"
+            attributes_path.write_text(
+                "* -text -filter !diff -working-tree-encoding -eol\n",
             )
             environment = {
                 **base_environment,
@@ -1989,21 +1990,22 @@ def _sealed_repository_diff(
                         code="snapshot_tampered",
                         details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
                     )
+            diff_command = (
+                *common,
+                "diff",
+                "--cached",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--binary",
+                "--full-index",
+                "--no-renames",
+                "--ignore-submodules=none",
+                base_tree,
+                "--",
+                ".",
+            )
             returncode, stdout, stderr = invoke(
-                (
-                    *common,
-                    "diff",
-                    "--cached",
-                    "--no-ext-diff",
-                    "--no-textconv",
-                    "--binary",
-                    "--full-index",
-                    "--no-renames",
-                    "--ignore-submodules=none",
-                    base_tree,
-                    "--",
-                    ".",
-                ),
+                diff_command,
                 environment=environment,
                 stdout_limit=plan.limits.artifact_bytes_each,
             )
@@ -2013,10 +2015,30 @@ def _sealed_repository_diff(
                     code="snapshot_tampered",
                     details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
                 )
+            try:
+                patch = stdout.decode("utf-8", "strict")
+            except UnicodeDecodeError:
+                # Git's content check emits non-UTF-8 text as a text hunk. The patch is a
+                # UTF-8 string, so such a snapshot is re-derived with every path binary.
+                attributes_path.write_text(
+                    "* -text -filter -diff -working-tree-encoding -eol\n",
+                )
+                returncode, stdout, stderr = invoke(
+                    diff_command,
+                    environment=environment,
+                    stdout_limit=plan.limits.artifact_bytes_each,
+                )
+                if returncode != 0:
+                    raise VerifierSnapshotError(
+                        "sealed workspace diff failed",
+                        code="snapshot_tampered",
+                        details={"stderr": stderr.decode("utf-8", "replace")[:4096]},
+                    )
+                patch = stdout.decode("utf-8", "strict")
             return MappingProxyType(
                 {
                     "returncode": 0,
-                    "stdout": stdout.decode("utf-8", "strict"),
+                    "stdout": patch,
                     "stderr": stderr.decode("utf-8", "replace"),
                     "base_commit": base_commit,
                     "git_executable_digest": pinned.digest,
