@@ -286,6 +286,31 @@ def test_upstream_no_rules_flag_scopes_only_the_discovered_rules_block() -> None
     assert "upstream_cli_no_rules" not in _divergence_names(without_flag)
 
 
+def _without_system_line(case: str, line: str) -> dict:
+    replay = _faithful(case)
+    for request in replay["trace"]["requests"]:
+        system = request["messages"][0]
+        assert f"\n{line}\n" in system["content"]
+        system["content"] = system["content"].replace(f"\n{line}\n", "\n", 1)
+    return _report(case, replay)
+
+
+def test_unseeded_agent_dir_scopes_only_planted_agent_dir_rule_lines() -> None:
+    case = "declared__o6_disabled_resources_agents_md"
+    report = _without_system_line(case, "PLANTED_AGENTDIR_RULE_TOKEN")
+    assert report["verdict"] == "named_divergence", report["findings"]
+    record = next(item for item in report["divergences"] if item["name"] == "controller_owned_agent_dir")
+    assert record["absent_rule_lines"] == ["PLANTED_AGENTDIR_RULE_TOKEN"]
+    assert record["requests_scoped"] == 1
+
+    workspace_rule_missing = _without_system_line(case, "PLANTED_AGENTS_RULE_TOKEN")
+    assert workspace_rule_missing["verdict"] == "fail"
+    assert "requests" in {item["field"] for item in workspace_rule_missing["findings"]}
+
+    assert "controller_owned_agent_dir" not in _divergence_names(_report("declared__o0_text_stop", _faithful("declared__o0_text_stop")))
+
+
+
 def test_json_member_order_is_reported_when_bb_reorders_members() -> None:
     case = "declared__o0_text_stop"
     trace = _bb_trace(case)

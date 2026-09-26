@@ -205,21 +205,16 @@ def _served_responses(case: str) -> list[tuple[int, str, bytes]]:
 
 
 def _seed_workspace(case: str, workspace: Path) -> None:
+    # Production seeds regular files only (named divergence workspace_regular_files_only).
     workspace.mkdir(parents=True, exist_ok=True)
-    manifest_file = _capture(case, "workspace-manifest-pre.json")
-    if not manifest_file.is_file():
-        return
-    pre = json.loads(manifest_file.read_text(encoding="utf-8"))
+    pre = json.loads(_capture(case, "workspace-manifest-pre.json").read_text(encoding="utf-8"))
     for path, entry in sorted(pre.items()):
-        if "type" in entry and entry["type"] != "file":
+        if entry["type"] != "file":
             continue
         target = workspace / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        blob_path = FIXTURES / "blobs" / entry["sha256"].removeprefix("sha256:")
-        if blob_path.is_file():
-            data = blob_path.read_bytes()
-            target.write_bytes(data)
-            os.chmod(target, int(entry["mode"] if "mode" in entry else "0644", 8))
+        target.write_bytes((FIXTURES / "blobs" / entry["sha256"].removeprefix("sha256:")).read_bytes())
+        os.chmod(target, int(entry["mode"], 8))
 
 
 def _cases_data() -> dict[str, Any]:
@@ -228,15 +223,6 @@ def _cases_data() -> dict[str, Any]:
         raise FileNotFoundError(f"missing cases fixture file: {cases_file}")
     return json.loads(cases_file.read_text(encoding="utf-8"))["cases"]
 
-
-def _seed_scratch(case: str, scratch: Path) -> None:
-    scratch.mkdir(parents=True, exist_ok=True)
-    case_key = case.removeprefix("declared__")
-    case_def = _cases_data()[case_key]
-    for rel_path, content in case_def["planted_config"].items():
-        target = scratch / rel_path
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(content, encoding="utf-8")
 
 # --- fake provider ----------------------------------------------------------
 
@@ -593,9 +579,10 @@ def _compare(case: str, trace: Mapping[str, Any], process: Mapping[str, Any] | N
 @pytest.mark.skipif(not worker_available, reason="omp_16_2_13_native_tool_worker.ts or node root unavailable")
 @pytest.mark.parametrize("case", CASES)
 def test_omp_16_2_13_declared_case_replays_through_conductor(tmp_path: Path, case: str) -> None:
+    # Only the workspace is seeded: production gives the worker a lease-owned native
+    # scratch (its PI_CODING_AGENT_DIR) that no episode input can populate.
     def _seed(ws: Path) -> None:
         _seed_workspace(case, ws)
-        _seed_scratch(case, tmp_path / "scratch")
 
     if case == "declared__o4_bash_timeout_nonzero_cancel":
         case_key = case.removeprefix("declared__")

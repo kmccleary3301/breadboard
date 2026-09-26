@@ -91,6 +91,11 @@ LEDGER_PHASES = frozenset({"initial", "assistant", "observation_batch"})
 # whose always-apply rules render as the system-prompt.md:36-42 generic-rules block.
 UPSTREAM_NO_RULES_FLAG = "--no-rules"
 GENERIC_RULES_BLOCK = re.compile(r"\n<generic-rules>\n.*?\n</generic-rules>", re.S)
+# The capture kit (omp16213_capture_run.py prepare_case_dirs) writes each case's `planted_config` into
+# PI_CODING_AGENT_DIR. The BB worker points PI_CODING_AGENT_DIR at the lease-owned native scratch
+# (sandbox._native_scratch_path), which no target or episode input seeds.
+UPSTREAM_CASES_FILE = "omp16213_capture_cases.json"
+AGENT_DIR_RULES_PREFIX = "rules/"
 
 RuleName = Literal[
     "workspace_root",
@@ -120,6 +125,7 @@ DivergenceName = Literal[
     "bounded_request_cap",
     "compaction_start_then_exit",
     "upstream_cli_no_rules",
+    "controller_owned_agent_dir",
     "external_cancel_signal",
     "workspace_regular_files_only",
     "sdk_hidden_transport_retry",
@@ -134,6 +140,7 @@ DIVERGENCES: tuple[DivergenceName, ...] = (
     "bounded_request_cap",
     "compaction_start_then_exit",
     "upstream_cli_no_rules",
+    "controller_owned_agent_dir",
     "external_cancel_signal",
     "workspace_regular_files_only",
     "sdk_hidden_transport_retry",
@@ -414,6 +421,28 @@ class _Upstream:
     trace: Mapping[str, Any]
     scenario: Mapping[str, Any]
     events: list[dict[str, Any]]
+    agent_dir_config: dict[str, str]
+
+
+def _upstream_agent_dir_config(root: Path, manifest: Mapping[str, Any], case_id: str) -> dict[str, str]:
+    code = "upstream_case_invalid"
+    entries = [
+        entry for entry in _require(manifest, "files", list, "fixture_manifest_invalid", "manifest")
+        if _require(entry, "path", str, "fixture_manifest_invalid", "manifest.files[]") == UPSTREAM_CASES_FILE
+    ]
+    if len(entries) != 1:
+        raise _fail("fixture_manifest_invalid", f"manifest must bind exactly one {UPSTREAM_CASES_FILE}")
+    path = root / UPSTREAM_CASES_FILE
+    if not path.is_file():
+        raise _fail(code, f"missing {path}")
+    data = path.read_bytes()
+    if _sha(data) != _require(entries[0], "sha256", str, "fixture_manifest_invalid", "manifest.files[]"):
+        raise _fail(code, f"{UPSTREAM_CASES_FILE} does not match its manifest sha256")
+    cases = _require(json.loads(data), "cases", Mapping, code, UPSTREAM_CASES_FILE)
+    planted = _require(_require(cases, case_id, Mapping, code, f"{UPSTREAM_CASES_FILE}.cases"), "planted_config", Mapping, code, case_id)
+    if any(type(rel) is not str or type(text) is not str for rel, text in planted.items()):
+        raise _fail(code, f"{case_id}.planted_config must map paths to text")
+    return dict(planted)
 
 
 def _fixture_set(case_dir: Path) -> tuple[Path, Mapping[str, Any]]:
@@ -597,6 +626,7 @@ def _load_upstream(case_dir: str | Path) -> _Upstream:
         trace=trace,
         scenario=scenario,
         events=events,
+        agent_dir_config=_upstream_agent_dir_config(root, manifest, case_id),
     )
 
 
@@ -1021,6 +1051,62 @@ def _upstream_cli_no_rules(expected: Mapping[str, Any], observed: dict[str, Any]
     }
 
 
+def _planted_rule_body_lines(text: str) -> set[str]:
+    lines = text.splitlines()
+    if lines and lines[0] == "---" and "---" in lines[1:]:
+        lines = lines[lines.index("---", 1) + 1:]
+    return {line for line in lines if line.strip()}
+
+
+def _controller_owned_agent_dir(
+    expected: Mapping[str, Any], observed: dict[str, Any], agent_dir_config: Mapping[str, str]
+) -> dict[str, Any]:
+    # Scope only system prompts that equal upstream everywhere outside one generic-rules block, and whose
+    # block equals upstream's with every planted agent-dir rule body line deleted; any other system prompt
+    # difference remains a finding.
+    agent_rule_lines: set[str] = set()
+    for rel, text in agent_dir_config.items():
+        if rel.startswith(AGENT_DIR_RULES_PREFIX):
+            agent_rule_lines |= _planted_rule_body_lines(text)
+    absent: set[str] = set()
+    scoped = 0
+    for up_request, bb_request in zip(expected["requests"], observed["requests"]):
+        up_system = up_request["messages"][0]
+        bb_system = bb_request["messages"][0]
+        if (
+            up_system["role"] != "system" or bb_system["role"] != "system"
+            or type(up_system["content"]) is not str or type(bb_system["content"]) is not str
+            or up_system["content"] == bb_system["content"]
+        ):
+            continue
+        up_content, bb_content = up_system["content"], bb_system["content"]
+        up_blocks = list(GENERIC_RULES_BLOCK.finditer(up_content))
+        bb_blocks = list(GENERIC_RULES_BLOCK.finditer(bb_content))
+        if len(up_blocks) != 1 or len(bb_blocks) != 1:
+            continue
+        up_block, bb_block = up_blocks[0], bb_blocks[0]
+        if (
+            up_content[:up_block.start()] != bb_content[:bb_block.start()]
+            or up_content[up_block.end():] != bb_content[bb_block.end():]
+        ):
+            continue
+        up_lines = up_block.group(0).split("\n")
+        kept = [line for line in up_lines if line not in agent_rule_lines]
+        if len(kept) == len(up_lines) or bb_block.group(0).split("\n") != kept:
+            continue
+        bb_system["content"] = up_content
+        absent |= {line for line in up_lines if line in agent_rule_lines}
+        scoped += 1
+    return {
+        "name": "controller_owned_agent_dir",
+        "upstream_agent_dir_paths": sorted(agent_dir_config),
+        "absent_rule_lines": sorted(absent),
+        "requests_scoped": scoped,
+        "upstream": "the capture planted these resources in PI_CODING_AGENT_DIR, so pinned rule discovery rendered its always-apply agent-dir rules",
+        "bb": "the worker's PI_CODING_AGENT_DIR is the lease-owned native scratch, which no target or episode input seeds",
+    }
+
+
 class OhMyPi16213Comparator:
     comparator_id = COMPARATOR_ID
 
@@ -1105,6 +1191,8 @@ class OhMyPi16213Comparator:
             raise _fail("upstream_case_invalid", "upstream trace argv must be text")
         if UPSTREAM_NO_RULES_FLAG in argv:
             divergences.append(_upstream_cli_no_rules(expected, observed))
+        if upstream.agent_dir_config:
+            divergences.append(_controller_owned_agent_dir(expected, observed, upstream.agent_dir_config))
 
         hidden = [index for index, group in enumerate(upstream.groups) if len(group) > 1]
         typed = None
