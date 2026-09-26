@@ -308,6 +308,139 @@ def test_p4_extra_request_after_anchor_or_wrong_signal_fails() -> None:
     del replay["process"]
     assert _report(case, replay)["verdict"] == "fail"
 
+def _p4_bb_ledger_and_transcript():
+    case = "declared__p4_bash_timeout_nonzero_cancel"
+    date_time = _date_time(case)
+    messages = _to_bb(deepcopy(_upstream_messages(case)), date_time)
+    requests = _to_bb(deepcopy(_logical_bodies(case)), date_time)
+    transcript = [{"body": req} for req in requests]
+    consumer_id = "breadboard.pi-coding-agent.v0.57.1"
+    events = [
+        {"sequence": 0, "phase": "initial", "source_id": consumer_id, "events": [messages[0]], "state": {"native_stop_reason": None, "public_stop": None, "request_count": 0, "stream_fn_issued": 0}},
+        {"sequence": 1, "request_payload": requests[0]},
+        {"sequence": 2, "turn": 1},
+        {"sequence": 3, "turn": 1},
+        {"sequence": 4, "response_payload": {}},
+        {"sequence": 5, "phase": "assistant", "source_id": consumer_id, "events": [messages[1]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 1, "stream_fn_issued": 1}},
+        {"sequence": 6, "tool_name": "bash", "call_id": "pi057-call-p4-00-timeout"},
+        {"sequence": 7, "submitted": True, "observation": {}},
+        {"sequence": 8, "phase": "observation_batch", "source_id": consumer_id, "events": [messages[2]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 1, "stream_fn_issued": 1}},
+        {"sequence": 9, "request_payload": requests[1]},
+        {"sequence": 10, "turn": 2},
+        {"sequence": 11, "turn": 2},
+        {"sequence": 12, "response_payload": {}},
+        {"sequence": 13, "phase": "assistant", "source_id": consumer_id, "events": [messages[3]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 2, "stream_fn_issued": 2}},
+        {"sequence": 14, "tool_name": "bash", "call_id": "pi057-call-p4-01-nonzero"},
+        {"sequence": 15, "submitted": True, "observation": {}},
+        {"sequence": 16, "phase": "observation_batch", "source_id": consumer_id, "events": [messages[4]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 2, "stream_fn_issued": 2}},
+        {"sequence": 17, "request_payload": requests[2]},
+        {"sequence": 18, "turn": 3},
+        {"sequence": 19, "turn": 3},
+        {"sequence": 20, "response_payload": {}},
+        {"sequence": 21, "phase": "assistant", "source_id": consumer_id, "events": [messages[5]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 3, "stream_fn_issued": 3}},
+        {"sequence": 22, "tool_name": "bash", "call_id": "pi057-call-p4-02-missing"},
+        {"sequence": 23, "submitted": True, "observation": {}},
+        {"sequence": 24, "phase": "observation_batch", "source_id": consumer_id, "events": [messages[6]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 3, "stream_fn_issued": 3}},
+        {"sequence": 25, "request_payload": requests[3]},
+        {"sequence": 26, "turn": 4},
+        {"sequence": 27, "turn": 4},
+        {"sequence": 28, "response_payload": {}},
+        {"sequence": 29, "phase": "assistant", "source_id": consumer_id, "events": [messages[7]], "state": {"native_stop_reason": "toolUse", "public_stop": None, "request_count": 4, "stream_fn_issued": 4}},
+        {"sequence": 30, "tool_name": "bash", "call_id": "pi057-call-p4-03-cancel"},
+        {"sequence": 31, "reason": "episode close requested"},
+        {"sequence": 32, "call_id": "pi057-call-p4-03-cancel", "submitted": False, "observation": {"completion_index": 0, "content": [{"text": "(no output)", "type": "text"}], "id": "pi057-call-p4-03-cancel", "isError": False, "terminate": False}},
+        {"sequence": 33, "reason": "process exit"},
+    ]
+    ledger = {
+        "schema_version": "bb.rl.runner-event-ledger.v2",
+        "episode_id": "pi-coding-agent-0571-declared--p4-bash-timeout-nonzero-cancel",
+        "first_sequence": 0,
+        "last_sequence": 33,
+        "event_count": len(events),
+        "events": events,
+    }
+    return ledger, transcript
+
+
+def test_p4_ledger_input_positive_from_fixture_capture(tmp_path: Path) -> None:
+    case = "declared__p4_bash_timeout_nonzero_cancel"
+    ledger, transcript = _p4_bb_ledger_and_transcript()
+    canonical_bytes = json.dumps(ledger).encode("utf-8")
+    digest = _sha(canonical_bytes)
+    ledger_file = tmp_path / "events.jsonl"
+    ledger_file.write_bytes(canonical_bytes)
+
+    rep = _report(case, {"ledger": ledger_file, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+    assert rep["verdict"] == "named_divergence", rep["findings"]
+    assert rep["findings"] == []
+    assert rep["passed"] is True
+    [cancel] = [d for d in rep["divergences"] if d["name"] == "external_cancel_signal"]
+    assert cancel["anchor_tool_call_id"] == "pi057-call-p4-03-cancel"
+    assert cancel["bb"]["exit_code"] == 130
+    assert cancel["workspace_state"]["proven"] is False
+    assert cancel["anchor_unsubmitted_observation"]["content"][0]["text"] == "(no output)"
+    assert cancel["runtime_inputs_source"] == "derived from sent system prompt"
+
+
+def test_p4_ledger_negative_cases(tmp_path: Path) -> None:
+    case = "declared__p4_bash_timeout_nonzero_cancel"
+    ledger, transcript = _p4_bb_ledger_and_transcript()
+    canonical_bytes = json.dumps(ledger).encode("utf-8")
+    digest = _sha(canonical_bytes)
+    ledger_file = tmp_path / "events.jsonl"
+    ledger_file.write_bytes(canonical_bytes)
+
+    # 1. ledger on a non-cancel case
+    with pytest.raises(Pi0571ComparatorError, match="ledger replay is admitted only for a signal-cancel case"):
+        _report("declared__p0_text_stop", {"ledger": ledger, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+
+    # 2. missing process
+    with pytest.raises(Pi0571ComparatorError, match="ledger replay requires replay.process"):
+        _report(case, {"ledger": ledger, "ledger_digest": digest, "transcript": transcript})
+
+    # 3. exit code != 130
+    proc = _cancel_process()
+    proc["exit_code"] = 1
+    rep = _report(case, {"ledger": ledger, "ledger_digest": digest, "transcript": transcript, "process": proc})
+    assert rep["verdict"] == "fail"
+    assert any(item["field"] == "process" for item in rep["findings"])
+
+    # 4. digest mismatch
+    with pytest.raises(Pi0571ComparatorError, match="ledger digest mismatch"):
+        _report(case, {"ledger": ledger_file, "ledger_digest": "sha256:" + "0" * 64, "transcript": transcript, "process": _cancel_process()})
+
+    # 5. non-contiguous sequence
+    bad_ledger = deepcopy(ledger)
+    bad_ledger["events"][5]["sequence"] = 99
+    with pytest.raises(Pi0571ComparatorError, match="non-contiguous ledger sequence"):
+        _report(case, {"ledger": bad_ledger, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+
+    # 6. message mismatch before the anchor
+    bad_ledger = deepcopy(ledger)
+    bad_ledger["events"][0]["events"][0]["content"][0]["text"] += " mutated"
+    rep = _report(case, {"ledger": bad_ledger, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+    assert rep["verdict"] == "fail"
+    assert any(item["field"] == "messages" for item in rep["findings"])
+
+    # 7. tool-arg mismatch
+    bad_ledger = deepcopy(ledger)
+    bad_ledger["events"][5]["events"][0]["content"][1]["arguments"]["timeout"] = 999
+    rep = _report(case, {"ledger": bad_ledger, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+    assert rep["verdict"] == "fail"
+    assert any(item["field"] == "tool_calls" for item in rep["findings"])
+
+    # 8. request-count mismatch
+    bad_transcript = deepcopy(transcript)[:-1]
+    rep = _report(case, {"ledger": ledger, "ledger_digest": digest, "transcript": bad_transcript, "process": _cancel_process()})
+    assert rep["verdict"] == "fail"
+    assert any(item["field"] in ("request_count", "requests") for item in rep["findings"])
+
+    # 9. a home-like path left in content surfacing as a finding
+    bad_ledger = deepcopy(ledger)
+    bad_ledger["events"][0]["events"][0]["content"][0]["text"] += "\nrefer to /capture/home/config.json"
+    rep = _report(case, {"ledger": bad_ledger, "ledger_digest": digest, "transcript": transcript, "process": _cancel_process()})
+    assert rep["verdict"] == "fail"
+    assert any(item["field"] == "messages" for item in rep["findings"])
 
 def test_request_limit_without_upstream_cap_overrun_fails() -> None:
     def mutate(trace: dict) -> None:

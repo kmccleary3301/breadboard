@@ -145,7 +145,7 @@ class Pi0571ComparatorError(ValueError):
 @dataclass(frozen=True)
 class _Runtime:
     workspace_root: str
-    home_root: str
+    home_root: str | None
     package_dir: str
     current_date_time: str
 
@@ -188,13 +188,14 @@ class _Normalizer:
                 value, f"{self.runtime.package_dir}/{suffix}", f"<PI_PACKAGE_DIR>/{suffix}",
                 "package_dir_documentation_path", path,
             )
-        roots = sorted(
-            ((self.runtime.workspace_root, "<WORKSPACE>", "workspace_root"), (self.runtime.home_root, "<HOME>", "home_root")),
-            key=lambda item: len(item[0]),
-            reverse=True,
-        )
+        roots: list[tuple[str, str, RuleName]] = [
+            (self.runtime.workspace_root, "<WORKSPACE>", "workspace_root")
+        ]
+        if self.runtime.home_root is not None:
+            roots.append((self.runtime.home_root, "<HOME>", "home_root"))
+        roots.sort(key=lambda item: len(item[0]), reverse=True)
         for root, replacement, rule in roots:
-            value = self._token(value, root, replacement, rule, path)  # type: ignore[arg-type]
+            value = self._token(value, root, replacement, rule, path)
         return value
 
     def value(self, value: Any, path: str, *, system: bool = False) -> Any:
@@ -506,14 +507,23 @@ def project_upstream_case(case_dir: str | Path) -> dict[str, Any]:
     return {"schema_version": CANONICAL_SCHEMA_VERSION, "case_id": upstream.case_id, **upstream.canonical}
 
 
+PI_0_57_1_CONSUMER_ID = "breadboard.pi-coding-agent.v0.57.1"
+LEDGER_PHASES = frozenset({"initial", "assistant", "observation_batch"})
+_CWD_LINE = re.compile(r"(?m)^Current working directory: (.*)$")
+_PKG_LINE = re.compile(r"(?m)^- Main documentation: (.*)/README\.md$")
+
+
 @dataclass
 class _Replay:
-    trace: Mapping[str, Any]
+    trace: Mapping[str, Any] | None
     canonical: dict[str, Any]
     normalizer: _Normalizer
     messages: list[Any]
     orders: list[dict[str, list[str]]]
     process: Mapping[str, Any] | None
+    ledger: Mapping[str, Any] | None = None
+    unsubmitted_observation_by_call_id: dict[str, Any] = field(default_factory=dict)
+    last_commit_state: Mapping[str, Any] | None = None
 
 
 def _load_bb(trace: Mapping[str, Any] | str | Path, process: Mapping[str, Any] | None) -> _Replay:
@@ -562,6 +572,172 @@ def _load_bb(trace: Mapping[str, Any] | str | Path, process: Mapping[str, Any] |
         raise _fail(code, "replay.process must be an object")
     return _Replay(trace, canonical, normalizer, messages, [_member_order(request) for request in trace["requests"]], process)
 
+def _load_bb_ledger(
+    ledger: Mapping[str, Any] | str | Path,
+    ledger_digest: str,
+    transcript: list[Mapping[str, Any]] | str | Path,
+    process: Mapping[str, Any] | None,
+) -> _Replay:
+    code = "bb_ledger_invalid"
+    if not isinstance(ledger_digest, str) or not re.match(r"^sha256:[0-9a-f]{64}$", ledger_digest):
+        raise _fail("comparator_input_invalid", "ledger_digest must be a sha256:<64 hex> string")
+
+    if isinstance(ledger, (str, Path)):
+        ledger_path = Path(ledger)
+        if not ledger_path.is_file():
+            raise _fail(code, f"missing {ledger_path}")
+        raw_bytes = ledger_path.read_bytes()
+        computed_digest = _sha(raw_bytes)
+        if computed_digest != ledger_digest:
+            raise _fail(code, f"ledger digest mismatch: expected {ledger_digest!r}, got {computed_digest!r}")
+        try:
+            ledger_obj = json.loads(raw_bytes)
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise _fail(code, f"ledger JSON parse error: {exc}") from exc
+    elif isinstance(ledger, Mapping):
+        ledger_obj = ledger
+    else:
+        raise _fail("comparator_input_invalid", "ledger must be an object or file path")
+
+    if not isinstance(ledger_obj, Mapping):
+        raise _fail(code, "BB ledger must be an object")
+    if "schema_version" not in ledger_obj or ledger_obj["schema_version"] != "bb.rl.runner-event-ledger.v2":
+        raise _fail(code, "unexpected BB ledger schema_version")
+
+    if "event_count" not in ledger_obj or type(ledger_obj["event_count"]) is not int:
+        raise _fail(code, "ledger lacks integer event_count")
+    event_count = ledger_obj["event_count"]
+    if "events" not in ledger_obj or not isinstance(ledger_obj["events"], list):
+        raise _fail(code, "ledger lacks list events")
+    events = ledger_obj["events"]
+    if len(events) != event_count:
+        raise _fail(code, f"ledger event_count {event_count} != len(events) {len(events)}")
+    if "first_sequence" not in ledger_obj or type(ledger_obj["first_sequence"]) is not int:
+        raise _fail(code, "ledger lacks integer first_sequence")
+    first_sequence = ledger_obj["first_sequence"]
+    if "last_sequence" not in ledger_obj or type(ledger_obj["last_sequence"]) is not int:
+        raise _fail(code, "ledger lacks integer last_sequence")
+    last_sequence = ledger_obj["last_sequence"]
+    if first_sequence != 0:
+        raise _fail(code, f"ledger first_sequence {first_sequence} != 0")
+    if last_sequence - first_sequence + 1 != event_count:
+        raise _fail(code, "ledger sequence range does not match event_count")
+
+    for index, row in enumerate(events):
+        if not isinstance(row, Mapping):
+            raise _fail(code, f"ledger row {index} must be an object")
+        if "sequence" not in row or type(row["sequence"]) is not int:
+            raise _fail(code, f"ledger row {index} lacks integer sequence")
+        seq = row["sequence"]
+        expected_seq = first_sequence + index
+        if seq != expected_seq:
+            raise _fail(code, f"non-contiguous ledger sequence at index {index}: expected {expected_seq}, got {seq}")
+
+    bb_messages_raw: list[dict[str, Any]] = []
+    source_commit_rows: list[Mapping[str, Any]] = []
+    unsubmitted_obs_by_call_id: dict[str, Any] = {}
+
+    for row in events:
+        if "phase" in row:
+            phase = row["phase"]
+            if phase in LEDGER_PHASES and "source_id" in row and row["source_id"] == PI_0_57_1_CONSUMER_ID:
+                if "events" not in row or not isinstance(row["events"], list):
+                    raise _fail(code, f"ledger row {row['sequence']} with phase {phase!r} lacks list events")
+                bb_messages_raw.extend(row["events"])
+                if "state" not in row or not isinstance(row["state"], Mapping):
+                    raise _fail(code, f"ledger row {row['sequence']} with phase {phase!r} lacks state object")
+                source_commit_rows.append(row)
+        if "call_id" in row and "submitted" in row and row["submitted"] is False and "observation" in row:
+            unsubmitted_obs_by_call_id[row["call_id"]] = row["observation"]
+
+    if not bb_messages_raw:
+        raise _fail(code, "BB ledger contains no messages")
+    if not source_commit_rows:
+        raise _fail(code, "BB ledger contains no consumer commit state rows")
+
+    if isinstance(transcript, (str, Path)):
+        trans_path = Path(transcript)
+        if not trans_path.is_file():
+            raise _fail("bb_transcript_invalid", f"missing {trans_path}")
+        transcript_rows = []
+        for line_number, line in enumerate(trans_path.read_text(encoding="utf-8").splitlines(), 1):
+            if not line.strip():
+                continue
+            try:
+                transcript_rows.append(json.loads(line))
+            except json.JSONDecodeError as exc:
+                raise _fail("bb_transcript_invalid", f"transcript line {line_number} is not JSON: {exc}") from exc
+    elif isinstance(transcript, list):
+        transcript_rows = transcript
+    else:
+        raise _fail("comparator_input_invalid", "transcript must be a list or file path")
+
+    bb_requests_raw: list[dict[str, Any]] = []
+    for index, row in enumerate(transcript_rows):
+        if not isinstance(row, Mapping):
+            raise _fail("bb_transcript_invalid", f"transcript row {index} must be an object")
+        if "body" not in row or not isinstance(row["body"], Mapping):
+            raise _fail("bb_transcript_invalid", f"transcript row {index} lacks body object")
+        bb_requests_raw.append(row["body"])
+
+    if not bb_requests_raw:
+        raise _fail("bb_transcript_invalid", "transcript contains no requests")
+
+    first_request = bb_requests_raw[0]
+    if "messages" not in first_request or not isinstance(first_request["messages"], list):
+        raise _fail("bb_requests_invalid", "first request lacks list messages")
+    system_messages = [
+        m for m in first_request["messages"]
+        if isinstance(m, Mapping) and "role" in m and m["role"] == "system"
+    ]
+    if len(system_messages) != 1:
+        raise _fail("bb_requests_invalid", f"first request must carry exactly one system message, found {len(system_messages)}")
+    sys_msg = system_messages[0]
+    if "content" not in sys_msg or not isinstance(sys_msg["content"], str):
+        raise _fail("bb_requests_invalid", "first request system message must have string content")
+    sys_content = sys_msg["content"]
+
+    date_time_matches = _DATE_TIME_LINE.findall(sys_content)
+    if len(date_time_matches) != 1:
+        raise _fail("runtime_inputs_invalid", f"system message must carry exactly one Current date and time line, found {len(date_time_matches)}")
+    current_date_time = _validate_date_time(date_time_matches[0], "runtime_inputs_invalid")
+
+    cwd_matches = _CWD_LINE.findall(sys_content)
+    if len(cwd_matches) != 1:
+        raise _fail("runtime_inputs_invalid", f"system message must carry exactly one Current working directory line, found {len(cwd_matches)}")
+    cwd = cwd_matches[0]
+    if not cwd.startswith("/"):
+        raise _fail("runtime_inputs_invalid", "parsed cwd must be an absolute path")
+
+    pkg_matches = _PKG_LINE.findall(sys_content)
+    if len(pkg_matches) != 1:
+        raise _fail("runtime_inputs_invalid", f"system message must carry exactly one Main documentation line, found {len(pkg_matches)}")
+    package_dir = pkg_matches[0]
+    if not package_dir.startswith("/"):
+        raise _fail("runtime_inputs_invalid", "parsed package_dir must be an absolute path")
+
+    runtime = _Runtime(cwd, None, package_dir, current_date_time)
+    normalizer = _Normalizer(runtime)
+    messages = normalizer.messages(list(bb_messages_raw), "$.messages")
+    requests = [normalizer.value(request, f"$.requests[{index}]") for index, request in enumerate(bb_requests_raw)]
+    canonical = _canonical(requests, messages, {})
+
+    if process is not None and not isinstance(process, Mapping):
+        raise _fail("bb_process_invalid", "replay.process must be an object")
+
+    last_commit_state = source_commit_rows[-1]["state"]
+
+    return _Replay(
+        trace=None,
+        canonical=canonical,
+        normalizer=normalizer,
+        messages=messages,
+        orders=[_member_order(req) for req in bb_requests_raw],
+        process=process,
+        ledger=ledger_obj,
+        unsubmitted_observation_by_call_id=unsubmitted_obs_by_call_id,
+        last_commit_state=last_commit_state,
+    )
 
 def project_bb_trace(trace: Mapping[str, Any] | str | Path) -> dict[str, Any]:
     """Project a BB replay trace into the canonical episode; reject undeclared shapes."""
@@ -734,10 +910,28 @@ class PiCodingAgent0571Comparator:
         capture, replay = inp["capture"], inp["replay"]
         if not isinstance(capture, Mapping) or set(capture) != {"case_dir"}:
             raise _fail("comparator_input_invalid", "capture must be {case_dir}")
-        if not isinstance(replay, Mapping) or "trace" not in replay or not set(replay) <= {"trace", "process"}:
-            raise _fail("comparator_input_invalid", "replay must be {trace, process?}")
+        if not isinstance(replay, Mapping):
+            raise _fail("comparator_input_invalid", "replay must be an object")
         upstream = _load_upstream(capture["case_dir"])
-        bb = _load_bb(replay["trace"], replay["process"] if "process" in replay else None)
+        if "ledger" in replay:
+            if (
+                upstream.agent_end
+                or "signal_cancel_on_tool_start" not in upstream.scenario
+                or not isinstance(upstream.scenario["signal_cancel_on_tool_start"], str)
+            ):
+                raise _fail("comparator_input_invalid", "ledger replay is admitted only for a signal-cancel case without agent_end")
+            if "process" not in replay:
+                raise _fail("comparator_input_invalid", "ledger replay requires replay.process")
+            if not set(replay) <= {"ledger", "ledger_digest", "transcript", "process"}:
+                raise _fail("comparator_input_invalid", "ledger replay must be {ledger, ledger_digest, transcript, process}")
+            for key in ("ledger", "ledger_digest", "transcript", "process"):
+                if key not in replay:
+                    raise _fail("comparator_input_invalid", f"ledger replay lacks {key}")
+            bb = _load_bb_ledger(replay["ledger"], replay["ledger_digest"], replay["transcript"], replay["process"])
+        else:
+            if "trace" not in replay or not set(replay) <= {"trace", "process"}:
+                raise _fail("comparator_input_invalid", "replay must be {trace, process?}")
+            bb = _load_bb(replay["trace"], replay["process"] if "process" in replay else None)
         expected = deepcopy(upstream.canonical)
         observed = deepcopy(bb.canonical)
         divergences: list[dict[str, Any]] = []
@@ -855,52 +1049,92 @@ class PiCodingAgent0571Comparator:
             cut = len(upstream.messages)
             after = bb.messages[cut:]
             observed.update(_canonical(observed["requests"], bb.messages[:cut], observed["effects"]))
-            divergences.append({
+            cancel_record: dict[str, Any] = {
                 "name": "external_cancel_signal",
                 "anchor_tool_call_id": anchor,
                 "upstream": {"signal": "SIGTERM", "exit_code": upstream.exit_code, "agent_end": False},
                 "bb": {"signal": "SIGINT", **bb_info},
                 "bb_messages_after_anchor": after,
                 "comparison_scope": {"messages_through_anchor": cut},
-            })
+            }
+            if bb.ledger is not None:
+                cancel_record["runtime_inputs_source"] = "derived from sent system prompt"
+                cancel_record["anchor_unsubmitted_observation"] = (
+                    bb.unsubmitted_observation_by_call_id[anchor]
+                    if anchor in bb.unsubmitted_observation_by_call_id
+                    else None
+                )
+                cancel_record["workspace_state"] = {
+                    "proven": False,
+                    "upstream_effects": expected["effects"],
+                    "detail": "cancelled BB run did not record post-execution effect snapshot; workspace state unproven",
+                }
+                if expected["effects"]:
+                    findings.append({
+                        "field": "effects",
+                        "detail": "cancelled BB run did not record post-execution effect snapshot; upstream produced file changes that cannot be proven",
+                    })
+                expected["effects"] = None
+                observed["effects"] = None
+            divergences.append(cancel_record)
 
-        kind = bb.trace["termination"]["kind"]
-        stop = bb.trace["termination"]["native_stop_reason"]
-        last_bb_stop = _termination(bb.messages)
-        if "stopReason" in last_bb_stop and stop != last_bb_stop["stopReason"]:
-            findings.append({"field": "termination", "detail": f"BB native_stop_reason {stop!r} differs from last assistant {last_bb_stop['stopReason']!r}"})
-        if stop not in BB_KIND_BY_STOP or kind not in BB_KIND_BY_STOP[stop]:
-            findings.append({"field": "termination", "detail": f"BB termination kind {kind!r} is inconsistent with stop {stop!r}"})
-        if bb.trace["request_count"] != len(bb.trace["requests"]):
-            findings.append({"field": "request_count", "detail": f"BB request_count {bb.trace['request_count']} != sent requests {len(bb.trace['requests'])}"})
-        if kind == "RequestLimitExceeded":
-            terminal = bb.messages[-1] if bb.messages else None
-            cap_terminal = (
-                stop == "error"
-                and isinstance(terminal, Mapping) and terminal.get("stopReason") == "error" and "errorMessage" not in terminal
-            )
-            cap = -1
-            if cap_terminal:
-                config = _json_file(Path(__file__).resolve().parents[2].joinpath(*TARGET_NATIVE_CONFIG), "target_config_invalid")
-                cap = _require(_require(config, "agent", Mapping, "target_config_invalid", "native-config"), "request_cap", int, "target_config_invalid", "agent")
-            if (
-                cap_terminal
-                and len(upstream.groups) > cap
-                and bb.trace["stream_fn_issued"] == cap + 1
-                and len(bb.trace["requests"]) == cap
-            ):
-                record = {"name": "bounded_request_cap", "request_cap": cap, "upstream_logical_request_count": len(upstream.groups), "bb_terminal_message": terminal}
-                _set_expected(expected, upstream, cap, _scope_prefix(expected, upstream, cap, record), record)
-                observed.update(_canonical(observed["requests"], bb.messages[:-1], observed["effects"]))
-                if expected["effects"] is None:
-                    observed["effects"] = None
-                expected["termination"] = {"cause": "request_limit"}
-                observed["termination"] = {"cause": "request_limit"}
-                expected_counts_extra = 1
-                bb.normalizer.add("request_limit_cause", "$.termination")
-                divergences.append(record)
-            else:
-                findings.append({"field": "termination", "detail": "BB RequestLimitExceeded does not satisfy the declared request cap against this upstream case"})
+        if bb.trace is not None:
+            kind = bb.trace["termination"]["kind"]
+            stop = bb.trace["termination"]["native_stop_reason"]
+            last_bb_stop = _termination(bb.messages)
+            if "stopReason" in last_bb_stop and stop != last_bb_stop["stopReason"]:
+                findings.append({"field": "termination", "detail": f"BB native_stop_reason {stop!r} differs from last assistant {last_bb_stop['stopReason']!r}"})
+            if stop not in BB_KIND_BY_STOP or kind not in BB_KIND_BY_STOP[stop]:
+                findings.append({"field": "termination", "detail": f"BB termination kind {kind!r} is inconsistent with stop {stop!r}"})
+            if bb.trace["request_count"] != len(bb.trace["requests"]):
+                findings.append({"field": "request_count", "detail": f"BB request_count {bb.trace['request_count']} != sent requests {len(bb.trace['requests'])}"})
+            if kind == "RequestLimitExceeded":
+                terminal = bb.messages[-1] if bb.messages else None
+                cap_terminal = (
+                    stop == "error"
+                    and isinstance(terminal, Mapping) and terminal.get("stopReason") == "error" and "errorMessage" not in terminal
+                )
+                cap = -1
+                if cap_terminal:
+                    config = _json_file(Path(__file__).resolve().parents[2].joinpath(*TARGET_NATIVE_CONFIG), "target_config_invalid")
+                    cap = _require(_require(config, "agent", Mapping, "target_config_invalid", "native-config"), "request_cap", int, "target_config_invalid", "agent")
+                if (
+                    cap_terminal
+                    and len(upstream.groups) > cap
+                    and bb.trace["stream_fn_issued"] == cap + 1
+                    and len(bb.trace["requests"]) == cap
+                ):
+                    record = {"name": "bounded_request_cap", "request_cap": cap, "upstream_logical_request_count": len(upstream.groups), "bb_terminal_message": terminal}
+                    _set_expected(expected, upstream, cap, _scope_prefix(expected, upstream, cap, record), record)
+                    observed.update(_canonical(observed["requests"], bb.messages[:-1], observed["effects"]))
+                    if expected["effects"] is None:
+                        observed["effects"] = None
+                    expected["termination"] = {"cause": "request_limit"}
+                    observed["termination"] = {"cause": "request_limit"}
+                    expected_counts_extra = 1
+                    bb.normalizer.add("request_limit_cause", "$.termination")
+                    divergences.append(record)
+                else:
+                    findings.append({"field": "termination", "detail": "BB RequestLimitExceeded does not satisfy the declared request cap against this upstream case"})
+        else:
+            if bb.last_commit_state is None:
+                raise _fail("bb_ledger_invalid", "ledger replay carries no consumer commit state")
+            last_commit = bb.last_commit_state
+            stop = last_commit["native_stop_reason"] if "native_stop_reason" in last_commit else None
+            last_bb_stop = _termination(bb.messages)
+            anchor_stop = last_bb_stop["stopReason"] if "stopReason" in last_bb_stop else None
+            if stop != anchor_stop:
+                findings.append({"field": "termination", "detail": f"BB native_stop_reason {stop!r} differs from anchor assistant {anchor_stop!r}"})
+            if stop != "toolUse":
+                findings.append({"field": "termination", "detail": f"BB native_stop_reason {stop!r} is not 'toolUse'"})
+            req_count = last_commit["request_count"] if "request_count" in last_commit else None
+            stream_fn = last_commit["stream_fn_issued"] if "stream_fn_issued" in last_commit else None
+            sent_reqs = len(observed["requests"])
+            if req_count != sent_reqs or stream_fn != sent_reqs or req_count != stream_fn:
+                findings.append({
+                    "field": "request_count",
+                    "detail": f"BB request_count {req_count} and stream_fn_issued {stream_fn} must equal transcript requests {sent_reqs}",
+                })
         if expected_counts_extra:
             upstream.normalizer.add("request_limit_cause", "$.termination")
 
