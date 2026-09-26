@@ -314,6 +314,50 @@ def test_h06_stops_at_eight_requests_without_ninth() -> None:
     }
 
 
+_FIXTURE_DATE_LINE = "Conversation started: Wednesday, September 23, 2026 (UTC, UTC+00:00)"
+
+
+def _replace_date_line(trace: dict[str, Any], line: str) -> dict[str, Any]:
+    return json.loads(json.dumps(trace).replace(json.dumps(_FIXTURE_DATE_LINE)[1:-1], json.dumps(line)[1:-1]))
+
+
+def test_replay_on_a_later_utc_day_matches_the_supplier_capture() -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    later = _replace_date_line(replay, "Conversation started: Saturday, September 26, 2026 (UTC, UTC+00:00)")
+    assert later != replay
+    report = compare_cases(case_dir, later)
+    assert report["ok"], report["errors"] or [a["detail"] for a in report["assertions"] if a["status"] == "failed"]
+    assert "conversation_started_date:<CONVERSATION_DATE>" in report["normalizations"]
+
+
+def _first_request_date(trace: dict[str, Any], line: str) -> None:
+    message = trace["requests"][0]["body"]["messages"][0]
+    message["content"] = message["content"].replace(_FIXTURE_DATE_LINE, line)
+
+
+@pytest.mark.parametrize(
+    ("line", "whole_trace", "error"),
+    [
+        ("Conversation started: Friday, September 26, 2026 (UTC, UTC+00:00)", True, "not a valid calendar date"),
+        ("Conversation started: Saturday, September 26, 2026 (America/New_York, EDT, UTC-04:00)", True,
+         "exactly one pinned Conversation started UTC line"),
+        ("", True, "exactly one pinned Conversation started UTC line"),
+        ("Conversation started: Saturday, September 26, 2026 (UTC, UTC+00:00)", False,
+         "different Conversation started dates"),
+    ],
+    ids=["weekday_disagrees_with_date", "non_utc_zone", "line_missing", "dates_differ_within_trace"],
+)
+def test_conversation_date_line_fails_closed(line: str, whole_trace: bool, error: str) -> None:
+    case_dir, replay = _replay("H-01-normal-memory-skill-write")
+    if whole_trace:
+        replay = _replace_date_line(replay, line)
+    else:
+        _first_request_date(replay, line)
+    report = compare_cases(case_dir, replay)
+    assert report["ok"] is False
+    assert error in report["errors"][0]
+
+
 
 
 def test_supplier_root_comes_from_its_system_prompt_not_packet_path() -> None:
@@ -377,6 +421,7 @@ def test_workspace_roots_are_typed_and_fail_closed() -> None:
         "workspace_root:<WORKSPACE>",
         "hermes_home_root:<HERMES_HOME>",
         "home_root:<HOME>",
+        "conversation_started_date:<CONVERSATION_DATE>",
     }
     assert next(a for a in report["assertions"] if a["name"].endswith(".tool_calls_equal"))["status"] == "passed"
     assert next(a for a in report["assertions"] if a["name"].endswith(".requests_equal"))["status"] == "failed"

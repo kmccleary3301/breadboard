@@ -12,7 +12,10 @@ A BreadBoard replay must provide the canonical fields documented by
 ``project_bb_trace``.  No wildcard normalization is performed.  The only
 accepted repair is the native case/snake-case name repair against the
 advertised tool list (for example ``WriteFile`` -> ``write_file``); the raw
-sample is retained alongside the repaired name.
+sample is retained alongside the repaired name.  Besides the declared roots,
+the only normalized text is the pinned wall-clock session date line (see
+``_normalize_conversation_date``), which Hermes renders from the day each side
+ran.
 """
 
 from __future__ import annotations
@@ -426,6 +429,64 @@ def _normalize_case_roots(
     for key in ("context", "requests", "tool_calls", "tool_results", "visible_corrections", "runtime"):
         if key in case_data:
             case_data[key] = _normalize_roots_in_structure(case_data[key], ordered_roots, normalizations)
+
+
+# Pinned hermes-agent 939e45c9 agent/system_prompt.py ``_timestamp_line``:
+#   f"Conversation started: {_start.strftime('%A, %B %d, %Y')}{_zone_suffix}"
+# with ``_zone_bits`` under HERMES_TIMEZONE=UTC yielding " (UTC, UTC+00:00)".
+# The date is the day the session started, so supplier and replay differ
+# whenever they ran on different UTC days.
+_CONVERSATION_DATE_FORMAT = "%A, %B %d, %Y"
+_CONVERSATION_DATE_LINE = re.compile(
+    r"(?m)^Conversation started: (?P<date>[A-Z][a-z]+, [A-Z][a-z]+ \d{2}, \d{4}) \(UTC, UTC\+00:00\)$"
+)
+_CONVERSATION_DATE_PLACEHOLDER = "Conversation started: <CONVERSATION_DATE> (UTC, UTC+00:00)"
+
+
+def _system_message_contents(case_data: Mapping[str, Any]) -> list[tuple[list[Any] | dict[str, Any], Any]]:
+    """Return (container, key) slots holding every system-prompt string."""
+    slots: list[tuple[list[Any] | dict[str, Any], Any]] = []
+    context = case_data["context"]
+    for field in ("system_messages", "agents_md"):
+        values = context.get(field)
+        if isinstance(values, list):
+            slots.extend((values, index) for index in range(len(values)))
+    for request in case_data["requests"]:
+        body = request.get("body") if isinstance(request, Mapping) else None
+        if not isinstance(body, Mapping) or not isinstance(body.get("messages"), list):
+            raise ValueError("request rows must carry a body with a messages list")
+        for message in body["messages"]:
+            if isinstance(message, dict) and message.get("role") == "system":
+                slots.append((message, "content"))
+    return slots
+
+
+def _normalize_conversation_date(case_data: dict[str, Any], normalizations: list[str], *, side: str) -> None:
+    """Replace the exact pinned date line; fail closed on any other shape.
+
+    Every system prompt must carry exactly one line in the pinned UTC format,
+    the weekday must agree with the calendar date, and one trace must render a
+    single session date across all of its system prompts.
+    """
+    dates: set[str] = set()
+    for container, key in _system_message_contents(case_data):
+        content = container[key]
+        if not isinstance(content, str):
+            raise ValueError(f"{side} system prompt content must be a string")
+        matches = list(_CONVERSATION_DATE_LINE.finditer(content))
+        if len(matches) != 1 or content.count("Conversation started:") != 1:
+            raise ValueError(f"{side} system prompt must contain exactly one pinned Conversation started UTC line")
+        date = matches[0].group("date")
+        if datetime.strptime(date, _CONVERSATION_DATE_FORMAT).strftime(_CONVERSATION_DATE_FORMAT) != date:
+            raise ValueError(f"{side} Conversation started date is not a valid calendar date: {date!r}")
+        dates.add(date)
+        container[key] = content[: matches[0].start()] + _CONVERSATION_DATE_PLACEHOLDER + content[matches[0].end():]
+    if len(dates) > 1:
+        raise ValueError(f"{side} system prompts render different Conversation started dates: {sorted(dates)}")
+    if dates:
+        entry = "conversation_started_date:<CONVERSATION_DATE>"
+        if entry not in normalizations:
+            normalizations.append(entry)
 
 
 def _body_projection(body: Mapping[str, Any]) -> dict[str, Any]:
@@ -868,6 +929,8 @@ def compare_cases(
         observed = project_bb_trace(bb_value)
         _normalize_case_roots(expected, supplier_roots, normalizations)
         _normalize_case_roots(observed, observed_roots, normalizations)
+        _normalize_conversation_date(expected, normalizations, side="supplier")
+        _normalize_conversation_date(observed, normalizations, side="BreadBoard")
     except (OSError, TypeError, ValueError) as exc:
         return _report([], [str(exc)], normalizations, bb_trace_sha256=trace_hash, job_id=job_id, mode=mode)
     assertions: list[dict[str, Any]] = []
