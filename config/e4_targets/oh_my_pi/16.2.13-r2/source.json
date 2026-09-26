@@ -1,0 +1,28 @@
+{
+  "repository": "https://github.com/can1357/oh-my-pi.git",
+  "package": "@oh-my-pi/pi-coding-agent",
+  "version": "16.2.13",
+  "commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+  "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+  "source_archive_sha256": "03fd855b01bb7457f85e929ff747d8560d7cf7ed420fd0676bf32b917fb264a3",
+  "source_archive_bytes": 42065260,
+  "published_package": "https://registry.npmjs.org/@oh-my-pi/pi-coding-agent/-/pi-coding-agent-16.2.13.tgz",
+  "published_package_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+  "published_package_bytes": 8833029,
+  "published_package_integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+  "closure_lock_sha256": "329e0ca5f7ec6c8a28a272ab347e1c6ef03f946d5716e4415552611898c3997a",
+  "portable_digest": "c60c9de54257785fde344e866ef2ab9a8176f934d18b0e49b5335cd33e01ce42",
+  "license_source": "https://raw.githubusercontent.com/can1357/oh-my-pi/5356713eae60e67ee64d9b02e3b5e377d248ee7f/LICENSE",
+  "historical_descriptor": {
+    "target_id": "oh-my-pi@16.2.13",
+    "sha256": "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
+  },
+  "tool_schema_source": {
+    "capture": "cases/declared__o0_text_stop/capture/http-transcript.jsonl",
+    "request_index": 0,
+    "raw_body_sha256": "sha256:70f04c36d51643eb306e240578376acb7f6632029a5a39b709f387bdbcfe50a8",
+    "excluded_members": [],
+    "notes": "All 5 wire tools captured verbatim from request 0; identical across all 57 packet requests"
+  },
+  "native_loop": "Oh My Pi 16.2.13 agent-loop semantics executed by BreadBoard Omp16213SemanticsState; upstream process is not invoked"
+}

@@ -1,0 +1,17 @@
+{
+  "name": "bb-omp16213-closure",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "16.2.13"
+  },
+  "overrides": {
+    "@ark/schema": "0.56.0",
+    "@ark/util": "0.56.0",
+    "arkregex": "0.0.6",
+    "arktype": "2.2.1"
+  },
+  "patchedDependencies": {
+    "@ark/schema@0.56.0": "patches/@ark%2Fschema@0.56.0.patch"
+  }
+}

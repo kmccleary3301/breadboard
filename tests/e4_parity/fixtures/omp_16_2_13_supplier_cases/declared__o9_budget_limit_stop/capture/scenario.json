@@ -1,0 +1,166 @@
+{
+  "case_id": "o9_budget_limit_stop",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "budget step 1",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf one > budget_1.txt\",\"i\":\"Budget step 1\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-01",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 2",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf two > budget_2.txt\",\"i\":\"Budget step 2\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-02",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 3",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf three > budget_3.txt\",\"i\":\"Budget step 3\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-03",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 4",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf four > budget_4.txt\",\"i\":\"Budget step 4\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-04",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 5",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf five > budget_5.txt\",\"i\":\"Budget step 5\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-05",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 6",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf six > budget_6.txt\",\"i\":\"Budget step 6\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-06",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 7",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf seven > budget_7.txt\",\"i\":\"Budget step 7\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-07",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 8",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf eight > budget_8.txt\",\"i\":\"Budget step 8\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-08",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 9",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf nine > budget_9.txt\",\"i\":\"Budget step 9\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-09",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "budget step 10",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf ten > budget_10.txt\",\"i\":\"Budget step 10\"}",
+          "id": "omp16213-call-o9_budget_limit_stop-10",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    }
+  ]
+}

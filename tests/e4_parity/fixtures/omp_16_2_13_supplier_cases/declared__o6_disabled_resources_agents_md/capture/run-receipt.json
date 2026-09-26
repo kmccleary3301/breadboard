@@ -1,0 +1,10 @@
+{
+  "case_id": "o6_disabled_resources_agents_md",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:f0ec4cc8ee7b9814e454b13660f4f6deb1c3c672b00c2627aeeee70759283432"
+}

@@ -14,11 +14,18 @@ from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
 from breadboard_engine.compilation.provider_response import (
-    HERMES_RESPONSE_CONSUMER_ID, PI_0_57_1_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+    HERMES_RESPONSE_CONSUMER_ID,
+    OMP_16_2_13_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
 )
 from breadboard.rl.harness import hermes_worker
 from breadboard.rl.harness.runners import (
-    omp_semantics, openclaw_semantics, pi_0_57_1_semantics, pi_semantics,
+    omp_16_2_13_semantics,
+    omp_semantics,
+    openclaw_semantics,
+    pi_0_57_1_semantics,
+    pi_semantics,
 )
 
 
@@ -122,6 +129,31 @@ def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> A
 
 def _openclaw_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
     return openclaw_semantics.OpenClawSemanticsState(task, system_prompt, bootstrap)
+
+def _omp_16_2_13_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    for name in ("model_config", "runtime_inputs", "length_aborted_message"):
+        if name not in bootstrap:
+            raise ValueError(f"native stream bootstrap missing {name}")
+    model_config = bootstrap["model_config"]
+    if not isinstance(model_config, Mapping) or not {"id", "provider", "api", "cost"} <= set(model_config):
+        raise ValueError("native stream bootstrap model_config is malformed")
+    runtime_inputs = bootstrap["runtime_inputs"]
+    if not isinstance(runtime_inputs, Mapping) or not {"cwd", "home", "current_date", "package_dir"} <= set(runtime_inputs):
+        raise ValueError("native stream bootstrap runtime_inputs is malformed")
+    if "current_date_time" not in bootstrap or not isinstance(bootstrap["current_date_time"], str) or not bootstrap["current_date_time"]:
+        raise ValueError("native stream bootstrap missing or invalid 'current_date_time'")
+    current_date_time = bootstrap["current_date_time"]
+    return omp_16_2_13_semantics.Omp16213SemanticsState(
+        task=task,
+        system_prompt=system_prompt,
+        model_id=model_config["id"],
+        provider=model_config["provider"],
+        api=model_config["api"],
+        cost=model_config["cost"],
+        current_date_time=current_date_time,
+        length_aborted_message=bootstrap["length_aborted_message"],
+        runtime_inputs=runtime_inputs,
+    )
 
 
 NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
@@ -244,6 +276,27 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         classify_result_phase="classify_result",
         finalize_result_phase="finalize_command_result",
         provider_failure_terminates=True,
+    ),
+    OMP_16_2_13_RESPONSE_CONSUMER_ID: NativeStreamProfile(
+        consumer_id=OMP_16_2_13_RESPONSE_CONSUMER_ID,
+        target_id=omp_16_2_13_semantics.TARGET_ID,  # "oh-my-pi-r2@16.2.13"
+        target_version=3,  # policy_provider.py:304,320 deferred target version 3
+        api_variant="chat_completions",  # openai-completions.ts:350
+        phase_schema_version=omp_16_2_13_semantics.PHASE_SCHEMA_VERSION,  # "bb.omp-native.v16.2.13"
+        tool_order=omp_16_2_13_semantics.TOOL_NAMES,  # main.ts:908-912, sdk.ts:1778-1782 (site table row 12-13)
+        max_turns=8,  # scenario.json:3, kit receiver request cap (site table row 29)
+        action_timeout_ms=40_000,  # harness.yaml:48 single_tool_wall_seconds: 40
+        episode_timeout_seconds=120,  # harness.yaml:47 episode_wall_seconds: 120
+        ack_policy="none",  # 16.2.13 framed worker requires no delivery ack
+        incomplete_stop_reasons=frozenset({"error", "aborted"}),  # agent-loop.ts:1015-1017 continues on length (site table row 20)
+        runtime_input_names=("cwd", "home", "current_date", "package_dir"),  # system-prompt.ts:486-773 (site table row 15)
+        package_subpath="node_modules/@oh-my-pi/pi-coding-agent",  # dist/cli.js:1 (site table row 1)
+        state_module=omp_16_2_13_semantics,
+        state_factory=_omp_16_2_13_state,
+        accepts_truncated_stream=True,  # openai-completions.ts:239-250, agent-loop.ts:1530-1555 (site table row 21, o10)
+        provider_failure_terminates=True,  # settings.ts:210-250, agent-session.ts:9800 (site table row 22, o5)
+        provider_failure_phase="project_provider_failure",  # pinned assistant error message projection
+        parse_arguments_phase="parse_streaming_json_batch",  # pinned stream argument parsing
     ),
 })
 

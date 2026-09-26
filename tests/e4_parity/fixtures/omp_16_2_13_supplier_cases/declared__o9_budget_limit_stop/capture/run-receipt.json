@@ -1,0 +1,10 @@
+{
+  "case_id": "o9_budget_limit_stop",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 9,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:eb63a07e1799745ccfde864f6ec8556a34ce4ab5cc1a0584c980df30fa6728f6"
+}

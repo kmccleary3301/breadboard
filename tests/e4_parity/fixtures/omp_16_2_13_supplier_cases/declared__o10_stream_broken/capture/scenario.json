@@ -1,0 +1,43 @@
+{
+  "case_id": "o10_stream_broken",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "broken stream mid-argument",
+      "finish_reason": "tool_calls",
+      "keep_chunks": 3,
+      "kind": "broken_stream",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'stream-omp\\\\n' > stream_marker.txt\",\"i\":\"Writing stream marker\"}",
+          "id": "omp16213-call-o10_stream_broken-01",
+          "name": "bash",
+          "split": [
+            "{\"command\":\"printf '",
+            "stream-omp\\\\n' > stream_marker.txt\",\"i\":\"Writing stream marker\"}"
+          ]
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response 1.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response 2.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

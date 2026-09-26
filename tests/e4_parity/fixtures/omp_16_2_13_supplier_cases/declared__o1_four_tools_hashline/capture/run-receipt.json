@@ -1,0 +1,10 @@
+{
+  "case_id": "o1_four_tools_hashline",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 6,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:3bea3cc310aad706add1c6508e50a95d74ca381944054e962cba1804659a3ed2"
+}

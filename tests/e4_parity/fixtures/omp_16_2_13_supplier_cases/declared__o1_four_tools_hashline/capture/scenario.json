@@ -1,0 +1,95 @@
+{
+  "case_id": "o1_four_tools_hashline",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "Reading the file.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"README.txt\",\"i\":\"Reading README\"}",
+          "id": "omp16213-call-o1_four_tools_hashline-01-read",
+          "name": "read",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Running bash.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'bash-omp\\\\n' > bash_marker.txt && cat bash_marker.txt\",\"i\":\"Writing bash marker\"}",
+          "id": "omp16213-call-o1_four_tools_hashline-02-bash",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Writing a file.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"written.txt\",\"content\":\"written by omp write\\n\",\"i\":\"Writing file\"}",
+          "id": "omp16213-call-o1_four_tools_hashline-03-write",
+          "name": "write",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Editing with hashline.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"input\":\"[README.txt#DDE6]\\nSWAP 2.=2:\\n+Edited line 2 via hashline\\n\",\"i\":\"Editing README line 2\"}",
+          "id": "omp16213-call-o1_four_tools_hashline-04-edit",
+          "name": "edit",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Listing a directory.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"nested/dir\",\"i\":\"Listing nested dir\"}",
+          "id": "omp16213-call-o1_four_tools_hashline-05-readdir",
+          "name": "read",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "All four tools completed.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

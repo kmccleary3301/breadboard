@@ -979,3 +979,26 @@ async def test_native_phase_launch_rejects_unknown_adapter_id(
 
     assert captured.value.code == "runtime_unsupported"
     assert "unsupported.local.adapter" in str(captured.value)
+
+
+@pytest.mark.parametrize("adapter_id", sorted(sandbox_module.NATIVE_PHASE_TOOL_IDS))
+def test_native_phase_tool_ids_are_admissible_installed_adapter_tools(adapter_id: str) -> None:
+    # Installed adapters admit only sorted, unique tool IDs, and native phase
+    # admission requires them to equal this table's entry exactly.
+    digest = "sha256:" + "a" * 64
+    tool_ids = sandbox_module.NATIVE_PHASE_TOOL_IDS[adapter_id]
+    adapter = InstalledToolAdapter(
+        adapter_id=adapter_id,
+        tool_ids=tool_ids,
+        runtime_root_path="/opt/native",
+        runtime_root_device=1,
+        runtime_root_inode=2,
+        runtime_root_owner_uid=0,
+        runtime_root_mode="0755",
+        manifest_digest=digest,
+        executable_relative_path="bin/runtime",
+        entrypoint_relative_path="worker.js",
+        executable_digest=digest,
+        entrypoint_digest=digest,
+    )
+    assert adapter.tool_ids == tool_ids

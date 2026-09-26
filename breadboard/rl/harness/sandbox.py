@@ -121,6 +121,10 @@ PI_0_57_1_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
 OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OMP_16_2_13_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v16.2.13"
+OMP_16_2_13_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "bash", "edit", "generate_image", "read", "write",
+)
 OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
 OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
 HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
@@ -134,6 +138,7 @@ NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     PI_0_57_1_LOCAL_ADAPTER_ID: PI_0_57_1_NATIVE_TOOL_IDS,
     HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
     OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
+    OMP_16_2_13_LOCAL_ADAPTER_ID: OMP_16_2_13_NATIVE_TOOL_IDS,
     OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
 })
 MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
@@ -1057,6 +1062,10 @@ def _native_worker_environment(
     elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
         # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
         pass
+    elif binding.adapter_id == OMP_16_2_13_LOCAL_ADAPTER_ID:
+        environment["OMP_NATIVE_WORKER_FRAMED"] = "1"
+        environment["OMP16213_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+        environment["OMP_OFFLINE"] = "1"
     elif binding.adapter_id == OPENCLAW_LOCAL_ADAPTER_ID:
         environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
         # The pinned supplier capture environment
@@ -7254,5 +7263,7 @@ __all__ = [
     "HERMES_NATIVE_TOOL_IDS",
     "OMP_NATIVE_LOCAL_ADAPTER_ID",
     "OMP_NATIVE_TOOL_IDS",
+    "OMP_16_2_13_LOCAL_ADAPTER_ID",
+    "OMP_16_2_13_NATIVE_TOOL_IDS",
     "NATIVE_PHASE_TOOL_IDS",
 ]

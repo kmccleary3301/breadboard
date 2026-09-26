@@ -1,0 +1,65 @@
+{
+  "case_id": "o11_length_cutoff",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "cut off before tool execution",
+      "finish_reason": "length",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf forbidden > cutoff_marker.txt\",\"i\":\"Cut off call\"}",
+          "id": "omp16213-call-o11_length_cutoff-01",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "The length cutoff was observed.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\\nlength cutoff observed\\\\n'\",\"i\":\"Submitting\"}",
+          "id": "omp16213-call-o11_length_cutoff-02",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "The length cutoff was observed; no tool should run.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Final answer: cutoff respected.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Done.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

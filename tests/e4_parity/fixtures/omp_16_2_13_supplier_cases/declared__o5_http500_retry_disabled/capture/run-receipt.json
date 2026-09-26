@@ -1,0 +1,10 @@
+{
+  "case_id": "o5_http500_retry_disabled",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:123a67e417baed1db1ad4a5377c2cae9ccff07d74212f5546b8df3eb34aa1065"
+}

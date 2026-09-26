@@ -1,0 +1,10 @@
+{
+  "case_id": "o8_normal_multiturn",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 4,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:ca4fa32d6670aa7656089c81fe2227a173b2f3107a058c61bec6f11292780afa"
+}

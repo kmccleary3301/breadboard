@@ -1,0 +1,238 @@
+{
+  "argv": [
+    "bun",
+    "<omp-cli>",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Exercise the hashline anchor checks in order, then stop."
+  ],
+  "argv_exact": [
+    "/opt/omp/bun/bun",
+    "/opt/omp/runtime/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Exercise the hashline anchor checks in order, then stop."
+  ],
+  "assistant_stops": [
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "stop"
+    }
+  ],
+  "bun_version": "1.3.14",
+  "case_id": "o7_hashline_stale_unseen_anchor",
+  "config_dir_side_effects": {
+    "added": [
+      "agent.db",
+      "agent.db-shm",
+      "agent.db-wal",
+      "models.db",
+      "models.yml"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "config_mode": "declared",
+  "config_overlay": {
+    "path": "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "sha256": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191"
+  },
+  "covered_bullets": [
+    "read, bash, edit, write, grep, find, and ls behavior",
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "parser repair and invalid tool-call behavior",
+    "no-session behavior"
+  ],
+  "cwd": "/testbed",
+  "egress_probe": {
+    "blocked": true,
+    "errno": "ENETUNREACH",
+    "error": "[Errno 101] Network is unreachable",
+    "target": "1.1.1.1:443"
+  },
+  "elapsed_seconds": 1.254,
+  "env": {
+    "HOME": "/capture/home",
+    "LANG": "C.UTF-8",
+    "NO_COLOR": "1",
+    "PATH": "/opt/omp/bun:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PI_CODING_AGENT_DIR": "/omp-config",
+    "PI_NATIVE_VARIANT": "baseline",
+    "TMPDIR": "/capture/tmp"
+  },
+  "event_type_counts": {
+    "agent_end": 1,
+    "agent_start": 1,
+    "message_end": 10,
+    "message_start": 10,
+    "message_update": 31,
+    "session": 1,
+    "tool_execution_end": 4,
+    "tool_execution_start": 4,
+    "turn_end": 5,
+    "turn_start": 5
+  },
+  "events_total": 72,
+  "events_unparsed_lines": [],
+  "exit_code": 0,
+  "expect": {
+    "effect_absent": [],
+    "exit_code": 0,
+    "request_markers_absent": [],
+    "request_markers_present": [],
+    "requests": 5,
+    "requests_at_least": null,
+    "requests_served": null,
+    "stderr_contains": null,
+    "workspace_after": {
+      "README.txt": "Initial text line 1\nInitial text line 2\n",
+      "long.txt": "long line 1\nseen edit 2\nlong line 3\nlong line 4\nlong line 5\nlong line 6\nlong line 7\nlong line 8\nlong line 9\nlong line 10\nlong line 11\nlong line 12\nlong line 13\nlong line 14\nlong line 15\nlong line 16\nlong line 17\nlong line 18\nlong line 19\nlong line 20\nlong line 21\nlong line 22\nlong line 23\nlong line 24\nlong line 25\nlong line 26\nlong line 27\nlong line 28\nlong line 29\nlong line 30\nlong line 31\nlong line 32\nlong line 33\nlong line 34\nlong line 35\nlong line 36\nlong line 37\nlong line 38\nlong line 39\nlong line 40\nlong line 41\nlong line 42\nlong line 43\nlong line 44\nlong line 45\nlong line 46\nlong line 47\nlong line 48\nlong line 49\nlong line 50\nlong line 51\nlong line 52\nlong line 53\nlong line 54\nlong line 55\nlong line 56\nlong line 57\nlong line 58\nlong line 59\nlong line 60\nlong line 61\nlong line 62\nlong line 63\nlong line 64\nlong line 65\nlong line 66\nlong line 67\nlong line 68\nlong line 69\nlong line 70\nlong line 71\nlong line 72\nlong line 73\nlong line 74\nlong line 75\nlong line 76\nlong line 77\nlong line 78\nlong line 79\nlong line 80\nlong line 81\nlong line 82\nlong line 83\nlong line 84\nlong line 85\nlong line 86\nlong line 87\nlong line 88\nlong line 89\nlong line 90\nlong line 91\nlong line 92\nlong line 93\nlong line 94\nlong line 95\nlong line 96\nlong line 97\nlong line 98\nlong line 99\nlong line 100\nlong line 101\nlong line 102\nlong line 103\nlong line 104\nlong line 105\nlong line 106\nlong line 107\nlong line 108\nlong line 109\nlong line 110\nlong line 111\nlong line 112\nlong line 113\nlong line 114\nlong line 115\nlong line 116\nlong line 117\nlong line 118\nlong line 119\nlong line 120\nlong line 121\nlong line 122\nlong line 123\nlong line 124\nlong line 125\nlong line 126\nlong line 127\nlong line 128\nlong line 129\nlong line 130\nlong line 131\nlong line 132\nlong line 133\nlong line 134\nlong line 135\nlong line 136\nlong line 137\nlong line 138\nlong line 139\nlong line 140\nlong line 141\nlong line 142\nlong line 143\nlong line 144\nlong line 145\nlong line 146\nlong line 147\nlong line 148\nlong line 149\nlong line 150\nlong line 151\nlong line 152\nlong line 153\nlong line 154\nlong line 155\nlong line 156\nlong line 157\nlong line 158\nlong line 159\nlong line 160\nlong line 161\nlong line 162\nlong line 163\nlong line 164\nlong line 165\nlong line 166\nlong line 167\nlong line 168\nlong line 169\nlong line 170\nlong line 171\nlong line 172\nlong line 173\nlong line 174\nlong line 175\nlong line 176\nlong line 177\nlong line 178\nlong line 179\nlong line 180\nlong line 181\nlong line 182\nlong line 183\nlong line 184\nlong line 185\nlong line 186\nlong line 187\nlong line 188\nlong line 189\nlong line 190\nlong line 191\nlong line 192\nlong line 193\nlong line 194\nlong line 195\nlong line 196\nlong line 197\nlong line 198\nlong line 199\nlong line 200\nlong line 201\nlong line 202\nlong line 203\nlong line 204\nlong line 205\nlong line 206\nlong line 207\nlong line 208\nlong line 209\nlong line 210\nlong line 211\nlong line 212\nlong line 213\nlong line 214\nlong line 215\nlong line 216\nlong line 217\nlong line 218\nlong line 219\nlong line 220\nlong line 221\nlong line 222\nlong line 223\nlong line 224\nlong line 225\nlong line 226\nlong line 227\nlong line 228\nlong line 229\nlong line 230\nlong line 231\nlong line 232\nlong line 233\nlong line 234\nlong line 235\nlong line 236\nlong line 237\nlong line 238\nlong line 239\nlong line 240\nlong line 241\nlong line 242\nlong line 243\nlong line 244\nlong line 245\nlong line 246\nlong line 247\nlong line 248\nlong line 249\nlong line 250\nlong line 251\nlong line 252\nlong line 253\nlong line 254\nlong line 255\nlong line 256\nlong line 257\nlong line 258\nlong line 259\nlong line 260\nlong line 261\nlong line 262\nlong line 263\nlong line 264\nlong line 265\nlong line 266\nlong line 267\nlong line 268\nlong line 269\nlong line 270\nlong line 271\nlong line 272\nlong line 273\nlong line 274\nlong line 275\nlong line 276\nlong line 277\nlong line 278\nlong line 279\nlong line 280\nlong line 281\nlong line 282\nlong line 283\nlong line 284\nlong line 285\nlong line 286\nlong line 287\nlong line 288\nlong line 289\nlong line 290\nlong line 291\nlong line 292\nlong line 293\nlong line 294\nlong line 295\nlong line 296\nlong line 297\nlong line 298\nlong line 299\nlong line 300\nlong line 301\nlong line 302\nlong line 303\nlong line 304\nlong line 305\nlong line 306\nlong line 307\nlong line 308\nlong line 309\nlong line 310\nlong line 311\nlong line 312\nlong line 313\nlong line 314\nlong line 315\nlong line 316\nlong line 317\nlong line 318\nlong line 319\nlong line 320\nlong line 321\nlong line 322\nlong line 323\nlong line 324\nlong line 325\nlong line 326\nlong line 327\nlong line 328\nlong line 329\nlong line 330\nlong line 331\nlong line 332\nlong line 333\nlong line 334\nlong line 335\nlong line 336\nlong line 337\nlong line 338\nlong line 339\nlong line 340\nlong line 341\nlong line 342\nlong line 343\nlong line 344\nlong line 345\nlong line 346\nlong line 347\nlong line 348\nlong line 349\nlong line 350\nlong line 351\nlong line 352\nlong line 353\nlong line 354\nlong line 355\nlong line 356\nlong line 357\nlong line 358\nlong line 359\nlong line 360\nlong line 361\nlong line 362\nlong line 363\nlong line 364\nlong line 365\nlong line 366\nlong line 367\nlong line 368\nlong line 369\nlong line 370\nlong line 371\nlong line 372\nlong line 373\nlong line 374\nlong line 375\nlong line 376\nlong line 377\nlong line 378\nlong line 379\nlong line 380\nlong line 381\nlong line 382\nlong line 383\nlong line 384\nlong line 385\nlong line 386\nlong line 387\nlong line 388\nlong line 389\nlong line 390\nlong line 391\nlong line 392\nlong line 393\nlong line 394\nlong line 395\nlong line 396\nlong line 397\nlong line 398\nlong line 399\nlong line 400\n"
+    }
+  },
+  "expected_exit_code": 0,
+  "failures": [],
+  "files": {
+    "config-manifest-post.json": "sha256:b6596c95cace22cdf89bd93960171cc2572d6d3c5cb5f3aa1072e484af81d84c",
+    "config-manifest-pre.json": "sha256:81b3b7bc4441f1fa1cecb992b250c6a425fa6b0e4cce05a5171e78ee990c170c",
+    "config-overlay.yml": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191",
+    "git-status.txt": "sha256:f7df3287988f5b8454cc04d86dc5b38c56d786a857aa11eabc4b9bdab84b9e62",
+    "home-manifest-post.json": "sha256:9d09cfa1cda1d8dee6e5a6605fe82c05f3e86c5d46c726f13ba3987aaf374ee3",
+    "home-manifest-pre.json": "sha256:c8a2e4c23e75e6872f535886e23abc5198b9774164d83a614a82ba0d0a5d24e5",
+    "http-transcript.jsonl": "sha256:d9b63b47802ad446ea1aeba514503e89163ff9ff9da91be45930c55bfdca42f7",
+    "model.patch": "sha256:8df2ddc199f7f60f98a81b7474d684137d0ccbb7fd3d7c6294d4b74fc33fc816",
+    "omp-events.jsonl": "sha256:44cf430e4f38b9750aaaa6e29abb2c5b5f28a2ee9d31b8a1e39feb6c7e3de6ab",
+    "omp-stderr.log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scenario.json": "sha256:940fe9552953b1760005fa15d90c545ac28869641f83e5d659b7972a91ff021d",
+    "workspace-manifest-post-immediate.json": "sha256:8c2657bae93ec59093354f2abde5fb2618ec4e329cdaec71e84333823a0fd12d",
+    "workspace-manifest-post.json": "sha256:8c2657bae93ec59093354f2abde5fb2618ec4e329cdaec71e84333823a0fd12d",
+    "workspace-manifest-pre.json": "sha256:d2fdb3cef8067d34a3d9c19ab62e4528515ed1fd8e7e9a8986f4c9bc8075ae8a"
+  },
+  "home_side_effects": {
+    "added": [
+      ".omp",
+      ".omp/gpu_cache.json",
+      ".omp/logs",
+      ".omp/logs/.9939c2487322ebfbfbe60eac85a2eff9e5900a27-audit.json",
+      ".omp/logs/omp.2026-09-26.log"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "kind": "capture",
+  "marker_hits": {},
+  "omp_version": "omp/16.2.13",
+  "oracle_notes": {
+    "hashline_tags": "README.txt#DDE6 and long.txt#B76A = computeFileHash(content) from @oh-my-pi/hashline@16.2.13 src/format.ts",
+    "observed_mac_smoke_trial_3": "01 rejected (tag not from this session), 02 displayed lines 1-8 of 401, 03 rejected (line 350 never displayed), 04 applied (long.txt#5875)"
+  },
+  "overlay_argv_dropped": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "receiver_closed": {
+    "cap_refused": 0,
+    "failed": null,
+    "requests": 5,
+    "steps_scripted": 6,
+    "steps_served": 5
+  },
+  "request_guard": {
+    "cap_reached": false,
+    "request_cap": 8,
+    "signal_sent": null
+  },
+  "requests_by_served": {
+    "completion": 5
+  },
+  "requests_total": 5,
+  "schema_version": "bb.e4.omp16213-capture-trace.v2",
+  "stderr_head": "",
+  "supplier": {
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+    "package": "@oh-my-pi/pi-coding-agent",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "version": "16.2.13"
+  },
+  "tool_results": [
+    {
+      "isError": true,
+      "text_head": "Edit rejected for README.txt: hash #0000 is not from this session.\nThe current file hashes to #DDE6. Re-read the file with `read` to copy a current [path#tag] header — never invent the tag and never reuse one from a prior session.\n\n*1:Initial text line 1\n 2:Initial text line 2\n 3:",
+      "toolCallId": "omp16213-call-o7_hashline_stale_unseen_anchor-01-stale",
+      "toolName": "edit"
+    },
+    {
+      "isError": false,
+      "text_head": "[long.txt#B76A]\n1:long line 1\n2:long line 2\n3:long line 3\n4:long line 4\n5:long line 5\n6:long line 6\n7:long line 7\n8:long line 8\n\n[Showing lines 1-8 of 401. Use :9 to continue]",
+      "toolCallId": "omp16213-call-o7_hashline_stale_unseen_anchor-02-read-partial",
+      "toolName": "read"
+    },
+    {
+      "isError": true,
+      "text_head": "This edit anchors to lines 350 of long.txt that [long.txt#B76A] never displayed (it showed a partial range, a search hit, or a folded summary). Re-read them in full first with a ranged read like `long.txt:350` — it skips summarization and mints a fresh tag (a plain re-read just re-folds them) — then",
+      "toolCallId": "omp16213-call-o7_hashline_stale_unseen_anchor-03-unseen",
+      "toolName": "edit"
+    },
+    {
+      "isError": false,
+      "text_head": "[long.txt#5875]\n1:long line 1\n2:seen edit 2\n3:long line 3\n4:long line 4",
+      "toolCallId": "omp16213-call-o7_hashline_stale_unseen_anchor-04-seen",
+      "toolName": "edit"
+    }
+  ],
+  "transcript_unparsed_lines": [],
+  "what_it_exercises": "Hashline anchor validation: (1) README edit with a fabricated tag #0000 before any read; (2) partial read long.txt:1-5; (3) edit of unseen line 350 under the valid tag B76A; (4) edit of seen line 2 under B76A.",
+  "workspace_delta": {
+    "added": [],
+    "changed": [
+      "long.txt"
+    ],
+    "removed": []
+  },
+  "workspace_delta_immediate": {
+    "added": [],
+    "changed": [
+      "long.txt"
+    ],
+    "removed": []
+  }
+}

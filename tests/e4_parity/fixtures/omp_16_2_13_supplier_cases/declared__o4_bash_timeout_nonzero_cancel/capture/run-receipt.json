@@ -1,0 +1,10 @@
+{
+  "case_id": "o4_bash_timeout_nonzero_cancel",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 4,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:44a1733478706fdcb3c25f55a3f9ba7b48dd4e4fee2feab4c1075852780d1568"
+}

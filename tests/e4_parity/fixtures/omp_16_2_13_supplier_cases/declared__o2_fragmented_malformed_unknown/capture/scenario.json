@@ -1,0 +1,88 @@
+{
+  "case_id": "o2_fragmented_malformed_unknown",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": null,
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": [
+        "Frag",
+        "mented ",
+        "text."
+      ],
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'frag-omp\\\\n' > frag_marker.txt\",\"i\":\"Writing fragment marker\"}",
+          "id": "omp16213-call-o2_fragmented_malformed_unknown-01-frag",
+          "name": "bash",
+          "split": [
+            "{\"comma",
+            "nd\":\"printf 'frag-omp\\\\",
+            "n' > frag_marke",
+            "r.txt\",\"i\":\"Writing fragment marker\"}"
+          ]
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "This call is intentionally malformed.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":",
+          "id": "omp16213-call-o2_fragmented_malformed_unknown-02-malformed",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "This tool does not exist.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"x\":1,\"i\":\"Unknown tool\"}",
+          "id": "omp16213-call-o2_fragmented_malformed_unknown-03-unknown",
+          "name": "does_not_exist_tool",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Recovering.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'recovered-omp\\\\n' > malformed_recovered.txt\",\"i\":\"Recovering marker\"}",
+          "id": "omp16213-call-o2_fragmented_malformed_unknown-04-recover",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Recovered after the malformed and unknown calls.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}
