@@ -1,0 +1,66 @@
+{
+  "case_id": "o3_threshold_compaction",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "Running one command.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'compaction-omp\\\\n'\",\"i\":\"Printing marker\"}",
+          "id": "omp16213-call-o3_threshold_compaction-01-bash",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": {
+        "completion_tokens": 20,
+        "prompt_tokens": 190000,
+        "total_tokens": 190020
+      }
+    },
+    {
+      "assistant_content": "Done after the threshold was crossed.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": {
+        "completion_tokens": 8,
+        "prompt_tokens": 1500,
+        "total_tokens": 1508
+      }
+    },
+    {
+      "assistant_content": "Spare response 1.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response 2.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response 3.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

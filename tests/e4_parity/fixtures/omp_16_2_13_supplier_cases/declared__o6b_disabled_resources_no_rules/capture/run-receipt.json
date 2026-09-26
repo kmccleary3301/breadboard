@@ -1,0 +1,10 @@
+{
+  "case_id": "o6b_disabled_resources_no_rules",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:7549c51d311d6b0ad9302463ebce72e17d90e8ebb57fe14067659cf3cc38bb92"
+}

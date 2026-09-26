@@ -1,0 +1,1406 @@
+{
+  "blob_store": {
+    "layout": "blobs/<sha256 hex>: workspace file bytes addressed by the sha256 recorded in workspace-manifest-pre/post.json",
+    "reason": "content-addressed so repository ignore rules and symlinks cannot drop golden-tree members"
+  },
+  "cases": [
+    "declared__o0_text_stop",
+    "declared__o1_four_tools_hashline",
+    "declared__o2_fragmented_malformed_unknown",
+    "declared__o3_threshold_compaction",
+    "declared__o4_bash_timeout_nonzero_cancel",
+    "declared__o5_http500_retry_disabled",
+    "declared__o6_disabled_resources_agents_md",
+    "declared__o6b_disabled_resources_no_rules",
+    "declared__o7_hashline_stale_unseen_anchor",
+    "declared__o8_normal_multiturn",
+    "declared__o9_budget_limit_stop",
+    "declared__o10_stream_broken",
+    "declared__o11_length_cutoff",
+    "declared__o12_process_lifecycle",
+    "declared__f2_json_mode_without_print"
+  ],
+  "derived_files": [
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/prompts/planted-omp-prompt.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/prompts/planted-omp-prompt.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/00c8cbace3db964883d83ef21f67d90a55f58fd285462c8dceb6e2890221af22",
+      "sha256": "sha256:00c8cbace3db964883d83ef21f67d90a55f58fd285462c8dceb6e2890221af22"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_4.txt",
+          "entry": "budget_4.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00"
+        }
+      ],
+      "path": "blobs/04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00",
+      "sha256": "sha256:04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".agents/rules/planted-agents-rule.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".agents/rules/planted-agents-rule.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/1881ef12bc9184dcbcd30693efe4038afca7fac1c706f25f8f609e198a354521",
+      "sha256": "sha256:1881ef12bc9184dcbcd30693efe4038afca7fac1c706f25f8f609e198a354521"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o3_threshold_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o5_http500_retry_disabled/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o8_normal_multiturn/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o10_stream_broken/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o11_length_cutoff/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__f2_json_mode_without_print/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba",
+      "sha256": "sha256:1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".cursor/rules/planted-cursor-rule.mdc",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".cursor/rules/planted-cursor-rule.mdc",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/1b0b0c2747bb3752bf3a72c320e9552203710f4949a018f4ce29ef58fb2c0d3c",
+      "sha256": "sha256:1b0b0c2747bb3752bf3a72c320e9552203710f4949a018f4ce29ef58fb2c0d3c"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_5.txt",
+          "entry": "budget_5.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:222b0bd51fcef7e65c2e62db2ed65457013bab56be6fafeb19ee11d453153c80"
+        }
+      ],
+      "path": "blobs/222b0bd51fcef7e65c2e62db2ed65457013bab56be6fafeb19ee11d453153c80",
+      "sha256": "sha256:222b0bd51fcef7e65c2e62db2ed65457013bab56be6fafeb19ee11d453153c80"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_7.txt",
+          "entry": "budget_7.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:3ba8d02b16fd2a01c1a8ba1a1f036d7ce386ed953696fa57331c2ac48a80b255"
+        }
+      ],
+      "path": "blobs/3ba8d02b16fd2a01c1a8ba1a1f036d7ce386ed953696fa57331c2ac48a80b255",
+      "sha256": "sha256:3ba8d02b16fd2a01c1a8ba1a1f036d7ce386ed953696fa57331c2ac48a80b255"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_2.txt",
+          "entry": "budget_2.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3"
+        }
+      ],
+      "path": "blobs/3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+      "sha256": "sha256:3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_6.txt",
+          "entry": "budget_6.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:44778d82365e4af681c40d5f0eef5cf6f5899d3f0ac335050a7ed6779cf3f674"
+        }
+      ],
+      "path": "blobs/44778d82365e4af681c40d5f0eef5cf6f5899d3f0ac335050a7ed6779cf3f674",
+      "sha256": "sha256:44778d82365e4af681c40d5f0eef5cf6f5899d3f0ac335050a7ed6779cf3f674"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/long.txt",
+          "entry": "long.txt",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:61a7d4069876315f4543db6c8463361c8c40efcfd6377ebe66c9a32c175a32cb"
+        }
+      ],
+      "path": "blobs/61a7d4069876315f4543db6c8463361c8c40efcfd6377ebe66c9a32c175a32cb",
+      "sha256": "sha256:61a7d4069876315f4543db6c8463361c8c40efcfd6377ebe66c9a32c175a32cb"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/bash_marker.txt",
+          "entry": "bash_marker.txt",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:6317b98368c6db60164b3f1e69522a66ed2b67ad5439bb53b3dd677325f928f7"
+        }
+      ],
+      "path": "blobs/6317b98368c6db60164b3f1e69522a66ed2b67ad5439bb53b3dd677325f928f7",
+      "sha256": "sha256:6317b98368c6db60164b3f1e69522a66ed2b67ad5439bb53b3dd677325f928f7"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/rules/planted-omp-rule.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/rules/planted-omp-rule.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/641251e9f58bec81e818063891d572795bc01b0f1d165e22b7a01fa0dc3c35a1",
+      "sha256": "sha256:641251e9f58bec81e818063891d572795bc01b0f1d165e22b7a01fa0dc3c35a1"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/frag_marker.txt",
+          "entry": "frag_marker.txt",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:64f0a988ccce1098234e070f1c07565ad0e8a51963c96bb30064bd790de8ff15"
+        }
+      ],
+      "path": "blobs/64f0a988ccce1098234e070f1c07565ad0e8a51963c96bb30064bd790de8ff15",
+      "sha256": "sha256:64f0a988ccce1098234e070f1c07565ad0e8a51963c96bb30064bd790de8ff15"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/malformed_recovered.txt",
+          "entry": "malformed_recovered.txt",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:7072f186429aabd403ce0eac668a22372b34c499b9d65ea9a835bb87402a8caf"
+        }
+      ],
+      "path": "blobs/7072f186429aabd403ce0eac668a22372b34c499b9d65ea9a835bb87402a8caf",
+      "sha256": "sha256:7072f186429aabd403ce0eac668a22372b34c499b9d65ea9a835bb87402a8caf"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_1.txt",
+          "entry": "budget_1.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"
+        }
+      ],
+      "path": "blobs/7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+      "sha256": "sha256:7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/extensions/planted-omp-ext/index.ts",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/extensions/planted-omp-ext/index.ts",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/76b94c6b0113644026b7090a51123aac452c07c7c066d9e7c4f73d48568e3119",
+      "sha256": "sha256:76b94c6b0113644026b7090a51123aac452c07c7c066d9e7c4f73d48568e3119"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_3.txt",
+          "entry": "budget_3.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f"
+        }
+      ],
+      "path": "blobs/8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+      "sha256": "sha256:8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/README.txt",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:90d06708f3734db4184e30439d913f34a32d73357504c6b28be935257365a865"
+        }
+      ],
+      "path": "blobs/90d06708f3734db4184e30439d913f34a32d73357504c6b28be935257365a865",
+      "sha256": "sha256:90d06708f3734db4184e30439d913f34a32d73357504c6b28be935257365a865"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".claude/skills/planted-claude-skill/SKILL.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".claude/skills/planted-claude-skill/SKILL.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/a3fb40b38e379193f55a5a9347d51f7dab76abc50f25305c1d5cfe71bd18c645",
+      "sha256": "sha256:a3fb40b38e379193f55a5a9347d51f7dab76abc50f25305c1d5cfe71bd18c645"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "AGENTS.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "AGENTS.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/ad5446ea9f62effeb284eeb92bf8c120266005e370b8816a905318dc7496b132",
+      "sha256": "sha256:ad5446ea9f62effeb284eeb92bf8c120266005e370b8816a905318dc7496b132"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/written.txt",
+          "entry": "written.txt",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:b15deb7c7f36fb927e383ad9c608dc2f0aff386080e5b184e28920ebbf18542c"
+        }
+      ],
+      "path": "blobs/b15deb7c7f36fb927e383ad9c608dc2f0aff386080e5b184e28920ebbf18542c",
+      "sha256": "sha256:b15deb7c7f36fb927e383ad9c608dc2f0aff386080e5b184e28920ebbf18542c"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o3_threshold_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o5_http500_retry_disabled/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o8_normal_multiturn/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o10_stream_broken/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o11_length_cutoff/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__f2_json_mode_without_print/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d",
+      "sha256": "sha256:b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o8_normal_multiturn/testbed/normal_marker.txt",
+          "entry": "normal_marker.txt",
+          "manifest": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:bc05538a52dd26d9a426c789150a4e7af6dae0fbdd76dcbfc291d7af98ebe9cf"
+        }
+      ],
+      "path": "blobs/bc05538a52dd26d9a426c789150a4e7af6dae0fbdd76dcbfc291d7af98ebe9cf",
+      "sha256": "sha256:bc05538a52dd26d9a426c789150a4e7af6dae0fbdd76dcbfc291d7af98ebe9cf"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/budget_8.txt",
+          "entry": "budget_8.txt",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:c195d2d8756234367242ba7616c5c60369bc25ced2dcb5b92808d31b58ef217a"
+        }
+      ],
+      "path": "blobs/c195d2d8756234367242ba7616c5c60369bc25ced2dcb5b92808d31b58ef217a",
+      "sha256": "sha256:c195d2d8756234367242ba7616c5c60369bc25ced2dcb5b92808d31b58ef217a"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/skills/planted-omp-skill/SKILL.md",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".omp/skills/planted-omp-skill/SKILL.md",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/dbcd9be03f84c92c9024818b6de514d5f3debe72b9a368e779a0e13a040182c0",
+      "sha256": "sha256:dbcd9be03f84c92c9024818b6de514d5f3debe72b9a368e779a0e13a040182c0"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/lifecycle_child.txt",
+          "entry": "lifecycle_child.txt",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:ddc9e669194254cef019a29d3619a2c16592e5d52e1a81e98b01bd52319149a3"
+        }
+      ],
+      "path": "blobs/ddc9e669194254cef019a29d3619a2c16592e5d52e1a81e98b01bd52319149a3",
+      "sha256": "sha256:ddc9e669194254cef019a29d3619a2c16592e5d52e1a81e98b01bd52319149a3"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/lifecycle_parent.txt",
+          "entry": "lifecycle_parent.txt",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c"
+        }
+      ],
+      "path": "blobs/e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c",
+      "sha256": "sha256:e47125968b3b71049fbc4802d1e40a71ea1359decfabacf70b34588037d4ff0c"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "long.txt",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/e8f139814370a93c1560b3ed6b89c7396af8ce1a061b9a48ac38c69a53448354",
+      "sha256": "sha256:e8f139814370a93c1560b3ed6b89c7396af8ce1a061b9a48ac38c69a53448354"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o3_threshold_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o5_http500_retry_disabled/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o8_normal_multiturn/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o10_stream_broken/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o11_length_cutoff/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__f2_json_mode_without_print/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd",
+      "sha256": "sha256:fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__o0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o1_four_tools_hashline/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o2_fragmented_malformed_unknown/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o3_threshold_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o5_http500_retry_disabled/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6_disabled_resources_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o6b_disabled_resources_no_rules/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o7_hashline_stale_unseen_anchor/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o8_normal_multiturn/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o9_budget_limit_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o10_stream_broken/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o11_length_cutoff/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__o12_process_lifecycle/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__f2_json_mode_without_print/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108",
+      "sha256": "sha256:fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108"
+    }
+  ],
+  "files": [
+    {
+      "member_path": "packet/omp16213_capture_cases.json",
+      "path": "omp16213_capture_cases.json",
+      "sha256": "sha256:8fbc47f8cd0d587afa8f9471421fdf7269e8d009dddd1357b357a39232106864"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/trace.json",
+      "path": "declared__o0_text_stop/capture/trace.json",
+      "sha256": "sha256:4c79a1117dcac267814f775e2ed35340e37389b028cecee637e724670e3ae670"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/run-receipt.json",
+      "path": "declared__o0_text_stop/capture/run-receipt.json",
+      "sha256": "sha256:890005c30830dd4d2f749b4ae2b1b46c5ebeabb7ab3199d25c08ef4e0d8463fa"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/scenario.json",
+      "path": "declared__o0_text_stop/capture/scenario.json",
+      "sha256": "sha256:b2378164cef2280e6f64604f6a4853b468a5af3b08dd7bf0010843159ecfcacb"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o0_text_stop/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o0_text_stop/capture/http-transcript.jsonl",
+      "path": "declared__o0_text_stop/capture/http-transcript.jsonl",
+      "sha256": "sha256:9a7f6d45f1557f98676a2b7364c469a4c0c7c3b6e377b2cdba37dc9d2381a322"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/omp-events.jsonl",
+      "path": "declared__o0_text_stop/capture/omp-events.jsonl",
+      "sha256": "sha256:a3cfaf1024f77615760babd345f2c3d5ea795bfba7ecd5c319c017d4fde83b7c"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-pre.json",
+      "path": "declared__o0_text_stop/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/workspace-manifest-post.json",
+      "path": "declared__o0_text_stop/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o0_text_stop/capture/model.patch",
+      "path": "declared__o0_text_stop/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/trace.json",
+      "path": "declared__o1_four_tools_hashline/capture/trace.json",
+      "sha256": "sha256:3bea3cc310aad706add1c6508e50a95d74ca381944054e962cba1804659a3ed2"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/run-receipt.json",
+      "path": "declared__o1_four_tools_hashline/capture/run-receipt.json",
+      "sha256": "sha256:8cd7f95a43597d5b526c454e026ad4ec426d4b2eaa8209c9799e75265c765de8"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/scenario.json",
+      "path": "declared__o1_four_tools_hashline/capture/scenario.json",
+      "sha256": "sha256:479538cefefa24b317574d3e0a673ac54da0b4d1e0e3efeef2392c55ca3160c6"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o1_four_tools_hashline/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/http-transcript.jsonl",
+      "path": "declared__o1_four_tools_hashline/capture/http-transcript.jsonl",
+      "sha256": "sha256:64bec58c101a924d95c85cf2c521b307580c6103b8955ad4b218b517df4e4552"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/omp-events.jsonl",
+      "path": "declared__o1_four_tools_hashline/capture/omp-events.jsonl",
+      "sha256": "sha256:2f2474f5e7954faae064ced5464433ab2f2b77146b10405be449858e11fad1c7"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json",
+      "path": "declared__o1_four_tools_hashline/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/workspace-manifest-post.json",
+      "path": "declared__o1_four_tools_hashline/capture/workspace-manifest-post.json",
+      "sha256": "sha256:795461ecc0da8e17f081430f1c81c831637048af019aebdb3b5c42e06533dc1c"
+    },
+    {
+      "member_path": "packet/cases/declared__o1_four_tools_hashline/capture/model.patch",
+      "path": "declared__o1_four_tools_hashline/capture/model.patch",
+      "sha256": "sha256:2d6ec4bcd209e8cb1025a39939675b3383b3d2266371db68943d5c7fd8af1080"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/trace.json",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/trace.json",
+      "sha256": "sha256:c410475b34818db9faf38fb40068c930b69ac23198756621ee2ab291b6f316c4"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/run-receipt.json",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/run-receipt.json",
+      "sha256": "sha256:7a3af453814401eb8eaae9ca687f33340c7933b11c574e4c832d02209038a346"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/scenario.json",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/scenario.json",
+      "sha256": "sha256:7629a691954c61f013d6ac44321ee3b2d23cbad2c9ad3725ddbd16e0670703e3"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o2_fragmented_malformed_unknown/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/http-transcript.jsonl",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/http-transcript.jsonl",
+      "sha256": "sha256:f6f5bab741bcbf146da21d4f5ae9a4c925952d4a869160fce632807d19fd9691"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/omp-events.jsonl",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/omp-events.jsonl",
+      "sha256": "sha256:b717475329d73842ff387b3c3fe8908c5fb3f2e8ab26b3c50e398d8659d0d4de"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-post.json",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/workspace-manifest-post.json",
+      "sha256": "sha256:abb08a9483aa2dd8de7b7115b9185d9d21e7f444d0ab881fabc118902185ea12"
+    },
+    {
+      "member_path": "packet/cases/declared__o2_fragmented_malformed_unknown/capture/model.patch",
+      "path": "declared__o2_fragmented_malformed_unknown/capture/model.patch",
+      "sha256": "sha256:f11bfee1b0692e1c8242f6775d88d38f9ec71503ccd184693f5367b36b4cdb32"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/trace.json",
+      "path": "declared__o3_threshold_compaction/capture/trace.json",
+      "sha256": "sha256:b59c6569df885ca56f4e3c1311d0c14b7386f015ff5987fd68a22179fd957620"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/run-receipt.json",
+      "path": "declared__o3_threshold_compaction/capture/run-receipt.json",
+      "sha256": "sha256:4fe5157d804c1286316c186b7e71c48810b518a14f960da99b3f0129d3371d86"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/scenario.json",
+      "path": "declared__o3_threshold_compaction/capture/scenario.json",
+      "sha256": "sha256:47f224a5efb420748d483e3885c3e48341f9c426934f79c75fe2cb1b5d28c243"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o3_threshold_compaction/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/http-transcript.jsonl",
+      "path": "declared__o3_threshold_compaction/capture/http-transcript.jsonl",
+      "sha256": "sha256:131600f5cb3e54568532b08c9f66f52767a1830301b8a76d65ef8da9ee6b6f77"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/omp-events.jsonl",
+      "path": "declared__o3_threshold_compaction/capture/omp-events.jsonl",
+      "sha256": "sha256:a58ae0a9a688a90f432dbd5fa7057b4613c7f1068e8e2b85673ea8d6dd550abe"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-pre.json",
+      "path": "declared__o3_threshold_compaction/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/workspace-manifest-post.json",
+      "path": "declared__o3_threshold_compaction/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o3_threshold_compaction/capture/model.patch",
+      "path": "declared__o3_threshold_compaction/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/trace.json",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/trace.json",
+      "sha256": "sha256:44a1733478706fdcb3c25f55a3f9ba7b48dd4e4fee2feab4c1075852780d1568"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/run-receipt.json",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/run-receipt.json",
+      "sha256": "sha256:09a906b456aff0d892993c14e165a25d226a242ad0c0b367089d3dc57a6fe803"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/scenario.json",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/scenario.json",
+      "sha256": "sha256:3c9337abb9793b507454bc2ab8ea48a38f1da1ca324c1a301fbe8a1121506298"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/http-transcript.jsonl",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/http-transcript.jsonl",
+      "sha256": "sha256:1f520b721d07cb5c0680d3d2146670915d9af60a392a94a2a0d8c8ac9dbf3336"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/omp-events.jsonl",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/omp-events.jsonl",
+      "sha256": "sha256:49a41c94539383974ffaf552018471666b2807187fc69ca660f1986319ce54eb"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-post.json",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o4_bash_timeout_nonzero_cancel/capture/model.patch",
+      "path": "declared__o4_bash_timeout_nonzero_cancel/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/trace.json",
+      "path": "declared__o5_http500_retry_disabled/capture/trace.json",
+      "sha256": "sha256:123a67e417baed1db1ad4a5377c2cae9ccff07d74212f5546b8df3eb34aa1065"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/run-receipt.json",
+      "path": "declared__o5_http500_retry_disabled/capture/run-receipt.json",
+      "sha256": "sha256:93ee63c8b69164aab99ec276003a2eb3ab3f11dddccf4bebaec95682a274e454"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/scenario.json",
+      "path": "declared__o5_http500_retry_disabled/capture/scenario.json",
+      "sha256": "sha256:f90a4e3db140fd96f5cf71b181167582a123317a2b4027d55e94feac0e8bc1fa"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o5_http500_retry_disabled/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/http-transcript.jsonl",
+      "path": "declared__o5_http500_retry_disabled/capture/http-transcript.jsonl",
+      "sha256": "sha256:02c3ce06a31c75d385a1197bd374c25711a76b5be12369ed2f298d5e2a4f5804"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/omp-events.jsonl",
+      "path": "declared__o5_http500_retry_disabled/capture/omp-events.jsonl",
+      "sha256": "sha256:d6b792280a0517b73406214d749a3f90e79c81dc50dddbc1d450015488fcefbd"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json",
+      "path": "declared__o5_http500_retry_disabled/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/workspace-manifest-post.json",
+      "path": "declared__o5_http500_retry_disabled/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o5_http500_retry_disabled/capture/model.patch",
+      "path": "declared__o5_http500_retry_disabled/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/trace.json",
+      "path": "declared__o6_disabled_resources_agents_md/capture/trace.json",
+      "sha256": "sha256:f0ec4cc8ee7b9814e454b13660f4f6deb1c3c672b00c2627aeeee70759283432"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/run-receipt.json",
+      "path": "declared__o6_disabled_resources_agents_md/capture/run-receipt.json",
+      "sha256": "sha256:4bfc7a06b32acba3abb59ac1238a2a4bea3c4e399e9c739a1c6227aeddcc3d4e"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/scenario.json",
+      "path": "declared__o6_disabled_resources_agents_md/capture/scenario.json",
+      "sha256": "sha256:11cafc642fc943b378a9dbf0e40020293f07c05df9bd6e84956b146e02d2d703"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o6_disabled_resources_agents_md/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/http-transcript.jsonl",
+      "path": "declared__o6_disabled_resources_agents_md/capture/http-transcript.jsonl",
+      "sha256": "sha256:0ecb1a7cc0b872341403ddbd0ba5e55e464c1ca8a2f9ceeb4e100082a02060d6"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/omp-events.jsonl",
+      "path": "declared__o6_disabled_resources_agents_md/capture/omp-events.jsonl",
+      "sha256": "sha256:53ee6038e9bf3a9972040aa41b196709039a3279b1f45ccfbbe52ba2931b1ff6"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json",
+      "path": "declared__o6_disabled_resources_agents_md/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:f55721d75b2a8e05f7c3dc3fe16e6b7c010c067877f8d125fab2ca597b98453c"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/workspace-manifest-post.json",
+      "path": "declared__o6_disabled_resources_agents_md/capture/workspace-manifest-post.json",
+      "sha256": "sha256:f55721d75b2a8e05f7c3dc3fe16e6b7c010c067877f8d125fab2ca597b98453c"
+    },
+    {
+      "member_path": "packet/cases/declared__o6_disabled_resources_agents_md/capture/model.patch",
+      "path": "declared__o6_disabled_resources_agents_md/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/trace.json",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/trace.json",
+      "sha256": "sha256:7549c51d311d6b0ad9302463ebce72e17d90e8ebb57fe14067659cf3cc38bb92"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/run-receipt.json",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/run-receipt.json",
+      "sha256": "sha256:c42b153eee70ea04e15a024e271693e633adabb0a0c69c5b9d2873127e14c342"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/scenario.json",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/scenario.json",
+      "sha256": "sha256:425b463e117d68dcbe358287e74d2e69a659b2d4d063edde466ecdd2990688b9"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o6b_disabled_resources_no_rules/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/http-transcript.jsonl",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/http-transcript.jsonl",
+      "sha256": "sha256:af71310d0820520f45236b9072d1ee07d7c2579fc2661fe9a2c0a858577206ca"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/omp-events.jsonl",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/omp-events.jsonl",
+      "sha256": "sha256:28aeaef78952925186801d4a16872456b3efb5f428ce047948e70d8014d4d549"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:f55721d75b2a8e05f7c3dc3fe16e6b7c010c067877f8d125fab2ca597b98453c"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-post.json",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/workspace-manifest-post.json",
+      "sha256": "sha256:f55721d75b2a8e05f7c3dc3fe16e6b7c010c067877f8d125fab2ca597b98453c"
+    },
+    {
+      "member_path": "packet/cases/declared__o6b_disabled_resources_no_rules/capture/model.patch",
+      "path": "declared__o6b_disabled_resources_no_rules/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/trace.json",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/trace.json",
+      "sha256": "sha256:93f8a5a98a89521c59d608b3e29149c87113fa9ade4f8ccfb8caa952ca475dd1"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/run-receipt.json",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/run-receipt.json",
+      "sha256": "sha256:8fae574bd27ffa00049045ee987bee3a42b1a78e94db3bc02796e7324b93bbe6"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/scenario.json",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/scenario.json",
+      "sha256": "sha256:940fe9552953b1760005fa15d90c545ac28869641f83e5d659b7972a91ff021d"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/http-transcript.jsonl",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/http-transcript.jsonl",
+      "sha256": "sha256:d9b63b47802ad446ea1aeba514503e89163ff9ff9da91be45930c55bfdca42f7"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/omp-events.jsonl",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/omp-events.jsonl",
+      "sha256": "sha256:44cf430e4f38b9750aaaa6e29abb2c5b5f28a2ee9d31b8a1e39feb6c7e3de6ab"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:d2fdb3cef8067d34a3d9c19ab62e4528515ed1fd8e7e9a8986f4c9bc8075ae8a"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-post.json",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/workspace-manifest-post.json",
+      "sha256": "sha256:8c2657bae93ec59093354f2abde5fb2618ec4e329cdaec71e84333823a0fd12d"
+    },
+    {
+      "member_path": "packet/cases/declared__o7_hashline_stale_unseen_anchor/capture/model.patch",
+      "path": "declared__o7_hashline_stale_unseen_anchor/capture/model.patch",
+      "sha256": "sha256:8df2ddc199f7f60f98a81b7474d684137d0ccbb7fd3d7c6294d4b74fc33fc816"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/trace.json",
+      "path": "declared__o8_normal_multiturn/capture/trace.json",
+      "sha256": "sha256:ca4fa32d6670aa7656089c81fe2227a173b2f3107a058c61bec6f11292780afa"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/run-receipt.json",
+      "path": "declared__o8_normal_multiturn/capture/run-receipt.json",
+      "sha256": "sha256:0ca30a86231b772c2b0d3884c1fc4099d6fd78fb270f4e4d118219ffb736bc87"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/scenario.json",
+      "path": "declared__o8_normal_multiturn/capture/scenario.json",
+      "sha256": "sha256:a1893ebf36346c54152cd47d83b3efbfe7041e1f986dc87448c3ae3af16fdaf7"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o8_normal_multiturn/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/http-transcript.jsonl",
+      "path": "declared__o8_normal_multiturn/capture/http-transcript.jsonl",
+      "sha256": "sha256:8b525b7a11ee1fa117f310c77f107cb980128cccb9fb7b7dfe047bc53e6a3322"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/omp-events.jsonl",
+      "path": "declared__o8_normal_multiturn/capture/omp-events.jsonl",
+      "sha256": "sha256:90a569db5fe76b2cbf0c0a63533a96593c8f4905fbd7204b2ab22690ef1a97fb"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-pre.json",
+      "path": "declared__o8_normal_multiturn/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/workspace-manifest-post.json",
+      "path": "declared__o8_normal_multiturn/capture/workspace-manifest-post.json",
+      "sha256": "sha256:92531687bb0ab41c84bd07fc51a9ff02c6708bb578ec61dc37d2854d337d4342"
+    },
+    {
+      "member_path": "packet/cases/declared__o8_normal_multiturn/capture/model.patch",
+      "path": "declared__o8_normal_multiturn/capture/model.patch",
+      "sha256": "sha256:04449856f0774624b9715db2cf5d4369891d920dfa02290b17cc6949406012d0"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/trace.json",
+      "path": "declared__o9_budget_limit_stop/capture/trace.json",
+      "sha256": "sha256:eb63a07e1799745ccfde864f6ec8556a34ce4ab5cc1a0584c980df30fa6728f6"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/run-receipt.json",
+      "path": "declared__o9_budget_limit_stop/capture/run-receipt.json",
+      "sha256": "sha256:193603c7fd2aa5f51c7e9828db56c8c9dafe2f9f46f90982a37a599ceb66fc23"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/scenario.json",
+      "path": "declared__o9_budget_limit_stop/capture/scenario.json",
+      "sha256": "sha256:e662058c1162ad5a1270998195cd4336367c370b0d91e486f37a8447b2f7985b"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o9_budget_limit_stop/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/http-transcript.jsonl",
+      "path": "declared__o9_budget_limit_stop/capture/http-transcript.jsonl",
+      "sha256": "sha256:00d25df80c2ce1eb8426697ee764a603d3cc622dbfa8f99dcba8f68a9a278db6"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/omp-events.jsonl",
+      "path": "declared__o9_budget_limit_stop/capture/omp-events.jsonl",
+      "sha256": "sha256:13f9495f29d7dfdc1d996ac5680b785129ad497b61a6d6a9425c8b10dd496d24"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json",
+      "path": "declared__o9_budget_limit_stop/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+      "path": "declared__o9_budget_limit_stop/capture/workspace-manifest-post.json",
+      "sha256": "sha256:7edc28f23a582a3c7d816742a446d3c41351434d6435433494e8bd15f1768f4b"
+    },
+    {
+      "member_path": "packet/cases/declared__o9_budget_limit_stop/capture/model.patch",
+      "path": "declared__o9_budget_limit_stop/capture/model.patch",
+      "sha256": "sha256:6f663b3d5e69af08f32473dfe4db6934a5559889031e8c25ffd5e4d510e9b435"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/trace.json",
+      "path": "declared__o10_stream_broken/capture/trace.json",
+      "sha256": "sha256:2da886429d43ccfdf77863315685b3e67b0a72993049f49372c9855a396a7efe"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/run-receipt.json",
+      "path": "declared__o10_stream_broken/capture/run-receipt.json",
+      "sha256": "sha256:2612fb4c5d148f7e0da27c10155ba34f4faac60209a64c25485681257c59b469"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/scenario.json",
+      "path": "declared__o10_stream_broken/capture/scenario.json",
+      "sha256": "sha256:9985bf9efd36c0e2642ae56319c44bd713a838a10ca10c5e77ee8f5330c3644b"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o10_stream_broken/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/http-transcript.jsonl",
+      "path": "declared__o10_stream_broken/capture/http-transcript.jsonl",
+      "sha256": "sha256:f6a8128e5e7e89a77b5df6b0f52f0145cbfd94fc63098a671f063a2ede17812c"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/omp-events.jsonl",
+      "path": "declared__o10_stream_broken/capture/omp-events.jsonl",
+      "sha256": "sha256:4481bd4c7754e0c4d48af2bcf76a67d52851727104deefd1ff921b06328d2b0d"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-pre.json",
+      "path": "declared__o10_stream_broken/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/workspace-manifest-post.json",
+      "path": "declared__o10_stream_broken/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o10_stream_broken/capture/model.patch",
+      "path": "declared__o10_stream_broken/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/trace.json",
+      "path": "declared__o11_length_cutoff/capture/trace.json",
+      "sha256": "sha256:5bc95176ca22df8d8eee94e120934e03e832e922a0a777722b96e5aea8e86475"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/run-receipt.json",
+      "path": "declared__o11_length_cutoff/capture/run-receipt.json",
+      "sha256": "sha256:d403a8e579b747b0954ebc51a4b44c41c372c941a5427a94925e784254fa531c"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/scenario.json",
+      "path": "declared__o11_length_cutoff/capture/scenario.json",
+      "sha256": "sha256:89829d4458f1aa7b2b0375987f5510a054fd6a67b1f5b63c6ac89ec547b7d38a"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o11_length_cutoff/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/http-transcript.jsonl",
+      "path": "declared__o11_length_cutoff/capture/http-transcript.jsonl",
+      "sha256": "sha256:8ea41fb15820c549d11dd3ca78ac3a483611355742a5346f0d13ec59c4618bda"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/omp-events.jsonl",
+      "path": "declared__o11_length_cutoff/capture/omp-events.jsonl",
+      "sha256": "sha256:a9773b7e55ec0450d29d546cce65cd2ccd7870382ecd2531874f3c6dd5c031fe"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-pre.json",
+      "path": "declared__o11_length_cutoff/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/workspace-manifest-post.json",
+      "path": "declared__o11_length_cutoff/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o11_length_cutoff/capture/model.patch",
+      "path": "declared__o11_length_cutoff/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/trace.json",
+      "path": "declared__o12_process_lifecycle/capture/trace.json",
+      "sha256": "sha256:62cdd809d90f6caf02ef3fee1a427512668c620ead92ec83f9732e29ea238e12"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/run-receipt.json",
+      "path": "declared__o12_process_lifecycle/capture/run-receipt.json",
+      "sha256": "sha256:6a5a637d18bdd5c4622fffc0746bfaabe3f73962d9a4b24230460de89c40334f"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/scenario.json",
+      "path": "declared__o12_process_lifecycle/capture/scenario.json",
+      "sha256": "sha256:dd3ade733f9490be3bc8f9d6f7ed1994ff66b0f44ebcdc04370cbbd7d12cfa10"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__o12_process_lifecycle/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/http-transcript.jsonl",
+      "path": "declared__o12_process_lifecycle/capture/http-transcript.jsonl",
+      "sha256": "sha256:808e1acc57748d34addf505ae458493709a8d4449e2e8350cc15c1d4a1519422"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/omp-events.jsonl",
+      "path": "declared__o12_process_lifecycle/capture/omp-events.jsonl",
+      "sha256": "sha256:8b9cdec1e60ccf3ee53927c987f8a59c59643e17dddfc84c21881a8fdefba614"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-pre.json",
+      "path": "declared__o12_process_lifecycle/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/workspace-manifest-post.json",
+      "path": "declared__o12_process_lifecycle/capture/workspace-manifest-post.json",
+      "sha256": "sha256:afec855ca50b3687bb110a3194448e685a3117e06e0b9258d422ee045db29ce3"
+    },
+    {
+      "member_path": "packet/cases/declared__o12_process_lifecycle/capture/model.patch",
+      "path": "declared__o12_process_lifecycle/capture/model.patch",
+      "sha256": "sha256:746a48b0613ae7b32c14afea464f6a201323c28a5e68733349d939ad5cc13358"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/trace.json",
+      "path": "declared__f2_json_mode_without_print/capture/trace.json",
+      "sha256": "sha256:0e4f62cfaa7c31fdfa92104109b3dcfb30b9d14a6bbc2400ca9d0368848b8b82"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/run-receipt.json",
+      "path": "declared__f2_json_mode_without_print/capture/run-receipt.json",
+      "sha256": "sha256:4aea8bd4145cf912fd010880be8e767fdc1c93c75365a9dcb5c359243ab9a530"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/scenario.json",
+      "path": "declared__f2_json_mode_without_print/capture/scenario.json",
+      "sha256": "sha256:d3e2407e104a7d21d4346c26abbd8dc4bd71ca9930d35ca77ef7d53e022c379e"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__f2_json_mode_without_print/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/http-transcript.jsonl",
+      "path": "declared__f2_json_mode_without_print/capture/http-transcript.jsonl",
+      "sha256": "sha256:e5f701a54025c110c6674c13500261cf86de37524f3262621cbc07bc8e2ae6fd"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/omp-events.jsonl",
+      "path": "declared__f2_json_mode_without_print/capture/omp-events.jsonl",
+      "sha256": "sha256:656c8565825e7b45ae8fc704b38973ec630cb50958b3dcd69d4bc21518be4c5f"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json",
+      "path": "declared__f2_json_mode_without_print/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/workspace-manifest-post.json",
+      "path": "declared__f2_json_mode_without_print/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__f2_json_mode_without_print/capture/model.patch",
+      "path": "declared__f2_json_mode_without_print/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "not_replayed_cases": {
+    "declared__f0_no_prompt_templates_rejected": "Upstream CLI flag probe rejected (--no-prompt-templates unknown flag, exit 2, 0 requests served); BB headless replay does not expose CLI argv flags",
+    "declared__f1_config_key_value_rejected": "Upstream CLI flag probe rejected (--config key=value not supported, exit 1, 0 requests served); BB headless replay does not expose CLI argv flags",
+    "retry_default_control__o5_http500_retry_disabled": "Control run causal evidence for overlay retry.enabled:false; not a declared replay target"
+  },
+  "omitted": [
+    {
+      "member_glob": "packet/cases/declared__*/testbed/.git/**",
+      "reason": "git object store of the golden commit. The golden (pre-run) regular files are recovered from its loose blob objects by sha256 content lookup into blobs/<sha256> and bound by capture/workspace-manifest-pre.json. Replay only needs `.git/` to exist as a directory; no tool reads git data in any declared case."
+    },
+    {
+      "member_glob": "packet/cases/declared__*/testbed/** (unchanged files and symlinks)",
+      "reason": "post-run tree entries identical to workspace-manifest-pre.json entries carry no effect; only changed regular files are kept, as blobs/<sha256> bound by workspace-manifest-post.json"
+    },
+    {
+      "member_glob": "packet/cases/declared__*/capture/receiver/http-transcript.jsonl",
+      "reason": "byte-identical (same SHA256SUMS digest) to capture/http-transcript.jsonl; recorded as identical_member_paths on that entry"
+    },
+    {
+      "member_glob": "packet/cases/declared__*/capture/{receiver/ready.json,receiver/closed.json,receiver/cap-reached.json,receiver/connection-events.jsonl,git-status.txt,omp-stderr.log}, supplier.stdout, supplier.stderr, capture/home/**, omp-config/**",
+      "reason": "capture-harness bookkeeping, sqlite cache, or credential placeholder; not an input of the comparator projection or replay"
+    },
+    {
+      "member_glob": "packet/cases/{declared__f0_*,declared__f1_*,retry_default_control__*}",
+      "reason": "probes and control runs recorded under not_replayed; not replay targets"
+    }
+  ],
+  "replay_workspace": {
+    "extra_directories": [
+      ".git"
+    ],
+    "extra_directories_reason": "git object store of the golden commit. The golden (pre-run) regular files are recovered from its loose blob objects by sha256 content lookup into blobs/<sha256> and bound by capture/workspace-manifest-pre.json. Replay only needs `.git/` to exist as a directory; no tool reads git data in any declared case.",
+    "golden_tree": "workspace-manifest-pre.json entries: directories and modes as recorded, files from blobs/<sha256>, symlinks from target"
+  },
+  "schema_version": "bb.e4.omp16213-declared-fixture-manifest.v1",
+  "source_packet": {
+    "archive": "omp16213-capture-packet.tar.gz",
+    "identity": {
+      "base_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef",
+      "bun_archive": "@oven/bun-linux-x64-baseline@1.3.14",
+      "bun_archive_sha256": "sha256:1d58ab332bf81a31ef3d59d0ddaf2d60e8889b7da9e6a41762492bf5675a2be5",
+      "bun_version": "1.3.14",
+      "lock_sha256": "sha256:329e0ca5f7ec6c8a28a272ab347e1c6ef03f946d5716e4415552611898c3997a",
+      "native_leaf_linux_x64_sha256": "sha256:6a01ccc7c3f16c667eeead5bc0e8f02bbf96037102e676171460cbb1dc32fa6c",
+      "notes": "Runtime tree = bun install --frozen-lockfile --ignore-scripts --production --omit=optional of the kit closure, packed on the Mac and overlaid in the SIF with the pinned pi-natives-linux-x64 leaf; no registry access during the SIF build.",
+      "package": "@oh-my-pi/pi-coding-agent",
+      "portable_digest": "c60c9de54257785fde344e866ef2ab9a8176f934d18b0e49b5335cd33e01ce42",
+      "portable_runtime_sha256": "sha256:39daa2c60f10cb7d4f505196806a5e1d967f895ca34c19555c2510081b017c7d",
+      "profile": "omp",
+      "profile_overlay": "breadboard.oh-my-pi.headless.v18.1.17 applied to 16.2.13 (see README)",
+      "published_package_integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+      "published_package_sha256": "sha256:293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+      "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+      "version": "16.2.13"
+    },
+    "identity_sha256": "sha256:2b65c0bea6b5302bb57f84439e72a3d3e4e48aad6b8718fc897689c78fcb7996",
+    "manifest_member_sha256": "sha256:b29d7ebf66c1561a16667dd1ade625ca62fabd7173048cb6843ec4a6ccca140a",
+    "member_root": "packet/",
+    "sha256": "sha256:cf93d5ac54c0271ce90a7028b0c1cde6ff022f7516cb26a838608878e5f54ec9",
+    "sha256sums_member": "packet/SHA256SUMS",
+    "sha256sums_sha256": "sha256:43924fbd2d7161f1d0d7dba0f83d229d45904ae506418ba7b5ee532354712e9f"
+  }
+}

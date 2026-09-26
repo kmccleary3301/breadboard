@@ -1,0 +1,10 @@
+{
+  "case_id": "o3_threshold_compaction",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 2,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:b59c6569df885ca56f4e3c1311d0c14b7386f015ff5987fd68a22179fd957620"
+}

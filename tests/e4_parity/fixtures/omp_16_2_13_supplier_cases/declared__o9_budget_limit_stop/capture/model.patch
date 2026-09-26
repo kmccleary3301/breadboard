@@ -1,0 +1,64 @@
+diff --git a/budget_1.txt b/budget_1.txt
+new file mode 100644
+index 0000000..43dd47e
+--- /dev/null
++++ b/budget_1.txt
+@@ -0,0 +1 @@
++one
+\ No newline at end of file
+diff --git a/budget_2.txt b/budget_2.txt
+new file mode 100644
+index 0000000..64c5e58
+--- /dev/null
++++ b/budget_2.txt
+@@ -0,0 +1 @@
++two
+\ No newline at end of file
+diff --git a/budget_3.txt b/budget_3.txt
+new file mode 100644
+index 0000000..1d19714
+--- /dev/null
++++ b/budget_3.txt
+@@ -0,0 +1 @@
++three
+\ No newline at end of file
+diff --git a/budget_4.txt b/budget_4.txt
+new file mode 100644
+index 0000000..ea1f343
+--- /dev/null
++++ b/budget_4.txt
+@@ -0,0 +1 @@
++four
+\ No newline at end of file
+diff --git a/budget_5.txt b/budget_5.txt
+new file mode 100644
+index 0000000..011203e
+--- /dev/null
++++ b/budget_5.txt
+@@ -0,0 +1 @@
++five
+\ No newline at end of file
+diff --git a/budget_6.txt b/budget_6.txt
+new file mode 100644
+index 0000000..64c56a3
+--- /dev/null
++++ b/budget_6.txt
+@@ -0,0 +1 @@
++six
+\ No newline at end of file
+diff --git a/budget_7.txt b/budget_7.txt
+new file mode 100644
+index 0000000..51174ca
+--- /dev/null
++++ b/budget_7.txt
+@@ -0,0 +1 @@
++seven
+\ No newline at end of file
+diff --git a/budget_8.txt b/budget_8.txt
+new file mode 100644
+index 0000000..fc496d3
+--- /dev/null
++++ b/budget_8.txt
+@@ -0,0 +1 @@
++eight
+\ No newline at end of file

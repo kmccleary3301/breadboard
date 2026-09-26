@@ -1,0 +1,290 @@
+{
+  "argv": [
+    "bun",
+    "<omp-cli>",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Execute the bounded budget steps in order. Do not invent extra work. The supplier request guard must stop before a ninth model request is served."
+  ],
+  "argv_exact": [
+    "/opt/omp/bun/bun",
+    "/opt/omp/runtime/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Execute the bounded budget steps in order. Do not invent extra work. The supplier request guard must stop before a ninth model request is served."
+  ],
+  "assistant_stops": [
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    }
+  ],
+  "bun_version": "1.3.14",
+  "case_id": "o9_budget_limit_stop",
+  "config_dir_side_effects": {
+    "added": [
+      "agent.db",
+      "agent.db-shm",
+      "agent.db-wal",
+      "models.db",
+      "models.yml"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "config_mode": "declared",
+  "config_overlay": {
+    "path": "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "sha256": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191"
+  },
+  "covered_bullets": [
+    "JSON event output and terminal result behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "cwd": "/testbed",
+  "egress_probe": {
+    "blocked": true,
+    "errno": "ENETUNREACH",
+    "error": "[Errno 101] Network is unreachable",
+    "target": "1.1.1.1:443"
+  },
+  "elapsed_seconds": 1.354,
+  "env": {
+    "HOME": "/capture/home",
+    "LANG": "C.UTF-8",
+    "NO_COLOR": "1",
+    "PATH": "/opt/omp/bun:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PI_CODING_AGENT_DIR": "/omp-config",
+    "PI_NATIVE_VARIANT": "baseline",
+    "TMPDIR": "/capture/tmp"
+  },
+  "event_type_counts": {
+    "agent_start": 1,
+    "message_end": 17,
+    "message_start": 17,
+    "message_update": 56,
+    "session": 1,
+    "tool_execution_end": 8,
+    "tool_execution_start": 8,
+    "turn_end": 8,
+    "turn_start": 9
+  },
+  "events_total": 125,
+  "events_unparsed_lines": [],
+  "exit_code": 0,
+  "expect": {
+    "effect_absent": [
+      "budget_9.txt",
+      "budget_10.txt"
+    ],
+    "exit_code": 0,
+    "request_markers_absent": [],
+    "request_markers_present": [],
+    "requests": null,
+    "requests_at_least": null,
+    "requests_served": 8,
+    "stderr_contains": null,
+    "workspace_after": {}
+  },
+  "expected_exit_code": 0,
+  "failures": [],
+  "files": {
+    "config-manifest-post.json": "sha256:02bee9aead081263f4e84ed3edca6a9afaa0faae23561b2df4e36475b065fa13",
+    "config-manifest-pre.json": "sha256:81b3b7bc4441f1fa1cecb992b250c6a425fa6b0e4cce05a5171e78ee990c170c",
+    "config-overlay.yml": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191",
+    "git-status.txt": "sha256:c8272b068973a0ad54b1fa9758ae815a3c44cd2e9d2f1ede01a4584c931ffa70",
+    "home-manifest-post.json": "sha256:ffe03e1fb0b68a816c4a18baf197441ecd6d5153eac3e730826b5342316b49f2",
+    "home-manifest-pre.json": "sha256:c8a2e4c23e75e6872f535886e23abc5198b9774164d83a614a82ba0d0a5d24e5",
+    "http-transcript.jsonl": "sha256:00d25df80c2ce1eb8426697ee764a603d3cc622dbfa8f99dcba8f68a9a278db6",
+    "model.patch": "sha256:6f663b3d5e69af08f32473dfe4db6934a5559889031e8c25ffd5e4d510e9b435",
+    "omp-events.jsonl": "sha256:13f9495f29d7dfdc1d996ac5680b785129ad497b61a6d6a9425c8b10dd496d24",
+    "omp-stderr.log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scenario.json": "sha256:e662058c1162ad5a1270998195cd4336367c370b0d91e486f37a8447b2f7985b",
+    "workspace-manifest-post-immediate.json": "sha256:7edc28f23a582a3c7d816742a446d3c41351434d6435433494e8bd15f1768f4b",
+    "workspace-manifest-post.json": "sha256:7edc28f23a582a3c7d816742a446d3c41351434d6435433494e8bd15f1768f4b",
+    "workspace-manifest-pre.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_side_effects": {
+    "added": [
+      ".omp",
+      ".omp/gpu_cache.json",
+      ".omp/logs",
+      ".omp/logs/.9939c2487322ebfbfbe60eac85a2eff9e5900a27-audit.json",
+      ".omp/logs/omp.2026-09-26.log"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "kind": "capture",
+  "marker_hits": {},
+  "omp_version": "omp/16.2.13",
+  "oracle_notes": {
+    "request_cap": 8
+  },
+  "overlay_argv_dropped": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "receiver_closed": {
+    "cap_refused": 1,
+    "failed": null,
+    "requests": 9,
+    "steps_scripted": 10,
+    "steps_served": 8
+  },
+  "request_guard": {
+    "cap_reached": true,
+    "request_cap": 8,
+    "signal_sent": {
+      "anchor": "request_cap_refused",
+      "signal": "SIGTERM",
+      "t": 1.304
+    }
+  },
+  "requests_by_served": {
+    "completion": 8,
+    "request_cap_refused": 1
+  },
+  "requests_total": 9,
+  "schema_version": "bb.e4.omp16213-capture-trace.v2",
+  "stderr_head": "",
+  "supplier": {
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+    "package": "@oh-my-pi/pi-coding-agent",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "version": "16.2.13"
+  },
+  "tool_results": [
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.08 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-01",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-02",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-03",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-04",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-05",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-06",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-07",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o9_budget_limit_stop-08",
+      "toolName": "bash"
+    }
+  ],
+  "transcript_unparsed_lines": [],
+  "what_it_exercises": "(18.1.17 budget_limit_stop) profile request_cap 8: ten scripted tool steps; the receiver serves 8, holds request 9 without response bytes, and the supplier SIGTERMs omp.",
+  "workspace_delta": {
+    "added": [
+      "budget_1.txt",
+      "budget_2.txt",
+      "budget_3.txt",
+      "budget_4.txt",
+      "budget_5.txt",
+      "budget_6.txt",
+      "budget_7.txt",
+      "budget_8.txt"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "workspace_delta_immediate": {
+    "added": [
+      "budget_1.txt",
+      "budget_2.txt",
+      "budget_3.txt",
+      "budget_4.txt",
+      "budget_5.txt",
+      "budget_6.txt",
+      "budget_7.txt",
+      "budget_8.txt"
+    ],
+    "changed": [],
+    "removed": []
+  }
+}

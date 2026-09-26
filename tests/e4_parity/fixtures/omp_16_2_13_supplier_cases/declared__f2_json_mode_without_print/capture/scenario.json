@@ -1,0 +1,15 @@
+{
+  "case_id": "f2_json_mode_without_print",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "READY",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

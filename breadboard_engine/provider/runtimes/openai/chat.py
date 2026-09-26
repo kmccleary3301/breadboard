@@ -27,6 +27,7 @@ from ....compilation.provider_response import (
     PI_RESPONSE_CONSUMER_ID,
     PI_0_57_1_RESPONSE_CONSUMER_ID,
     OMP_RESPONSE_CONSUMER_ID,
+    OMP_16_2_13_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
@@ -362,12 +363,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         profile_options.pop("messages")
         profile_options.pop("stream")
         request_tools = profile_options.pop("tools", request_tools)
+        extra_body_fields: Dict[str, Any] = {}
         thinking_control = profile_options.pop("enable_thinking", None)
-        extra_body = (
-            {"enable_thinking": thinking_control}
-            if thinking_control is not None
-            else None
-        )
+        if thinking_control is not None:
+            extra_body_fields["enable_thinking"] = thinking_control
+        preserve_thinking = profile_options.pop("preserve_thinking", None)
+        if preserve_thinking is not None:
+            extra_body_fields["preserve_thinking"] = preserve_thinking
+        chat_template_kwargs = profile_options.pop("chat_template_kwargs", None)
+        if chat_template_kwargs is not None:
+            extra_body_fields["chat_template_kwargs"] = chat_template_kwargs
+        extra_body = extra_body_fields or None
         with redaction.secret_value_scope(
             profile.scoped_credential,
             *profile.caller_headers.values(),
@@ -504,6 +510,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             PI_RESPONSE_CONSUMER_ID,
             PI_0_57_1_RESPONSE_CONSUMER_ID,
             OMP_RESPONSE_CONSUMER_ID,
+            OMP_16_2_13_RESPONSE_CONSUMER_ID,
             OPENCLAW_RESPONSE_CONSUMER_ID,
         }:
             chat_messages = [dict(message) for message in messages]
@@ -513,6 +520,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             PI_RESPONSE_CONSUMER_ID,
             PI_0_57_1_RESPONSE_CONSUMER_ID,
             OMP_RESPONSE_CONSUMER_ID,
+            OMP_16_2_13_RESPONSE_CONSUMER_ID,
             OPENCLAW_RESPONSE_CONSUMER_ID,
         }
         request = profile.chat_request(
@@ -643,12 +651,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             profile_request.pop("messages")
             profile_request.pop("stream")
             request_tools = profile_request.pop("tools", None)
+            extra_body_fields: Dict[str, Any] = {}
             thinking_control = profile_request.pop("enable_thinking", None)
-            extra_body = (
-                {"enable_thinking": thinking_control}
-                if thinking_control is not None
-                else None
-            )
+            if thinking_control is not None:
+                extra_body_fields["enable_thinking"] = thinking_control
+            preserve_thinking = profile_request.pop("preserve_thinking", None)
+            if preserve_thinking is not None:
+                extra_body_fields["preserve_thinking"] = preserve_thinking
+            chat_template_kwargs = profile_request.pop("chat_template_kwargs", None)
+            if chat_template_kwargs is not None:
+                extra_body_fields["chat_template_kwargs"] = chat_template_kwargs
+            extra_body = extra_body_fields or None
             role_request = profile_request
         elif isinstance(client, _ProfileClient):
             raise ProviderRuntimeError(

@@ -1,0 +1,10 @@
+{
+  "case_id": "o0_text_stop",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:4c79a1117dcac267814f775e2ed35340e37389b028cecee637e724670e3ae670"
+}

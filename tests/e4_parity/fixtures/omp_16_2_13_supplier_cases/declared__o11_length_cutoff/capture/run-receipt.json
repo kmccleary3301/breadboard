@@ -1,0 +1,10 @@
+{
+  "case_id": "o11_length_cutoff",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 3,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:5bc95176ca22df8d8eee94e120934e03e832e922a0a777722b96e5aea8e86475"
+}

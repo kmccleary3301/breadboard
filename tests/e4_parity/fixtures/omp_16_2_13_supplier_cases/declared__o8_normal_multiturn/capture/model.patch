@@ -1,0 +1,7 @@
+diff --git a/normal_marker.txt b/normal_marker.txt
+new file mode 100644
+index 0000000..da3a982
+--- /dev/null
++++ b/normal_marker.txt
+@@ -0,0 +1 @@
++normal-omp

@@ -11,6 +11,7 @@ import hashlib
 import re
 import unicodedata
 from collections.abc import Mapping
+from types import MappingProxyType
 from dataclasses import dataclass, field
 from typing import Any, Literal
 from urllib.parse import urlsplit
@@ -88,6 +89,8 @@ class OpenAICompletionsRequestPolicy:
     tool_choice: Literal["auto"] | None = None
     # A source-declared body key carrying one per-episode conversation identity.
     conversation_key_field: Literal["prompt_cache_key"] | None = None
+    preserve_thinking: bool | None = None
+    chat_template_kwargs: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.schema_version != "bb.openai_chat_request_policy.v1":
@@ -112,6 +115,34 @@ class OpenAICompletionsRequestPolicy:
         ):
             raise ProviderContractError(
                 "request_policy.enable_thinking must be boolean or null"
+            )
+        if (
+            self.preserve_thinking is not None
+            and type(self.preserve_thinking) is not bool
+        ):
+            raise ProviderContractError(
+                "request_policy.preserve_thinking must be boolean or null"
+            )
+        if self.chat_template_kwargs is not None:
+            if not isinstance(self.chat_template_kwargs, Mapping):
+                raise ProviderContractError(
+                    "request_policy.chat_template_kwargs must be an object or null"
+                )
+            frozen_kwargs: dict[str, Any] = {}
+            for key, val in self.chat_template_kwargs.items():
+                if type(key) is not str or not key:
+                    raise ProviderContractError(
+                        "request_policy.chat_template_kwargs keys must be non-empty text"
+                    )
+                if not (val is None or type(val) in (str, int, float, bool)):
+                    raise ProviderContractError(
+                        "request_policy.chat_template_kwargs values must be JSON scalars"
+                    )
+                frozen_kwargs[key] = val
+            object.__setattr__(
+                self,
+                "chat_template_kwargs",
+                MappingProxyType(frozen_kwargs),
             )
         if self.tool_choice is not None and self.tool_choice != "auto":
             raise ProviderContractError("request_policy.tool_choice is unsupported")
@@ -161,6 +192,10 @@ class OpenAICompletionsRequestPolicy:
         # Omitted when unset so existing profile identities are unchanged.
         if self.conversation_key_field is not None:
             result["conversation_key_field"] = self.conversation_key_field
+        if self.preserve_thinking is not None:
+            result["preserve_thinking"] = self.preserve_thinking
+        if self.chat_template_kwargs is not None:
+            result["chat_template_kwargs"] = dict(self.chat_template_kwargs)
         return result
 
 
@@ -498,6 +533,13 @@ class OpenAICompletionsProviderProfile:
             raise ProviderContractError(
                 "capabilities.supports_thinking_control must be true for thinking"
             )
+        if (
+            self.request_policy.preserve_thinking is not None
+            and not self.capabilities.supports_thinking_control
+        ):
+            raise ProviderContractError(
+                "capabilities.supports_thinking_control must be true for thinking"
+            )
         object.__setattr__(
             self,
             "compatibility",
@@ -640,6 +682,12 @@ class OpenAICompletionsProviderProfile:
                 request[field_name] = value
         if self.request_policy.enable_thinking is not None:
             request["enable_thinking"] = self.request_policy.enable_thinking
+        if self.request_policy.preserve_thinking is not None:
+            request["preserve_thinking"] = self.request_policy.preserve_thinking
+        if self.request_policy.chat_template_kwargs is not None:
+            request["chat_template_kwargs"] = dict(
+                self.request_policy.chat_template_kwargs
+            )
         return request
 
     def required_request_features(self, *, tools: bool) -> tuple[str, ...]:
@@ -653,6 +701,10 @@ class OpenAICompletionsProviderProfile:
             features.add("stream_options")
         if self.request_policy.enable_thinking is not None:
             features.add("enable_thinking")
+        if self.request_policy.preserve_thinking is not None:
+            features.add("preserve_thinking")
+        if self.request_policy.chat_template_kwargs is not None:
+            features.add("chat_template_kwargs")
         if tools and self.request_policy.strict_tools is not None:
             features.add("strict_tools")
         if tools and self.request_policy.tool_choice is not None:
@@ -761,6 +813,20 @@ class OpenAICompletionsProviderProfile:
                 "status": "effective",
                 "source": f"{policy_source}.enable_thinking",
                 "effective": request["enable_thinking"],
+                "uncertainty": None,
+            }
+        if "preserve_thinking" in request:
+            provenance["preserve_thinking"] = {
+                "status": "effective",
+                "source": f"{policy_source}.preserve_thinking",
+                "effective": request["preserve_thinking"],
+                "uncertainty": None,
+            }
+        if "chat_template_kwargs" in request:
+            provenance["chat_template_kwargs"] = {
+                "status": "effective",
+                "source": f"{policy_source}.chat_template_kwargs",
+                "effective": dict(request["chat_template_kwargs"]),
                 "uncertainty": None,
             }
         if "tool_choice" in request:

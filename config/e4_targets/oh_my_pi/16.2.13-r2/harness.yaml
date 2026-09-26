@@ -1,0 +1,176 @@
+schema_version: bb.e4.target_config.v2
+target_id: oh-my-pi-r2@16.2.13
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.oh-my-pi.v16.2.13
+  revision: breadboard.oh-my-pi.v16.2.13
+prompt:
+  asset: prompts/system-prompt.md
+  dynamic_fields: []
+tools:
+  ordered:
+  - read
+  - bash
+  - edit
+  - write
+  - generate_image
+  surface_asset: tool-surface.json
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: openai_chat_completions
+    stream: true
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 120
+  action:
+    protocol: native_tools
+    decoder: breadboard.oh-my-pi.v16.2.13
+    repair: null
+    argument_processors: []
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: false
+    malformed: native_per_call_error_then_continue
+    empty_reply: native_turn_recovery
+    max_consecutive_format_errors: null
+  execution:
+    scheduler: shared_read_bash_exclusive_edit_write_completion_order
+    history_commit: assistant_then_completion_order_tool_results
+    terminal_policy: native_stop_or_before_model_request_cap
+    bounded_controls:
+      max_model_calls: 8
+      episode_wall_seconds: 120
+      single_tool_wall_seconds: 40
+      raw_evidence_bytes_per_outcome: 1048576
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.oh-my-pi.v16.2.13
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: noninteractive
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - interactive_agent
+  - model_image_delivery
+  - provider_retries
+  - model_fallback
+  - compaction
+  - network_tools
+  - subagents
+  - extensions
+  - skills
+  - persistent_sessions
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: cwd
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_lease/repository_root
+    omission: required
+    value_schema:
+      type: string
+  - name: current_date
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_worker/UTC_calendar_date
+    omission: required
+    value_schema:
+      type: string
+  - name: project_context
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: '@oh-my-pi/pi-coding-agent@16.2.13/src/discovery/index.ts'
+    omission: required
+    value_schema:
+      type: array
+      items:
+        type: object
+        properties:
+          path:
+            type: string
+          content:
+            type: string
+        required:
+        - path
+        - content
+        additionalProperties: false
+  - name: package_dir
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: installed_runtime/oh_my_pi_documentation_bundle
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - cwd
+  - current_date
+  - project_context
+  - package_dir
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: '@oh-my-pi/pi-coding-agent@16.2.13/src/sdk.ts'
+  - path: prompts/system-prompt.md
+    role: prompt
+    required: true
+    source_ref: '@oh-my-pi/pi-coding-agent@16.2.13/src/prompts/system/system-prompt.md'
+  - path: native-config.json
+    role: runtime
+    required: true
+    source_ref: '@oh-my-pi/pi-coding-agent@16.2.13/src/sdk.ts'
+  - path: native-worker.json
+    role: runtime
+    required: true
+    source_ref: breadboard/rl/harness/runners/omp_16_2_13_native_tool_worker.ts
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: '@oh-my-pi/pi-coding-agent@16.2.13/src/tools/index.ts'
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: https://raw.githubusercontent.com/can1357/oh-my-pi/5356713eae60e67ee64d9b02e3b5e377d248ee7f/LICENSE
+  - path: source.json
+    role: source
+    required: true
+    source_ref: omp16213-runtime-pins.json
+  order:
+  - harness.yaml
+  - prompts/system-prompt.md
+  - native-config.json
+  - native-worker.json
+  - tool-surface.json
+  - LICENSE.txt
+  - source.json
+required_capabilities:
+- provider_native_response.v1
+- native_source_session.v1
+- native_tool_phase_worker.v1

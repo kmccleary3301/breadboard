@@ -1,0 +1,126 @@
+{
+  "case_id": "o5_http500_retry_disabled",
+  "request_cap": 8,
+  "steps": [
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Scripted HTTP 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    }
+  ]
+}

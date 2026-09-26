@@ -1,0 +1,10 @@
+{
+  "case_id": "f2_json_mode_without_print",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:0e4f62cfaa7c31fdfa92104109b3dcfb30b9d14a6bbc2400ca9d0368848b8b82"
+}

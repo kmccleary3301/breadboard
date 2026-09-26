@@ -1,0 +1,11 @@
+diff --git a/long.txt b/long.txt
+index 7df46af..72bf355 100644
+--- a/long.txt
++++ b/long.txt
+@@ -1,5 +1,5 @@
+ long line 1
+-long line 2
++seen edit 2
+ long line 3
+ long line 4
+ long line 5

@@ -1,0 +1,20 @@
+{
+  "schema_version": "bb.e4.native-worker.v1",
+  "worker": "breadboard.rl.harness.omp_16_2_13_native_tools.NativeToolWorker",
+  "bun": "/opt/omp/runtime/bun-linux-x64-baseline/bun",
+  "source_root": "/opt/omp/source/oh-my-pi-5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+  "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+  "native_entrypoints": {
+    "sdk_composition": "breadboard/rl/harness/runners/omp_16_2_13_native_tool_worker.ts",
+    "edit": "src/edit/index.ts",
+    "bash": "src/exec/bash-executor.ts"
+  },
+  "leaves": [
+    "pi-natives EditSession/EditStore",
+    "brush-core Shell",
+    "uutils"
+  ],
+  "shell_fallback": false,
+  "model_transport": "controller-owned",
+  "model_loop": "controller-owned; SDK worker never invokes session.prompt"
+}

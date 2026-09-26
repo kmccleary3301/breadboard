@@ -1,0 +1,19 @@
+{
+  "case_id": "o0_text_stop",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "READY",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": {
+        "completion_tokens": 1,
+        "prompt_tokens": 1200,
+        "total_tokens": 1201
+      }
+    }
+  ]
+}

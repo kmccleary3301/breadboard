@@ -13,6 +13,10 @@
       "descriptor": "oh_my_pi/16.2.13/target.json",
       "sha256": "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
     },
+    "oh-my-pi-r2@16.2.13": {
+      "descriptor": "oh_my_pi/16.2.13-r2/target.json",
+      "sha256": "aba6556807ff523fb01a17a65c1195e46e8ae7f089be21ed7ed626e6ef123918"
+    },
     "openclaw@2026.9.4": {
       "descriptor": "openclaw/2026.9.4/target.json",
       "sha256": "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a"

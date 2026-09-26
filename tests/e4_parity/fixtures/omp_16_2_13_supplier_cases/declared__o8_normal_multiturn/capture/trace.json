@@ -1,0 +1,225 @@
+{
+  "argv": [
+    "bun",
+    "<omp-cli>",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Use bash to write normal_marker.txt with exactly normal-omp, read it back, then finish with COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT."
+  ],
+  "argv_exact": [
+    "/opt/omp/bun/bun",
+    "/opt/omp/runtime/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Use bash to write normal_marker.txt with exactly normal-omp, read it back, then finish with COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT."
+  ],
+  "assistant_stops": [
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "stop"
+    }
+  ],
+  "bun_version": "1.3.14",
+  "case_id": "o8_normal_multiturn",
+  "config_dir_side_effects": {
+    "added": [
+      "agent.db",
+      "agent.db-shm",
+      "agent.db-wal",
+      "models.db",
+      "models.yml"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "config_mode": "declared",
+  "config_overlay": {
+    "path": "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "sha256": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191"
+  },
+  "covered_bullets": [
+    "prompt and message construction",
+    "JSON event output and terminal result behavior",
+    "context limits, compaction, and history retention",
+    "no-session behavior"
+  ],
+  "cwd": "/testbed",
+  "egress_probe": {
+    "blocked": true,
+    "errno": "ENETUNREACH",
+    "error": "[Errno 101] Network is unreachable",
+    "target": "1.1.1.1:443"
+  },
+  "elapsed_seconds": 1.354,
+  "env": {
+    "HOME": "/capture/home",
+    "LANG": "C.UTF-8",
+    "NO_COLOR": "1",
+    "PATH": "/opt/omp/bun:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PI_CODING_AGENT_DIR": "/omp-config",
+    "PI_NATIVE_VARIANT": "baseline",
+    "TMPDIR": "/capture/tmp"
+  },
+  "event_type_counts": {
+    "agent_end": 1,
+    "agent_start": 1,
+    "message_end": 8,
+    "message_start": 8,
+    "message_update": 24,
+    "session": 1,
+    "tool_execution_end": 3,
+    "tool_execution_start": 3,
+    "tool_execution_update": 2,
+    "turn_end": 4,
+    "turn_start": 4
+  },
+  "events_total": 59,
+  "events_unparsed_lines": [],
+  "exit_code": 0,
+  "expect": {
+    "effect_absent": [],
+    "exit_code": 0,
+    "request_markers_absent": [],
+    "request_markers_present": [],
+    "requests": 4,
+    "requests_at_least": null,
+    "requests_served": null,
+    "stderr_contains": null,
+    "workspace_after": {
+      "normal_marker.txt": "normal-omp\n"
+    }
+  },
+  "expected_exit_code": 0,
+  "failures": [],
+  "files": {
+    "config-manifest-post.json": "sha256:3d2484fe57f3eadc35a69c3178c7db967e4fa3bff8ba5f441133f0f4739c8342",
+    "config-manifest-pre.json": "sha256:81b3b7bc4441f1fa1cecb992b250c6a425fa6b0e4cce05a5171e78ee990c170c",
+    "config-overlay.yml": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191",
+    "git-status.txt": "sha256:8a05935a4d72a0b2e2cfcaec58d23a6b840a8a8fa2959522daea0a736ad232a0",
+    "home-manifest-post.json": "sha256:a02bb0aa062864fecbc2fde5d7c629a7fa46cb0d5346075e59ae002ea30e013a",
+    "home-manifest-pre.json": "sha256:c8a2e4c23e75e6872f535886e23abc5198b9774164d83a614a82ba0d0a5d24e5",
+    "http-transcript.jsonl": "sha256:8b525b7a11ee1fa117f310c77f107cb980128cccb9fb7b7dfe047bc53e6a3322",
+    "model.patch": "sha256:04449856f0774624b9715db2cf5d4369891d920dfa02290b17cc6949406012d0",
+    "omp-events.jsonl": "sha256:90a569db5fe76b2cbf0c0a63533a96593c8f4905fbd7204b2ab22690ef1a97fb",
+    "omp-stderr.log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scenario.json": "sha256:a1893ebf36346c54152cd47d83b3efbfe7041e1f986dc87448c3ae3af16fdaf7",
+    "workspace-manifest-post-immediate.json": "sha256:92531687bb0ab41c84bd07fc51a9ff02c6708bb578ec61dc37d2854d337d4342",
+    "workspace-manifest-post.json": "sha256:92531687bb0ab41c84bd07fc51a9ff02c6708bb578ec61dc37d2854d337d4342",
+    "workspace-manifest-pre.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_side_effects": {
+    "added": [
+      ".omp",
+      ".omp/gpu_cache.json",
+      ".omp/logs",
+      ".omp/logs/.9939c2487322ebfbfbe60eac85a2eff9e5900a27-audit.json",
+      ".omp/logs/omp.2026-09-26.log"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "kind": "capture",
+  "marker_hits": {},
+  "omp_version": "omp/16.2.13",
+  "oracle_notes": {},
+  "overlay_argv_dropped": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "receiver_closed": {
+    "cap_refused": 0,
+    "failed": null,
+    "requests": 4,
+    "steps_scripted": 6,
+    "steps_served": 4
+  },
+  "request_guard": {
+    "cap_reached": false,
+    "request_cap": 8,
+    "signal_sent": null
+  },
+  "requests_by_served": {
+    "completion": 4
+  },
+  "requests_total": 4,
+  "schema_version": "bb.e4.omp16213-capture-trace.v2",
+  "stderr_head": "",
+  "supplier": {
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+    "package": "@oh-my-pi/pi-coding-agent",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "version": "16.2.13"
+  },
+  "tool_results": [
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.08 seconds",
+      "toolCallId": "omp16213-call-o8_normal_multiturn-01",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "normal-omp\n\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o8_normal_multiturn-02",
+      "toolName": "bash"
+    },
+    {
+      "isError": false,
+      "text_head": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\nnormal multi-turn complete\n\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o8_normal_multiturn-03",
+      "toolName": "bash"
+    }
+  ],
+  "transcript_unparsed_lines": [],
+  "what_it_exercises": "(18.1.17 normal_multiturn) ordinary multi-turn bash continuation with a real workspace effect.",
+  "workspace_delta": {
+    "added": [
+      "normal_marker.txt"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "workspace_delta_immediate": {
+    "added": [
+      "normal_marker.txt"
+    ],
+    "changed": [],
+    "removed": []
+  }
+}

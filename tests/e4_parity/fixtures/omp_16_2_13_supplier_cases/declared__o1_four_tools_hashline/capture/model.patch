@@ -1,0 +1,22 @@
+diff --git a/README.txt b/README.txt
+index aac9804..20b2bba 100644
+--- a/README.txt
++++ b/README.txt
+@@ -1,2 +1,2 @@
+ Initial text line 1
+-Initial text line 2
++Edited line 2 via hashline
+diff --git a/bash_marker.txt b/bash_marker.txt
+new file mode 100644
+index 0000000..b5595f1
+--- /dev/null
++++ b/bash_marker.txt
+@@ -0,0 +1 @@
++bash-omp
+diff --git a/written.txt b/written.txt
+new file mode 100644
+index 0000000..36d35b1
+--- /dev/null
++++ b/written.txt
+@@ -0,0 +1 @@
++written by omp write
