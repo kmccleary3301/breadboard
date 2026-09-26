@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from importlib.resources import files
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 
