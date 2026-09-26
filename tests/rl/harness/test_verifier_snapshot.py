@@ -21,8 +21,11 @@ from breadboard.rl.harness.materialization import (
     EMPTY_WORKSPACE_SEED_DIGEST,
     IsolationDisposition,
     SandboxCleanupReceipt,
+    SealedSourceManifest,
+    SourceManifestEntry,
     WorkspaceLeaseState,
     WorkspaceOpenRequest,
+    build_workspace_seed_artifact,
 )
 from breadboard.rl.harness.sandbox import (
     SandboxAttestationError,
@@ -215,6 +218,48 @@ async def test_seeded_verifier_rejects_mutated_seed_baseline(
     finally:
         if primary.state is not WorkspaceLeaseState.QUARANTINED:
             await primary.close()
+
+
+def test_seed_baseline_digest_walks_nested_directories_within_depth_limit(
+    tmp_path: Path,
+) -> None:
+    files = {"README": b"readme\n", "pkg/sub/module.py": b"value = 1\n"}
+    seed_digest, payload = build_workspace_seed_artifact(files, directory_mode=0o700)
+    raw = json.loads(payload)
+    manifest = SealedSourceManifest(
+        source_digest=raw["source_digest"],
+        schema_identity=raw["schema_version"],
+        media_identity=raw["media_type"],
+        entries=tuple(
+            SourceManifestEntry(
+                entry["path"], entry["kind"], entry["bytes"], entry["mode"], entry["digest"]
+            )
+            for entry in raw["entries"]
+        ),
+        total_bytes=raw["total_bytes"],
+        total_files=raw["total_files"],
+    )
+    root = tmp_path / "baseline"
+    (root / "pkg" / "sub").mkdir(parents=True)
+    for directory in (root, root / "pkg", root / "pkg" / "sub"):
+        directory.chmod(0o700)
+    for logical_path, content in files.items():
+        (root / logical_path).write_bytes(content)
+        (root / logical_path).chmod(0o644)
+
+    assert (
+        sandbox_module._workspace_seed_baseline_digest(
+            root, manifest, max_bytes=4_096, max_inodes=16, max_depth=2
+        )
+        == seed_digest
+    )
+    with pytest.raises(VerifierSnapshotError, match="exceeds depth limit") as captured:
+        sandbox_module._workspace_seed_baseline_digest(
+            root, manifest, max_bytes=4_096, max_inodes=16, max_depth=1
+        )
+    assert captured.value.code == "snapshot_tampered"
+
+
 async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
