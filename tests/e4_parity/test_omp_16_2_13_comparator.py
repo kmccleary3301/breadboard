@@ -127,9 +127,9 @@ def _bb_trace(
     date = _date(case)
     messages = _upstream_messages(case) if messages is None else messages
     requests = _logical_bodies(case) if requests is None else requests
-    assistants = [m for m in messages if m.get("role") == "assistant"]
-    last_stop = assistants[-1].get("stopReason", "stop") if assistants else "stop"
-    kind = KIND_BY_STOP.get(last_stop, "Submitted")
+    assistants = [m for m in messages if m["role"] == "assistant"]
+    last_stop = assistants[-1]["stopReason"]
+    kind = KIND_BY_STOP[last_stop]
 
     if case == "declared__o9_budget_limit_stop":
         terminal_msg = {
@@ -213,11 +213,11 @@ def test_upstream_projection_is_consistent_with_the_capture(case: str) -> None:
     projected = project_upstream_case(FIXTURES / case)
     rows = _rows(case)
     trace = json.loads(_capture(case, "trace.json").read_text(encoding="utf-8"))
-    assert len(rows) == trace.get("requests_total", len(rows))
+    assert len(rows) == trace["requests_total"]
     assert all("timestamp" not in message for message in projected["messages"])
     assert [call["id"] for call in projected["tool_calls"]] == [
-        block["id"] for message in _upstream_messages(case) if message.get("role") == "assistant"
-        for block in message.get("content", []) if isinstance(block, dict) and block.get("type") == "toolCall"
+        block["id"] for message in _upstream_messages(case) if message["role"] == "assistant"
+        for block in message["content"] if block["type"] == "toolCall"
     ]
 
 
@@ -422,7 +422,7 @@ def _o1_with_read_text(text: str) -> dict:
         if message.get("role") == "toolResult" and message.get("toolCallId") == O1_READ_CALL:
             message["content"][0]["text"] = text
     for request in trace["requests"]:
-        for message in request.get("messages", []):
+        for message in request["messages"]:
             if message.get("role") == "tool" and message.get("tool_call_id") == O1_READ_CALL:
                 message["content"] = text
     return _report(case, {"trace": trace})

@@ -53,6 +53,7 @@ Existing surfaces changed:
 - `config/e4_targets/index.json`: adds an entry for the new package.
 - `pyproject.toml`: package-data globs for `oh_my_pi/16.2.13-r2/**`.
 - `tests/test_breadboard_cli_packaging.py` and `tests/test_e4_targets.py`: expected-file and target-id lists.
+- `tests/rl/harness/test_sandbox_native_phase_admission.py`: every `NATIVE_PHASE_TOOL_IDS` entry must pass installed-adapter admission, which requires sorted, unique IDs. The OMP 16.2.13 entry must equal the target's wire tools.
 
 New surfaces:
 
