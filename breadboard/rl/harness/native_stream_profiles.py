@@ -14,10 +14,12 @@ from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
 from breadboard_engine.compilation.provider_response import (
-    HERMES_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
+    HERMES_RESPONSE_CONSUMER_ID, PI_0_57_1_RESPONSE_CONSUMER_ID, PI_RESPONSE_CONSUMER_ID,
 )
 from breadboard.rl.harness import hermes_worker
-from breadboard.rl.harness.runners import omp_semantics, openclaw_semantics, pi_semantics
+from breadboard.rl.harness.runners import (
+    omp_semantics, openclaw_semantics, pi_0_57_1_semantics, pi_semantics,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,6 +61,12 @@ class NativeStreamProfile:
     # (no retry) and still classifies and finalizes it; the state commits the
     # failure through ``commit_provider_failure``.
     provider_failure_terminates: bool = False
+    # Worker phase that projects the source's own assistant message for an
+    # HTTP status failure; None keeps the Conductor's ``str(failure)`` commit.
+    provider_failure_phase: str | None = None
+    # Worker phase that parses the response's tool-call argument strings; the
+    # parsed list is handed to ``state.prepare_response(native, parsed)``.
+    parse_arguments_phase: str | None = None
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -80,6 +88,24 @@ def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> An
         model_id=model_id,
         provider=provider,
         api=api,
+    )
+
+
+def _pi_0_57_1_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    for name in ("model_config", "current_date_time"):
+        if name not in bootstrap:
+            raise ValueError(f"native stream bootstrap missing {name}")
+    model_config = bootstrap["model_config"]
+    if not isinstance(model_config, Mapping) or not {"id", "provider", "api", "cost"} <= set(model_config):
+        raise ValueError("native stream bootstrap model_config is malformed")
+    return pi_0_57_1_semantics.Pi0571SemanticsState(
+        task=task,
+        system_prompt=system_prompt,
+        model_id=model_config["id"],
+        provider=model_config["provider"],
+        api=model_config["api"],
+        cost=model_config["cost"],
+        current_date_time=bootstrap["current_date_time"],
     )
 
 
@@ -115,6 +141,29 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
+    ),
+    PI_0_57_1_RESPONSE_CONSUMER_ID: NativeStreamProfile(
+        consumer_id=PI_0_57_1_RESPONSE_CONSUMER_ID,
+        target_id="pi-r3@0.57.1",
+        target_version=3,
+        api_variant="chat_completions",
+        phase_schema_version="bb.pi-native.v0.57.1",
+        tool_order=pi_0_57_1_semantics.TOOL_NAMES,
+        max_turns=8,
+        action_timeout_ms=35_000,
+        episode_timeout_seconds=120,
+        ack_policy="none",
+        incomplete_stop_reasons=frozenset({"error", "aborted", "length"}),
+        runtime_input_names=("cwd", "home", "package_dir"),
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
+        state_module=pi_0_57_1_semantics,
+        state_factory=_pi_0_57_1_state,
+        # Pinned openai-completions.js:45 keeps "stop" for a stream without a
+        # finish_reason; BB rejects it (divergence truncated_stream_rejected).
+        accepts_truncated_stream=False,
+        provider_failure_terminates=True,
+        provider_failure_phase="project_provider_failure",
+        parse_arguments_phase="parse_streaming_json_batch",
     ),
     HERMES_RESPONSE_CONSUMER_ID: NativeStreamProfile(
         consumer_id=HERMES_RESPONSE_CONSUMER_ID,

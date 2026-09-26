@@ -1,0 +1,963 @@
+"""Deterministic comparator for Pi 0.57.1 upstream captures and BreadBoard replay traces.
+
+Parity target: the r6 ``declared__*`` capture packet (tests/e4_parity/fixtures/pi_0_57_1_supplier_cases,
+bound to packet sha256 14527fc6...99a4 by its manifest.json).
+
+Typed normalizations (each application is reported with its JSON paths):
+
+* ``workspace_root``: the declared workspace root becomes ``<WORKSPACE>``;
+* ``home_root``: the declared home root becomes ``<HOME>``;
+* ``package_dir_documentation_path``: ``<package_dir>/{README.md,docs,examples}`` become ``<PI_PACKAGE_DIR>/...``;
+* ``current_date_time_system_line``: the exact ``Current date and time: <value>`` line of a system message, where
+  ``<value>`` is the declared value in the pinned ``toLocaleString("en-US", …)`` format
+  (pi-coding-agent dist/core/system-prompt.js:20-30,155) becomes ``<CURRENT_DATE_TIME>``;
+* ``message_timestamp``: the ``timestamp`` member of each AgentMessage (pinned ``Date.now()``) is removed;
+* ``request_limit_cause``: a BB ``RequestLimitExceeded`` terminal that satisfies the declared request cap maps to
+  ``{"cause": "request_limit"}`` (only together with the ``bounded_request_cap`` divergence).
+
+Upstream runtime constants come from the capture kit (kit-pi057-r6 ``pi057_capture_run.py`` binds ``/testbed`` as the
+workspace and runs ``/opt/bb-pi-runtime/pi/node_modules/.bin/pi``; ``pi057_capture_supplier.py`` sets
+``HOME=<out>/home`` with ``--out /capture``).  BB values come only from ``trace.runtime_inputs``.
+
+Named divergences are REPORTED as divergence records and never normalized away.  A divergence may scope the
+comparison (for example to the prefix before a terminal event); the scope is part of the record.  Anything else that
+differs is an unexplained finding and fails the comparison.
+
+Verdicts: ``exact`` (no normalization, no divergence), ``normalized`` (typed normalizations only), ``named_divergence``
+(declared divergences, no findings), ``fail`` (at least one finding).
+"""
+from __future__ import annotations
+
+import base64
+from copy import deepcopy
+from dataclasses import dataclass, field
+from datetime import datetime
+import hashlib
+import json
+from pathlib import Path
+import posixpath
+import re
+import signal
+from typing import Any, Literal, Mapping
+
+COMPARATOR_ID = "pi_coding_agent_0_57_1_trace_v1"
+LANE_ID = "pi_coding_agent_0_57_1_replay"
+CONFIG_ID = "pi_coding_agent_0_57_1_replay_v1"
+REPORT_SCHEMA_VERSION = "bb.e4.comparator_report.v1"
+CANONICAL_SCHEMA_VERSION = "bb.e4.pi-0-57-1-canonical-episode.v1"
+BB_TRACE_SCHEMA_VERSION = "bb.e4.pi-replay-trace.v1"
+BB_TRACE_KEYS = frozenset({
+    "schema_version", "role", "profile", "version", "case_id", "request_count", "stream_fn_issued",
+    "messages", "effects", "termination", "requests", "runtime_inputs",
+})
+BB_RUNTIME_INPUT_NAMES = ("cwd", "home", "package_dir", "current_date_time")
+UPSTREAM_TRACE_SCHEMA_VERSION = "bb.e4.pi057-capture-trace.v1"
+UPSTREAM_CONFIG_MODE = "declared_writable"
+FIXTURE_MANIFEST_SCHEMA_VERSION = "bb.e4.pi057-declared-fixture-manifest.v1"
+EFFECT_CONTENT_UTF8_MAX_BYTES = 64 * 1024  # mirrors breadboard/rl/harness/sandbox.py effect snapshot
+
+UPSTREAM_WORKSPACE_ROOT = "/testbed"
+UPSTREAM_HOME_ROOT = "/capture/home"
+UPSTREAM_PACKAGE_DIR = "/opt/bb-pi-runtime/pi/node_modules/@mariozechner/pi-coding-agent"
+TARGET_NATIVE_CONFIG = ("config", "e4_targets", "pi", "0.57.1-r3", "native-config.json")
+
+# openai@6.26.0 client.js:414-434 shouldRetry; client.js:509 X-Stainless-Retry-Count.
+SDK_RETRY_COUNT_HEADER = "x-stainless-retry-count"
+SDK_RETRYABLE_STATUS = frozenset({408, 409, 429})
+SDK_RETRYABLE_MIN_STATUS = 500
+# pi-ai 0.57.1 openai-completions.js mapStopReason (D10): finish reasons the pinned mapping models.
+MODELED_FINISH_REASONS = frozenset({"stop", "length", "tool_calls", "function_call"})
+# pinned tools that resolve fd/rg through tools-manager ensureTool (download attempt unless PI_OFFLINE).
+DOWNLOADING_TOOLS = frozenset({"grep", "find"})
+# BB termination.kind per native stop reason (Pi0571SemanticsState contract).
+BB_KIND_BY_STOP = {
+    "stop": frozenset({"Submitted"}),
+    "length": frozenset({"length"}),
+    "error": frozenset({"error", "RequestLimitExceeded"}),
+    "aborted": frozenset({"aborted"}),
+    "toolUse": frozenset({"running"}),
+}
+UNMODELED_FINISH_REASON_FAILURE_CODE = "native_unmodeled_finish_reason"
+CANCEL_EXIT_CODE = 130
+CANCEL_FAILURE_CODE = "CancelledError"
+
+RuleName = Literal[
+    "workspace_root",
+    "home_root",
+    "package_dir_documentation_path",
+    "current_date_time_system_line",
+    "message_timestamp",
+    "request_limit_cause",
+]
+NORMALIZATIONS: tuple[RuleName, ...] = (
+    "workspace_root",
+    "home_root",
+    "package_dir_documentation_path",
+    "current_date_time_system_line",
+    "message_timestamp",
+    "request_limit_cause",
+)
+DivergenceName = Literal[
+    "sdk_hidden_transport_retry",
+    "bounded_request_cap",
+    "tool_download_attempt",
+    "compaction_start_then_exit",
+    "sdk_transport_headers",
+    "json_member_order",
+    "external_cancel_signal",
+    "truncated_stream_rejected",
+    "unmodeled_finish_reason",
+    "non_http_transport_failure",
+]
+DIVERGENCES: tuple[DivergenceName, ...] = (
+    "sdk_hidden_transport_retry",
+    "bounded_request_cap",
+    "tool_download_attempt",
+    "compaction_start_then_exit",
+    "sdk_transport_headers",
+    "json_member_order",
+    "external_cancel_signal",
+    "truncated_stream_rejected",
+    "unmodeled_finish_reason",
+    "non_http_transport_failure",
+)
+UNCOMPARED = (
+    "effects.*.mode: the BB workspace effect snapshot records exists/bytes/sha256/content_utf8 only",
+    "upstream JSON event stream beyond message_end/agent_end/post-agent_end events: the BB replay trace has no event stream",
+)
+CANONICAL_FIELDS = ("requests", "request_count", "tool_calls", "observations", "messages", "effects", "termination")
+_DATE_TIME = re.compile(
+    r"(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), "
+    r"(?:January|February|March|April|May|June|July|August|September|October|November|December) "
+    r"[1-9]\d?, \d{4} at \d{2}:\d{2}:\d{2} [AP]M UTC"
+)
+_DATE_TIME_LINE = re.compile(r"(?m)^Current date and time: (.*)$")
+
+
+class Pi0571ComparatorError(ValueError):
+    """Typed fail-closed comparator input error."""
+
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(f"{code}: {message}")
+        self.code = code
+
+
+@dataclass(frozen=True)
+class _Runtime:
+    workspace_root: str
+    home_root: str
+    package_dir: str
+    current_date_time: str
+
+
+@dataclass
+class _Normalizer:
+    runtime: _Runtime
+    counts: dict[RuleName, int] = field(default_factory=lambda: {rule: 0 for rule in NORMALIZATIONS})
+    paths: dict[RuleName, list[str]] = field(default_factory=lambda: {rule: [] for rule in NORMALIZATIONS})
+    findings: list[dict[str, Any]] = field(default_factory=list)
+
+    def add(self, rule: RuleName, path: str, count: int = 1) -> None:
+        self.counts[rule] += count
+        self.paths[rule].append(path)
+
+    def report(self, side: str) -> list[dict[str, Any]]:
+        return [
+            {"side": side, "rule": rule, "count": self.counts[rule], "paths": list(self.paths[rule])}
+            for rule in NORMALIZATIONS
+        ]
+
+    def _token(self, value: str, source: str, replacement: str, rule: RuleName, path: str) -> str:
+        pattern = re.compile(rf"(?<![\w.\-/]){re.escape(source)}(?=/|$|\s|[),.;:'\"])")
+        value, count = pattern.subn(replacement, value)
+        if count:
+            self.add(rule, path, count)
+        return value
+
+    def string(self, value: str, path: str, *, system: bool) -> str:
+        if system:
+            def replace(match: re.Match[str]) -> str:
+                if match.group(1) == self.runtime.current_date_time:
+                    self.add("current_date_time_system_line", path)
+                    return "Current date and time: <CURRENT_DATE_TIME>"
+                return match.group(0)
+
+            value = _DATE_TIME_LINE.sub(replace, value)
+        for suffix in ("README.md", "docs", "examples"):
+            value = self._token(
+                value, f"{self.runtime.package_dir}/{suffix}", f"<PI_PACKAGE_DIR>/{suffix}",
+                "package_dir_documentation_path", path,
+            )
+        roots = sorted(
+            ((self.runtime.workspace_root, "<WORKSPACE>", "workspace_root"), (self.runtime.home_root, "<HOME>", "home_root")),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        )
+        for root, replacement, rule in roots:
+            value = self._token(value, root, replacement, rule, path)  # type: ignore[arg-type]
+        return value
+
+    def value(self, value: Any, path: str, *, system: bool = False) -> Any:
+        if isinstance(value, str):
+            return self.string(value, path, system=system)
+        if isinstance(value, list):
+            return [self.value(item, f"{path}[{index}]", system=system) for index, item in enumerate(value)]
+        if isinstance(value, Mapping):
+            if value.get("role") == "user":
+                # The user message is the episode's task text, byte-identical on
+                # both sides; the runtime never writes its roots into it, so a
+                # literal root inside the task (the R3 wrapper names /testbed)
+                # is compared as is on each side.
+                return deepcopy(dict(value))
+            is_system = system or value.get("role") == "system"
+            return {key: self.value(item, f"{path}.{key}", system=is_system) for key, item in value.items()}
+        return value
+
+    def messages(self, messages: list[Any], path: str) -> list[Any]:
+        output: list[Any] = []
+        for index, message in enumerate(messages):
+            item_path = f"{path}[{index}]"
+            if not isinstance(message, Mapping):
+                self.findings.append({"field": "messages", "detail": f"{item_path}: message is not an object"})
+                output.append(message)
+                continue
+            stripped = dict(message)
+            if "timestamp" in stripped and type(stripped["timestamp"]) is int:
+                del stripped["timestamp"]
+                self.add("message_timestamp", f"{item_path}.timestamp")
+            else:
+                self.findings.append({"field": "messages", "detail": f"{item_path}: missing integer timestamp"})
+            output.append(self.value(stripped, item_path))
+        return output
+
+
+def _fail(code: str, message: str) -> Pi0571ComparatorError:
+    return Pi0571ComparatorError(code, message)
+
+
+def _sha(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
+def _json_file(path: Path, code: str) -> Any:
+    if not path.is_file():
+        raise _fail(code, f"missing {path}")
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _require(mapping: Any, key: str, kind: type | tuple[type, ...], code: str, where: str) -> Any:
+    if not isinstance(mapping, Mapping) or key not in mapping:
+        raise _fail(code, f"{where} lacks {key}")
+    value = mapping[key]
+    if not isinstance(value, kind) or (kind is int and type(value) is bool):
+        raise _fail(code, f"{where}.{key} has the wrong type")
+    return value
+
+
+def _validate_date_time(value: Any, code: str) -> str:
+    if type(value) is not str or _DATE_TIME.fullmatch(value) is None:
+        raise _fail(code, f"current date/time {value!r} is not the pinned en-US UTC format")
+    parsed = datetime.strptime(value, "%A, %B %d, %Y at %I:%M:%S %p UTC")
+    rendered = f"{parsed:%A}, {parsed:%B} {parsed.day}, {parsed.year} at {parsed:%I:%M:%S %p} UTC"
+    if rendered != value:
+        raise _fail(code, f"current date/time {value!r} is not self-consistent")
+    return value
+
+
+def _member_order(value: Any, path: str = "$") -> dict[str, list[str]]:
+    orders: dict[str, list[str]] = {}
+    if isinstance(value, Mapping):
+        orders[path] = list(value.keys())
+        for key, item in value.items():
+            orders.update(_member_order(item, f"{path}.{key}"))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            orders.update(_member_order(item, f"{path}[{index}]"))
+    return orders
+
+
+def _header(headers: Mapping[str, Any], name: str, code: str) -> str:
+    matches = [value for key, value in headers.items() if key.lower() == name]
+    if len(matches) != 1 or type(matches[0]) is not str:
+        raise _fail(code, f"request headers must carry exactly one {name}")
+    return matches[0]
+
+
+def _assistant_indices(messages: list[Any]) -> list[int]:
+    return [index for index, message in enumerate(messages) if isinstance(message, Mapping) and message.get("role") == "assistant"]
+
+
+def _tool_calls(messages: list[Any]) -> list[dict[str, Any]]:
+    calls: list[dict[str, Any]] = []
+    for message in messages:
+        if isinstance(message, Mapping) and message.get("role") == "assistant" and isinstance(message.get("content"), list):
+            for block in message["content"]:
+                if isinstance(block, Mapping) and block.get("type") == "toolCall":
+                    calls.append({key: block[key] for key in ("id", "name", "arguments") if key in block})
+    return calls
+
+
+def _observations(messages: list[Any]) -> list[dict[str, Any]]:
+    return [
+        {key: message[key] for key in ("toolCallId", "toolName", "content", "isError", "details") if key in message}
+        for message in messages
+        if isinstance(message, Mapping) and message.get("role") == "toolResult"
+    ]
+
+
+def _termination(messages: list[Any]) -> dict[str, Any]:
+    indices = _assistant_indices(messages)
+    if not indices:
+        return {}
+    last = messages[indices[-1]]
+    return {key: last[key] for key in ("stopReason", "errorMessage") if key in last}
+
+
+def _canonical(requests: list[Any], messages: list[Any], effects: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "requests": requests,
+        "request_count": len(requests),
+        "tool_calls": _tool_calls(messages),
+        "observations": _observations(messages),
+        "messages": messages,
+        "effects": dict(effects),
+        "termination": _termination(messages),
+    }
+
+
+def _effect_record(data: bytes) -> dict[str, Any]:
+    record: dict[str, Any] = {"exists": True, "bytes": len(data), "sha256": _sha(data)}
+    if len(data) <= EFFECT_CONTENT_UTF8_MAX_BYTES:
+        record["content_utf8"] = data.decode("utf-8", "replace")
+    return record
+
+
+@dataclass
+class _Upstream:
+    case_id: str
+    canonical: dict[str, Any]
+    normalizer: _Normalizer
+    messages: list[Any]
+    groups: list[list[dict[str, Any]]]
+    orders: list[dict[str, list[str]]]
+    header_names: list[str]
+    events_after_agent_end: list[dict[str, Any]]
+    agent_end: bool
+    exit_code: int
+    scenario: Mapping[str, Any]
+    events: list[dict[str, Any]]
+    fd_rg_provisioned: bool
+
+
+def _fixture_set(case_dir: Path) -> tuple[Path, Mapping[str, Any]]:
+    root = case_dir.parent
+    manifest = _json_file(root / "manifest.json", "fixture_manifest_invalid")
+    if _require(manifest, "schema_version", str, "fixture_manifest_invalid", "manifest") != FIXTURE_MANIFEST_SCHEMA_VERSION:
+        raise _fail("fixture_manifest_invalid", "unexpected fixture manifest schema")
+    if case_dir.name not in _require(manifest, "cases", list, "fixture_manifest_invalid", "manifest"):
+        raise _fail("fixture_manifest_invalid", f"{case_dir.name} is not a declared case")
+    return root, manifest
+
+
+def _upstream_effects(root: Path, pre: Mapping[str, Any], post: Mapping[str, Any]) -> dict[str, Any]:
+    effects: dict[str, Any] = {}
+    for path in sorted(set(pre) | set(post)):
+        before = pre[path] if path in pre else None
+        after = post[path] if path in post else None
+        if before == after:
+            continue
+        if after is None:
+            if before["type"] != "file":
+                raise _fail("unsupported_upstream_effect", f"{path}: non-file deletion")
+            effects[path] = {"exists": False}
+            continue
+        if after["type"] != "file":
+            raise _fail("unsupported_upstream_effect", f"{path}: non-file effect {after['type']}")
+        if before is not None and before["type"] == "file" and before["sha256"] == after["sha256"]:
+            raise _fail("unsupported_upstream_effect", f"{path}: mode-only change is not observable in BB effects")
+        blob = root / "blobs" / after["sha256"].removeprefix("sha256:")
+        if not blob.is_file():
+            raise _fail("upstream_case_invalid", f"{path}: effect blob missing")
+        data = blob.read_bytes()
+        if _sha(data) != after["sha256"] or len(data) != after["bytes"]:
+            raise _fail("upstream_case_invalid", f"{path}: effect blob does not match manifest-post")
+        effects[path] = _effect_record(data)
+    return effects
+
+
+def _load_upstream(case_dir: str | Path) -> _Upstream:
+    case = Path(case_dir).resolve()
+    root, manifest = _fixture_set(case)
+    capture = case / "capture"
+    code = "upstream_case_invalid"
+    trace = _json_file(capture / "trace.json", code)
+    if _require(trace, "schema_version", str, code, "trace") != UPSTREAM_TRACE_SCHEMA_VERSION:
+        raise _fail(code, "unexpected upstream trace schema")
+    if _require(trace, "config_mode", str, code, "trace") != UPSTREAM_CONFIG_MODE:
+        raise _fail(code, "only declared_writable captures are the parity target")
+    case_id = _require(trace, "case_id", str, code, "trace")
+    files = _require(trace, "files", Mapping, code, "trace")
+    for key, name in (
+        ("events_jsonl", "pi-events.jsonl"), ("http_transcript", "http-transcript.jsonl"),
+        ("workspace_manifest_pre", "workspace-manifest-pre.json"),
+        ("workspace_manifest_post", "workspace-manifest-post.json"), ("model_patch", "model.patch"),
+    ):
+        if _require(files, key, str, code, "trace.files") != _sha((capture / name).read_bytes()):
+            raise _fail(code, f"{name} does not match trace.files.{key}")
+    exit_code = _require(trace, "exit_code", int, code, "trace")
+    scenario = _json_file(capture / "scenario.json", code)
+    if _require(scenario, "case_id", str, code, "scenario") != case_id:
+        raise _fail(code, "scenario case_id differs")
+
+    rows: list[dict[str, Any]] = []
+    for index, line in enumerate((capture / "http-transcript.jsonl").read_text(encoding="utf-8").splitlines()):
+        row = json.loads(line)
+        if _require(row, "index", int, code, "transcript row") != index:
+            raise _fail(code, f"transcript row {index} index mismatch")
+        raw = base64.b64decode(_require(row, "raw_body_base64", str, code, "transcript row"), validate=True)
+        if _sha(raw) != _require(row, "raw_body_sha256", str, code, "transcript row"):
+            raise _fail(code, f"transcript row {index} raw body digest mismatch")
+        body = json.loads(raw)
+        if body != _require(row, "body", Mapping, code, "transcript row"):
+            raise _fail(code, f"transcript row {index} body differs from raw body")
+        row["_body"] = body
+        row["_retry_count"] = int(_header(_require(row, "headers", Mapping, code, "transcript row"), SDK_RETRY_COUNT_HEADER, code))
+        rows.append(row)
+    if len(rows) != _require(trace, "requests_served", int, code, "trace"):
+        raise _fail(code, "transcript line count differs from trace.requests_served")
+
+    groups: list[list[dict[str, Any]]] = []
+    for row in rows:
+        if row["_retry_count"] == 0:
+            groups.append([row])
+            continue
+        if not groups:
+            raise _fail(code, "SDK retry without an initial attempt")
+        previous = groups[-1][-1]
+        status = previous["status"] if "status" in previous else None
+        if (
+            row["_retry_count"] != previous["_retry_count"] + 1
+            or row["_body"] != previous["_body"]
+            or previous["served"] != "http_error"
+            or type(status) is not int
+            or not (status in SDK_RETRYABLE_STATUS or status >= SDK_RETRYABLE_MIN_STATUS)
+        ):
+            raise _fail(code, f"transcript row {row['index']} is not an SDK retry of row {previous['index']}")
+        groups[-1].append(row)
+
+    events = [json.loads(line) for line in (capture / "pi-events.jsonl").read_text(encoding="utf-8").splitlines()]
+    message_ends = [event["message"] for event in events if event["type"] == "message_end"]
+    agent_ends = [index for index, event in enumerate(events) if event["type"] == "agent_end"]
+    if len(agent_ends) > 1:
+        raise _fail(code, "more than one agent_end")
+    if agent_ends:
+        messages_raw = events[agent_ends[0]]["messages"]
+        if messages_raw != message_ends:
+            raise _fail(code, "agent_end.messages differs from the message_end sequence")
+        after = events[agent_ends[0] + 1:]
+    else:
+        if exit_code >= 0:
+            raise _fail(code, "a capture without agent_end must end by signal")
+        messages_raw = message_ends
+        after = []
+
+    first_request = groups[0][0]["_body"]
+    system = [message for message in first_request["messages"] if message["role"] == "system"]
+    if len(system) != 1:
+        raise _fail(code, "request 0 must carry one system message")
+    lines = _DATE_TIME_LINE.findall(system[0]["content"])
+    if len(lines) != 1:
+        raise _fail(code, "system message must carry one Current date and time line")
+    runtime = _Runtime(UPSTREAM_WORKSPACE_ROOT, UPSTREAM_HOME_ROOT, UPSTREAM_PACKAGE_DIR, _validate_date_time(lines[0], code))
+    normalizer = _Normalizer(runtime)
+    messages = normalizer.messages(list(messages_raw), "$.messages")
+    if normalizer.findings:
+        raise _fail(code, f"upstream messages malformed: {normalizer.findings}")
+    if len(_assistant_indices(messages)) != len(groups):
+        raise _fail(code, "assistant message count differs from logical request count")
+    requests = [normalizer.value(group[0]["_body"], f"$.requests[{index}]") for index, group in enumerate(groups)]
+    effects = _upstream_effects(
+        root,
+        _json_file(capture / "workspace-manifest-pre.json", code),
+        _json_file(capture / "workspace-manifest-post.json", code),
+    )
+    identity = _require(_require(manifest, "source_packet", Mapping, "fixture_manifest_invalid", "manifest"), "identity", Mapping, "fixture_manifest_invalid", "source_packet")
+    header_names = sorted({name for row in rows for name in row["headers"]})
+    return _Upstream(
+        case_id=case_id,
+        canonical=_canonical(requests, messages, effects),
+        normalizer=normalizer,
+        messages=messages,
+        groups=groups,
+        orders=[_member_order(group[0]["_body"]) for group in groups],
+        header_names=header_names,
+        events_after_agent_end=after,
+        agent_end=bool(agent_ends),
+        exit_code=exit_code,
+        scenario=scenario,
+        events=events,
+        fd_rg_provisioned=_require(identity, "fd_rg_provisioned", bool, "fixture_manifest_invalid", "identity"),
+    )
+
+
+def project_upstream_case(case_dir: str | Path) -> dict[str, Any]:
+    """Project one declared upstream case into the canonical episode."""
+    upstream = _load_upstream(case_dir)
+    return {"schema_version": CANONICAL_SCHEMA_VERSION, "case_id": upstream.case_id, **upstream.canonical}
+
+
+@dataclass
+class _Replay:
+    trace: Mapping[str, Any]
+    canonical: dict[str, Any]
+    normalizer: _Normalizer
+    messages: list[Any]
+    orders: list[dict[str, list[str]]]
+    process: Mapping[str, Any] | None
+
+
+def _load_bb(trace: Mapping[str, Any] | str | Path, process: Mapping[str, Any] | None) -> _Replay:
+    code = "bb_trace_invalid"
+    if isinstance(trace, (str, Path)):
+        trace = _json_file(Path(trace), code)
+    if not isinstance(trace, Mapping):
+        raise _fail(code, "BB trace must be an object")
+    if set(trace) != BB_TRACE_KEYS:
+        raise _fail(code, f"BB trace keys differ: missing {sorted(BB_TRACE_KEYS - set(trace))}, extra {sorted(set(trace) - BB_TRACE_KEYS)}")
+    for key, expected in (("schema_version", BB_TRACE_SCHEMA_VERSION), ("role", "replay"), ("profile", "pi"), ("version", "0.57.1")):
+        if trace[key] != expected:
+            raise _fail(code, f"BB trace {key} must be {expected!r}")
+    runtime_inputs = trace["runtime_inputs"]
+    if not isinstance(runtime_inputs, Mapping) or set(runtime_inputs) != set(BB_RUNTIME_INPUT_NAMES):
+        raise _fail("runtime_inputs_invalid", f"BB runtime_inputs must declare exactly {', '.join(BB_RUNTIME_INPUT_NAMES)}")
+    for name in BB_RUNTIME_INPUT_NAMES[:3]:
+        if type(runtime_inputs[name]) is not str or not runtime_inputs[name].startswith("/"):
+            raise _fail("runtime_inputs_invalid", f"BB runtime_inputs.{name} must be an absolute path")
+    runtime = _Runtime(
+        runtime_inputs["cwd"], runtime_inputs["home"], runtime_inputs["package_dir"],
+        _validate_date_time(runtime_inputs["current_date_time"], "runtime_inputs_invalid"),
+    )
+    for key in ("requests", "messages"):
+        if not isinstance(trace[key], list):
+            raise _fail(code, f"BB trace {key} must be a list")
+    if any(not isinstance(item, Mapping) for item in trace["requests"]):
+        raise _fail(code, "BB trace requests must be objects")
+    effects = trace["effects"]
+    if not isinstance(effects, Mapping):
+        raise _fail(code, "BB trace effects must be an object")
+    for path, value in effects.items():
+        if not isinstance(value, Mapping) or type(value.get("exists")) is not bool:
+            raise _fail(code, f"BB effect {path!r} must declare exists")
+        allowed = {"exists", "bytes", "sha256", "content_utf8"} if value["exists"] else {"exists"}
+        if not set(value) <= allowed:
+            raise _fail(code, f"BB effect {path!r} has undeclared members")
+    termination = trace["termination"]
+    if not isinstance(termination, Mapping) or set(termination) != {"kind", "native_stop_reason"}:
+        raise _fail(code, "BB termination must be {kind, native_stop_reason}")
+    normalizer = _Normalizer(runtime)
+    messages = normalizer.messages(list(trace["messages"]), "$.messages")
+    requests = [normalizer.value(request, f"$.requests[{index}]") for index, request in enumerate(trace["requests"])]
+    canonical = _canonical(requests, messages, {path: value for path, value in effects.items() if path != ".git" and not path.startswith(".git/")})
+    if process is not None and not isinstance(process, Mapping):
+        raise _fail(code, "replay.process must be an object")
+    return _Replay(trace, canonical, normalizer, messages, [_member_order(request) for request in trace["requests"]], process)
+
+
+def project_bb_trace(trace: Mapping[str, Any] | str | Path) -> dict[str, Any]:
+    """Project a BB replay trace into the canonical episode; reject undeclared shapes."""
+    replay = _load_bb(trace, None)
+    return {"schema_version": CANONICAL_SCHEMA_VERSION, "case_id": replay.trace["case_id"], **replay.canonical}
+
+
+def _first_difference(expected: Any, observed: Any, path: str = "$") -> str | None:
+    if type(expected) is not type(observed) and not (
+        isinstance(expected, (int, float)) and isinstance(observed, (int, float))
+        and type(expected) is not bool and type(observed) is not bool
+    ):
+        return f"{path}: expected {expected!r}, observed {observed!r}"
+    if isinstance(expected, Mapping):
+        if set(expected) != set(observed):
+            return f"{path}: keys differ (missing {sorted(set(expected) - set(observed))}, extra {sorted(set(observed) - set(expected))})"
+        for key in expected:
+            difference = _first_difference(expected[key], observed[key], f"{path}.{key}")
+            if difference:
+                return difference
+    elif isinstance(expected, list):
+        for index, (left, right) in enumerate(zip(expected, observed)):
+            difference = _first_difference(left, right, f"{path}[{index}]")
+            if difference:
+                return difference
+        if len(expected) != len(observed):
+            return f"{path}: lengths differ ({len(expected)} != {len(observed)})"
+    elif expected != observed:
+        return f"{path}: expected {expected!r}, observed {observed!r}"
+    return None
+
+
+def _rows(group: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        {key: row[key] for key in ("index", "served", "status", "finish_reason") if key in row} | {"retry_count": row["_retry_count"]}
+        for row in group
+    ]
+
+
+def _sdk_error_message(row: Mapping[str, Any]) -> str:
+    """openai@6.26.0 APIError.generate + makeMessage (core/error.js:21-30): ``${status} ${error.message}``."""
+    status = _require(row, "status", int, "upstream_case_invalid", "http_error row")
+    response = _require(row, "response", Mapping, "upstream_case_invalid", "http_error row")
+    error = _require(response, "error", Mapping, "upstream_case_invalid", "http_error response")
+    message = _require(error, "message", str, "unsupported_upstream_error_body", "http_error response.error")
+    return f"{status} {message}"
+
+
+def _scope_prefix(expected: dict[str, Any], upstream: _Upstream, logical_index: int, record: dict[str, Any]) -> list[Any]:
+    """Restrict the expected episode to the requests/messages before upstream assistant ``logical_index``."""
+    cut = _assistant_indices(upstream.messages)[logical_index]
+    later_calls = _tool_calls(upstream.messages[cut:])
+    record["comparison_scope"] = {"upstream_logical_requests": logical_index + 1, "upstream_messages_before": cut}
+    if later_calls:
+        record["comparison_scope"]["effects_uncompared_reason"] = (
+            f"upstream executed {len(later_calls)} tool call(s) after the divergence point"
+        )
+    return upstream.messages[:cut]
+
+
+def _set_expected(expected: dict[str, Any], upstream: _Upstream, logical_index: int, messages: list[Any], record: dict[str, Any]) -> None:
+    expected.update(_canonical(expected["requests"][: logical_index + 1], messages, expected["effects"]))
+    if "effects_uncompared_reason" in record["comparison_scope"]:
+        expected["effects"] = None
+
+
+def _typed_failure(process: Mapping[str, Any] | None, expected_code: str | None) -> tuple[dict[str, Any], list[str]]:
+    problems: list[str] = []
+    if process is None:
+        return {}, ["replay.process (installed run terminal) is required for this divergence"]
+    terminal = process["terminal"] if "terminal" in process else None
+    status = terminal["status"] if isinstance(terminal, Mapping) and "status" in terminal else None
+    primary = terminal["primary_failure"] if isinstance(terminal, Mapping) and "primary_failure" in terminal else None
+    failure_code = primary["code"] if isinstance(primary, Mapping) and "code" in primary else None
+    exit_code = process["exit_code"] if "exit_code" in process else None
+    if status != "failed":
+        problems.append(f"BB terminal status {status!r} is not 'failed'")
+    if type(failure_code) is not str or (expected_code is not None and failure_code != expected_code):
+        problems.append(f"BB primary_failure.code {failure_code!r} does not match {expected_code!r}")
+    return {"terminal_status": status, "primary_failure_code": failure_code, "exit_code": exit_code}, problems
+
+
+def _absent_non_regular_entries(case_dir: Path, manifest: Mapping[str, Any]) -> list[str]:
+    """Golden entries a files-only seed cannot materialize: symlinks, file-less directories, extra dirs."""
+    pre = _json_file(case_dir / "capture" / "workspace-manifest-pre.json", "upstream_case_invalid")
+    replay_workspace = _require(manifest, "replay_workspace", Mapping, "fixture_manifest_invalid", "manifest")
+    absent = list(_require(replay_workspace, "extra_directories", list, "fixture_manifest_invalid", "replay_workspace"))
+    files = [path for path, entry in pre.items() if entry["type"] == "file"]
+    for path, entry in pre.items():
+        if entry["type"] == "symlink" or (
+            entry["type"] == "directory" and not any(item.startswith(path + "/") for item in files)
+        ):
+            absent.append(path)
+    return sorted(absent)
+
+
+def _files_only_explained(text: str, observed: Any, root: str, absent: list[str]) -> bool:
+    """True when ``observed`` is ``text`` minus exactly the lines naming absent entries under ``root``."""
+    base = posixpath.normpath(root)
+    names = {
+        posixpath.relpath(entry, base) for entry in absent
+        if base == "." or entry.startswith(base + "/")
+    }
+    lines = text.split("\n")
+    kept = [line for line in lines if (line[:-1] if line.endswith("/") else line) not in names]
+    return len(kept) < len(lines) and observed == "\n".join(kept)
+
+
+def _workspace_regular_files_only(
+    case_dir: Path, manifest: Mapping[str, Any], expected: dict[str, Any], observed: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    """Name observations whose only difference is the golden non-regular entries a files-only seed lacks.
+
+    Production containment admits only regular workspace files
+    (breadboard/rl/harness/sandbox.py:3717-3721), so the golden symlink,
+    file-less directories and ``.git`` are absent from BB's seed.  A differing
+    observation text is explained only when removing the lines that name those
+    entries from the upstream text yields BB's text exactly; the expected
+    episode then carries that text and every other difference stays a finding.
+    """
+    absent = _absent_non_regular_entries(case_dir, manifest)
+    if not absent:
+        return None
+    calls = {call["id"]: call for call in expected["tool_calls"]}
+    observed_by_id = {item["toolCallId"]: item for item in observed["observations"]}
+    replaced: dict[str, dict[int, str]] = {}
+    for item in expected["observations"]:
+        other = observed_by_id[item["toolCallId"]] if item["toolCallId"] in observed_by_id else None
+        call = calls[item["toolCallId"]] if item["toolCallId"] in calls else None
+        if other is None or call is None or len(other["content"]) != len(item["content"]):
+            continue
+        arguments = call["arguments"] if isinstance(call["arguments"], Mapping) else {}
+        root = arguments["path"] if isinstance(arguments.get("path"), str) else "."
+        for index, (part, bb_part) in enumerate(zip(item["content"], other["content"])):
+            if (
+                part["type"] == "text" and bb_part["type"] == "text" and part["text"] != bb_part["text"]
+                and _files_only_explained(part["text"], bb_part["text"], root, absent)
+            ):
+                replaced.setdefault(item["toolCallId"], {})[index] = bb_part["text"]
+    if not replaced:
+        return None
+    for message in expected["messages"]:
+        if message["role"] == "toolResult" and message["toolCallId"] in replaced:
+            for index, text in replaced[message["toolCallId"]].items():
+                message["content"][index]["text"] = text
+    for request in expected["requests"]:
+        for message in request["messages"]:
+            if message["role"] == "tool" and message["tool_call_id"] in replaced:
+                [(index, text)] = replaced[message["tool_call_id"]].items()
+                if isinstance(message["content"], str):
+                    message["content"] = text
+                else:
+                    message["content"][index]["text"] = text
+    expected["observations"] = _observations(expected["messages"])
+    return {
+        "name": "workspace_regular_files_only",
+        "absent_entries": absent,
+        "affected_tool_call_ids": sorted(replaced),
+        "upstream": "golden pre-run tree includes these non-regular entries (workspace-manifest-pre.json, replay_workspace.extra_directories)",
+        "bb": "production workspace seed and containment admit regular files only (sandbox.py:3717-3721)",
+    }
+
+
+class PiCodingAgent0571Comparator:
+    comparator_id = COMPARATOR_ID
+
+    def __call__(self, inp: Mapping[str, Any]) -> dict[str, Any]:
+        if not isinstance(inp, Mapping) or set(inp) != {"capture", "replay"}:
+            raise _fail("comparator_input_invalid", "input must be {capture, replay}")
+        capture, replay = inp["capture"], inp["replay"]
+        if not isinstance(capture, Mapping) or set(capture) != {"case_dir"}:
+            raise _fail("comparator_input_invalid", "capture must be {case_dir}")
+        if not isinstance(replay, Mapping) or "trace" not in replay or not set(replay) <= {"trace", "process"}:
+            raise _fail("comparator_input_invalid", "replay must be {trace, process?}")
+        upstream = _load_upstream(capture["case_dir"])
+        bb = _load_bb(replay["trace"], replay["process"] if "process" in replay else None)
+        expected = deepcopy(upstream.canonical)
+        observed = deepcopy(bb.canonical)
+        divergences: list[dict[str, Any]] = []
+        findings: list[dict[str, Any]] = list(bb.normalizer.findings)
+        expected_counts_extra = 0
+
+        divergences.append({
+            "name": "sdk_transport_headers",
+            "upstream_request_header_names": upstream.header_names,
+            "bb": "the BB replay trace records sent request bodies only; transport headers are not captured",
+        })
+        order_paths = [
+            {"request": index, "path": path, "upstream": up_order[path], "bb": bb_order[path]}
+            for index, (up_order, bb_order) in enumerate(zip(upstream.orders, bb.orders))
+            for path in up_order
+            if path in bb_order and up_order[path] != bb_order[path]
+        ]
+        if order_paths:
+            divergences.append({"name": "json_member_order", "differences": order_paths})
+        if not upstream.fd_rg_provisioned:
+            download_calls = [call for call in upstream.canonical["tool_calls"] if call["name"] in DOWNLOADING_TOOLS]
+            if download_calls:
+                divergences.append({
+                    "name": "tool_download_attempt",
+                    "tool_call_ids": [call["id"] for call in download_calls],
+                    "upstream": "pinned tools-manager ensureTool attempted a download (fd/rg not provisioned)",
+                    "bb": "worker runs with PI_OFFLINE=1; no download attempt; observable results are compared exactly",
+                })
+        if upstream.events_after_agent_end:
+            kinds = [event["type"] for event in upstream.events_after_agent_end]
+            if set(kinds) == {"auto_compaction_start"}:
+                divergences.append({
+                    "name": "compaction_start_then_exit",
+                    "upstream_events_after_agent_end": upstream.events_after_agent_end,
+                    "bb": "compaction disabled; no event emitted; no summary request was sent upstream",
+                })
+            else:
+                findings.append({"field": "events", "detail": f"unexplained upstream events after agent_end: {kinds}"})
+
+        hidden = [index for index, group in enumerate(upstream.groups) if len(group) > 1]
+        typed = None
+        for index, group in enumerate(upstream.groups):
+            last = group[-1]
+            if last["served"] == "completion" and "finish_reason" in last:
+                if last["finish_reason"] is None:
+                    typed = ("truncated_stream_rejected", index, None)
+                elif last["finish_reason"] not in MODELED_FINISH_REASONS:
+                    typed = ("unmodeled_finish_reason", index, UNMODELED_FINISH_REASON_FAILURE_CODE)
+            elif last["served"] not in {"completion", "http_error"}:
+                typed = ("non_http_transport_failure", index, None)
+            if typed:
+                break
+        if hidden and (typed is None or hidden[0] <= typed[1]):
+            index = hidden[0]
+            group = upstream.groups[index]
+            outcome = "recovered" if group[-1]["served"] == "completion" else "exhausted"
+            record: dict[str, Any] = {
+                "name": "sdk_hidden_transport_retry",
+                "contract": "RL-PROVIDER-1",
+                "logical_request_index": index,
+                "outcome": outcome,
+                "upstream_http_rows": _rows(group),
+                "upstream_http_request_count": sum(len(item) for item in upstream.groups),
+                "upstream_logical_request_count": len(upstream.groups),
+                "bb_request_count": len(observed["requests"]),
+            }
+            if outcome == "exhausted":
+                if index != len(upstream.groups) - 1:
+                    raise _fail("upstream_case_invalid", "Pi continued after SDK retry exhaustion (retry was not disabled)")
+            else:
+                prefix = _scope_prefix(expected, upstream, index, record)
+                recovered = upstream.messages[_assistant_indices(upstream.messages)[index]]
+                usage = json.loads(json.dumps(recovered["usage"]), parse_float=lambda _: 0, parse_int=lambda _: 0)
+                derived = {
+                    "role": "assistant", "content": [], "api": recovered["api"], "provider": recovered["provider"],
+                    "model": recovered["model"], "usage": usage, "stopReason": "error",
+                    "errorMessage": _sdk_error_message(group[0]),
+                }
+                record["derived_bb_terminal"] = {
+                    "message": derived,
+                    "sources": [
+                        "pi-ai 0.57.1 openai-completions.js:31-47 (output init), :239-243 (catch)",
+                        "openai 6.26.0 core/error.js:21-30 (makeMessage)",
+                    ],
+                }
+                _set_expected(expected, upstream, index, prefix + [derived], record)
+                if expected["effects"] is None:
+                    observed["effects"] = None
+            divergences.append(record)
+        elif typed is not None:
+            name, index, failure_code = typed
+            record = {"name": name, "logical_request_index": index, "upstream_http_rows": _rows(upstream.groups[index])}
+            _set_expected(expected, upstream, index, _scope_prefix(expected, upstream, index, record), record)
+            if expected["effects"] is None:
+                observed["effects"] = None
+            record["bb"], problems = _typed_failure(bb.process, failure_code)
+            findings.extend({"field": "process", "detail": f"{name}: {problem}"} for problem in problems)
+            divergences.append(record)
+        elif not upstream.agent_end:
+            anchor = _require(upstream.scenario, "signal_cancel_on_tool_start", str, "upstream_case_invalid", "scenario")
+            last = upstream.messages[-1] if upstream.messages else None
+            started = {event["toolCallId"] for event in upstream.events if event["type"] == "tool_execution_start"}
+            ended = {event["toolCallId"] for event in upstream.events if event["type"] == "tool_execution_end"}
+            if (
+                upstream.exit_code != -signal.SIGTERM
+                or not isinstance(last, Mapping) or last["role"] != "assistant"
+                or anchor not in {call["id"] for call in _tool_calls([last])}
+                or anchor not in started or anchor in ended
+            ):
+                raise _fail("upstream_case_invalid", "signal-terminated capture does not end at the declared cancel anchor")
+            bb_info, problems = _typed_failure(bb.process, CANCEL_FAILURE_CODE)
+            if bb_info and bb_info["exit_code"] != CANCEL_EXIT_CODE:
+                problems.append(f"BB exit code {bb_info['exit_code']!r} is not {CANCEL_EXIT_CODE}")
+            findings.extend({"field": "process", "detail": f"external_cancel_signal: {problem}"} for problem in problems)
+            cut = len(upstream.messages)
+            after = bb.messages[cut:]
+            observed.update(_canonical(observed["requests"], bb.messages[:cut], observed["effects"]))
+            divergences.append({
+                "name": "external_cancel_signal",
+                "anchor_tool_call_id": anchor,
+                "upstream": {"signal": "SIGTERM", "exit_code": upstream.exit_code, "agent_end": False},
+                "bb": {"signal": "SIGINT", **bb_info},
+                "bb_messages_after_anchor": after,
+                "comparison_scope": {"messages_through_anchor": cut},
+            })
+
+        kind = bb.trace["termination"]["kind"]
+        stop = bb.trace["termination"]["native_stop_reason"]
+        last_bb_stop = _termination(bb.messages)
+        if "stopReason" in last_bb_stop and stop != last_bb_stop["stopReason"]:
+            findings.append({"field": "termination", "detail": f"BB native_stop_reason {stop!r} differs from last assistant {last_bb_stop['stopReason']!r}"})
+        if stop not in BB_KIND_BY_STOP or kind not in BB_KIND_BY_STOP[stop]:
+            findings.append({"field": "termination", "detail": f"BB termination kind {kind!r} is inconsistent with stop {stop!r}"})
+        if bb.trace["request_count"] != len(bb.trace["requests"]):
+            findings.append({"field": "request_count", "detail": f"BB request_count {bb.trace['request_count']} != sent requests {len(bb.trace['requests'])}"})
+        if kind == "RequestLimitExceeded":
+            terminal = bb.messages[-1] if bb.messages else None
+            cap_terminal = (
+                stop == "error"
+                and isinstance(terminal, Mapping) and terminal.get("stopReason") == "error" and "errorMessage" not in terminal
+            )
+            cap = -1
+            if cap_terminal:
+                config = _json_file(Path(__file__).resolve().parents[2].joinpath(*TARGET_NATIVE_CONFIG), "target_config_invalid")
+                cap = _require(_require(config, "agent", Mapping, "target_config_invalid", "native-config"), "request_cap", int, "target_config_invalid", "agent")
+            if (
+                cap_terminal
+                and len(upstream.groups) > cap
+                and bb.trace["stream_fn_issued"] == cap + 1
+                and len(bb.trace["requests"]) == cap
+            ):
+                record = {"name": "bounded_request_cap", "request_cap": cap, "upstream_logical_request_count": len(upstream.groups), "bb_terminal_message": terminal}
+                _set_expected(expected, upstream, cap, _scope_prefix(expected, upstream, cap, record), record)
+                observed.update(_canonical(observed["requests"], bb.messages[:-1], observed["effects"]))
+                if expected["effects"] is None:
+                    observed["effects"] = None
+                expected["termination"] = {"cause": "request_limit"}
+                observed["termination"] = {"cause": "request_limit"}
+                expected_counts_extra = 1
+                bb.normalizer.add("request_limit_cause", "$.termination")
+                divergences.append(record)
+            else:
+                findings.append({"field": "termination", "detail": "BB RequestLimitExceeded does not satisfy the declared request cap against this upstream case"})
+        if expected_counts_extra:
+            upstream.normalizer.add("request_limit_cause", "$.termination")
+
+        files_only = _workspace_regular_files_only(Path(capture["case_dir"]).resolve(), _fixture_set(Path(capture["case_dir"]).resolve())[1], expected, observed)
+        if files_only is not None:
+            divergences.append(files_only)
+        for name in CANONICAL_FIELDS:
+            difference = _first_difference(expected[name], observed[name], f"$.{name}")
+            if difference:
+                findings.append({"field": name, "detail": difference})
+
+        normalizations = upstream.normalizer.report("upstream") + bb.normalizer.report("bb")
+        if findings:
+            verdict = "fail"
+        elif divergences:
+            verdict = "named_divergence"
+        elif any(item["count"] for item in normalizations):
+            verdict = "normalized"
+        else:
+            verdict = "exact"
+        return {
+            "schema_version": REPORT_SCHEMA_VERSION,
+            "comparator_id": COMPARATOR_ID,
+            "lane_id": LANE_ID,
+            "config_id": CONFIG_ID,
+            "case_id": upstream.case_id,
+            "passed": verdict != "fail",
+            "verdict": verdict,
+            "normalizations": normalizations,
+            "divergences": divergences,
+            "findings": findings,
+            "uncompared": list(UNCOMPARED),
+            "assertions": [{
+                "assertion_id": "canonical_episode",
+                "status": "failed" if findings else "passed",
+                "expected": expected,
+                "observed": observed,
+                "detail": verdict if not findings else "; ".join(item["detail"] for item in findings),
+            }],
+        }
+
+    compare = __call__
+
+
+def compare(inp: Mapping[str, Any]) -> dict[str, Any]:
+    return PiCodingAgent0571Comparator()(inp)
+
+
+__all__ = [
+    "CONFIG_ID",
+    "COMPARATOR_ID",
+    "DIVERGENCES",
+    "LANE_ID",
+    "NORMALIZATIONS",
+    "Pi0571ComparatorError",
+    "PiCodingAgent0571Comparator",
+    "compare",
+    "project_bb_trace",
+    "project_upstream_case",
+]

@@ -115,6 +115,10 @@ OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
 )
 PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
 PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+PI_0_57_1_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.57.1"
+PI_0_57_1_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "bash", "edit", "find", "grep", "ls", "read", "write",
+)
 OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
 OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
 OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
@@ -127,6 +131,7 @@ HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
 NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
     OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
     PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+    PI_0_57_1_LOCAL_ADAPTER_ID: PI_0_57_1_NATIVE_TOOL_IDS,
     HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
     OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
     OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
@@ -1043,6 +1048,12 @@ def _native_worker_environment(
         # Pinned framed worker imports Pi only from the sealed root.
         environment["PI_NATIVE_WORKER_FRAMED"] = "1"
         environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+    elif binding.adapter_id == PI_0_57_1_LOCAL_ADAPTER_ID:
+        # Pinned 0.57.1 framed worker imports Pi only from the sealed root;
+        # offline mode keeps its tools-manager from attempting fd/rg downloads.
+        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+        environment["PI_OFFLINE"] = "1"
     elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
         # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
         pass
@@ -7235,6 +7246,8 @@ __all__ = [
     "OPENHANDS_NATIVE_TOOL_IDS",
     "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
     "PI_NATIVE_TOOL_IDS",
+    "PI_0_57_1_LOCAL_ADAPTER_ID",
+    "PI_0_57_1_NATIVE_TOOL_IDS",
     "OPENCLAW_LOCAL_ADAPTER_ID",
     "OPENCLAW_NATIVE_TOOL_IDS",
     "HERMES_AGENT_LOCAL_ADAPTER_ID",

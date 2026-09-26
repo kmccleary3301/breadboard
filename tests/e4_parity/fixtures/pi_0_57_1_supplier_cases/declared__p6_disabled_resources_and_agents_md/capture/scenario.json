@@ -1,0 +1,21 @@
+{
+  "case_id": "p6_disabled_resources_and_agents_md",
+  "covered_bullets": [
+    "prompt and message construction",
+    "disabled skills, extensions, and prompt templates",
+    "no-session behavior"
+  ],
+  "oracle": "Observed from source: CLI flags --no-extensions, --no-skills, and --no-prompt-templates disable scanning .pi/extensions, .pi/skills, and .pi/prompts in both agent dir and workspace; however, Pi 0.57.1 has no CLI flag to disable project context files, so DefaultResourceLoader loads AGENTS.md from cwd; the content of AGENTS.md appears in the provider request messages payload; no extension tools or prompt templates are registered.",
+  "steps": [
+    {
+      "assistant_content": "AGENTS.md was read as context; extensions, skills, and prompts were disabled.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 1600,
+        "total_tokens": 1615
+      }
+    }
+  ],
+  "task": "Verify planted skills, extensions, and prompt templates are ignored while AGENTS.md is loaded as context."
+}

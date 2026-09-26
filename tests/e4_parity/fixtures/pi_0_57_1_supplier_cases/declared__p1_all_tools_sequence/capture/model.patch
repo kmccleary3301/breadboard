@@ -1,0 +1,8 @@
+diff --git a/README.txt b/README.txt
+index aac9804..52fb756 100644
+--- a/README.txt
++++ b/README.txt
+@@ -1,2 +1,2 @@
+-Initial text line 1
++Modified text line 1
+ Initial text line 2

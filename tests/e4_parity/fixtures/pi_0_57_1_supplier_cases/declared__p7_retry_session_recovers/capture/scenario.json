@@ -1,0 +1,46 @@
+{
+  "case_id": "p7_retry_session_recovers",
+  "covered_bullets": [
+    "JSON event output and terminal result behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "oracle": "Historical R3 fact: /pi-config was read-only, so settings.json lock acquisition failed (EROFS) and global settings were discarded (settings-manager.js withLock/tryLoadFromStorage); effective retry = defaults enabled, maxRetries 3, baseDelayMs 2000. Inner layer: pi-ai openai-completions constructs OpenAI client without maxRetries; openai@6.26.0 defaults maxRetries 2 for 408/409/429/5xx. Expected: SDK exhausts 3 requests, Pi auto_retry_start attempt 1 (2000 ms), 4th request succeeds, auto_retry_end success=true.",
+  "steps": [
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "assistant_content": "Recovered after session retry.",
+      "finish_reason": "stop"
+    }
+  ],
+  "task": "Encounter three HTTP 500s then recover on the Pi session retry."
+}

@@ -38,6 +38,10 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.pi-coding-agent.v0.73.1",
         "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
     ),
+    "pi-r3@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "95a2ca6d6451a94fefd3d52732ad7342281410994d0c8bf4f4ceda741bd56d57",
+    ),
     "hermes-agent@2026.9.11": (
         "breadboard.hermes-agent.v2026.9.11",
         "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88",
@@ -423,6 +427,7 @@ def lower_e4_target(
         if harness["renderer"]["selector"] in {
             "breadboard.openhands-sdk.v1.47.0",
             "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.pi-coding-agent.v0.57.1",
             "breadboard.oh-my-pi.v18.1.17",
             "breadboard.hermes-agent.v2026.9.11",
             "breadboard.openclaw.native-chat.v1",

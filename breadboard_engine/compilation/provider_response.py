@@ -24,6 +24,7 @@ NATIVE_RESPONSE_POLICY_SCHEMA_VERSION: Final = "bb.provider_native_response_poli
 NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
 MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
+PI_0_57_1_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.57.1"
 OMP_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v18.1.17"
 OPENHANDS_RESPONSE_CONSUMER_ID: Final = "breadboard.openhands-sdk.v1.47.0"
 HERMES_RESPONSE_CONSUMER_ID: Final = "breadboard.hermes-agent.v2026.9.11"
@@ -41,6 +42,7 @@ _NATIVE_RESPONSE_CONSUMER_MODES: Final = {
     NATIVE_RESPONSE_CONSUMER_ID: frozenset({"non_streaming", "streaming"}),
     MINI_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     PI_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
+    PI_0_57_1_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OMP_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     HERMES_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
@@ -398,6 +400,25 @@ def admit_native_response_binding(
             or not profile.capabilities.supports_store
         ):
             raise NativeResponseBindingError("Pi native response requires its compiled source profile")
+    elif policy.consumer_id == PI_0_57_1_RESPONSE_CONSUMER_ID:
+        # Pinned pi-ai 0.57.1 buildParams (openai-completions.js:295-356) with
+        # the R3 custody compat: stream_options when supportsUsageInStreaming,
+        # max_tokens field, strict:false per tool (convertTools :604-615), no
+        # store, no n, no enable_thinking. Max tokens is episode-supplied.
+        if (
+            not isinstance(target, Mapping)
+            or target.get("version") != 3
+            or target.get("target_id") != "pi-r3@0.57.1"
+            or target.get("renderer_id") != PI_0_57_1_RESPONSE_CONSUMER_ID
+            or not isinstance(target.get("runtime_profile"), Mapping)
+            or effective_mode != "streaming"
+            or profile.request_policy.max_token_field != "max_tokens"
+            or profile.request_policy.strict_tools is not False
+            or profile.request_policy.enable_thinking is not None
+            or not profile.request_policy.include_usage
+            or profile.sampling.as_dict() != {"n": 1}
+        ):
+            raise NativeResponseBindingError("Pi 0.57.1 native response requires its compiled source profile")
     elif policy.consumer_id == OMP_RESPONSE_CONSUMER_ID:
         if (
             not isinstance(target, Mapping)

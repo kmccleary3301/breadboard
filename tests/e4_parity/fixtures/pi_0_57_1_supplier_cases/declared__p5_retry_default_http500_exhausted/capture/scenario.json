@@ -1,0 +1,142 @@
+{
+  "case_id": "p5_retry_default_http500_exhausted",
+  "covered_bullets": [
+    "JSON event output and terminal result behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "oracle": "Historical R3 fact: /pi-config was read-only, so settings.json lock acquisition failed (EROFS) and global settings were discarded (settings-manager.js withLock/tryLoadFromStorage); effective retry = defaults enabled, maxRetries 3, baseDelayMs 2000. Inner layer: pi-ai openai-completions constructs OpenAI client without maxRetries; openai@6.26.0 defaults maxRetries 2 for 408/409/429/5xx. Expected: 1 served completion + 4 Pi attempts x 3 SDK requests = 13 requests; auto_retry_start x3 then auto_retry_end success=false; JSON mode exit 0.",
+  "steps": [
+    {
+      "assistant_content": "First turn calling bash.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"echo p5-init\"}",
+          "id": "pi057-call-p5-00-bash",
+          "name": "bash"
+        }
+      ]
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    },
+    {
+      "body": {
+        "error": {
+          "message": "Internal Server Error 500",
+          "type": "server_error"
+        }
+      },
+      "kind": "http_error",
+      "status": 500
+    }
+  ],
+  "task": "Encounter persistent HTTP 500 after the first turn; both retry layers exhaust."
+}

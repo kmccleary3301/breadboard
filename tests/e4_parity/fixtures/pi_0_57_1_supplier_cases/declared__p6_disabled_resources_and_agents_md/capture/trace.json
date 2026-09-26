@@ -1,0 +1,28 @@
+{
+  "case_id": "p6_disabled_resources_and_agents_md",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "prompt and message construction",
+    "disabled skills, extensions, and prompt templates",
+    "no-session behavior"
+  ],
+  "elapsed_seconds": 1.467,
+  "exit_code": 0,
+  "files": {
+    "events_jsonl": "sha256:c2ebb97146ae64696d74dcd868f6fbeff12004cb11cb95bd8bbde294da773f32",
+    "git_status": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "http_transcript": "sha256:cbbf1356ef792a92e048fca2c1608fd41bfc8ec33a1756face942120d78ac042",
+    "model_patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:31b3d96f8a4b2df5236e3f42acc7d51a6549e49b0176d2ebf4c1efd13cfd2631",
+    "workspace_manifest_pre": "sha256:31b3d96f8a4b2df5236e3f42acc7d51a6549e49b0176d2ebf4c1efd13cfd2631"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Observed from source: CLI flags --no-extensions, --no-skills, and --no-prompt-templates disable scanning .pi/extensions, .pi/skills, and .pi/prompts in both agent dir and workspace; however, Pi 0.57.1 has no CLI flag to disable project context files, so DefaultResourceLoader loads AGENTS.md from cwd; the content of AGENTS.md appears in the provider request messages payload; no extension tools or prompt templates are registered.",
+  "requests_served": 1,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}

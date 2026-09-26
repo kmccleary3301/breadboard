@@ -359,7 +359,7 @@ generated = json.loads(
 assert generated["catalog_id"] == "bb.public_operation_catalog.v2"
 assert files("breadboard_sdk.generated").joinpath("public_bindings.py").is_file()
 target_ids = list_e4_target_ids()
-assert target_ids == ("hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1")
+assert target_ids == ("hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi-r3@0.57.1", "pi@0.57.1", "pi@0.73.1")
 for target_id in target_ids:
     target = load_e4_target(target_id)
     for asset in target.descriptor["assets"]:
@@ -415,7 +415,7 @@ print(json.dumps({{
         ),
         "profile_id": "daily_driver.v1",
         "e4_import_count": 0,
-        "e4_target_ids": ["hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi@0.57.1", "pi@0.73.1"],
+        "e4_target_ids": ["hermes-agent@2026.9.11", "mini-swe-agent@2.4.6", "oh-my-pi@16.2.13", "oh-my-pi@18.1.17", "openclaw@2026.9.4", "openhands-sdk@1.47.0", "pi-r3@0.57.1", "pi@0.57.1", "pi@0.73.1"],
     }
 
     help_result = subprocess.run(

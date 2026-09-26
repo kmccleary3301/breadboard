@@ -25,6 +25,7 @@ from ....compilation.provider_response import (
     CompiledNativeResponseBinding,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
     OMP_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
 )
@@ -501,24 +502,33 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if consumer_id in {
             MINI_RESPONSE_CONSUMER_ID,
             PI_RESPONSE_CONSUMER_ID,
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
             OMP_RESPONSE_CONSUMER_ID,
             OPENCLAW_RESPONSE_CONSUMER_ID,
         }:
             chat_messages = [dict(message) for message in messages]
         else:
             chat_messages = self._convert_messages_to_chat(messages, context=context)
+        pass_through_tools = {
+            PI_RESPONSE_CONSUMER_ID,
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
+            OMP_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }
         request = profile.chat_request(
             chat_messages,
             tools
-            if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}
+            if consumer_id in pass_through_tools
             else self._convert_tools_to_openai(tools),
         )
-        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID, OPENCLAW_RESPONSE_CONSUMER_ID}:
+        if consumer_id in pass_through_tools:
             # Pinned coding-agent SDKs omit n.
             request.pop("n")
         if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
             # Pi's and OMP's buildParams disable provider-side storage;
-            # OpenClaw's buildOpenAICompletionsParams emits no store member.
+            # OpenClaw's buildOpenAICompletionsParams emits no store member,
+            # and Pi 0.57.1's buildParams emits none under custody compat
+            # supportsStore=false (openai-completions.js:307-309).
             request["store"] = False
         return request
 

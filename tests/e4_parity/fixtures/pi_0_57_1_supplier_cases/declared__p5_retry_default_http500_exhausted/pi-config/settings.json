@@ -1,0 +1,7 @@
+{
+  "retry": {
+    "enabled": false,
+    "maxRetries": 0
+  },
+  "quietStartup": true
+}

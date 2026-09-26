@@ -1,0 +1,50 @@
+{
+  "repository": "https://github.com/badlogic/pi-mono",
+  "package": "@mariozechner/pi-coding-agent",
+  "version": "0.57.1",
+  "commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+  "source_archive_sha256": "bd64909b10a34c30890606f8787ee2ac47b9e7989e3db581978dd8214d62e87b",
+  "source_archive_bytes": 4755355,
+  "published_package": "https://registry.npmjs.org/@mariozechner/pi-coding-agent/-/pi-coding-agent-0.57.1.tgz",
+  "published_package_sha256": "8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+  "published_package_bytes": 3761279,
+  "published_package_integrity": "sha512-u5MQEduj68rwVIsRsqrWkJYiJCyPph/a6bMoJAQKo1sb+Pc17Y/ojwa+wGssnUMjEB38AQKofWTVe8NFEpSWNw==",
+  "license_source": "https://raw.githubusercontent.com/badlogic/pi-mono/a9cedccdde77e9d765303463d8a6cd11c58f7a7f/LICENSE",
+  "historical_descriptor": {
+    "target_id": "pi@0.57.1",
+    "sha256": "0131e41b0ffbbd0800fd332b769de2603caf4716382989a50c9e47a8f8d2441c"
+  },
+  "tool_schema_source": {
+    "capture": "tests/e4_parity/fixtures/pi_0_57_1_supplier_cases/declared__p0_text_stop/capture/http-transcript.jsonl",
+    "request_index": 0,
+    "raw_body_sha256": "sha256:d7e9b1703199290f1e1666fc9cf7e157a576c3641ec4768d5f35917c380d4e26",
+    "excluded_members": [
+      "strict"
+    ],
+    "historical_descriptor_discrepancies": [
+      "pi@0.57.1 tool-surface.json ls.parameters carries required: []; pinned dist/core/tools/ls.js TypeBox Type.Object with only optional members emits no required member, and the captured wire schema has none"
+    ]
+  },
+  "native_loop": "Pi 0.57.1 agent-loop semantics executed by BreadBoard Pi0571SemanticsState; upstream process is not invoked",
+  "source_files": [
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/system-prompt.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/resource-loader.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/index.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/read.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/bash.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/edit.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/edit-diff.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/write.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/grep.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/find.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/ls.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/core/tools/truncate.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/utils/shell.js",
+    "@mariozechner/pi-coding-agent@0.57.1/dist/utils/tools-manager.js",
+    "@mariozechner/pi-agent-core@0.57.1/dist/agent-loop.js",
+    "@mariozechner/pi-ai@0.57.1/dist/providers/openai-completions.js",
+    "@mariozechner/pi-ai@0.57.1/dist/utils/json-parse.js",
+    "@mariozechner/pi-ai@0.57.1/dist/utils/validation.js",
+    "openai@6.26.0/error.js"
+  ]
+}

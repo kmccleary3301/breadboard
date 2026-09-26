@@ -1,0 +1,94 @@
+{
+  "case_id": "p1_all_tools_sequence",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool ordering, names, descriptions, and JSON schemas",
+    "read, bash, edit, write, grep, find, and ls behavior",
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "JSON event output and terminal result behavior",
+    "no-session behavior"
+  ],
+  "oracle": "Observed from source and verified against all 499 R3 instances: tools read, bash, edit, write, ls execute cleanly in golden workspace; grep and find attempt ensureTool which fails because fd/rg are absent from image PATH and downloadTool network fetch fails under --network none; grep returns isError: true with 'ripgrep (rg) is not available and could not be downloaded'; find returns isError: true with 'fd is not available and could not be downloaded'; tool-result envelopes preserve exact tool-call IDs; final turn concludes with stop.",
+  "steps": [
+    {
+      "assistant_content": "Reading README.txt.",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"README.txt\"}",
+          "id": "pi057-call-p1-00-read",
+          "name": "read"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Running bash.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'p1-bash-ok\\\\n'\"}",
+          "id": "pi057-call-p1-01-bash",
+          "name": "bash"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Editing README.txt.",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"README.txt\",\"oldText\":\"Initial text line 1\",\"newText\":\"Modified text line 1\"}",
+          "id": "pi057-call-p1-02-edit",
+          "name": "edit"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Writing p1-created.txt.",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"p1-created.txt\",\"content\":\"p1 write content\\\\n\"}",
+          "id": "pi057-call-p1-03-write",
+          "name": "write"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Grepping for Modified (expected unavailable in R3).",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"README.txt\",\"pattern\":\"Modified\"}",
+          "id": "pi057-call-p1-04-grep",
+          "name": "grep"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Finding text files (expected unavailable in R3).",
+      "tool_calls": [
+        {
+          "arguments": "{\"pattern\":\"*.txt\"}",
+          "id": "pi057-call-p1-05-find",
+          "name": "find"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Listing directory.",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\".\"}",
+          "id": "pi057-call-p1-06-ls",
+          "name": "ls"
+        }
+      ]
+    },
+    {
+      "assistant_content": "All seven tools completed in sequence, matching exact R3 behavior where grep/find report unavailable.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 3200,
+        "total_tokens": 3210
+      }
+    }
+  ],
+  "task": "Execute all seven tools in order: read README.txt, bash echo, edit README.txt, write p1-created.txt, grep Modified README.txt, find *.txt, ls ."
+}
