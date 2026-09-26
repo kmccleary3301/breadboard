@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import functools
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from builtins import BaseExceptionGroup
 from dataclasses import dataclass
@@ -71,6 +72,20 @@ def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
         response_object=sdk_response.model_dump(),
         model_response_object=ModelResponse(),
     )
+
+
+def _mini_native_cost(response: Any, *, model: str) -> float:
+    """Price one converted Mini response as the pinned source's cost hook does."""
+    import litellm
+
+    try:
+        cost = litellm.cost_calculator.completion_cost(response, model=model)
+        if cost <= 0.0:
+            raise ValueError(f"Cost must be > 0.0, got {cost}")
+    except Exception:
+        # Exact source cost_tracking=ignore_errors behavior.
+        cost = 0.0
+    return cost
 
 
 def _mini_provider_exception(exception: Exception, *, model: str) -> MiniProviderFailure:
@@ -630,7 +645,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._request_attempts = 0
         self._native_binding: CompiledNativeResponseBinding | None = None
         self._native_plan: EffectiveExecutionPlan | None = None
-        self._native_cost: Callable[[Mapping[str, Any]], float] | None = None
+        self._native_cost: Callable[[Any], float] | None = None
         self._native_pending: _PendingNativeHTTPRequest | None = None
         self._native_private_responses: dict[str, Mapping[str, Any]] = {}
         self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
@@ -684,7 +699,6 @@ class EpisodeOpenAICompletionsPolicyClient:
                 raise ValueError("Mini pricing requires the sealed LiteLLM 1.101.0 assembly")
             if os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP", "").lower() != "true":
                 raise ValueError("Mini requires the installed local-only pricing catalog")
-            import litellm
             from litellm.litellm_core_utils.get_model_cost_map import (
                 get_model_cost_map_source_info,
             )
@@ -697,20 +711,9 @@ class EpisodeOpenAICompletionsPolicyClient:
             }:
                 raise ValueError("Mini pricing catalog was not loaded from its sealed assembly")
 
-            def native_cost(raw: Mapping[str, Any]) -> float:
-                try:
-                    cost = litellm.cost_calculator.completion_cost(
-                        litellm.ModelResponse(**thaw_json(raw)),
-                        model="openai/" + profile.model,
-                    )
-                    if cost <= 0.0:
-                        raise ValueError(f"Cost must be > 0.0, got {cost}")
-                except Exception:
-                    # Exact source cost_tracking=ignore_errors behavior.
-                    cost = 0.0
-                return cost
-
-            self._native_cost = native_cost
+            self._native_cost = functools.partial(
+                _mini_native_cost, model="openai/" + profile.model
+            )
             runtime_profile = thaw_json(target.runtime_profile)
             if not isinstance(runtime_profile, Mapping):
                 raise ValueError("Mini target runtime profile is malformed")
