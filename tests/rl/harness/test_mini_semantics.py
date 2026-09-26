@@ -168,6 +168,18 @@ def test_litellm_native_projection_matches_supplier_abc_response():
     assert parsed.message["extra"]["response"] == fixture["exp_resp"]
 
 
+def test_native_cost_prices_the_converted_response_like_supplier_abc():
+    pytest.importorskip("litellm")
+    from breadboard.rl.harness.policy_provider import _mini_model_response, _mini_native_cost
+
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "mini_litellm_probe.json").read_text()
+    )
+    response = _mini_model_response(fixture["raw"])
+    # Supplier mci023 abc_submit counters.model_cost for this 71/31-token sample.
+    assert _mini_native_cost(response, model="openai/gpt-4o-mini") == pytest.approx(2.925e-05)
+
+
 def test_provider_429_maps_to_supplier_native_exit():
     pytest.importorskip("litellm")
     import httpx
