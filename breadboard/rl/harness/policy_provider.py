@@ -25,6 +25,7 @@ from breadboard_engine.compilation.provider_response import (
     HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
     PI_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
     NATIVE_CHAT_RESPONSE_TARGETS,
     OMP_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
@@ -184,11 +185,20 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
             "parameters": parameter_schema,
         },
     }
-def _openclaw_wire_tools(chat_tools: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    """Project compiled tools onto OpenClaw's pinned wire form.
+# Pinned sources whose tool builders omit ``required`` when it is empty:
+# OpenClaw's tool builder, and Pi 0.57.1's TypeBox ``Type.Object`` with only
+# optional members (pi-coding-agent ls.js:6; r6 captured wire ls schema).
+_EMPTY_REQUIRED_OMITTED_TARGETS = frozenset({
+    OPENCLAW_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
+})
 
-    The compiler records every tool with a ``required`` list; OpenClaw's
-    pinned tool builder omits the key when the list is empty.
+
+def _empty_required_omitted_tools(chat_tools: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Project compiled tools onto a pinned wire form that omits empty ``required``.
+
+    The compiler records every tool with a ``required`` list; the pinned tool
+    builders of ``_EMPTY_REQUIRED_OMITTED_TARGETS`` omit the key when the list is empty.
     """
     tools = [thaw_json(tool) for tool in chat_tools]
     for tool in tools:
@@ -288,6 +298,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
         OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
         OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
         HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
@@ -337,6 +348,55 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     return binding
 
 
+_PI_0_57_1_MODEL_REGISTRY_FIELDS = frozenset(
+    {"provider_id", "api", "reasoning", "input", "cost", "compat"}
+)
+
+
+def _pi_0_57_1_public_config(
+    profile: OpenAICompletionsProviderProfile, runtime_profile: Any,
+) -> dict[str, Any]:
+    """Build the pinned 0.57.1 model object from the compiled model registry.
+
+    The registry carries the non-episode fields of the R3 custody models.json;
+    identity, endpoint, and token limits come from the episode profile.
+    """
+    native = thaw_json(runtime_profile)
+    if not isinstance(native, Mapping) or "model_registry" not in native:
+        raise ValueError("Pi 0.57.1 target runtime profile lacks its model registry")
+    registry = native["model_registry"]
+    if not isinstance(registry, Mapping) or set(registry) != _PI_0_57_1_MODEL_REGISTRY_FIELDS:
+        raise ValueError("Pi 0.57.1 model registry fields are malformed")
+    compat = registry["compat"]
+    if (
+        registry["api"] != "openai-completions"
+        or type(registry["provider_id"]) is not str
+        or not registry["provider_id"]
+        or registry["provider_id"] == "openai"
+        or type(registry["reasoning"]) is not bool
+        or not isinstance(registry["input"], list)
+        or not isinstance(registry["cost"], Mapping)
+        or not isinstance(compat, Mapping)
+        or "supportsDeveloperRole" not in compat
+        or compat["supportsDeveloperRole"] is not False
+    ):
+        raise ValueError("Pi 0.57.1 model registry values are not admitted")
+    return {
+        "id": profile.model,
+        "name": profile.model,
+        "api": registry["api"],
+        "provider": registry["provider_id"],
+        "baseUrl": profile.base_url,
+        "reasoning": registry["reasoning"],
+        "input": list(registry["input"]),
+        "cost": dict(registry["cost"]),
+        "contextWindow": profile.context_window,
+        "maxTokens": profile.max_output_tokens,
+        "compat": dict(compat),
+    }
+
+
+
 def _validate_request_features(
     profile: OpenAICompletionsProviderProfile,
     observation: PolicyCapabilityObservation,
@@ -352,6 +412,9 @@ def _validate_request_features(
         and target_projection.renderer_id in {
             *NATIVE_CHAT_RESPONSE_TARGETS,
             OPENCLAW_RESPONSE_CONSUMER_ID,
+            # Pinned 0.57.1 buildParams emits no n and, under custody compat
+            # supportsStore=false, no store (openai-completions.js:295-356).
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
         }
     ):
         # Native source clients emit their own wire and omit profile-inserted n.
@@ -664,6 +727,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             or target.renderer_id not in {
                 MINI_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
                 *NATIVE_CHAT_RESPONSE_TARGETS,
                 OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
@@ -746,6 +810,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                     "supportsStrictMode": False,
                 },
             }
+        elif target.renderer_id == PI_0_57_1_RESPONSE_CONSUMER_ID:
+            public_config = _pi_0_57_1_public_config(profile, target.runtime_profile)
         elif target.renderer_id == OMP_RESPONSE_CONSUMER_ID:
             public_config = {
                 "id": profile.model,
@@ -831,6 +897,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             target is None
             or target.renderer_id not in {
                 PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
                 OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }
@@ -840,8 +907,8 @@ class EpisodeOpenAICompletionsPolicyClient:
             or type(system_prompt) is not str or not system_prompt
             or type(tools) is not tuple
             or canonical_sha256(tools) != canonical_sha256(
-                _openclaw_wire_tools(target.chat_tools)
-                if target.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+                _empty_required_omitted_tools(target.chat_tools)
+                if target.renderer_id in _EMPTY_REQUIRED_OMITTED_TARGETS
                 else target.chat_tools
             )
             or type(accept_truncated_stream) is not bool
@@ -1385,6 +1452,7 @@ class EpisodeOpenAICompletionsPolicyClient:
             )
             if target.renderer_id in {
                 PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
                 OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }:
@@ -2062,8 +2130,8 @@ def _responses_request_to_chat(
         elif native_system_prompt is not None:
             raise ProviderContractError("native stream bootstrap is not admitted for this target")
         expected_tools = (
-            _openclaw_wire_tools(target_projection.chat_tools)
-            if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID
+            _empty_required_omitted_tools(target_projection.chat_tools)
+            if target_projection.renderer_id in _EMPTY_REQUIRED_OMITTED_TARGETS
             else [thaw_json(tool) for tool in target_projection.chat_tools]
         )
         if (

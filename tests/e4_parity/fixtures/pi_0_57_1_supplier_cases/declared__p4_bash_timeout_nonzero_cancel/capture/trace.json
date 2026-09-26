@@ -1,0 +1,28 @@
+{
+  "case_id": "p4_bash_timeout_nonzero_cancel",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "read, bash, edit, write, grep, find, and ls behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "elapsed_seconds": 3.025,
+  "exit_code": -15,
+  "files": {
+    "events_jsonl": "sha256:d51bf6eeabd61eb97f5fe677b5a82dcfc63ab217f871cc31ef43c8baa9660e66",
+    "git_status": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "http_transcript": "sha256:fbe355a28078dfec0e69bea3a1abe1341394e311dda22bb4fe2aeda24b12cd35",
+    "model_patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1",
+    "workspace_manifest_pre": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Observed from source: bash tool execute supports timeout parameter; execution exceeding timeout rejects with 'Command timed out after <N> seconds' and kills child process tree; nonzero command exit rejects with 'Command exited with code <exitCode>'; nonexistent command returns exit code 127; mid-tool SIGTERM delivered to pi process terminates agent cleanly, returning signal status (-15 or 143) the same way the R3 timeout invocation delivers it.",
+  "requests_served": 4,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}

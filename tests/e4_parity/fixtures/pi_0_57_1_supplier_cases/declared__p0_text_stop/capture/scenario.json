@@ -1,0 +1,24 @@
+{
+  "case_id": "p0_text_stop",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool ordering, names, descriptions, and JSON schemas",
+    "JSON event output and terminal result behavior",
+    "no-session behavior",
+    "thinking-option handling",
+    "provider payload construction and usage accounting"
+  ],
+  "oracle": "Observed from source: single-turn text stop causes Pi to emit message_start, message_delta/content, message_end (stopReason='stop'), and agent_end in JSONL mode; exits 0 without writing any session files under HOME or config dir. Request 0 body carries provider payload for Qwen/Qwen3.5-35B-A3B with max_tokens=32000, no temperature field, no thinking parameters (thinking-off effect), system prompt, user prompt prefixed with prompt_prefix.txt, and 7 tools in exact order read, bash, edit, write, grep, find, ls with TypeBox JSON schemas.",
+  "steps": [
+    {
+      "assistant_content": "Task complete. Verified single-turn text stop.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 12,
+        "prompt_tokens": 1500,
+        "total_tokens": 1512
+      }
+    }
+  ],
+  "task": "Acknowledge the task and report complete without calling any tools."
+}

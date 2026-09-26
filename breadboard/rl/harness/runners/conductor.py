@@ -2478,10 +2478,24 @@ class _ConductorSession:
                     "native provider request members differ from the pinned source request",
                     code="native_request_members_mismatch", **self._context(),
                 )
+            if "request_body" in projected and projected["request_body"] != request_body:
+                # The worker computes the exact body with its pinned request
+                # builder; any caller profile/capability drift is typed.
+                raise RunnerProtocolError(
+                    "native provider request body differs from the pinned source request",
+                    code="native_request_body_mismatch", **self._context(),
+                )
             trace_requests.append(dict(request_body))
             if failure is not None:
                 before = len(state.messages)
-                state.commit_provider_failure(str(failure))
+                if profile.provider_failure_phase is None:
+                    state.commit_provider_failure(str(failure))
+                else:
+                    state.commit_provider_failure(
+                        await self._project_native_provider_failure(
+                            phase, profile.provider_failure_phase, failure, state.messages,
+                        )
+                    )
                 await commit(before, "exit", turn)
                 self._turns.append(RunnerTurn(turn, (), ()))
                 return RunnerTermination.POLICY_INCOMPLETE
@@ -2489,7 +2503,12 @@ class _ConductorSession:
                 thaw_json(response["native_response"])
             )
             before = len(state.messages)
-            parsed = state.prepare_response(native)
+            if profile.parse_arguments_phase is None:
+                parsed = state.prepare_response(native)
+            else:
+                parsed = state.prepare_response(native, await self._parse_native_arguments(
+                    phase, profile.parse_arguments_phase, native,
+                ))
             if inspect.isawaitable(parsed):
                 # Profiles whose response preparation runs a pinned worker
                 # are awaited so the episode deadline can cancel them.
@@ -3340,6 +3359,63 @@ class _ConductorSession:
             }
 
         return _NativePhaseSteps(step, before_close, build_response, profile.max_turns)
+    async def _project_native_provider_failure(
+        self, phase: Callable[[str, Mapping[str, Any]], Awaitable[dict[str, Any]]],
+        operation: str, failure: NativeProviderRequestFailure,
+        messages: list[dict[str, Any]],
+    ) -> Mapping[str, Any]:
+        """Have the worker project the source's message for an HTTP status failure."""
+        details = failure.details
+        if (
+            details.get("code") != "provider_http_status"
+            or type(details.get("http_status")) is not int
+        ):
+            # Connection and mid-stream transport failures have no pinned
+            # HTTP projection (divergence non_http_transport_failure).
+            raise RunnerProtocolError(
+                "native provider failure lacks an HTTP status",
+                code="native_non_http_transport_failure", **self._context(),
+            )
+        if type(details.get("response_body_text")) is not str:
+            # The body was omitted (bound or secret scope); the pinned
+            # message depends on it, so the phase cannot run.
+            raise RunnerProtocolError(
+                "native provider failure body was withheld",
+                code="native_provider_failure_body_withheld", **self._context(),
+            )
+        projected = await phase(operation, {
+            "http_status": details["http_status"],
+            "response_body_text": details["response_body_text"],
+            "messages": messages,
+        })
+        message = projected.get("message")
+        if projected.get("kind") != "provider_failure" or type(message) is not dict:
+            raise RunnerProtocolError(
+                "native provider failure projection is malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return message
+
+    async def _parse_native_arguments(
+        self, phase: Callable[[str, Mapping[str, Any]], Awaitable[dict[str, Any]]],
+        operation: str, native: NativeProviderResponse,
+    ) -> list[Any]:
+        """Parse tool-call argument strings with the worker's pinned parser."""
+        if not native.tool_calls:
+            return []
+        parsed = await phase(operation, {"inputs": [call.arguments for call in native.tool_calls]})
+        results = parsed.get("results")
+        if (
+            parsed.get("kind") != "parsed_streaming_json_batch"
+            or type(results) is not list
+            or len(results) != len(native.tool_calls)
+        ):
+            raise RunnerProtocolError(
+                "native argument parsing result is malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return results
+
     async def _native_policy_exchange(
         self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
         turn: int, phase_mode: Literal["streaming", "checkpointed"],

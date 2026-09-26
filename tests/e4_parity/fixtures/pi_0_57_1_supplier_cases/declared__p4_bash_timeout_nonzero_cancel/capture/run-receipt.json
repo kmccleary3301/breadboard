@@ -1,0 +1,9 @@
+{
+  "case_id": "p4_bash_timeout_nonzero_cancel",
+  "config_mode": "declared_writable",
+  "exit_code": -15,
+  "no_session_verified": true,
+  "requests_served": 4,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:083e5eb00e4d9d93ba3062d7beaf1d45044c89c203081468458ff00efab6f5e4"
+}

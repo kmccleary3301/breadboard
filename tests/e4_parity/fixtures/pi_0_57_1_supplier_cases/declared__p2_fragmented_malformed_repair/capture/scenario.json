@@ -1,0 +1,61 @@
+{
+  "case_id": "p2_fragmented_malformed_repair",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "parser repair and invalid tool-call behavior",
+    "no-session behavior"
+  ],
+  "oracle": "Observed from source: receiver streams fragmented assistant text and split tool arguments; unknown tool name produces native tool error without crashing; malformed JSON argument fails argument parse and yields native tool error; split write arguments are successfully assembled and write p2-split.txt; in turn 2 the agent receives error tool results and recovers by successfully reading p2-split.txt; finishes with stop.",
+  "steps": [
+    {
+      "text_fragments": [
+        "Streaming ",
+        "fragmented ",
+        "text."
+      ],
+      "tool_calls": [
+        {
+          "arguments": "{\"foo\":\"bar\"}",
+          "id": "pi057-call-p2-00-unknown",
+          "name": "nonexistent_custom_tool"
+        },
+        {
+          "arguments": "{\"path\": 123",
+          "id": "pi057-call-p2-00-malformed",
+          "name": "read"
+        },
+        {
+          "id": "pi057-call-p2-00-split",
+          "name": "write",
+          "split": [
+            "{\"path\":\"",
+            "p2-split.txt\",",
+            "\"content\":\"",
+            "split-content\\n\"}"
+          ]
+        }
+      ]
+    },
+    {
+      "assistant_content": "Recovering from malformed calls by reading written file.",
+      "tool_calls": [
+        {
+          "arguments": "{\"path\":\"p2-split.txt\"}",
+          "id": "pi057-call-p2-01-read",
+          "name": "read"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Recovery complete.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 8,
+        "prompt_tokens": 2400,
+        "total_tokens": 2408
+      }
+    }
+  ],
+  "task": "Test streaming fragments, malformed tool arguments, unknown tool, and parser recovery."
+}

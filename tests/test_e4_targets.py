@@ -84,6 +84,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
         "oh-my-pi@18.1.17",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
+        "pi-r3@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -155,6 +156,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
         "oh-my-pi@18.1.17",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
+        "pi-r3@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )

@@ -1,0 +1,9 @@
+{
+  "case_id": "p0_text_stop",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 1,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:f079d2d97227f9f4fc802120b544f014e02f59ed961fcfa91b0febcd0552b77f"
+}

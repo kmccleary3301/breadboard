@@ -3,7 +3,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Protocol, Tuple
+from typing import Any, Dict, Final, List, Optional, Protocol, Tuple
+
+import httpx
 
 from ...contracts import (
     ProviderContractError,
@@ -33,6 +35,39 @@ _OPENAI_DERIVED_CHAT_EVENT_TYPES = frozenset(
         "refusal.done",
     }
 )
+
+# Declared bound for an HTTP error body carried in native failure details.
+# Larger bodies are omitted and marked so a consuming phase fails closed.
+MAX_NATIVE_HTTP_ERROR_BODY_BYTES: Final = 64 * 1024
+
+
+def _native_http_status_details(exc: Exception) -> Optional[Dict[str, Any]]:
+    """Project an SDK HTTP status error raised before any output.
+
+    The body is kept only when it is within the declared bound and scrubbing
+    with the active secret scope leaves it unchanged; otherwise it is omitted
+    and ``response_body_omitted`` names why.
+    """
+    response = getattr(exc, "response", None)
+    if not isinstance(response, httpx.Response):
+        return None
+    details: Dict[str, Any] = {
+        "code": "provider_http_status",
+        "http_status": response.status_code,
+    }
+    try:
+        text = response.text
+    except httpx.ResponseNotRead:
+        details["response_body_omitted"] = "unread"
+        return details
+    if len(text.encode("utf-8")) > MAX_NATIVE_HTTP_ERROR_BODY_BYTES:
+        details["response_body_omitted"] = "byte_limit"
+    elif redaction.scrub_text(text) != text:
+        details["response_body_omitted"] = "redaction_required"
+    else:
+        details["response_body_text"] = text
+    return details
+
 
 
 
@@ -631,8 +666,11 @@ class OpenAIChatStreamDecoder:
                 if exc.__class__.__name__ in {"APIConnectionError", "APITimeoutError"}
                 else "provider"
             )
+            # Native consumers receive the SDK HTTP status and body so a
+            # source profile can project its own pinned failure message.
+            details = _native_http_status_details(exc) if native else None
             raise ProviderRuntimeError(
-                redaction.safe_exception_message(exc), kind=kind
+                redaction.safe_exception_message(exc), kind=kind, details=details
             ) from None
 
     def _content_index(self, state: _ChatStreamState, family: str, source_index: int = 0) -> int:

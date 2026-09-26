@@ -1,0 +1,28 @@
+{
+  "case_id": "p7_retry_session_recovers",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "JSON event output and terminal result behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "elapsed_seconds": 2.823,
+  "exit_code": 0,
+  "files": {
+    "events_jsonl": "sha256:f7f8b48839c877b9faf7f560f89e6b4daf31cce0e9754028d6d7408fd68cbf45",
+    "git_status": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "http_transcript": "sha256:3eaa55afb807c6b7046de8b22a6a6cfc6f4abcae766a3e6cf931ca8cde18e91b",
+    "model_patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1",
+    "workspace_manifest_pre": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Historical R3 fact: /pi-config was read-only, so settings.json lock acquisition failed (EROFS) and global settings were discarded (settings-manager.js withLock/tryLoadFromStorage); effective retry = defaults enabled, maxRetries 3, baseDelayMs 2000. Inner layer: pi-ai openai-completions constructs OpenAI client without maxRetries; openai@6.26.0 defaults maxRetries 2 for 408/409/429/5xx. Expected: SDK exhausts 3 requests, Pi auto_retry_start attempt 1 (2000 ms), 4th request succeeds, auto_retry_end success=true.",
+  "requests_served": 3,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}
