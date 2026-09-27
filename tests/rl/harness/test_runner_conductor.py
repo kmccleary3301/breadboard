@@ -34,6 +34,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTermination,
     RunnerTerminationEvent,
     RunnerToolBinding,
+    ToolActionTimeout,
     ToolCallEvent,
     ToolObservationEvent,
     thaw_json,
@@ -3800,4 +3801,61 @@ async def test_conductor_tool_error_observations_malformed_arguments_reach_adapt
     assert obs_event.error_type == "tool_error"
     assert obs_event.tool_name == "read_file"
     assert "Validation failed for tool" in thaw_json(obs_event.observation)["content"][0]["text"]
+    await session.close()
+
+
+@pytest.mark.parametrize("observations", [True, False])
+async def test_conductor_tool_action_timeout_follows_tool_error_observation_mode(observations: bool) -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_errors_as_observations"] = observations
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="read_file", call_id="call-read-1", arguments='{"path":"a.py"}')
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "finished"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding(),))
+    tools.error = ToolActionTimeout(30000)
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    if not observations:
+        with pytest.raises(RunnerDependencyError) as failed:
+            await session.run(ConductorRunRequest({"query": "work"}))
+        assert failed.value.code == "tool_invoke_failed"
+        assert type(failed.value.__cause__) is ToolActionTimeout
+        assert len(client.requests) == 1
+        await session.close()
+        return
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    second_request = thaw_json(client.requests[1].request_payload)
+    outputs = [
+        json.loads(item["output"])
+        for item in second_request["input"]
+        if item.get("type") == "function_call_output" and item.get("call_id") == "call-read-1"
+    ]
+    assert outputs == [{
+        "content": [{"type": "text", "text": "Tool read_file timed out after 30 seconds"}],
+        "details": {},
+        "isError": True,
+    }]
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert [e.error_type for e in tool_obs_events] == ["tool_error"]
     await session.close()

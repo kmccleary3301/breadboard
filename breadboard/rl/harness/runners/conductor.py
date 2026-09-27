@@ -53,6 +53,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTerminationEvent,
     RunnerToolBinding,
     RunnerTurn,
+    ToolActionTimeout,
     ToolCallEvent,
     ToolObservationEvent,
     freeze_json_object,
@@ -1543,9 +1544,21 @@ class _ConductorSession:
                 )
                 await self._checkpoint("before_action", turn=turn, call_id=call_id)
                 try:
-                    observation_raw = await self._tools.invoke_tool(
-                        tool.tool_id, arguments, timeout_ms=tool.timeout_ms
-                    )
+                    try:
+                        observation_raw = await self._tools.invoke_tool(
+                            tool.tool_id, arguments, timeout_ms=tool.timeout_ms
+                        )
+                    except ToolActionTimeout as exc:
+                        if not self._projection.tool_errors_as_observations:
+                            raise
+                        observation_raw = {
+                            "content": [{
+                                "type": "text",
+                                "text": f"Tool {name} timed out after {exc.timeout_ms // 1000} seconds",
+                            }],
+                            "details": {},
+                            "isError": True,
+                        }
                     observation, _ = freeze_json_object_with_size(
                         observation_raw,
                         field_name="tool observation",

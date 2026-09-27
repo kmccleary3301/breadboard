@@ -48,6 +48,7 @@ from .materialization import (
 from .runners.base import (
     JsonSnapshotError,
     RunnerToolBinding,
+    ToolActionTimeout,
     freeze_json_object,
 )
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
@@ -1089,6 +1090,7 @@ class SandboxPlanError(SandboxRuntimeError): pass
 class MaterializationError(SandboxRuntimeError): pass
 class CacheLeaseError(MaterializationError): pass
 class SandboxLaunchError(SandboxRuntimeError): pass
+class SandboxActionTimeout(SandboxLaunchError): pass
 class SandboxAttestationError(SandboxRuntimeError): pass
 class WorkspaceStateError(SandboxRuntimeError): pass
 class VerifierSnapshotError(SandboxRuntimeError): pass
@@ -2101,7 +2103,7 @@ class TrustedProcessHandle:
                 stdout, stderr, _, _ = await asyncio.gather(*stream_tasks, wait_task)
             stream_result = (stdout, stderr)
         except TimeoutError as exc:
-            primary_error = SandboxLaunchError(
+            primary_error = SandboxActionTimeout(
                 "process action timed out",
                 code="runtime_launch_failed",
                 lease_id=self.lease_id,
@@ -2122,7 +2124,9 @@ class TrustedProcessHandle:
                 if primary_error is None:
                     primary_error = exc
                 group_absent = not self._group_exists(process.pid)
-            if not group_absent and primary_error is None:
+            if not group_absent and (
+                primary_error is None or type(primary_error) is SandboxActionTimeout
+            ):
                 primary_error = SandboxLaunchError(
                     "process group cleanup could not be proven",
                     code="runtime_launch_failed",
@@ -2534,6 +2538,8 @@ class LeaseBackedRunnerWorkspace:
                 timeout_ms=timeout_ms,
                 output_limit=lease.plan.limits.observation_bytes,
             )
+        except SandboxActionTimeout as exc:
+            raise ToolActionTimeout(timeout_ms) from exc
         finally:
             await lease._end_operation()
 
