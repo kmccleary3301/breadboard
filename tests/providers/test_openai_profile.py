@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import json
 import pickle
+import threading
 import types
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -225,6 +228,57 @@ def test_profile_projects_exact_sdk_stream_request(monkeypatch):
     assert "stream" not in captured["request_options"]
     assert "enable_thinking" not in captured["request_options"]
     assert result.messages[0].content == "done"
+
+
+def test_profile_stream_keeps_a_length_limited_completion_as_a_truncated_turn():
+    chunks = [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "partial answer"}, "finish_reason": None}]},
+        {
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+    ]
+    body = b"".join(
+        b"data: "
+        + json.dumps({"id": "chatcmpl-length", "object": "chat.completion.chunk", "created": 1, "model": MODEL, **chunk}).encode()
+        + b"\n\n"
+        for chunk in chunks
+    ) + b"data: [DONE]\n\n"
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            return
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        profile = _profile(base_url=f"http://127.0.0.1:{server.server_port}/v1")
+        runtime = _runtime()
+        result = runtime.invoke(
+            client=runtime.create_client_from_profile(profile),
+            model=MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            stream=True,
+            context=ProviderRuntimeContext(None, {}, stream=True, provider_profile=profile),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert [(message.content, message.finish_reason) for message in result.messages] == [
+        ("partial answer", "length")
+    ]
 
 
 def test_profile_identity_is_deterministic_and_secret_free():

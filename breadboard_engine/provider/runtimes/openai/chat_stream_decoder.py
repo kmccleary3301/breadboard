@@ -11,6 +11,7 @@ from ...contracts import (
     ProviderRuntimeError,
 )
 from ....security import redaction
+from ...sdk_bindings import provider_sdk_bindings
 
 _OPENAI_DERIVED_CHAT_EVENT_TYPES = frozenset(
     {
@@ -124,7 +125,12 @@ class OpenAIChatStreamDecoder:
                         kind="adapter",
                         output_emitted=state.output_emitted,
                     )
-                final_response = finalizer()
+                try:
+                    final_response = finalizer()
+                except provider_sdk_bindings.openai_length_finish_error as exc:
+                    # The SDK's parse helper refuses every length-limited completion, but a
+                    # length stop is still one complete, truncated assistant turn.
+                    final_response = exc.completion
 
             self._reconcile_final_response(final_response, context, state)
             self._finalize_lifecycle(context, state)

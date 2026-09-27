@@ -8,9 +8,11 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 try:  # pragma: no cover - import guard exercised through runtime error paths
+    from openai import LengthFinishReasonError as _OpenAILengthFinishReasonError
     from openai import OpenAI as _OpenAI
 except ImportError:  # pragma: no cover
     _OpenAI = None
+    _OpenAILengthFinishReasonError = None
 
 try:  # pragma: no cover - import guard exercised through runtime error paths
     from anthropic import Anthropic as _Anthropic
@@ -30,6 +32,7 @@ class ProviderSdkBindings:
     """SDK constructors, error types, and retry dependencies used by runtimes."""
 
     openai: Any = _OpenAI
+    openai_length_finish_error: Any = _OpenAILengthFinishReasonError
     anthropic: Any = _Anthropic
     anthropic_rate_limit_error: Any = _AnthropicRateLimitError
     anthropic_overloaded_error: Any = _AnthropicOverloadedError
