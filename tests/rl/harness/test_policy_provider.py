@@ -237,9 +237,20 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
                 "arguments": '{"path":"README.md"}',
             },
             {
+                "type": "function_call",
+                "name": "read",
+                "call_id": "call-two",
+                "arguments": '{"path": "setup.py"}',
+            },
+            {
                 "type": "function_call_output",
                 "call_id": "call-one",
                 "output": '{"content":"project"}',
+            },
+            {
+                "type": "function_call_output",
+                "call_id": "call-two",
+                "output": '{"content":"setup"}',
             },
         ],
         turn=2,
@@ -258,14 +269,12 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
         {"role": "system", "content": "system prompt"},
         {"role": "user", "content": '{"task":"inspect"}'},
     ]
-    assert captured[1][0][2] == {
-        "role": "assistant",
-        "content": "checking",
-    }
-    assert captured[1][0][-2:] == [
+    # One assistant turn (text plus parallel calls) replays as the single chat message the
+    # policy produced, so append-only token continuity holds across turns.
+    assert captured[1][0][2:] == [
         {
             "role": "assistant",
-            "content": "",
+            "content": "checking",
             "tool_calls": [
                 {
                     "id": "call-one",
@@ -274,13 +283,26 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
                         "name": "read",
                         "arguments": '{"path":"README.md"}',
                     },
-                }
+                },
+                {
+                    "id": "call-two",
+                    "type": "function",
+                    "function": {
+                        "name": "read",
+                        "arguments": '{"path": "setup.py"}',
+                    },
+                },
             ],
         },
         {
             "role": "tool",
             "tool_call_id": "call-one",
             "content": '{"content":"project"}',
+        },
+        {
+            "role": "tool",
+            "tool_call_id": "call-two",
+            "content": '{"content":"setup"}',
         },
     ]
     assert captured[0][1] == [

@@ -856,6 +856,8 @@ def _responses_request_to_chat(
     messages: list[dict[str, Any]] = []
     if instructions:
         messages.append({"role": "system", "content": instructions})
+    # Items of one assistant turn (text message, then function calls) form one chat message.
+    assistant_turn_open = False
     for item in raw_input:
         if type(item) is not dict:
             raise ProviderContractError("policy input items must be exact objects")
@@ -870,20 +872,20 @@ def _responses_request_to_chat(
             ):
                 raise ProviderContractError("policy function call is malformed")
             json.loads(arguments)
-            messages.append(
-                {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                            "id": call_id,
-                            "type": "function",
-                            "function": {"name": name, "arguments": arguments},
-                        }
-                    ],
-                }
-            )
+            tool_call = {
+                "id": call_id,
+                "type": "function",
+                "function": {"name": name, "arguments": arguments},
+            }
+            if assistant_turn_open:
+                messages[-1].setdefault("tool_calls", []).append(tool_call)
+            else:
+                messages.append(
+                    {"role": "assistant", "content": "", "tool_calls": [tool_call]}
+                )
+                assistant_turn_open = True
             continue
+        assistant_turn_open = False
         if item_type == "function_call_output":
             call_id = item.get("call_id")
             output = item.get("output")
@@ -936,6 +938,7 @@ def _responses_request_to_chat(
         else:
             raise ProviderContractError("policy message content is unsupported")
         messages.append({"role": role, "content": projected_content})
+        assistant_turn_open = role == "assistant"
 
     raw_tools = request.get("tools")
     if type(raw_tools) is not list:

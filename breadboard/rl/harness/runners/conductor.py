@@ -1427,6 +1427,25 @@ class _ConductorSession:
             await self._checkpoint(
                 "before_action" if calls else "after_policy", turn=turn
             )
+            # A tool-calling turn is replayed whole: every output item in returned order
+            # (assistant text included), then each call's output in call order.
+            call_outputs: list[dict[str, Any]] = []
+            if calls:
+                added_size = sum(
+                    _encoded_json_size(item)
+                    for item in normalized
+                    if item.get("type") != "function_call"
+                )
+                if transcript_size + added_size > limits.transcript_bytes:
+                    await self._raise_error(
+                        RunnerProtocolError(
+                            "compiled transcript byte limit exceeded",
+                            code="transcript_limit_exceeded",
+                            **self._context(),
+                        ),
+                        turn=turn,
+                    )
+                transcript_size += added_size
             counts: dict[str, int] = {}
             for ordinal, call in enumerate(calls):
                 name = call.get("name")
@@ -1487,7 +1506,7 @@ class _ConductorSession:
                         )
                     )
                     await self._checkpoint("after_action", turn=turn, call_id=call_id)
-                    transcript.extend((thaw_json(call), output_item))
+                    call_outputs.append(output_item)
                     transcript_size += added_size
                     continue
                 if type(name) is not str or type(call_id) is not str or name not in tool_by_name:
@@ -1630,8 +1649,10 @@ class _ConductorSession:
                     )
                 )
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
-                transcript.extend((thaw_json(call), output_item))
+                call_outputs.append(output_item)
                 transcript_size += added_size
+            if calls:
+                transcript.extend((*thaw_json(normalized), *call_outputs))
             self._turns.append(
                 RunnerTurn(
                     turn=turn,

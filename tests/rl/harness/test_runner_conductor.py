@@ -785,6 +785,43 @@ async def test_conductor_dispatches_compiled_model_name_to_admitted_tool_id_and_
     await session.close()
     assert client.close_calls == 1
 
+async def test_conductor_replays_assistant_text_and_parallel_calls_before_their_outputs() -> None:
+    observation = _observation()
+    text = {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": "Reading both files.\n\n"}],
+    }
+    second_call = _function_call(call_id="call-2", arguments='{"path": "src/util.py"}')
+    first = _response()
+    first["output"] = [text, _function_call(), second_call]
+    client = RecordingPolicyClient(observation, responses=[first, _response()])
+    tools = RecordingToolPort(
+        (_tool_binding(),),
+        results=[{"content": "main", "ok": True}, {"content": "util", "ok": True}],
+    )
+    session, *_ = await _open(
+        observation=observation,
+        plan=_plan_with_tools(observation),
+        client=client,
+        tools=tools,
+    )
+
+    result = await session.run(ConductorRunRequest({"query": "inspect"}))
+
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert [call[1] for call in tools.calls] == [{"path": "src/main.py"}, {"path": "src/util.py"}]
+    # The next request carries the policy's turn exactly as produced (text included),
+    # so a trainer can verify it as an append-only extension of the served transcript.
+    assert thaw_json(client.requests[1].request_payload)["input"][2:] == [
+        text,
+        _function_call(),
+        second_call,
+        {"type": "function_call_output", "call_id": "call-1", "output": '{"content":"main","ok":true}'},
+        {"type": "function_call_output", "call_id": "call-2", "output": '{"content":"util","ok":true}'},
+    ]
+    await session.close()
+
 async def test_conductor_executes_ordered_modes_with_exact_prompts_and_mode_tool_sets() -> None:
     observation = _observation()
     semantic = _multi_mode_semantics(observation)
