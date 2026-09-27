@@ -3692,3 +3692,112 @@ async def test_session_close_shares_redacted_cancelled_error_subclass_and_remain
     assert closed.value.code == "session_closed"
     assert client.requests == []
     assert client.close_calls == 1
+
+
+async def test_conductor_tool_error_observations_unbound_tool_call_emits_error_observation_and_continues() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_errors_as_observations"] = True
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="glob", call_id="call-glob-1", arguments='{"pattern":"*.py"}')
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "recovered and complete"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding(),), results=[])
+    session, client_res, tools_res, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    assert len(client.requests) == 2
+    # Turn 2 request should include the Tool glob not found observation in function_call_output
+    second_request = thaw_json(client.requests[1].request_payload)
+    assert any(
+        item.get("type") == "function_call_output"
+        and item.get("call_id") == "call-glob-1"
+        and "Tool glob not found" in item.get("output", "")
+        for item in second_request["input"]
+    )
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert len(tool_obs_events) == 1
+    obs_event = tool_obs_events[0]
+    assert obs_event.tool_name == "glob"
+    assert obs_event.call_id == "call-glob-1"
+    assert obs_event.error_type == "tool_error"
+    assert thaw_json(obs_event.observation) == {
+        "content": [{"type": "text", "text": "Tool glob not found"}],
+        "details": {},
+        "isError": True,
+    }
+    await session.close()
+
+
+async def test_conductor_tool_error_observations_malformed_arguments_reach_adapter_unvalidated() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_errors_as_observations"] = True
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    # Malformed JSON: Pi parses leniently to {}; Pi's own validator in the adapter rejects it.
+    response_turn1["output"] = [
+        _function_call(name="read_file", call_id="call-read-1", arguments="not-json")
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "finished"}],
+        }
+    ]
+    # The tool port receives empty dict arguments (per Pi's parseStreamingJson lenient fallback)
+    # and returns a validation error observation as Pi would
+    validation_error_result = {
+        "content": [
+            {
+                "type": "text",
+                "text": 'Validation failed for tool "read_file":\n  - path: must have required property \'path\'\n\nReceived arguments:\n{}',
+            }
+        ],
+        "details": {},
+        "isError": True,
+    }
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding(),), results=[validation_error_result])
+    session, client_res, tools_res, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    assert len(tools.calls) == 1
+    tool_id, args, _ = tools.calls[0]
+    assert tool_id == "read-file"
+    assert args == {}
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert len(tool_obs_events) == 1
+    obs_event = tool_obs_events[0]
+    assert obs_event.error_type == "tool_error"
+    assert obs_event.tool_name == "read_file"
+    assert "Validation failed for tool" in thaw_json(obs_event.observation)["content"][0]["text"]
+    await session.close()

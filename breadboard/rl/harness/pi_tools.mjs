@@ -25,6 +25,7 @@ const {
   createReadTool,
   createWriteTool,
 } = await import("@mariozechner/pi-coding-agent");
+const { validateToolArguments } = await import("@mariozechner/pi-ai");
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const TOOL_FACTORIES = Object.freeze({
@@ -85,9 +86,13 @@ async function main() {
   process.once("SIGINT", abort);
   process.once("SIGTERM", abort);
   try {
+    const validatedArgs = validateToolArguments(tool, {
+      name: request.toolId,
+      arguments: request.argumentsValue,
+    });
     const result = await tool.execute(
       `bb-native-${request.toolId}`,
-      request.argumentsValue,
+      validatedArgs,
       controller.signal,
     );
     process.stdout.write(`${JSON.stringify(result)}\n`);

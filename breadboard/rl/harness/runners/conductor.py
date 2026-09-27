@@ -521,6 +521,7 @@ class _RuntimeProjection:
     tools: tuple[_ToolProjection, ...]
     responses_use_developer_role: bool
     tool_prompt_mode: str
+    tool_errors_as_observations: bool
 
 
 
@@ -580,7 +581,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         raise _plan_error(request, "compiled provider controls are invalid", "compiled_ir_mismatch")
     allowed_provider_controls = {
         "api_variant", "use_native", "responses_use_developer_role",
-        "suppress_prompts", "responses_stateful",
+        "suppress_prompts", "responses_stateful", "tool_errors_as_observations",
     }
     if (
         any(
@@ -593,9 +594,11 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         or provider_tools.get("suppress_prompts", False) is not False
         or provider_tools.get("responses_stateful", False) is not False
         or type(provider_tools.get("responses_use_developer_role", True)) is not bool
+        or type(provider_tools.get("tool_errors_as_observations", False)) is not bool
     ):
         raise _plan_error(request, "compiled provider authority is unsupported", "compiled_ir_mismatch")
     responses_use_developer_role = provider_tools.get("responses_use_developer_role", True)
+    tool_errors_as_observations = provider_tools.get("tool_errors_as_observations", False)
 
     models = providers.get("models")
     slots = providers.get("policy_slots")
@@ -894,7 +897,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     return _RuntimeProjection(
         tuple(projected_models), tuple(projected_modes), tuple(sequence),
         tuple(projected_tools), responses_use_developer_role,
-        prompts["tool_prompt_mode"],
+        prompts["tool_prompt_mode"], tool_errors_as_observations,
     )
 
 
@@ -1427,6 +1430,65 @@ class _ConductorSession:
             for ordinal, call in enumerate(calls):
                 name = call.get("name")
                 call_id = call.get("call_id")
+                raw_arguments = call["arguments"]
+                if self._projection.tool_errors_as_observations and (
+                    type(call_id) is str and (type(name) is not str or name not in tool_by_name)
+                ):
+                    tool_display_name = name if type(name) is str else "undefined"
+                    await self._checkpoint("before_action", turn=turn, call_id=call_id)
+                    await self._emit(
+                        ToolCallEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn,
+                            ordinal, call_id, tool_display_name, raw_arguments,
+                        )
+                    )
+                    await self._checkpoint("before_action", turn=turn, call_id=call_id)
+                    observation_raw = {
+                        "content": [{"type": "text", "text": f"Tool {tool_display_name} not found"}],
+                        "details": {},
+                        "isError": True,
+                    }
+                    observation, _ = freeze_json_object_with_size(
+                        observation_raw,
+                        field_name="tool observation",
+                        max_encoded_bytes=limits.observation_bytes,
+                        max_nodes=limits.observation_bytes + 1,
+                    )
+                    await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                    output_item = {
+                        "type": "function_call_output",
+                        "call_id": call_id,
+                        "output": json.dumps(
+                            thaw_json(observation),
+                            sort_keys=True,
+                            separators=(",", ":"),
+                        ),
+                    }
+                    added_size = _encoded_json_size(call) + _encoded_json_size(output_item)
+                    if transcript_size + added_size > limits.transcript_bytes:
+                        await self._raise_error(
+                            RunnerProtocolError(
+                                "compiled transcript byte limit exceeded",
+                                code="transcript_limit_exceeded",
+                                **self._context(),
+                            ),
+                            turn=turn,
+                            call_id=call_id,
+                        )
+                    observations.append(observation)
+                    await self._emit(
+                        ToolObservationEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn,
+                            ordinal, call_id, tool_display_name, observation, False,
+                            error_type="tool_error",
+                        )
+                    )
+                    await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                    transcript.extend((thaw_json(call), output_item))
+                    transcript_size += added_size
+                    continue
                 if type(name) is not str or type(call_id) is not str or name not in tool_by_name:
                     await self._raise_error(
                         RunnerProtocolError(
@@ -1449,25 +1511,28 @@ class _ConductorSession:
                         turn=turn,
                         call_id=call_id,
                     )
-                raw_arguments = call["arguments"]
                 try:
                     arguments = json.loads(raw_arguments)
                     if type(arguments) is not dict:
                         raise ValueError
                 except Exception as exc:
-                    error = RunnerProtocolError(
-                        "policy tool arguments are malformed",
-                        code="policy_response_invalid",
-                        **self._context(),
-                    )
-                    error.__cause__ = exc
-                    await self._raise_error(error, turn=turn, call_id=call_id)
-                try:
-                    _validate_arguments(arguments, tool.schema["parameters"])
-                except RunnerProtocolError as error:
-                    error.episode_id = self._open_request.episode_id
-                    error.effective_plan_digest = self._open_request.effective_plan_digest
-                    await self._raise_error(error, turn=turn, call_id=call_id)
+                    if self._projection.tool_errors_as_observations:
+                        arguments = {}
+                    else:
+                        error = RunnerProtocolError(
+                            "policy tool arguments are malformed",
+                            code="policy_response_invalid",
+                            **self._context(),
+                        )
+                        error.__cause__ = exc
+                        await self._raise_error(error, turn=turn, call_id=call_id)
+                if not self._projection.tool_errors_as_observations:
+                    try:
+                        _validate_arguments(arguments, tool.schema["parameters"])
+                    except RunnerProtocolError as error:
+                        error.episode_id = self._open_request.episode_id
+                        error.effective_plan_digest = self._open_request.effective_plan_digest
+                        await self._raise_error(error, turn=turn, call_id=call_id)
                 await self._checkpoint("before_action", turn=turn, call_id=call_id)
                 await self._emit(
                     ToolCallEvent(
@@ -1537,11 +1602,18 @@ class _ConductorSession:
                         call_id=call_id,
                     )
                 observations.append(observation)
+                # In observation mode the tool adapter owns argument validation and reports rejections as isError results.
+                error_type = (
+                    "tool_error"
+                    if self._projection.tool_errors_as_observations and observation.get("isError") is True
+                    else None
+                )
                 await self._emit(
                     ToolObservationEvent(
                         0, self._open_request.episode_id,
                         self._open_request.effective_plan_digest, turn,
                         ordinal, call_id, name, observation, False,
+                        error_type=error_type,
                     )
                 )
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
