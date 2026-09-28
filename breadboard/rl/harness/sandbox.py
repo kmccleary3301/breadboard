@@ -1603,10 +1603,12 @@ class _PrivateGit:
         return stdout, stderr
 
     def stage_work_tree(self, tree: str) -> None:
-        # Every file, including ignored and untracked content, is staged so
-        # that the patch is a complete account of the sealed checkout.
+        # Stage like the stock AnySWE collector (``git add -A``): tracked and
+        # untracked content, but not new files the checkout's ignore rules
+        # exclude. Policy-run builds (``pip install -e .``) write ignored
+        # products into the checkout that are not part of the answer.
         self.run("read-tree", tree)
-        self.run("add", "--all", "--force", "--", ".", ":(top,exclude).git")
+        self.run("add", "--all", "--", ".", ":(top,exclude).git")
 
 
 def _capture_repository_baseline(

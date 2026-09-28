@@ -1009,6 +1009,8 @@ def _project_headless_run(
     )
     workspace_diff = run.workspace_diff
     if workspace_diff is None:
+        if run.failure is not None:
+            raise HeadlessEpisodeFailed(run.failure)
         raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
         "returncode", "stdout", "stderr", "base_commit", "baseline_tree",

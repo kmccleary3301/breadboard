@@ -44,7 +44,53 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
-def test_headless_projection_reports_the_service_failure_code() -> None:
+class _EvidenceCAS:
+    def __init__(self, events: bytes) -> None:
+        artifact_manifest = json.dumps(
+            {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
+            sort_keys=True,
+        ).encode()
+        self.payloads = {
+            "manifest": json.dumps(
+                {
+                    "runner_ledger_ref": self.ref("events", events),
+                    "artifact_manifest_ref": self.ref(
+                        "artifacts",
+                        artifact_manifest,
+                    ),
+                },
+                sort_keys=True,
+            ).encode(),
+            "events": events,
+            "artifacts": artifact_manifest,
+        }
+
+    @staticmethod
+    def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
+        return {
+            "artifact_id": artifact_id,
+            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+        }
+
+    def get_ref(self, artifact_id: str) -> SimpleNamespace:
+        payload = self.payloads[artifact_id]
+        projection = self.ref(artifact_id, payload)
+        return SimpleNamespace(**projection, to_dict=lambda: projection)
+
+    def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
+        payload = self.payloads[ref.artifact_id]
+        assert len(payload) <= max_bytes
+        return payload
+
+
+# The service publishes failure evidence for some failed episodes (a verifier
+# failure after the runner finished) and none for others; either way the
+# headless result must carry the service's failure code.
+@pytest.mark.parametrize("failure_evidence_published", (False, True))
+def test_headless_projection_reports_the_service_failure_code(
+    failure_evidence_published: bool,
+) -> None:
+    cas = _EvidenceCAS(b'{"event":"failed"}\n')
     run = SimpleNamespace(
         primary_disposition=SimpleNamespace(value="failed"),
         termination=None,
@@ -53,7 +99,9 @@ def test_headless_projection_reports_the_service_failure_code() -> None:
         completed_envelope_ref=None,
         closed_envelope_ref=None,
         result_ref=None,
-        evidence_manifest_ref=None,
+        evidence_manifest_ref=(
+            cas.get_ref("manifest") if failure_evidence_published else None
+        ),
         evidence_root=None,
         artifact_manifest_ref=None,
         primary_measurement_digest=None,
@@ -69,7 +117,10 @@ def test_headless_projection_reports_the_service_failure_code() -> None:
 
     with pytest.raises(Exception) as captured:
         _project_headless_run(
-            {}, run, SimpleNamespace(), expected_base_commit="0" * 40
+            {},
+            run,
+            SimpleNamespace(authority_graph=SimpleNamespace(cas=cas)),
+            expected_base_commit="0" * 40,
         )
 
     assert _safe_failure_projection(captured.value) == {
@@ -82,45 +133,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     patch = b"diff --git a/a.py b/a.py\n"
     events = b'{"event":"done"}\n'
 
-    class CAS:
-        def __init__(self) -> None:
-            artifact_manifest = json.dumps(
-                {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
-                sort_keys=True,
-            ).encode()
-            self.payloads = {
-                "manifest": json.dumps(
-                    {
-                        "runner_ledger_ref": self.ref("events", events),
-                        "artifact_manifest_ref": self.ref(
-                            "artifacts",
-                            artifact_manifest,
-                        ),
-                    },
-                    sort_keys=True,
-                ).encode(),
-                "events": events,
-                "artifacts": artifact_manifest,
-            }
-
-        @staticmethod
-        def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
-            return {
-                "artifact_id": artifact_id,
-                "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
-            }
-
-        def get_ref(self, artifact_id: str) -> SimpleNamespace:
-            payload = self.payloads[artifact_id]
-            projection = self.ref(artifact_id, payload)
-            return SimpleNamespace(**projection, to_dict=lambda: projection)
-
-        def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
-            payload = self.payloads[ref.artifact_id]
-            assert len(payload) <= max_bytes
-            return payload
-
-    cas = CAS()
+    cas = _EvidenceCAS(events)
     composition = SimpleNamespace(
         authority_graph=SimpleNamespace(cas=cas),
     )

@@ -107,7 +107,7 @@ def test_sealed_executable_works_without_python_exported_seal_constants(
         pinned.close()
 
 
-def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
+def test_sealed_repository_diff_includes_untracked_and_binary_files_but_not_new_ignored_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     repository = tmp_path / "source"
@@ -172,7 +172,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         plan=plan,
     )
     (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
-    (repository / "ignored.txt").write_text("included\n", encoding="utf-8")
+    (repository / "ignored.txt").write_text("excluded\n", encoding="utf-8")
     binary = b"\x00\x01\xffbinary\n"
     (repository / "new.bin").write_bytes(binary)
     raw_binary = b"\xffnon-UTF-8-without-NUL\n"
@@ -193,7 +193,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         input=result["stdout"].encode(), check=True,
     )
     assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
-    assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
+    assert not (reconstruction / "ignored.txt").exists()
     assert (reconstruction / "new.bin").read_bytes() == binary
     assert (reconstruction / "raw.bin").read_bytes() == raw_binary
     (repository / "nested" / ".git" / "objects").mkdir(parents=True)
@@ -278,7 +278,8 @@ async def test_sealed_workspace_diff_omits_lease_start_build_products(
     monkeypatch.setattr(harness.backend, "launch", launch_image_checkout)
     primary = await harness.manager.open(fixture.request)
     await primary.runner_workspace.write_text("work/module.py", "value = 2\n")
-    await primary.runner_workspace.write_text("work/build/policy.log", "policy\n")
+    await primary.runner_workspace.write_text("work/build/policy.log", "policy build\n")
+    await primary.runner_workspace.write_text("work/policy_notes.txt", "policy\n")
     await primary.runner_workspace.write_text("work/notes.txt", "policy note\n")
     await primary.seal_for_verifier()
     patch = primary.sealed_workspace_diff()["stdout"]
@@ -288,7 +289,7 @@ async def test_sealed_workspace_diff_omits_lease_start_build_products(
         for line in patch.splitlines()
         if line.startswith("diff --git ")
     )
-    assert changed == ["build/policy.log", "module.py", "notes.txt"]
+    assert changed == ["module.py", "notes.txt", "policy_notes.txt"]
     lease_start = tmp_path / "lease-start"
     subprocess.run(
         (
@@ -307,7 +308,8 @@ async def test_sealed_workspace_diff_omits_lease_start_build_products(
     )
     assert (lease_start / "module.py").read_text(encoding="utf-8") == "value = 2\n"
     assert (lease_start / "notes.txt").read_text(encoding="utf-8") == "policy note\n"
-    assert (lease_start / "build" / "policy.log").read_text(encoding="utf-8") == "policy\n"
+    assert (lease_start / "policy_notes.txt").read_text(encoding="utf-8") == "policy\n"
+    assert not (lease_start / "build" / "policy.log").exists()
     assert (lease_start / "build" / "module.o").read_bytes() == prebuilt
     baseline_path = harness.lease_root / (primary.lease_id + ".baseline")
     assert baseline_path.is_dir()
