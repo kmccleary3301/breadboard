@@ -15946,6 +15946,9 @@ var GENERATED_SCHEMA_OBJECTS = {
             "minLength": 1,
             "type": "string"
           },
+          "tool_errors_as_observations": {
+            "type": "boolean"
+          },
           "use_native": {
             "type": "boolean"
           }
