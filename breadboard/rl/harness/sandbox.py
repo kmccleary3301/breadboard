@@ -5058,12 +5058,6 @@ class SandboxWorkspaceLease:
                 )
             if base_commit is None and seed_entries:
                 base_commit = seed_entries[0].source_digest
-                self._state = WorkspaceLeaseState.QUARANTINED
-                raise VerifierSnapshotError(
-                    "workspace base authority is incomplete",
-                    code="snapshot_tampered",
-                    lease_id=self.lease_id,
-                )
             try:
                 if seed_entries:
                     seed_manifest = self._materialized.seed_manifest

@@ -217,7 +217,8 @@ async def test_seeded_verifier_rejects_mutated_seed_baseline(
         (baseline / "tampered.txt").write_text("tampered", encoding="utf-8")
         with pytest.raises(VerifierSnapshotError) as captured:
             await primary.seal_for_verifier()
-        assert captured.value.code == "workspace seed baseline identity changed"
+        assert captured.value.code == "snapshot_tampered"
+        assert "workspace seed baseline identity changed" in str(captured.value)
         assert primary.state is WorkspaceLeaseState.QUARANTINED
     finally:
         if primary.state is not WorkspaceLeaseState.QUARANTINED:
