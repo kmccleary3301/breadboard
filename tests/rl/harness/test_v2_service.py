@@ -332,6 +332,8 @@ async def test_workspace_diff_too_large_for_evidence_fails_the_episode_before_pu
     recovered = repository.recover(case.request.episode_id)
 
     assert outcome.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+    assert outcome.response.failure is not None
+    assert outcome.response.failure.code == "workspace_diff_too_large"
     assert "verifier.execute" not in case.calls
     assert recovered is not None
     assert recovered.locator.current_state == "closed"

@@ -108,22 +108,45 @@ async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
     harness = RuntimeHarness(tmp_path, fixture)
+    launch = harness.backend.launch
+    baseline = sandbox_module.RepositoryBaseline(
+        tree="1" * 40, object_directory=tmp_path / "baseline-objects"
+    )
+
+    async def launch_with_repository(plan: Any, workspace: Path, *, context: Any):
+        handle, measurement = await launch(plan, workspace, context=context)
+        handle.repository_base_commit = "0" * 40
+        handle.repository_relative_path = "work"
+        return handle, measurement
+
+    captured: list[Path] = []
+
+    def capture_baseline(**kwargs: Any) -> Any:
+        assert kwargs["base_commit"] == "0" * 40
+        captured.append(kwargs["repository"])
+        return baseline
+
+    monkeypatch.setattr(harness.backend, "launch", launch_with_repository)
+    monkeypatch.setattr(
+        sandbox_module, "_capture_repository_baseline", capture_baseline
+    )
     primary = await harness.manager.open(fixture.request)
+    assert captured == [primary._materialized.workspace_path / "work"]
     handle = harness.backend.handles[0]
-    handle.repository_base_commit = "0" * 40
-    handle.repository_relative_path = "work"
     order: list[str] = []
     original_seal = harness.store.seal_snapshot
 
     def sealed_diff(**kwargs: Any) -> Mapping[str, Any]:
         assert handle.terminate_calls == 1
         assert kwargs["repository"] != primary._materialized.workspace_path / "work"
+        assert kwargs["baseline"] is baseline
         order.append("patch")
         return {
             "returncode": 0,
             "stdout": "diff --git a/a.py b/a.py\n",
             "stderr": "",
             "base_commit": kwargs["base_commit"],
+            "baseline_tree": kwargs["baseline"].tree,
             "git_executable_digest": digest(b"git"),
         }
 
@@ -980,6 +1003,7 @@ async def test_open_verifier_rejects_noncanonical_primary_before_effects(
             runtime=primary._runtime,
             measurement=primary.measurement,
             owner_token=primary._owner_token,
+            repository_baseline=primary._repository_baseline,
             epoch=primary._epoch,
         )
         candidate._state = WorkspaceLeaseState.QUIESCING
@@ -1657,6 +1681,14 @@ def test_sealed_diff_of_a_damaged_repository_fails_with_a_bounded_code(
             "limits": type("Limits", (), {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024})(),
         },
     )()
+    baseline_directory = tmp_path / "baseline"
+    baseline_directory.mkdir(mode=0o700)
+    baseline = sandbox_module._capture_repository_baseline(
+        repository=repository,
+        base_commit=base_commit,
+        baseline_directory=baseline_directory,
+        plan=plan,
+    )
     if damage == "move_repository":
         repository.rename(tmp_path / "moved_repository")
     else:
@@ -1667,6 +1699,7 @@ def test_sealed_diff_of_a_damaged_repository_fails_with_a_bounded_code(
             repository=repository,
             scratch_directory=tmp_path,
             base_commit=base_commit,
+            baseline=baseline,
             plan=plan,
         )
 

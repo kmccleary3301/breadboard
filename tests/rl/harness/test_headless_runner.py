@@ -11,6 +11,7 @@ import pytest
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import load_production_composition
+from breadboard.rl.harness.evidence import SafeFailureFactV2
 from breadboard.rl.harness.headless import (
     HeadlessRunFailed,
     HeadlessProviderInput,
@@ -19,6 +20,7 @@ from breadboard.rl.harness.headless import (
     HeadlessWorkspaceInput,
     _atomic_write,
     _project_headless_run,
+    _safe_failure_projection,
     _validate_repository_base_commit_binding,
     run_headless_request,
 )
@@ -40,6 +42,40 @@ def test_atomic_result_publication_refuses_existing_destination(
 
     assert destination.read_bytes() == b"existing"
     assert list(tmp_path.iterdir()) == [destination]
+
+
+def test_headless_projection_reports_the_service_failure_code() -> None:
+    run = SimpleNamespace(
+        primary_disposition=SimpleNamespace(value="failed"),
+        termination=None,
+        turn_count=12,
+        response=None,
+        completed_envelope_ref=None,
+        closed_envelope_ref=None,
+        result_ref=None,
+        evidence_manifest_ref=None,
+        evidence_root=None,
+        artifact_manifest_ref=None,
+        primary_measurement_digest=None,
+        verifier_measurement_digest=None,
+        verifier_result_digest=None,
+        reward=None,
+        reward_components={},
+        workspace_diff=None,
+        failure=SafeFailureFactV2(
+            "runtime", "workspace_diff_too_large", "none", "verifier"
+        ),
+    )
+
+    with pytest.raises(Exception) as captured:
+        _project_headless_run(
+            {}, run, SimpleNamespace(), expected_base_commit="0" * 40
+        )
+
+    assert _safe_failure_projection(captured.value) == {
+        "code": "workspace_diff_too_large",
+        "category": "runtime",
+    }
 
 
 def test_headless_projection_exports_the_exact_workspace_patch() -> None:
@@ -112,6 +148,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
             "stdout": patch.decode(),
             "stderr": "",
             "base_commit": "0" * 40,
+            "baseline_tree": "1" * 40,
             "git_executable_digest": "sha256:" + "4" * 64,
             "patch_digest": "sha256:" + hashlib.sha256(patch).hexdigest(),
             "snapshot_root_digest": "sha256:" + "5" * 64,

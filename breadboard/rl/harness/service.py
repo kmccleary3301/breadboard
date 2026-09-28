@@ -444,6 +444,7 @@ class V2RunResult:
     verifier_measurement_digest: str | None = None
     verifier_result_digest: str | None = None
     workspace_diff: Mapping[str, Any] | None = None
+    failure: SafeFailureFactV2 | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1819,6 +1820,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                failure=failure,
             )
             coordinator.run_result = result
             return result
@@ -1881,6 +1883,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                failure=failure,
             )
             coordinator.run_result = result
             return result
@@ -1903,7 +1906,7 @@ class BreadBoardV2EpisodeService:
             if raw_workspace_diff is not None:
                 expected_keys = {
                     "returncode", "stdout", "stderr", "base_commit",
-                    "git_executable_digest", "patch_digest",
+                    "baseline_tree", "git_executable_digest", "patch_digest",
                     "snapshot_root_digest",
                 }
                 patch_bytes = raw_workspace_diff.get("stdout", "").encode("utf-8")
@@ -1913,6 +1916,7 @@ class BreadBoardV2EpisodeService:
                     or type(raw_workspace_diff["stdout"]) is not str
                     or type(raw_workspace_diff["stderr"]) is not str
                     or type(raw_workspace_diff["base_commit"]) is not str
+                    or type(raw_workspace_diff["baseline_tree"]) is not str
                     or type(raw_workspace_diff["git_executable_digest"]) is not str
                     or type(raw_workspace_diff["patch_digest"]) is not str
                     or type(raw_workspace_diff["snapshot_root_digest"]) is not str
@@ -2059,6 +2063,7 @@ class BreadBoardV2EpisodeService:
                     if coordinator.completed is not None
                     else None
                 ),
+                failure=failure,
             )
             coordinator.run_result = result
             return result

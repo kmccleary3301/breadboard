@@ -46,6 +46,19 @@ _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
 
 
+class HeadlessEpisodeFailed(RuntimeError):
+    """The service failed the episode before publishing completion evidence.
+
+    Carries the service's bounded failure fact so the headless result reports
+    its code (for example ``workspace_diff_too_large``) instead of the missing
+    evidence that follows from it.
+    """
+
+    def __init__(self, failure: Any) -> None:
+        super().__init__(failure.code)
+        self.failure = failure
+
+
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -987,6 +1000,8 @@ def _project_headless_run(
         "reward_components": dict(run.reward_components),
     }
     if run.evidence_manifest_ref is None:
+        if run.failure is not None:
+            raise HeadlessEpisodeFailed(run.failure)
         raise ValueError("headless evidence manifest is unavailable")
     evidence_projection, event_bytes = _load_evidence_projection(
         composition,
@@ -996,7 +1011,7 @@ def _project_headless_run(
     if workspace_diff is None:
         raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
-        "returncode", "stdout", "stderr", "base_commit",
+        "returncode", "stdout", "stderr", "base_commit", "baseline_tree",
         "git_executable_digest", "patch_digest", "snapshot_root_digest",
     }
     if (
@@ -1006,6 +1021,7 @@ def _project_headless_run(
         or type(workspace_diff.get("stdout")) is not str
         or workspace_diff.get("stderr") != ""
         or type(workspace_diff.get("base_commit")) is not str
+        or type(workspace_diff.get("baseline_tree")) is not str
         or type(workspace_diff.get("git_executable_digest")) is not str
         or type(workspace_diff.get("patch_digest")) is not str
         or type(workspace_diff.get("snapshot_root_digest")) is not str
@@ -1020,6 +1036,7 @@ def _project_headless_run(
         **evidence_projection,
         "patch_digest": workspace_diff["patch_digest"],
         "patch_base_commit": workspace_diff["base_commit"],
+        "patch_baseline_tree": workspace_diff["baseline_tree"],
         "patch_git_executable_digest": workspace_diff["git_executable_digest"],
         "patch_snapshot_root_digest": workspace_diff["snapshot_root_digest"],
     }

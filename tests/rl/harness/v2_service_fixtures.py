@@ -486,6 +486,7 @@ class DeterministicLease:
             "stdout": patch,
             "stderr": "",
             "base_commit": "0" * 40,
+            "baseline_tree": "1" * 40,
             "git_executable_digest": ref("workspace-diff-git").sha256,
             "patch_digest": "sha256:" + hashlib.sha256(patch.encode()).hexdigest(),
             "snapshot_root_digest": receipt.root_digest,
