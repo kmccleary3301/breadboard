@@ -2153,7 +2153,8 @@ def _sealed_repository_diff(
                         "sealed workspace empty-tree initialization failed",
                         code="snapshot_tampered",
                     )
-            git.stage_work_tree(base_tree, exclude_git=not seed_base)
+            diff_base = base_tree if seed_base else base_commit
+            git.stage_work_tree(diff_base, exclude_git=not seed_base)
             stdout, stderr = git.run(
                 "diff",
                 "--cached",
@@ -2163,7 +2164,7 @@ def _sealed_repository_diff(
                 "--full-index",
                 "--no-renames",
                 "--ignore-submodules=none",
-                base_tree,
+                diff_base,
                 "--",
                 ".",
                 stdout_limit=plan.limits.artifact_bytes_each,
@@ -2186,7 +2187,7 @@ def _sealed_repository_diff(
                     "--full-index",
                     "--no-renames",
                     "--ignore-submodules=none",
-                    base_tree,
+                    diff_base,
                     "--",
                     ".",
                     stdout_limit=plan.limits.artifact_bytes_each,

@@ -4017,6 +4017,194 @@ async def test_conductor_tool_action_timeout_follows_tool_error_observation_mode
     await session.close()
 
 
+def _terminal_semantics(
+    observation: c.PolicyCapabilityObservation,
+    *,
+    observations: bool = False,
+) -> dict[str, Any]:
+    semantic = _tool_semantics(observation)
+    semantic["tools"]["definitions"][0]["tool_id"] = "terminal"
+    semantic["tools"]["definitions"][0]["model_name"] = "terminal"
+    semantic["tools"]["definitions"][0]["parameters"] = [
+        {
+            "default_value": None,
+            "description": "command",
+            "has_default": False,
+            "name": "command",
+            "required": True,
+            "schema": {"minLength": 1, "type": "string"},
+            "validation_rules": {},
+        }
+    ]
+    semantic["tools"]["selected_tool_ids"] = ["terminal"]
+    semantic["tools"]["aliases"] = [["sh", "terminal"]]
+    semantic["tools"]["binding_requests"][0]["tool_id"] = "terminal"
+    semantic["modes"][0]["enabled_tool_ids"] = ["terminal"]
+    variant = semantic["prompts"]["variants"][0]
+    variant["effective_tool_ids"] = ["terminal"]
+    variant["tool_catalog"]["effective_tool_ids"] = ["terminal"]
+    variant["tool_catalog"]["text"] = "TOOL CATALOG: terminal"
+    variant["tool_catalog"]["text_digest"] = _digest(variant["tool_catalog"]["text"])
+    variant["tool_set_digest"] = _independent_digest(
+        {"schema": "bb.tool-set.v1", "tool_ids": ["terminal"]}
+    )
+    semantic["providers"]["provider_tools"]["tool_errors_as_observations"] = observations
+    return _sync_root_semantics(semantic)
+
+
+@pytest.mark.parametrize("observations", [True, False])
+@pytest.mark.parametrize(
+    ("arguments", "error_needle"),
+    [
+        ("not-json", "policy tool arguments are malformed"),
+        ("{}", "policy omitted a required tool argument"),
+        ('{"command": ""}', "policy supplied a tool string below its minimum length"),
+        ('{"command": 123}', "policy supplied a tool argument of the wrong type"),
+        ('{"command": "echo ok", "extra": 1}', "policy supplied an unknown tool argument"),
+    ],
+)
+async def test_conductor_terminal_invalid_args_follows_tool_error_observation_mode(
+    observations: bool,
+    arguments: str,
+    error_needle: str,
+) -> None:
+    observation = _observation()
+    semantic = _terminal_semantics(observation, observations=observations)
+    plan = _plan_with_tools(observation, semantics=semantic, tool_ids=("terminal",))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="terminal", call_id="call-term-1", arguments=arguments)
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "finished"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding("terminal"),))
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    if not observations:
+        with pytest.raises(RunnerProtocolError) as rejected:
+            await session.run(ConductorRunRequest({"query": "work"}))
+        assert rejected.value.code == "policy_response_invalid"
+        assert error_needle in str(rejected.value)
+        assert tools.calls == []
+        await session.close()
+        return
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    assert tools.calls == []
+    second_request = thaw_json(client.requests[1].request_payload)
+    outputs = [
+        json.loads(item["output"])
+        for item in second_request["input"]
+        if item.get("type") == "function_call_output" and item.get("call_id") == "call-term-1"
+    ]
+    assert len(outputs) == 1
+    assert outputs[0]["isError"] is True
+    assert error_needle in outputs[0]["content"][0]["text"]
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert len(tool_obs_events) == 1
+    assert tool_obs_events[0].error_type == "tool_error"
+    assert tool_obs_events[0].tool_name == "terminal"
+    assert thaw_json(tool_obs_events[0].observation)["isError"] is True
+    await session.close()
+
+
+async def test_conductor_terminal_preserves_multiple_tool_calls_order_with_error_and_success() -> None:
+    observation = _observation()
+    semantic = _terminal_semantics(observation, observations=True)
+    plan = _plan_with_tools(observation, semantics=semantic, tool_ids=("terminal",))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="terminal", call_id="call-term-invalid", arguments="{}"),
+        _function_call(name="terminal", call_id="call-term-valid", arguments='{"command": "echo ok"}'),
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "finished"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort(
+        (_tool_binding("terminal"),),
+        results=[{"stdout": "ok\n", "returncode": 0}],
+    )
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    assert len(tools.calls) == 1
+    assert tools.calls[0][:2] == ("terminal", {"command": "echo ok"})
+
+    second_request = thaw_json(client.requests[1].request_payload)
+    outputs = [
+        item for item in second_request["input"]
+        if item.get("type") == "function_call_output"
+    ]
+    assert len(outputs) == 2
+    assert outputs[0]["call_id"] == "call-term-invalid"
+    assert json.loads(outputs[0]["output"])["isError"] is True
+    assert outputs[1]["call_id"] == "call-term-valid"
+    assert json.loads(outputs[1]["output"]) == {"stdout": "ok\n", "returncode": 0}
+
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert len(tool_obs_events) == 2
+    assert tool_obs_events[0].call_id == "call-term-invalid"
+    assert tool_obs_events[0].error_type == "tool_error"
+    assert tool_obs_events[1].call_id == "call-term-valid"
+    assert tool_obs_events[1].error_type is None
+    await session.close()
+
+
+async def test_conductor_terminal_dependency_error_remains_fatal_under_tool_error_observations() -> None:
+    observation = _observation()
+    semantic = _terminal_semantics(observation, observations=True)
+    plan = _plan_with_tools(observation, semantics=semantic, tool_ids=("terminal",))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="terminal", call_id="call-term-1", arguments='{"command": "echo ok"}')
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1])
+    tools = RecordingToolPort((_tool_binding("terminal"),))
+    tools.error = RuntimeError("fatal sandbox runtime corruption")
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    with pytest.raises(RunnerDependencyError) as failed:
+        await session.run(ConductorRunRequest({"query": "work"}))
+    assert failed.value.code == "tool_invoke_failed"
+    assert type(failed.value.__cause__) is RuntimeError
+    assert len(client.requests) == 1
+    await session.close()
+
 class _NativeCloseTestClient(RecordingPolicyClient):
     def __init__(
         self,

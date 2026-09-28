@@ -2001,6 +2001,7 @@ class _ConductorSession:
                         turn=turn,
                         call_id=call_id,
                     )
+                terminal_validation_error: RunnerProtocolError | None = None
                 try:
                     arguments = (
                         {"command": parsed.actions[ordinal].command}
@@ -2011,6 +2012,13 @@ class _ConductorSession:
                 except Exception as exc:
                     if self._projection.tool_errors_as_observations:
                         arguments = {}
+                        if tool.tool_id == "terminal":
+                            terminal_validation_error = RunnerProtocolError(
+                                "policy tool arguments are malformed",
+                                code="policy_response_invalid",
+                                **self._context(),
+                            )
+                            terminal_validation_error.__cause__ = exc
                     else:
                         error = RunnerProtocolError(
                             "policy tool arguments are malformed",
@@ -2019,13 +2027,47 @@ class _ConductorSession:
                         )
                         error.__cause__ = exc
                         await self._raise_error(error, turn=turn, call_id=call_id)
-                if not self._projection.tool_errors_as_observations and mini is None:
+                if mini is None and terminal_validation_error is None:
+                    validation_error: RunnerProtocolError | None = None
                     try:
                         _validate_arguments(arguments, tool.schema["parameters"])
                     except RunnerProtocolError as error:
                         error.episode_id = self._open_request.episode_id
                         error.effective_plan_digest = self._open_request.effective_plan_digest
-                        await self._raise_error(error, turn=turn, call_id=call_id)
+                        validation_error = error
+                    if (
+                        validation_error is None
+                        and tool.tool_id == "terminal"
+                    ):
+                        if "command" not in arguments:
+                            validation_error = RunnerProtocolError(
+                                "policy omitted a required tool argument",
+                                code="policy_response_invalid",
+                                **self._context(),
+                            )
+                        elif any(k != "command" for k in arguments):
+                            validation_error = RunnerProtocolError(
+                                "policy supplied an unknown tool argument",
+                                code="policy_response_invalid",
+                                **self._context(),
+                            )
+                        elif type(arguments["command"]) is not str:
+                            validation_error = RunnerProtocolError(
+                                "policy supplied a tool argument of the wrong type",
+                                code="policy_response_invalid",
+                                **self._context(),
+                            )
+                        elif not arguments["command"]:
+                            validation_error = RunnerProtocolError(
+                                "policy supplied a tool string below its minimum length",
+                                code="policy_response_invalid",
+                                **self._context(),
+                            )
+                    if validation_error is not None:
+                        if not self._projection.tool_errors_as_observations:
+                            await self._raise_error(validation_error, turn=turn, call_id=call_id)
+                        elif tool.tool_id == "terminal":
+                            terminal_validation_error = validation_error
                 await self._checkpoint("before_action", turn=turn, call_id=call_id)
                 await self._emit(
                     ToolCallEvent(
@@ -2037,9 +2079,19 @@ class _ConductorSession:
                 await self._checkpoint("before_action", turn=turn, call_id=call_id)
                 try:
                     try:
-                        observation_raw = await self._tools.invoke_tool(
-                            tool.tool_id, arguments, timeout_ms=tool.timeout_ms
-                        )
+                        if terminal_validation_error is not None:
+                            observation_raw = {
+                                "content": [{
+                                    "type": "text",
+                                    "text": f"Validation failed for tool \"{name}\": {terminal_validation_error}",
+                                }],
+                                "details": {},
+                                "isError": True,
+                            }
+                        else:
+                            observation_raw = await self._tools.invoke_tool(
+                                tool.tool_id, arguments, timeout_ms=tool.timeout_ms
+                            )
                     except ToolActionTimeout as exc:
                         if not self._projection.tool_errors_as_observations:
                             raise
@@ -2078,17 +2130,38 @@ class _ConductorSession:
                         call_id=call_id,
                     )
                 except Exception as exc:
-                    error = RunnerDependencyError(
-                        "conductor tool invocation failed",
-                        code=(
-                            "native_output_limit_exceeded"
-                            if getattr(exc, "code", None) == "native_output_limit_exceeded"
-                            else "tool_invoke_failed"
-                        ),
-                        **self._context(),
-                    )
-                    error.__cause__ = exc
-                    await self._raise_error(error, turn=turn, call_id=call_id)
+                    if (
+                        self._projection.tool_errors_as_observations
+                        and tool.tool_id == "terminal"
+                        and getattr(exc, "code", None) == "runtime_preflight_failed"
+                        and "tool arguments are invalid" in str(exc)
+                    ):
+                        observation_raw = {
+                            "content": [{
+                                "type": "text",
+                                "text": f"Validation failed for tool \"{name}\": {exc}",
+                            }],
+                            "details": {},
+                            "isError": True,
+                        }
+                        observation, _ = freeze_json_object_with_size(
+                            observation_raw,
+                            field_name="tool observation",
+                            max_encoded_bytes=limits.observation_bytes,
+                            max_nodes=limits.observation_bytes + 1,
+                        )
+                    else:
+                        error = RunnerDependencyError(
+                            "conductor tool invocation failed",
+                            code=(
+                                "native_output_limit_exceeded"
+                                if getattr(exc, "code", None) == "native_output_limit_exceeded"
+                                else "tool_invoke_failed"
+                            ),
+                            **self._context(),
+                        )
+                        error.__cause__ = exc
+                        await self._raise_error(error, turn=turn, call_id=call_id)
                 if mini is not None:
                     observations.append(observation)
                     native_exit = observation.get("exit")

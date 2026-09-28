@@ -684,27 +684,33 @@ async def run_headless_request(
                 close_operation = await composition.service.close_episode(episode_id)
                 closed = await composition.service.get_closed_envelope(episode_id)
                 _project_headless_cleanup(result, close_operation.response, closed)
-                if run_started and primary_failure is not None:
-                    replay = await composition.service.run(
-                        episode_id,
-                        create_fingerprint=create.create_fingerprint,
-                        task_input={"prompt": request.prompt},
-                        context=request.context,
-                    )
-                    run = replay.response
-                    event_bytes, patch_bytes = _project_headless_run(
-                        result,
-                        run,
-                        composition,
-                        expected_base_commit=(
-                            request.workspace.base_commit
-                            if request.workspace.workspace_mode == "repository"
-                            else request.workspace.workspace_seed_digest
-                        ),
-                    )
-                    terminal_unsuccessful = run.primary_disposition.value != "succeeded"
             except BaseException as exc:
                 cleanup_failure = exc
+            else:
+                if run_started and primary_failure is not None:
+                    try:
+                        replay = await composition.service.run(
+                            episode_id,
+                            create_fingerprint=create.create_fingerprint,
+                            task_input={"prompt": request.prompt},
+                            context=request.context,
+                        )
+                        run = replay.response
+                        event_bytes, patch_bytes = _project_headless_run(
+                            result,
+                            run,
+                            composition,
+                            expected_base_commit=(
+                                request.workspace.base_commit
+                                if request.workspace.workspace_mode == "repository"
+                                else request.workspace.workspace_seed_digest
+                            ),
+                        )
+                        terminal_unsuccessful = (
+                            run.primary_disposition.value != "succeeded"
+                        )
+                    except HeadlessEpisodeFailed:
+                        terminal_unsuccessful = True
         try:
             await composition.close()
         except BaseException as exc:
@@ -769,9 +775,9 @@ async def run_headless_request(
             **result.get("terminal", {}),
             "status": "failed",
             "failure": _safe_failure_projection(
-                publication_failure
+                primary_failure
                 or cleanup_failure
-                or primary_failure
+                or publication_failure
                 or RuntimeError()
             ),
             "primary_failure": (
