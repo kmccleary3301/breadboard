@@ -1727,6 +1727,9 @@ class RuntimeBackend(Protocol):
                      context: RuntimeLaunchContext) -> tuple[RuntimeHandle, SandboxMeasurement]: ...
 
 
+_KILLED_GROUP_EXIT_S = 5.0
+
+
 class TrustedProcessHandle:
     def __init__(
         self,
@@ -1892,7 +1895,9 @@ class TrustedProcessHandle:
                 os.killpg(process_group, 9)
             except ProcessLookupError:
                 return True
-        deadline = asyncio.get_running_loop().time() + 0.75
+        # SIGKILL cannot be ignored, but the kernel may need seconds to tear
+        # down large or I/O-bound members (e.g. a killed compiler fleet).
+        deadline = asyncio.get_running_loop().time() + _KILLED_GROUP_EXIT_S
         while self._group_exists(process_group) and asyncio.get_running_loop().time() < deadline:
             await asyncio.sleep(0.01)
         return not self._group_exists(process_group)

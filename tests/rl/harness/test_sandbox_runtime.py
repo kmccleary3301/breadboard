@@ -2578,3 +2578,31 @@ def test_lease_constructor_closes_duplicate_when_identity_stat_fails(
         os.fstat(duplicated[0])
     os.fstat(lease_fd)
     os.close(lease_fd)
+
+
+async def test_process_group_drain_waits_for_killed_members_to_finish_exiting(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # 112340 episode-z_3ixc2k: a SIGKILLed `pip install` group was still being
+    # torn down one second after SIGKILL and vanished moments later; cleanup
+    # must wait for the kernel to finish, not report an unproven group.
+    handle = object.__new__(sandbox_module.TrustedProcessHandle)
+    loop = asyncio.get_running_loop()
+    killed_at: list[float] = []
+    signals: list[int] = []
+
+    def killpg(process_group: int, signal_number: int) -> None:
+        assert process_group == 4242
+        signals.append(signal_number)
+        if signal_number == 9:
+            killed_at.append(loop.time())
+
+    def group_exists(process_group: int) -> bool:
+        return not killed_at or loop.time() - killed_at[0] < 1.5
+
+    monkeypatch.setattr(sandbox_module.os, "killpg", killpg)
+    monkeypatch.setattr(handle, "_group_exists", group_exists)
+    monkeypatch.setattr(handle, "_group_identity_matches", lambda group, identity: True)
+
+    assert await handle._drain_group(4242, {}) is True
+    assert signals == [15, 9]
