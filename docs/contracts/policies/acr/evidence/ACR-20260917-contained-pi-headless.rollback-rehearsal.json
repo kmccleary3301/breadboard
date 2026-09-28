@@ -1,0 +1,54 @@
+{
+  "schema_version": "bb.e4.pr128_rollback_rehearsal.v1",
+  "scope": "isolated Git index restoration; no worktree, branch, runtime, deployment or evidence mutation",
+  "source_commit": "39094215d4f96f29cc2276b573327d71d76a11a0",
+  "source_tree": "4a0d6ab0b0f93dff97b3b0afc770e72eaaf84d72",
+  "stable_commit": "b8fbff06b4e6a6990be7b5fdef9f225aaaa8ea24",
+  "stable_tree": "4f8fb0d1b373d784cca8ae77b77493d2bf81ac26",
+  "patch": {
+    "path": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/PR128_FULL_REVERT_REHEARSAL.patch",
+    "bytes": 78490,
+    "sha256": "ba547926098e55ba4ae1ff813700d521fc6ec039123320ad6e81ec2a350e9849"
+  },
+  "environment": {
+    "GIT_INDEX_FILE": "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/PR128_ROLLBACK_REHEARSAL.index"
+  },
+  "cwd": "/Users/kylemccleary/projects/breadboard-e4src-resource-notices-20260915",
+  "commands": [
+    [
+      "git",
+      "read-tree",
+      "39094215d4f96f29cc2276b573327d71d76a11a0"
+    ],
+    [
+      "git",
+      "apply",
+      "--cached",
+      "--reverse",
+      "--check",
+      "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/PR128_FULL_REVERT_REHEARSAL.patch"
+    ],
+    [
+      "git",
+      "apply",
+      "--cached",
+      "--reverse",
+      "/Users/kylemccleary/projects/breadboard/docs_tmp/bb_direction_assessment/engine_pr_handoff_20260827/e4_admission_20260914T221653Z/PR128_FULL_REVERT_REHEARSAL.patch"
+    ],
+    [
+      "git",
+      "write-tree"
+    ]
+  ],
+  "result": {
+    "exit_code": 0,
+    "wall_seconds": 0.46,
+    "restored_tree": "4f8fb0d1b373d784cca8ae77b77493d2bf81ac26",
+    "matches_stable_tree": true
+  },
+  "limitations": [
+    "No production rollback was executed.",
+    "No runtime, replay or deployment validation is inferred from the index rehearsal.",
+    "A subsequent documentation-only head must receive its own protected checks and independent review."
+  ]
+}

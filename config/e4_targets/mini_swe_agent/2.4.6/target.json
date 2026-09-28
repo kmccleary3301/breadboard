@@ -1,0 +1,84 @@
+{
+  "assets": [
+    {
+      "bytes": 4707,
+      "path": "harness.yaml",
+      "sha256": "sha256:6828285a0a8e6c20a44bcd2c6df04e8d252a2e38962cef9f0e6036001bc231b7"
+    },
+    {
+      "bytes": 63,
+      "path": "prompts/system.j2",
+      "sha256": "sha256:6fb54145bbb1724ce77430ff3852887acbd4a5cce10c86cd8dfbf4c7d55f1091"
+    },
+    {
+      "bytes": 3007,
+      "path": "prompts/instance.j2",
+      "sha256": "sha256:546a89156d7823eb34eb49c5b31a3703df4d27639d034a6d13f0162488d70821"
+    },
+    {
+      "bytes": 599,
+      "path": "prompts/observation.j2",
+      "sha256": "sha256:bf5a29fe56e297588a40b3a8df70c8eb4d4664d205a930fa62e72560382b2916"
+    },
+    {
+      "bytes": 841,
+      "path": "prompts/format-error.j2",
+      "sha256": "sha256:03b5a9fab17867bf9942520c21f044bfc7779f07ac7253646ef0b71ae0caa32e"
+    },
+    {
+      "bytes": 5501,
+      "path": "native-config.json",
+      "sha256": "sha256:3da5cd2a205622bccb5c7343776d0d2a9f1beecb7f751c52439fb86b47dc3a9a"
+    },
+    {
+      "bytes": 429,
+      "path": "tool-surface.json",
+      "sha256": "sha256:e1967b4ac97aca10db62541dac848788c6d2cae9e1e1a8d57e85d738b3bd0dfc"
+    },
+    {
+      "bytes": 1094,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:0f796e58f91d1c07bb2c1b1d0f8bf3a83017c3a5dec1bdc6fae733b2cd2e875b"
+    },
+    {
+      "bytes": 402,
+      "path": "source.json",
+      "sha256": "sha256:b3a6935abe95117011a1ae87c21cec97216f2d728524dab67b347e9d72cfb30e"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system.j2",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "mini_swe_agent",
+  "overlay": {
+    "argv": [],
+    "overlay_id": "breadboard.mini-swe-agent.headless.v2.4.6",
+    "settings": [
+      {
+        "name": "agent.step_limit",
+        "value": 8
+      },
+      {
+        "name": "agent.cost_limit",
+        "value": 0
+      },
+      {
+        "name": "model.cost_tracking",
+        "value": "ignore_errors"
+      },
+      {
+        "name": "environment.timeout",
+        "value": 30
+      },
+      {
+        "name": "MSWEA_MODEL_RETRY_STOP_AFTER_ATTEMPT",
+        "value": "1"
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "mini-swe-agent@2.4.6",
+  "version": "2.4.6"
+}

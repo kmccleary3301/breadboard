@@ -1,0 +1,9 @@
+{
+  "case_id": "p6_disabled_resources_and_agents_md",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 1,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:9e7804f644d20e3afa1622ffe8fba75448e216a758547f87da1762e075c8346a"
+}

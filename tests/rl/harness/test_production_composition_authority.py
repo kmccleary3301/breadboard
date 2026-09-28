@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 import stat
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -46,6 +47,131 @@ from tests.compilation.test_server_compiler import _MINIMAL_CONFIG, _compile, _o
 def _digest(value: object) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+
+def test_openhands_adapter_rejects_missing_terminal_during_descriptor_admission(tmp_path: Path) -> None:
+    native = tmp_path / "native"
+    native.mkdir(mode=0o700)
+    metadata = native.stat()
+    manifest = tmp_path / "native-manifest.json"
+    payload = b"{}\n"
+    manifest.write_bytes(payload)
+    descriptor = {
+        "adapter_id": "openhands-sdk.local.v1.47.0",
+        "tool_ids": ["file_editor", "finish", "task_tracker", "terminal", "think"],
+        "runtime_root": {
+            "authority_id": "native-runtime",
+            "path": str(native),
+            "device": str(metadata.st_dev),
+            "inode": str(metadata.st_ino),
+            "owner_uid": metadata.st_uid,
+            "mode": "0700",
+        },
+        "manifest_ref": {
+            "path": str(manifest),
+            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            "size_bytes": len(payload),
+            "media_type": "application/vnd.breadboard.native-tool-source+json;version=1",
+        },
+        "executable_relative_path": "python/bin/python3.12",
+        "entrypoint_relative_path": "openhands_worker.py",
+    }
+    composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor["argv"] = ["python3.12", "--import", "./sealed-loader.mjs", "openhands_worker.py"]
+    composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor["argv"][1] = "--eval"
+    with pytest.raises(ValueError, match="unsupported interpreter flag"):
+        composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+    descriptor.pop("argv")
+    descriptor["tool_ids"].remove("terminal")
+    with pytest.raises(ValueError):
+        composition.InstalledToolAdapterV1.model_validate_json(json.dumps(descriptor))
+
+def test_native_adapter_squashfs_inode_round_trips_canonical_descriptor(tmp_path: Path) -> None:
+    from breadboard_engine.compilation.contracts import canonical_json_bytes
+
+    root = tmp_path / "native"
+    root.mkdir()
+    descriptor = {
+        "adapter_id": "native-adapter",
+        "tool_ids": ("terminal",),
+        "runtime_root": {
+            "authority_id": "native-root",
+            "path": str(root),
+            "device": "8",
+            "inode": "9223372036854805903",
+            "owner_uid": 0,
+            "mode": "0700",
+        },
+        "manifest_ref": {
+            "path": str(tmp_path / "manifest.json"),
+            "sha256": "sha256:" + "a" * 64,
+            "size_bytes": 1,
+            "media_type": "application/vnd.breadboard.native-tool-source+json;version=1",
+        },
+        "executable_relative_path": "bin/python",
+        "entrypoint_relative_path": "worker.py",
+    }
+    parsed = composition.InstalledToolAdapterV1.model_validate(descriptor, strict=True)
+    encoded = canonical_json_bytes(parsed.model_dump(mode="json"))
+    assert json.loads(encoded)["runtime_root"]["inode"] == "9223372036854805903"
+
+
+@pytest.mark.parametrize("inode", ["0123", "", "-1", "1e3", 123])
+def test_native_adapter_rejects_noncanonical_inode(tmp_path: Path, inode: object) -> None:
+    with pytest.raises(ValueError):
+        composition.DirectoryAuthorityRefV1.model_validate(
+            {
+                "authority_id": "native-root",
+                "path": str(tmp_path),
+                "device": "0",
+                "inode": inode,
+                "owner_uid": 0,
+                "mode": "0700",
+            },
+            strict=True,
+        )
+
+
+def test_project_quota_seccomp_rejects_inode_owner_escape_authority() -> None:
+    profile = {
+        "defaultAction": "SCMP_ACT_ERRNO",
+        "syscalls": [{
+            "names": ["ioctl"],
+            "action": "SCMP_ACT_ALLOW",
+            "args": [{"index": 1, "op": "SCMP_CMP_EQ", "value": 0x5401}],
+        }],
+    }
+    composition._validate_project_quota_seccomp(json.dumps(profile).encode())
+
+    # FSSETXATTR, native/compat SETFLAGS, and the high-bit alias that ioctl's
+    # unsigned-int command truncation maps back to FSSETXATTR.
+    for command in (0x401C5820, 0x40086602, 0x40046602, 0x1401C5820):
+        mutable = copy.deepcopy(profile)
+        mutable["syscalls"][0]["args"][0]["value"] = command
+        with pytest.raises(ValueError):
+            composition._validate_project_quota_seccomp(json.dumps(mutable).encode())
+    alternatives = copy.deepcopy(profile)
+    alternatives["syscalls"][0]["args"].append({
+        "index": 1, "op": "SCMP_CMP_EQ", "value": 0x401C5820,
+    })
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(alternatives).encode())
+
+
+    broad = copy.deepcopy(profile)
+    broad["syscalls"][0]["args"] = []
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(broad).encode())
+
+    inverse = copy.deepcopy(profile)
+    inverse["syscalls"][0]["args"][0]["op"] = "SCMP_CMP_NE"
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(inverse).encode())
+
+    profile["defaultAction"] = "SCMP_ACT_ALLOW"
+    with pytest.raises(ValueError):
+        composition._validate_project_quota_seccomp(json.dumps(profile).encode())
 
 
 def test_hmac_authenticator_binds_exact_unsigned_receipt_bytes() -> None:
@@ -138,15 +264,15 @@ def _socket_plan(
     gateway: str, port: int, *, role: str = "harness", inode: int = 42
 ) -> PreboundServiceSocketPlanV1:
     values = {
-        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v1",
+        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
         "role": role,
         "gateway": gateway,
         "observed_port": port,
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": 8,
-        "socket_inode": inode,
+        "socket_device": "8",
+        "socket_inode": str(inode),
         "socket_mode": stat.S_IFSOCK | 0o600,
         "socket_owner_uid": 0,
         "getsockname_host": gateway,
@@ -310,11 +436,11 @@ def _manifest_cross_bind(
         server=server,
         openssl_authority=(
             OpenSslAuthorityV1(
-                schema_version="bb.rl.harness-openssl-authority.v1",
+                schema_version="bb.rl.harness-openssl-authority.v2",
                 path="/usr/bin/openssl",
                 sha256="sha256:" + "d" * 64,
-                device=8,
-                inode=42,
+                device="8",
+                inode="42",
                 ctime_ns="123",
                 size_bytes=1024,
                 mode=0o755,
@@ -537,6 +663,157 @@ def _real_target_manifest(
         )
         return compiled.manifest.canonical_bytes(), compiled.manifest.semantic.to_canonical_obj()
     finally:
+        cas.close()
+
+
+@pytest.mark.parametrize(
+    ("target", "reconstructs"),
+    [("pi@0.57.1", True), ("mini-swe-agent@2.4.6", False)],
+)
+def test_store_without_closure_alias_loads_only_by_exact_reconstruction(
+    tmp_path: Path, target: str, reconstructs: bool
+) -> None:
+    # Stores written before producers published the closure alias hold only the
+    # bundle and external members. They load when provenance rebuilds the exact
+    # compiled closure; Mini's declared asset order cannot be rebuilt that way.
+    cas = FilesystemCAS(tmp_path / "current")
+    legacy_cas = FilesystemCAS(tmp_path / "legacy")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target(target),
+            {} if target.startswith("mini") else {
+                "readme_path": "README.md",
+                "docs_path": "docs",
+                "examples_path": "examples",
+                "current_date_time": "2026-09-14T00:00:00Z",
+                "cwd": "/workspace",
+            },
+            {
+                "version": 2,
+                "profile": {"name": "legacy-store"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{"id": "test-model", "adapter": "openai", "params": {}}],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            **(
+                {"request_schema_version": "bb.rl.headless-run-request.v2"}
+                if target.startswith("mini") else {}
+            ),
+        )
+        stored = {entry.artifact_id: entry.media_type for entry in compiled.bundle.entries}
+        stored.update(
+            (member.artifact_id, member.media_type)
+            for member in compiled.closure.members
+            if member.source == "external"
+        )
+        for artifact_id, media_type in stored.items():
+            legacy_cas.put_bytes(
+                cas.get_bytes(artifact_id),
+                artifact_id=artifact_id,
+                media_type=media_type,
+            )
+        assert not legacy_cas.has(compiled.closure.closure_digest)
+        bundles = {compiled.bundle.bundle_digest: compiled.bundle}
+        manifests = {
+            compiled.manifest.compiled_manifest_digest: compiled.manifest.canonical_bytes()
+        }
+        if reconstructs:
+            composition._verify_config_bundle_cas(legacy_cas, bundles, manifests)
+        else:
+            with pytest.raises(ValueError, match="closure authority mismatch"):
+                composition._verify_config_bundle_cas(legacy_cas, bundles, manifests)
+    finally:
+        legacy_cas.close()
+        cas.close()
+
+
+def test_declared_target_dependency_order_survives_admission(tmp_path: Path) -> None:
+    cas = FilesystemCAS(tmp_path / "original")
+    altered_cas = FilesystemCAS(tmp_path / "altered")
+    try:
+        compiled = compile_e4_harness(
+            load_e4_target("mini-swe-agent@2.4.6"),
+            {},
+            {
+                "version": 2,
+                "profile": {"name": "closure-admission"},
+                "workspace": {"root": "workspace"},
+                "provider_tools": {"use_native": True},
+                "providers": {
+                    "default_model": "test-model",
+                    "models": [{
+                        "id": "test-model",
+                        "adapter": "openai",
+                        "params": {},
+                        "response_policy": {
+                            "schema_version": "bb.provider_native_response_policy.v1",
+                            "consumer_id": "breadboard.mini-swe-agent.v2.4.6",
+                            "provider_profile_digest": "sha256:" + "0" * 64,
+                            "max_response_bytes": 4194304,
+                            "max_stream_fragments": 1,
+                        },
+                    }],
+                },
+            },
+            cas=cas,
+            options=_options(),
+            request_schema_version="bb.rl.headless-run-request.v2",
+        )
+        bundles = {compiled.bundle.bundle_digest: compiled.bundle}
+        manifests = {
+            compiled.manifest.compiled_manifest_digest: compiled.manifest.canonical_bytes()
+        }
+        composition._verify_config_bundle_cas(cas, bundles, manifests)
+
+        asset_count = sum(
+            edge.kind == "e4_target_asset" for edge in compiled.closure.edges
+        )
+        altered = replace(
+            compiled.closure,
+            edges=tuple(
+                replace(edge, ordinal=asset_count - 1 - edge.ordinal)
+                if edge.kind == "e4_target_asset" else edge
+                for edge in compiled.closure.edges
+            ),
+            closure_digest="",
+        )
+        for entry in compiled.bundle.entries:
+            altered_cas.put_bytes(
+                cas.get_bytes(entry.artifact_id, max_bytes=entry.size_bytes),
+                artifact_id=entry.artifact_id,
+                media_type=entry.media_type,
+            )
+        altered_cas.put_bytes(
+            altered.canonical_bytes(),
+            artifact_id=compiled.closure.closure_digest,
+            media_type="application/json",
+        )
+        with pytest.raises(ValueError):
+            composition._verify_config_bundle_cas(altered_cas, bundles, manifests)
+        altered_manifest = replace(
+            compiled.manifest,
+            source_dependencies=(
+                replace(
+                    compiled.manifest.source_dependencies[0],
+                    raw_reference="unadmitted-reference",
+                ),
+                *compiled.manifest.source_dependencies[1:],
+            ),
+            compiled_manifest_digest="",
+        )
+        with pytest.raises(ValueError):
+            composition._verify_config_bundle_cas(
+                cas,
+                bundles,
+                {altered_manifest.compiled_manifest_digest: altered_manifest.canonical_bytes()},
+            )
+    finally:
+        altered_cas.close()
         cas.close()
 
 

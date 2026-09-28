@@ -13,10 +13,21 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal
-
-from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure, ingest_member_map
-from breadboard_engine.compilation.contracts import CompileOptions, DependencyEdge, canonical_json_bytes
+from breadboard_engine.compilation.bundle import (
+    ManifestReader,
+    build_dependency_closure,
+    ingest_member_map,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from breadboard_engine.compilation.contracts import (
+    CompileOptions,
+    CompiledConfigManifest,
+    ConfigBundleManifest,
+    DependencyEdge,
+    DependencyClosureManifest,
+    canonical_json_bytes,
+)
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.composition import (
@@ -311,7 +322,7 @@ class C4StaticPolicyAuthority(_ExactModel):
 
 
 class F2C4StaticAuthorityInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-input.v2"]
     prompt: str = Field(min_length=1, max_length=4096)
     tool_implementation_digest: str
     task: C4TaskIdentity
@@ -346,7 +357,7 @@ class F2C4StaticAuthorityInput(_ExactModel):
 
 
 class F2C4DynamicAuthorityInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-dynamic-authority-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-dynamic-authority-input.v2"]
     composition_id: str
     attempt_id: str
     callback: C4CallbackAuthority
@@ -445,7 +456,7 @@ class F2C4TargetDynamicPlanInput(_ExactModel):
 
 
 class F2C4TargetDynamicObservations(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-target-dynamic-observations.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-target-dynamic-observations.v2"]
     attempt_id: str
     callback_observed_port: int = Field(ge=1, le=65535)
     callback_secret_handle_version_digest: str
@@ -559,7 +570,7 @@ def author_f2_target_dynamic_authority(
         secret_handle_version_digest=observations.callback_secret_handle_version_digest,
     )
     return F2C4DynamicAuthorityInput(
-        schema_version="bb.rl.phase5-f2-c4-dynamic-authority-input.v1",
+        schema_version="bb.rl.phase5-f2-c4-dynamic-authority-input.v2",
         composition_id=plan.composition_id, attempt_id=plan.attempt_id,
         callback=callback, subject=plan.subject, validity=observations.validity,
         revocation=observations.revocation, installed=observations.installed,
@@ -828,8 +839,8 @@ class TlsCallbackLiveHandoffV1:
             or self.tls_private_key.leaf_public_key_sha256 != runtime.leaf_public_key_sha256
             or self.callback_socket.gateway != callback_plan.gateway
             or self.callback_socket.observed_port != callback_plan.observed_port
-            or self.callback_socket.socket_device != callback_plan.socket_device
-            or self.callback_socket.socket_inode != callback_plan.socket_inode
+            or self.callback_socket.socket_device != int(callback_plan.socket_device)
+            or self.callback_socket.socket_inode != int(callback_plan.socket_inode)
             or self.callback_socket.socket_mode != callback_plan.socket_mode
             or self.callback_socket.socket_owner_uid != callback_plan.socket_owner_uid
             or len(matching_handles) != 1
@@ -839,7 +850,7 @@ class TlsCallbackLiveHandoffV1:
 
 
 class F2C4StaticAuthorityFragment(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-fragment.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-c4-static-authority-fragment.v2"]
     authority: F2C4StaticAuthorityInput
     authority_digest: str
     source_inventory: tuple[dict[str, Any], ...]
@@ -1197,10 +1208,11 @@ def _compiled_identity(manifest: Any, digest: str) -> c.CompiledArtifactIdentity
 
 
 def _verify_authority_objects(objects: dict[str, bytes], graph: dict[str, Any]) -> None:
-    from breadboard_engine.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
+    from breadboard_engine.compilation.contracts import CompiledConfigManifest
     parsers: dict[str, Any] = {
         "compiled-manifest.json": lambda raw: CompiledConfigManifest.from_dict(json.loads(raw)),
         "config-bundle.json": lambda raw: ConfigBundleManifest.from_dict(json.loads(raw)),
+        "config-closure.json": lambda raw: DependencyClosureManifest.from_dict(json.loads(raw)),
         "admission-policy.json": lambda raw: c.AdmissionPolicySnapshot.model_validate_json(raw, strict=True),
         "registry-snapshot.json": lambda raw: c.RegistrySnapshotSet.model_validate_json(raw, strict=True),
         "admission-receipt.json": lambda raw: c.AdmissionReceipt.model_validate_json(raw, strict=True),
@@ -1219,6 +1231,15 @@ def _verify_authority_objects(objects: dict[str, bytes], graph: dict[str, Any]) 
     capabilities = json.loads(objects["policy-capabilities.json"])
     if canonical_json_bytes([c.PolicyCapabilityObservation.model_validate(item, strict=True).model_dump(mode="json") for item in capabilities]) != objects["policy-capabilities.json"]:
         raise F2AuthorityAuthoringError("policy-capabilities.json is not canonical")
+    closure = DependencyClosureManifest.from_json(objects["config-closure.json"])
+    compiled = CompiledConfigManifest.from_json(objects["compiled-manifest.json"])
+    bundle = ConfigBundleManifest.from_json(objects["config-bundle.json"])
+    if (
+        closure.bundle_digest != bundle.bundle_digest
+        or closure.closure_digest != compiled.inputs.closure_digest
+        or closure.canonical_bytes() != objects["config-closure.json"]
+    ):
+        raise F2AuthorityAuthoringError("config closure authority does not bind compiled bundle")
     receipt = c.AdmissionReceipt.model_validate_json(objects["admission-receipt.json"], strict=True)
     admitted = c.AdmittedSetManifest.model_validate_json(objects["admitted-set.json"], strict=True)
     selector = c.DirectSelector.model_validate_json(objects["direct-selector.json"], strict=True)
@@ -1251,7 +1272,7 @@ def _verify_executable_observation(executable: Any) -> None:
         stat.S_IMODE(info.st_mode), info.st_uid,
     )
     expected = (
-        executable.device, executable.inode, int(executable.ctime_ns),
+        int(executable.device), int(executable.inode), int(executable.ctime_ns),
         executable.size_bytes, executable.mode, executable.owner_uid,
     )
     if actual != expected:
@@ -1342,7 +1363,7 @@ def build_f2_c4_static_authority(
     } for name, item in source_values)
     authority_bytes = canonical_json_bytes(authority.model_dump(mode="json"))
     fragment = F2C4StaticAuthorityFragment(
-        schema_version="bb.rl.phase5-f2-c4-static-authority-fragment.v1",
+        schema_version="bb.rl.phase5-f2-c4-static-authority-fragment.v2",
         authority=authority,
         authority_digest=_digest(authority_bytes),
         source_inventory=source_inventory,
@@ -1397,7 +1418,7 @@ def _compile_c4_config(
     spec: F2C4SemanticInput,
     capability: c.CapabilityVector,
     cas: FilesystemCAS,
-) -> tuple[Any, Any, dict[str, bytes]]:
+) -> tuple[Any, Any, Any, dict[str, bytes]]:
     from breadboard_engine.compilation.server_compiler import compile_config
 
     compiler_config = {
@@ -1428,6 +1449,17 @@ def _compile_c4_config(
         DependencyEdge("c4-terminal-direct.json", "tool_registry", "tools", "tools/shell.yaml", 0),
     )
     closure = build_dependency_closure(bundle, root_entrypoint="main", edges=edges)
+    closure_bytes = closure.canonical_bytes()
+    closure_ref = cas.put_bytes(
+        closure_bytes,
+        artifact_id=closure.closure_digest,
+        media_type="application/json",
+    )
+    if (
+        closure_ref.sha256 != _digest(closure_bytes)
+        or closure_ref.media_type != "application/json"
+    ):
+        raise F2AuthorityAuthoringError("dependency closure CAS publication mismatch")
     reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
     options = CompileOptions.from_dict({
         "schema_id": "bb.compile-options.v1", "source_contract": "v2", "v1_loss_policy": "reject_all",
@@ -1441,7 +1473,7 @@ def _compile_c4_config(
             "retention": {"retention_class_id": _RETENTION_POLICY_ID, "minimum_retention_seconds": spec.policy.retention_minimum_seconds},
         },
     })
-    return compile_config(reader, closure, options), bundle, member_bytes
+    return compile_config(reader, closure, options), bundle, closure, member_bytes
 
 
 def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
@@ -1477,7 +1509,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
         openssl_before.st_size, stat.S_IMODE(openssl_before.st_mode), openssl_before.st_uid,
     )
     expected_openssl = (
-        spec.openssl.device, spec.openssl.inode, int(spec.openssl.ctime_ns),
+        int(spec.openssl.device), int(spec.openssl.inode), int(spec.openssl.ctime_ns),
         spec.openssl.size_bytes, spec.openssl.mode, spec.openssl.owner_uid,
     )
     if actual_openssl != expected_openssl:
@@ -1508,7 +1540,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
         cas = FilesystemCAS(staging / "cas")
         try:
             capability, registries, policy_capabilities, policy_http, ceiling = _derive_c4(spec)
-            manifest, bundle, member_bytes = _compile_c4_config(spec, capability, cas)
+            manifest, bundle, closure, member_bytes = _compile_c4_config(spec, capability, cas)
             compiled_bytes = manifest.canonical_bytes()
             compiled_digest = _digest(compiled_bytes)
             compiled = _compiled_identity(manifest, compiled_digest)
@@ -1582,6 +1614,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
                 "admitted-set.json": admitted_bytes,
                 "direct-selector.json": selector_bytes,
                 "config-bundle.json": bundle.canonical_bytes(),
+                "config-closure.json": closure.canonical_bytes(),
             }
             graph = {
                 "schema_version": "bb.rl.phase5-f2-authority-inventory.v1",
@@ -1631,6 +1664,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
                 "mount_broker_implementation": spec.mount_broker_implementation.model_dump(mode="json"),
                 "openssl": spec.openssl.model_dump(mode="json"),
                 "config_bundle": _source(artifacts / "config-bundle.json", objects["config-bundle.json"], "application/json"),
+                "config_closure": _source(artifacts / "config-closure.json", objects["config-closure.json"], "application/json"),
                 "config_members": config_sources,
                 "compiled_manifests": (_source(artifacts / "compiled-manifest.json", compiled_bytes, _MEDIA["compiled_manifest"]),),
                 "admission_receipts": (_source(artifacts / "admission-receipt.json", receipt_bytes, _MEDIA["admission_receipt"]),),
@@ -1639,7 +1673,7 @@ def author_f2_operator_input(semantic_input_path: str, output_dir: str) -> str:
                 "tls": spec.tls.model_dump(mode="json"),
             }
             operator = {
-                "schema_version": "bb.rl.phase5-f2-production-input.v1",
+                "schema_version": "bb.rl.phase5-f2-production-input.v3",
                 "composition_id": spec.composition_id,
                 "authority": authority,
                 "installed": spec.installed.model_dump(mode="json"),
@@ -1692,6 +1726,7 @@ def verify_f2_operator_input(operator_input_path: str) -> None:
         model.authority.admission_policy, model.authority.registry_snapshot,
         model.authority.revocation_snapshot, model.authority.policy_capability_snapshot,
         model.authority.policy_http, model.authority.config_bundle,
+        model.authority.config_closure,
         model.authority.admitted_set, model.authority.direct_selector,
         *model.authority.compiled_manifests, *model.authority.admission_receipts,
     )}

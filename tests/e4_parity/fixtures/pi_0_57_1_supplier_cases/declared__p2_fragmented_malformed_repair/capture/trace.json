@@ -1,0 +1,29 @@
+{
+  "case_id": "p2_fragmented_malformed_repair",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "parser repair and invalid tool-call behavior",
+    "no-session behavior"
+  ],
+  "elapsed_seconds": 1.518,
+  "exit_code": 0,
+  "files": {
+    "events_jsonl": "sha256:fdde72739209e9a38d10483f28a8fd5df2029d2e58bca6177770b5e84c45fe1e",
+    "git_status": "sha256:c7b1235042a4e115b20e4be102e7595030b2e37eca126a65960d793f93272c0e",
+    "http_transcript": "sha256:1ccddc64badcb4aa476fefa92e529fe2880d3bdb9a628cdb1882a7dd4e8ed58a",
+    "model_patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:71ea0daceb06cdf4e2d35b8e6d4493fee25deeee3b091ba7228ce3fb068e25a8",
+    "workspace_manifest_pre": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Observed from source: receiver streams fragmented assistant text and split tool arguments; unknown tool name produces native tool error without crashing; malformed JSON argument fails argument parse and yields native tool error; split write arguments are successfully assembled and write p2-split.txt; in turn 2 the agent receives error tool results and recovers by successfully reading p2-split.txt; finishes with stop.",
+  "requests_served": 3,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}

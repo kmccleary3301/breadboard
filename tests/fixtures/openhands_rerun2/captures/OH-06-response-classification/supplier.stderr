@@ -1,0 +1,31 @@
++----------------------------------------------------------------------+
+|  OpenHands SDK v1.47.0                                               |
+|                                                                      |
+|  Report a bug: github.com/OpenHands/software-agent-sdk/issues        |
+|  Get help: openhands.dev/joinslack                                   |
+|  Scale up: openhands.dev/product/sdk                                 |
+|                                                                      |
+|  Set OPENHANDS_SUPPRESS_BANNER=1 to hide this message                |
++----------------------------------------------------------------------+
+
+[09/23/26 05:46:32] WARNING  No persistence_dir provided; falling   state.py:515
+                             back to InMemoryFileStore. EventLog                
+                             data will not persist across requests.             
+[09/23/26 05:46:32] INFO     Created new conversation               state.py:592
+                             d01db8d2-4008-4002-863e-88b43f2c4bbd               
+[09/23/26 05:46:32] INFO     Using forced SubprocessTerminal      factory.py:149
+[09/23/26 05:46:32] INFO     TaskTrackerExecutor initialized   definition.py:161
+                             with save_dir: None                                
+[09/23/26 05:46:32] INFO     FileEditor initialized with cwd:      editor.py:105
+                             /opt/openhands/case/workspace                      
+[09/23/26 05:46:32] INFO     Using shell: /bin/bash   subprocess_terminal.py:142
+[09/23/26 05:46:33] INFO     TerminalExecutor initialized with       impl.py:124
+                             working_dir:                                       
+                             /opt/openhands/case/workspace,                     
+                             username: None, terminal_type:                     
+                             subprocess                                         
+[09/23/26 05:46:33] INFO     Loaded 3 tools from spec                base.py:564
+[09/23/26 05:46:33] WARNING  LLM response contained no  response_dispatch.py:349
+                             tool call and no content -                         
+                             sending corrective                                 
+                             feedback                                           

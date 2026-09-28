@@ -41,6 +41,8 @@ _FS_IOC_SETFLAGS = 0x40086602
 _FS_IMMUTABLE_FL = 0x00000010
 _FS_APPEND_FL = 0x00000020
 _UINT64_MAX = 2**64 - 1
+_FILESYSTEM_DEVICE_RE = re.compile(r"(0|[1-9][0-9]*)\Z")
+_FILESYSTEM_INODE_RE = re.compile(r"[1-9][0-9]*\Z")
 _PROC_STATUS_PATH = "/proc/self/status"
 _T = TypeVar("_T", bound=BaseModel)
 
@@ -108,6 +110,18 @@ def _validate_digest(value: str) -> str:
 def _validate_uint64(value: int | None) -> int | None:
     if value is not None and (type(value) is not int or not 0 <= value <= _UINT64_MAX):
         raise ValueError("epoch must be an exact uint64")
+    return value
+
+
+def _filesystem_device(value: str) -> str:
+    if type(value) is not str or _FILESYSTEM_DEVICE_RE.fullmatch(value) is None:
+        raise ValueError("filesystem device must be a canonical nonnegative decimal string")
+    return value
+
+
+def _filesystem_inode(value: str) -> str:
+    if type(value) is not str or _FILESYSTEM_INODE_RE.fullmatch(value) is None:
+        raise ValueError("filesystem inode must be a canonical positive decimal string")
     return value
 
 
@@ -222,26 +236,32 @@ class MonotonicRevocationAuthorityConfig(_ExactModel):
 
 
 class MonotonicRevocationAuthorityIdentity(_ExactModel):
-    schema_version: Literal["bb.rl.monotonic-revocation-authority-identity.v1"]
+    schema_version: Literal["bb.rl.monotonic-revocation-authority-identity.v2"]
     authority_id: str
-    root_device: int = Field(ge=0)
-    root_inode: int = Field(ge=1)
+    root_device: str
+    root_inode: str
     root_uid: int = Field(ge=0)
     root_gid: int = Field(ge=0)
     root_flags: int = Field(ge=0)
-    config_device: int = Field(ge=0)
-    config_inode: int = Field(ge=1)
+    config_device: str
+    config_inode: str
     config_uid: int = Field(ge=0)
     config_gid: int = Field(ge=0)
     config_flags: int = Field(ge=0)
-    lock_device: int = Field(ge=0)
-    lock_inode: int = Field(ge=1)
+    lock_device: str
+    lock_inode: str
     lock_uid: int = Field(ge=0)
     lock_gid: int = Field(ge=0)
     lock_flags: int = Field(ge=0)
     config_digest: str
 
     _digests = field_validator("authority_id", "config_digest")(_validate_digest)
+    _devices = field_validator("root_device", "config_device", "lock_device")(
+        _filesystem_device
+    )
+    _inodes = field_validator("root_inode", "config_inode", "lock_inode")(
+        _filesystem_inode
+    )
 
 
 class _KernelAuthorityFlags(Protocol):
@@ -481,20 +501,20 @@ class PreprovisionedAppendOnlyMonotonicRevocationAuthority:
                 config_payload, strict=True
             )
             self._identity = MonotonicRevocationAuthorityIdentity(
-                schema_version="bb.rl.monotonic-revocation-authority-identity.v1",
+                schema_version="bb.rl.monotonic-revocation-authority-identity.v2",
                 authority_id=config.authority_id,
-                root_device=root_stat.st_dev,
-                root_inode=root_stat.st_ino,
+                root_device=str(root_stat.st_dev),
+                root_inode=str(root_stat.st_ino),
                 root_uid=root_stat.st_uid,
                 root_gid=root_stat.st_gid,
                 root_flags=root_flags,
-                config_device=config_stat.st_dev,
-                config_inode=config_stat.st_ino,
+                config_device=str(config_stat.st_dev),
+                config_inode=str(config_stat.st_ino),
                 config_uid=config_stat.st_uid,
                 config_gid=config_stat.st_gid,
                 config_flags=config_flags,
-                lock_device=lock_stat.st_dev,
-                lock_inode=lock_stat.st_ino,
+                lock_device=str(lock_stat.st_dev),
+                lock_inode=str(lock_stat.st_ino),
                 lock_uid=lock_stat.st_uid,
                 lock_gid=lock_stat.st_gid,
                 lock_flags=lock_flags,
@@ -603,8 +623,8 @@ class PreprovisionedAppendOnlyMonotonicRevocationAuthority:
             for descriptor in linked_fds:
                 os.close(descriptor)
         root_expected = (
-            self._identity.root_device,
-            self._identity.root_inode,
+            int(self._identity.root_device),
+            int(self._identity.root_inode),
             self._identity.root_uid,
             self._identity.root_gid,
             self._identity.root_flags,
@@ -635,8 +655,8 @@ class PreprovisionedAppendOnlyMonotonicRevocationAuthority:
                 "monotonic authority root identity or kernel flags changed"
             )
         config_expected = (
-            self._identity.config_device,
-            self._identity.config_inode,
+            int(self._identity.config_device),
+            int(self._identity.config_inode),
             self._identity.config_uid,
             self._identity.config_gid,
             self._identity.config_flags,
@@ -658,8 +678,8 @@ class PreprovisionedAppendOnlyMonotonicRevocationAuthority:
             ),
         )
         lock_expected = (
-            self._identity.lock_device,
-            self._identity.lock_inode,
+            int(self._identity.lock_device),
+            int(self._identity.lock_inode),
             self._identity.lock_uid,
             self._identity.lock_gid,
             self._identity.lock_flags,
@@ -727,8 +747,8 @@ class PreprovisionedAppendOnlyMonotonicRevocationAuthority:
         observed_flags = self._kernel_flags.read(fd)
         if (
             not stat.S_ISREG(observed.st_mode)
-            or observed.st_dev != self._identity.lock_device
-            or observed.st_ino != self._identity.lock_inode
+            or observed.st_dev != int(self._identity.lock_device)
+            or observed.st_ino != int(self._identity.lock_inode)
             or observed.st_uid != self._identity.lock_uid
             or observed.st_gid != self._identity.lock_gid
             or observed.st_nlink != 1

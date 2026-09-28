@@ -43,8 +43,8 @@ def _observed(*, inode: int = 42, port: int = 43123) -> dict[str, object]:
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": 8,
-        "socket_inode": inode,
+        "socket_device": "8",
+        "socket_inode": str(inode),
         "socket_mode": stat.S_IFSOCK | 0o600,
         "socket_owner_uid": 0,
         "getsockname_host": _GATEWAY,
@@ -57,7 +57,7 @@ def _socket_plan(
     *, role: str = "harness", inode: int = 42, port: int = 43123
 ) -> PreboundServiceSocketPlanV1:
     values = {
-        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v1",
+        "schema_version": "bb.rl.harness-prebound-service-socket-plan.v2",
         "role": role,
         **_observed(inode=inode, port=port),
     }

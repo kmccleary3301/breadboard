@@ -32,6 +32,7 @@ def test_lane_source_inventory_and_legacy_executable_stage_contracts() -> None:
         ("breadboard_self_runtime_records_v1.yaml", "lane_def_legacy"),
         ("claude_code_north_star_capture_v1.yaml", "lane_def_legacy"),
         ("codex_cli_e4_capture_probe_v1.yaml", "lane_def_legacy"),
+        ("mini_swe_agent_2_4_6_replay.yaml", "lane_def_legacy"),
         ("oh_my_pi_p3_1_effective_config_graph_compiler.yaml", "lane_def_legacy"),
         ("oh_my_pi_p3_2_context_resource_pack_compiler.yaml", "lane_def_legacy"),
         ("oh_my_pi_p3_3_capability_registry_compiler.yaml", "lane_def_legacy"),

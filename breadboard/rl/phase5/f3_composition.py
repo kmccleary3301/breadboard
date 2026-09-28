@@ -13,6 +13,7 @@ from urllib.parse import urlsplit
 from breadboard_engine.compilation.contracts import (
     CompiledConfigManifest,
     ConfigBundleManifest,
+    DependencyClosureManifest,
     canonical_json_bytes,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -434,8 +435,8 @@ def _measure_directory(name: str, path: str) -> DirectoryAuthorityRefV1:
     return DirectoryAuthorityRefV1(
         authority_id=f"f3-{name}",
         path=path,
-        device=metadata.st_dev,
-        inode=metadata.st_ino,
+        device=str(metadata.st_dev),
+        inode=str(metadata.st_ino),
         owner_uid=metadata.st_uid,
         mode="0700",
     )
@@ -689,6 +690,29 @@ def build_f3_production_composition(
         config_bundle = ConfigBundleManifest.from_json(copied["config-bundle.json"][1])
         if config_bundle.canonical_bytes() != copied["config-bundle.json"][1]:
             raise F3CompositionError("config bundle is not canonical")
+        closure_raw = copied["config-closure.json"][1]
+        closure = DependencyClosureManifest.from_json(closure_raw)
+        if (
+            closure.canonical_bytes() != closure_raw
+            or closure.closure_digest != compiled.inputs.closure_digest
+        ):
+            raise F3CompositionError(
+                "config closure does not bind the compiled manifest"
+            )
+        closure_cas = FilesystemCAS(parsed.stores.cas)
+        try:
+            closure_cas_ref = closure_cas.put_bytes(
+                closure_raw,
+                artifact_id=closure.closure_digest,
+                media_type="application/json",
+            )
+        finally:
+            closure_cas.close()
+        if (
+            closure_cas_ref.sha256 != sha256_bytes(closure_raw)
+            or closure_cas_ref.media_type != "application/json"
+        ):
+            raise F3CompositionError("config closure CAS publication mismatch")
         if (
             selector.admitted_set_root != admitted.canonical_digest()
             or selector.candidate.receipt_digest
@@ -759,7 +783,7 @@ def build_f3_production_composition(
         _measure_directory("service_output_root", parsed.stores.service_output_root)
         compiler = compiled.compiler
         manifest = HarnessCompositionManifestV1(
-            schema_version="bb.rl.harness-composition.v1",
+            schema_version="bb.rl.harness-composition.v3",
             composition_id=parsed.composition_id,
             authority_bundle_ref=authority_ref,
             config_bundle_ref=copied["config-bundle.json"][0],
@@ -803,7 +827,7 @@ def build_f3_production_composition(
         manifest_bytes = manifest.canonical_bytes()
         _write_exclusive(manifest_path, manifest_bytes)
         composition_ref = CompositionRefV1(
-            schema_version="bb.rl.harness-composition-ref.v1",
+            schema_version="bb.rl.harness-composition-ref.v3",
             manifest_path=os.fspath(manifest_path.resolve()),
             manifest_sha256=sha256_bytes(manifest_bytes),
             manifest_size_bytes=len(manifest_bytes),

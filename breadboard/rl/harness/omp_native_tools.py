@@ -1,0 +1,397 @@
+"""Pinned native-worker invocation contract for Oh My Pi 18.1.17.
+
+This module deliberately does not reimplement Brush, EditStore, or EditSession.
+A production controller must launch the pinned Bun workspace and load its real
+Rust/NAPI leaves. Offline tests can validate the command, settings, admission,
+and request/result projection without executing native code.
+"""
+from dataclasses import dataclass
+import hashlib
+import importlib.resources
+import json
+import os
+from pathlib import Path
+import select
+import re
+import struct
+import subprocess
+from typing import Any, Mapping
+
+PINNED_EXCLUDED_ROUTES: Mapping[str, str] = {
+    "archive": "archive",
+    "sqlite": "sqlite",
+    "image": "image",
+    "video": "video",
+    "pdf": "pdf",
+    "document": "document",
+    "url": "url",
+    "ssh": "ssh",
+    "internal": "internal-resource",
+}
+OMP_COMMIT = "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
+OMP_SOURCE_ROOT = f"oh-my-pi-{OMP_COMMIT}"
+OMP_CLI_RELATIVE = "packages/coding-agent/src/cli.ts"
+OMP_BUN_LINUX_BASELINE = "/opt/omp/runtime/bun-linux-x64-baseline/bun"
+OMP_SOURCE_ROOT_LINUX = f"/opt/omp/source/{OMP_SOURCE_ROOT}"
+OMP_CLI_LINUX = f"{OMP_SOURCE_ROOT_LINUX}/{OMP_CLI_RELATIVE}"
+OMP_TOOL_WORKER_RELATIVE = "breadboard/rl/harness/runners/omp_native_tool_worker.ts"
+OMP_ARCHIVE_SHA256 = "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
+OMP_LOCK_SHA256 = "sha256:9c0ed804704050ad4dbc3de84581694c7e505fdc39b0c13dea337300bae82a7e"
+
+ALLOWED_TOOLS = ("read", "bash", "edit", "write")
+
+def verified_tool_worker_path() -> Path:
+    """Return the package-installed worker, never a cwd-relative copy."""
+    resource = importlib.resources.files("breadboard.rl.harness.runners").joinpath(
+        "omp_native_tool_worker.ts"
+    )
+    path = Path(resource).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"installed OMP phase worker is missing: {path}")
+    return path
+EXCLUDED_CAPABILITIES = frozenset({"url", "ssh", "pty", "archive", "sqlite", "image", "video", "pdf", "document", "internal-resource"})
+
+
+@dataclass(frozen=True)
+class PinnedNativeWorkerSpec:
+    """Identity and argv contract for the source-owned native worker."""
+
+    bun: str = OMP_BUN_LINUX_BASELINE
+    source_root: str = OMP_SOURCE_ROOT_LINUX
+    cli: str = OMP_CLI_LINUX
+    commit: str = OMP_COMMIT
+    archive_sha256: str = OMP_ARCHIVE_SHA256
+    lock_sha256: str = OMP_LOCK_SHA256
+    platform: str = "linux-x64-baseline"
+    @classmethod
+    def for_test(cls, *, bun: Path, source_root: Path) -> "PinnedNativeWorkerSpec":
+        """Verified local runtime override; production defaults never read environment."""
+        if not bun.is_file() or not source_root.is_dir():
+            raise FileNotFoundError("test OMP Bun and source root must exist")
+        classifier = _sealed_route_classifier()
+        modules = {
+            entry["path"]: entry["sha256"]
+            for entry in classifier["modules"].values()
+        }
+        modules["bun.lock"] = classifier["lock_sha256"]
+        modules["packages/coding-agent/src/tools/read.ts"] = "sha256:270694388f57680524c3df3f6223e845dc8c4d78e2146748d2013c63ae9ba935"
+        for relative, digest in modules.items():
+            path = source_root / relative
+            if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != digest.removeprefix("sha256:"):
+                raise ValueError(f"test OMP pinned source digest mismatch: {relative}")
+        return cls(
+            bun=str(bun),
+            source_root=str(source_root),
+            cli=str(source_root / OMP_CLI_RELATIVE),
+        )
+
+    def command(self, *, cwd: str, model: str, task: str, no_session: bool = True) -> tuple[str, ...]:
+        """Exact supplier-compatible command used by the capture packet."""
+        args = [self.bun, self.cli, "-p"]
+        if no_session:
+            args.append("--no-session")
+        args.extend(("--model", model, task))
+        return tuple(args)
+
+    def worker_command(self, *, entrypoint: str, args: tuple[str, ...] = ()) -> tuple[str, ...]:
+        """Invoke a worker entrypoint with the pinned Bun, never `/bin/sh`."""
+        entry = str(Path(self.source_root) / entrypoint)
+        return (self.bun, entry, *args)
+
+    def tool_worker_command(self, *, cwd: str) -> tuple[str, ...]:
+        """Run controller-owned SDK composition from the installed package."""
+        entry = str(verified_tool_worker_path())
+        return (self.bun, entry, "--cwd", cwd)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "commit": self.commit,
+            "source_root": self.source_root,
+            "cli": self.cli,
+            "bun": self.bun,
+            "platform": self.platform,
+            "archive_sha256": self.archive_sha256,
+            "lock_sha256": self.lock_sha256,
+            "tools": list(ALLOWED_TOOLS),
+            "native_entrypoint": OMP_TOOL_WORKER_RELATIVE,
+            "native_leaves": ["pi-natives EditStore/EditSession", "brush-core Shell", "uutils selection"],
+            "offline_verifiable": ["argv", "identity digests", "settings", "tool admission", "result projection"],
+            "requires_native_runtime": ["hashline patch application", "seen-anchor recovery", "brush shell execution", "filesystem lifecycle"],
+        }
+
+
+@dataclass(frozen=True)
+class NativeInvocation:
+    worker: str
+    command: tuple[str, ...]
+    cwd: str
+    env: Mapping[str, str]
+    lifecycle_owner: str = "breadboard"
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "worker": self.worker,
+            "command": list(self.command),
+            "cwd": self.cwd,
+            "env": dict(self.env),
+            "lifecycle_owner": self.lifecycle_owner,
+        }
+
+
+def pinned_worker_spec() -> PinnedNativeWorkerSpec:
+    return PinnedNativeWorkerSpec()
+
+
+def build_native_invocation(*, cwd: str, entrypoint: str, args: tuple[str, ...] = (), env: Mapping[str, str] | None = None) -> NativeInvocation:
+    spec = pinned_worker_spec()
+    return NativeInvocation("omp-native-tool-core", spec.worker_command(entrypoint=entrypoint, args=args), cwd, dict(env or {}))
+
+
+def supplier_cli_invocation(*, cwd: str, model: str, task: str) -> NativeInvocation:
+    spec = pinned_worker_spec()
+    return NativeInvocation("omp-supplier-cli", spec.command(cwd=cwd, model=model, task=task), cwd, {})
+
+
+def deny_pinned_route(
+    route_result: Mapping[str, Any],
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
+) -> None:
+    """Map a worker-owned pinned route to the static policy table."""
+    if not isinstance(route_result, Mapping):
+        raise PermissionError("OMP capability denial policy unavailable: malformed pinned read route")
+    route = route_result.get("route")
+    if route == "file":
+        return
+    capability = "internal" if isinstance(route, str) and route.startswith("internal:") else route
+    policy = denial_policy or {}
+    policy_capability = PINNED_EXCLUDED_ROUTES.get(capability)
+    if policy_capability is None:
+        raise PermissionError("OMP capability denial policy unavailable: unknown pinned read route")
+    entry = policy.get(policy_capability)
+    if not isinstance(entry, Mapping) or type(entry.get("message")) is not str:
+        raise PermissionError(f"OMP capability denial policy unavailable: {policy_capability}")
+    raise PermissionError(entry["message"])
+
+
+def deny_declared_read_route(
+    name: str,
+    arguments: Mapping[str, Any],
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]],
+    cwd: str | None = None,
+) -> None:
+    """Partition syntactically declared remote and structured reads before dispatch."""
+    path = arguments.get("path")
+    if name != "read" or not isinstance(path, str):
+        return
+    for capability in ("url", "ssh"):
+        declaration = denial_policy.get(capability, {}).get("route", {})
+        if any(
+            re.search(pattern, path, re.IGNORECASE)
+            for pattern in declaration.get("patterns", ())
+        ):
+            deny_pinned_route({"route": capability}, denial_policy=denial_policy)
+    scheme = re.match(r"^([a-z][a-z0-9+.-]*)://", path, re.IGNORECASE)
+    if scheme:
+        name = scheme.group(1).lower()
+        declaration = denial_policy.get("internal-resource", {}).get("route", {})
+        if name not in {"file", "local"} and name in declaration.get("schemes", ()):
+            deny_pinned_route({"route": f"internal:{name}"}, denial_policy=denial_policy)
+        return
+    if cwd is None:
+        return
+    try:
+        if (Path(cwd) / path).exists():
+            return
+    except OSError:
+        return
+    # A colon is a structured member/table request, not an extension alone.
+    resource, delimiter, _selector = path.partition(":")
+    if not delimiter:
+        return
+    for capability in ("archive", "sqlite"):
+        declaration = denial_policy.get(capability, {}).get("route", {})
+        if any(resource.lower().endswith(extension) for extension in declaration.get("extensions", ())):
+            deny_pinned_route({"route": capability}, denial_policy=denial_policy)
+
+def deny_excluded_capabilities(
+    arguments: Mapping[str, Any],
+    *,
+    denial_policy: Mapping[str, Mapping[str, Any]] | None = None,
+) -> None:
+    """Apply only static non-path denials; pinned worker owns read routing."""
+    policy = denial_policy or {}
+    for key in ("pty", "async"):
+        if arguments.get(key) is True:
+            entry = policy.get(key)
+            if (
+                not isinstance(entry, Mapping)
+                or entry.get("capability") != key
+                or type(entry.get("message")) is not str
+            ):
+                raise PermissionError(f"OMP capability denial policy unavailable: {key}")
+            raise PermissionError(entry["message"])
+def _sealed_route_classifier() -> Mapping[str, Any]:
+    target = Path(__file__).resolve().parents[3] / "config" / "e4_targets" / "oh_my_pi" / "18.1.17" / "native-config.json"
+    config = json.loads(target.read_text(encoding="utf-8"))
+    route_classifier = config.get("route_classifier")
+    if not isinstance(route_classifier, Mapping):
+        raise RuntimeError("OMP sealed native-config is missing route_classifier")
+    return route_classifier
+
+
+class NativeWorkerPhaseError(RuntimeError):
+    """A framed OMP phase failed in the pinned worker."""
+
+
+class NativeToolWorker:
+    """Persistent framed adapter for the source-owned OMP tool worker."""
+
+    def __init__(
+        self,
+        *,
+        cwd: str,
+        env: Mapping[str, str] | None = None,
+        spec: PinnedNativeWorkerSpec | None = None,
+    ):
+        self.cwd = cwd
+        self.env = dict(env or {})
+        self.spec = spec or pinned_worker_spec()
+        self.started = False
+        self._process: subprocess.Popen[bytes] | None = None
+        self._request_id = 0
+
+    def invocation(self, entrypoint: str, args: tuple[str, ...] = ()) -> NativeInvocation:
+        if not entrypoint or entrypoint.startswith("/"):
+            raise ValueError("native entrypoint must be a relative pinned-workspace path")
+        return build_native_invocation(cwd=self.cwd, entrypoint=entrypoint, args=args, env=self.env)
+
+    def start(self) -> NativeInvocation:
+        self.started = True
+        return NativeInvocation(
+            "omp-native-tool-core",
+            self.spec.tool_worker_command(cwd=self.cwd),
+            self.cwd,
+            self.env,
+        )
+
+    def _ensure_process(self) -> subprocess.Popen[bytes]:
+        if self._process is not None:
+            return self._process
+        invocation = self.start()
+        environment = os.environ.copy()
+        environment.update(self.env)
+        self._process = subprocess.Popen(
+            invocation.command,
+            cwd=self.cwd,
+            env=environment,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        return self._process
+
+    @staticmethod
+    def _read_frame(stream: Any, timeout: float) -> bytes:
+        ready, _, _ = select.select([stream], [], [], timeout)
+        if not ready:
+            raise NativeWorkerPhaseError("timed out waiting for native worker phase")
+        header = stream.read(4)
+        if len(header) != 4:
+            raise NativeWorkerPhaseError("native worker closed before phase response")
+        length = struct.unpack(">I", header)[0]
+        payload = stream.read(length)
+        if len(payload) != length:
+            raise NativeWorkerPhaseError("native worker returned a truncated phase frame")
+        return payload
+    def phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_seconds: float = 35.0,
+    ) -> dict[str, Any]:
+        if operation not in {"initialize", "project_request", "prepare_tools", "execute_batch", "close"}:
+            raise ValueError(f"unknown OMP phase: {operation}")
+        process = self._ensure_process()
+        if process.stdin is None or process.stdout is None:
+            raise NativeWorkerPhaseError("native worker pipes are unavailable")
+        self._request_id += 1
+        request_id = self._request_id
+        request_payload = dict(payload)
+        if operation == "initialize" and "route_classifier" not in request_payload:
+            classifier = dict(_sealed_route_classifier())
+            if isinstance(self.spec, PinnedNativeWorkerSpec) and self.spec.source_root != OMP_SOURCE_ROOT_LINUX:
+                classifier["source_root"] = self.spec.source_root
+            request_payload["route_classifier"] = classifier
+        body = json.dumps(
+            {
+                "schema_version": "bb.native-worker.rpc.v1",
+                "request_id": request_id,
+                "operation": operation,
+                "payload": request_payload,
+            },
+            separators=(",", ":"),
+        ).encode()
+        process.stdin.write(struct.pack(">I", len(body)) + body)
+        process.stdin.flush()
+        response = json.loads(self._read_frame(process.stdout, timeout_seconds))
+        if response.get("schema_version") != "bb.native-worker.rpc.v1" or response.get("request_id") != request_id:
+            raise NativeWorkerPhaseError("native worker returned an invalid phase envelope")
+        if "error" in response:
+            error = response["error"]
+            raise NativeWorkerPhaseError(str(error.get("message", error)))
+        result = response.get("result")
+        if not isinstance(result, dict) or result.get("schema_version") != "bb.omp-native.v1":
+            raise NativeWorkerPhaseError("native worker returned an invalid OMP phase result")
+        return result
+
+    def execute_batch(self, calls: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        prepared = self.phase("prepare_tools", {"calls": calls})
+        if prepared.get("kind") != "prepared":
+            raise NativeWorkerPhaseError("prepare_tools returned an invalid result")
+        result = self.phase("execute_batch", {})
+        if result.get("kind") != "tool_results" or not isinstance(result.get("results"), list):
+            raise NativeWorkerPhaseError("execute_batch returned an invalid result")
+        return [item for item in result["results"] if isinstance(item, dict)]
+    def close(self) -> dict[str, Any]:
+        if self._process is None:
+            self.stop()
+            return {"kind": "closed", "cleanup": {"processes": [], "all_dead": True}}
+        try:
+            return self.phase("close", {})
+        finally:
+            self.stop()
+
+    def stop(self) -> None:
+        process = self._process
+        self._process = None
+        self.started = False
+        if process is None:
+            return
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+
+
+
+__all__ = [
+    "ALLOWED_TOOLS",
+    "EXCLUDED_CAPABILITIES",
+    "NativeInvocation",
+    "NativeToolWorker",
+    "NativeWorkerPhaseError",
+    "OMP_TOOL_WORKER_RELATIVE",
+    "OMP_COMMIT",
+    "OMP_LOCK_SHA256",
+    "OMP_SOURCE_ROOT",
+    "PinnedNativeWorkerSpec",
+    "build_native_invocation",
+    "deny_excluded_capabilities",
+    "deny_pinned_route",
+    "pinned_worker_spec",
+    "supplier_cli_invocation",
+    "validate_native_tool_name",
+    "verified_tool_worker_path",
+]

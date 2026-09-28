@@ -71,6 +71,18 @@
       "status": "active"
     },
     {
+      "description": "MiniComplete 2.4.6 deterministic trace comparator.",
+      "id": "mini_swe_agent_trace_v1",
+      "metadata": {
+        "config_keys": [
+          "assertions"
+        ],
+        "impl": "conformance.comparators.mini_swe_agent:compare",
+        "kind": "comparator"
+      },
+      "status": "active"
+    },
+    {
       "description": "Capture adapter id for lane-definition-driven North Star package captures.",
       "id": "north_star_package_capture",
       "metadata": {

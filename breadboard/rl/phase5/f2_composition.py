@@ -13,8 +13,12 @@ from types import MappingProxyType
 from pathlib import Path
 from typing import Any, Literal, Mapping
 from urllib.parse import urlsplit
-
-from breadboard_engine.compilation.contracts import CompiledConfigManifest, ConfigBundleManifest
+from breadboard_engine.compilation.contracts import (
+    CompiledConfigManifest,
+    ConfigBundleManifest,
+    DependencyClosureManifest,
+    canonical_json_bytes,
+)
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
@@ -43,6 +47,8 @@ from breadboard.rl.harness.composition import (
     TlsCallbackRuntimeInputV1,
     ServerV1,
     StoresV1,
+    _nonnegative_decimal,
+    _filesystem_inode,
     load_production_composition,
 )
 from breadboard.rl.harness.evidence import EvidenceRoleBindingV2
@@ -176,8 +182,8 @@ class TlsAuthorityInput(_ExactModel):
 class OpenSslAuthorityInput(_ExactModel):
     path: Literal["/usr/bin/openssl"]
     sha256: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     ctime_ns: str
     size_bytes: int = Field(gt=0)
     mode: int = Field(ge=0, le=0o7777)
@@ -188,6 +194,8 @@ class OpenSslAuthorityInput(_ExactModel):
 
     _digests = field_validator("sha256", "version_stdout_sha256")(_digest_value)
     _ctime_ns = field_validator("ctime_ns")(_positive_decimal)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def executable_mode(self) -> "OpenSslAuthorityInput":
@@ -199,8 +207,8 @@ class OpenSslAuthorityInput(_ExactModel):
 class ExecutableObservationInput(_ExactModel):
     path: str
     sha256: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     ctime_ns: str
     size_bytes: int = Field(gt=0)
     mode: int = Field(ge=0, le=0o7777)
@@ -208,6 +216,8 @@ class ExecutableObservationInput(_ExactModel):
 
     _digest = field_validator("sha256")(_digest_value)
     _ctime_ns = field_validator("ctime_ns")(_positive_decimal)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def exact_executable(self) -> "ExecutableObservationInput":
@@ -282,6 +292,7 @@ class AuthoritySources(_ExactModel):
     mount_broker_implementation: SourceArtifact
     openssl: OpenSslAuthorityInput
     config_bundle: SourceArtifact
+    config_closure: SourceArtifact
     config_members: tuple[ConfigMemberSource, ...]
     compiled_manifests: tuple[SourceArtifact, ...]
     admission_receipts: tuple[SourceArtifact, ...]
@@ -312,6 +323,8 @@ class AuthoritySources(_ExactModel):
             raise ValueError("F2 requires exactly one compiled manifest and one admission receipt")
         if self.config_bundle.media_type != "application/json":
             raise ValueError("config bundle media type mismatch")
+        if self.config_closure.media_type != "application/json":
+            raise ValueError("config closure media type mismatch")
         if self.compiled_manifests[0].media_type != _COMPILED_MEDIA:
             raise ValueError("compiled manifest media type mismatch")
         if self.admission_receipts[0].media_type != _RECEIPT_MEDIA:
@@ -385,7 +398,7 @@ class RequestTemplateInput(_ExactModel):
 
 
 class F2ProductionCompositionInput(_ExactModel):
-    schema_version: Literal["bb.rl.phase5-f2-production-input.v1"]
+    schema_version: Literal["bb.rl.phase5-f2-production-input.v3"]
     composition_id: str = Field(min_length=1, max_length=256)
     authority: AuthoritySources
     installed: InstalledV1
@@ -488,8 +501,8 @@ def _prepare_callback_tls_runtime(
                 socket_metadata.st_uid,
             )
             != (
-                callback_plan.socket_device,
-                callback_plan.socket_inode,
+                int(callback_plan.socket_device),
+                int(callback_plan.socket_inode),
                 callback_plan.socket_mode,
                 callback_plan.socket_owner_uid,
             )
@@ -600,8 +613,8 @@ def _prepare_callback_tls_runtime(
     os.set_inheritable(key_dup, False)
     identity = MappingProxyType({
         "handle_id": runtime.private_key_secret_handle_id,
-        "device": key_identity[0],
-        "inode": key_identity[1],
+        "device": str(key_identity[0]),
+        "inode": str(key_identity[1]),
         "ctime_ns": key_identity[2],
         "size_bytes": key_identity[3],
         "mode": key_identity[4],
@@ -772,8 +785,8 @@ def _verify_executable_observation(value: ExecutableObservationInput) -> None:
         stat.S_IMODE(current.st_mode),
         current.st_uid,
     ) != (
-        value.device,
-        value.inode,
+        int(value.device),
+        int(value.inode),
         int(value.ctime_ns),
         value.size_bytes,
         value.mode,
@@ -812,7 +825,7 @@ def _measure_store(name: str, path: str) -> DirectoryAuthorityRefV1:
     if not stat.S_ISDIR(current.st_mode) or stat.S_IMODE(current.st_mode) != 0o700:
         raise F2CompositionError(f"store {name!r} must be a 0700 directory")
     return DirectoryAuthorityRefV1(
-        authority_id=f"f2-{name}", path=path, device=current.st_dev, inode=current.st_ino,
+        authority_id=f"f2-{name}", path=path, device=str(current.st_dev), inode=str(current.st_ino),
         owner_uid=current.st_uid, mode="0700",
     )
 
@@ -958,7 +971,7 @@ def _materialize_f2_production_composition(
         ))
         openssl_before = os.stat(openssl.path, follow_symlinks=False)
         expected_openssl = (
-            openssl.device, openssl.inode, int(openssl.ctime_ns), openssl.size_bytes,
+            int(openssl.device), int(openssl.inode), int(openssl.ctime_ns), openssl.size_bytes,
             openssl.mode, openssl.owner_uid,
         )
         actual_openssl = (
@@ -1067,6 +1080,12 @@ def _materialize_f2_production_composition(
         )
 
         config_ref, config_bytes = _copy_artifact(artifacts, "config-bundle.json", sources.config_bundle)
+        closure_ref, closure_bytes = _copy_artifact(
+            artifacts, "config-closure.json", sources.config_closure
+        )
+        closure = DependencyClosureManifest.from_json(closure_bytes)
+        if closure.canonical_bytes() != closure_bytes:
+            raise F2CompositionError("config closure is not canonical")
         config_bundle = ConfigBundleManifest.from_json(config_bytes)
         if config_bundle.canonical_bytes() != config_bytes:
             raise F2CompositionError("config bundle is not canonical")
@@ -1093,6 +1112,25 @@ def _materialize_f2_production_composition(
             ref, payload = _copy_artifact(artifacts, f"compiled-manifest-{index}.json", source)
             compiled_refs.append(ref)
             compiled_models.append(CompiledConfigManifest.from_json(payload))
+        if closure.closure_digest != compiled_models[0].inputs.closure_digest:
+            raise F2CompositionError(
+                "compiled manifest does not bind the supplied config closure"
+            )
+        closure_cas = FilesystemCAS(parsed.stores.cas)
+        try:
+            closure_cas_ref = closure_cas.put_bytes(
+                closure_bytes,
+                artifact_id=closure.closure_digest,
+                media_type="application/json",
+            )
+        finally:
+            closure_cas.close()
+        if (
+            closure_cas_ref.sha256 != closure_ref.sha256
+            or closure_cas_ref.size_bytes != closure_ref.size_bytes
+            or closure_cas_ref.media_type != "application/json"
+        ):
+            raise F2CompositionError("config closure CAS publication mismatch")
         receipt_refs: list[ArtifactFileRefV1] = []
         receipts: list[c.AdmissionReceipt] = []
         for index, source in enumerate(sources.admission_receipts):
@@ -1137,7 +1175,7 @@ def _materialize_f2_production_composition(
         store_values = parsed.stores.model_dump(exclude={"lease_ttl_seconds"})
         stores = StoresV1(**{name: _measure_store(name, store_values[name]) for name in _STORE_NAMES}, lease_ttl_seconds=parsed.stores.lease_ttl_seconds)
         openssl_authority = OpenSslAuthorityV1(
-            schema_version="bb.rl.harness-openssl-authority.v1",
+            schema_version="bb.rl.harness-openssl-authority.v2",
             path=openssl.path,
             sha256=openssl.sha256,
             device=openssl.device,
@@ -1151,7 +1189,7 @@ def _materialize_f2_production_composition(
             discovery_report_ref=openssl_report_ref,
         )
         manifest = HarnessCompositionManifestV1(
-            schema_version="bb.rl.harness-composition.v1", composition_id=parsed.composition_id,
+            schema_version="bb.rl.harness-composition.v3", composition_id=parsed.composition_id,
             authority_bundle_ref=authority_ref, config_bundle_ref=config_ref, admitted_set_ref=admitted_ref,
             selector_catalog=SelectorCatalogV1(direct=(selector_ref,), weighted=()),
             control_plane=ControlPlaneV1(
@@ -1185,7 +1223,7 @@ def _materialize_f2_production_composition(
         manifest_bytes = manifest.canonical_bytes()
         _write_exclusive(manifest_path, manifest_bytes)
         composition_ref = CompositionRefV1(
-            schema_version="bb.rl.harness-composition-ref.v1", manifest_path=str(manifest_path.resolve()),
+            schema_version="bb.rl.harness-composition-ref.v3", manifest_path=str(manifest_path.resolve()),
             manifest_sha256=sha256_bytes(manifest_bytes), manifest_size_bytes=len(manifest_bytes),
             manifest_media_type=COMPOSITION_MEDIA_TYPE,
         )

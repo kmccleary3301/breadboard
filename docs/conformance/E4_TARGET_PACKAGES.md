@@ -33,6 +33,26 @@ configs backed by tracked prompt/reference packages. The Codex 0.139.0 package
 intentionally contains only the exact prompt source needed by the accepted probe; it
 does not fabricate an installed-target descriptor or a broad parity profile.
 
+Mini SWE Agent 2.4.6 is an additional source-backed target at
+`config/e4_targets/mini_swe_agent/2.4.6/`, pinned to
+`a83fcae82d2a08f0ee0c688f9d137b3566c097f8`. It uses target/config v2, an empty
+caller input object, native `bash`, the `DefaultAgent` loop and an explicit
+non-streaming Chat profile. Its renderer and native response consumer are
+`breadboard.mini-swe-agent.v2.4.6`. Native shell execution requires the admitted
+Python tool closure; pricing requires the installed LiteLLM 1.101.0 catalog with
+`LITELLM_LOCAL_MODEL_COST_MAP=True` before import. Package/compiler support is not
+whole-episode qualification, official grading or a full-profile parity claim.
+
+Hermes Agent 2026.9.11 is pinned to source commit
+`939e45c91d751fadd94dcd1b873ac3cb44846213` under
+`config/e4_targets/hermes_agent/2026.9.11/`. Its replay trace records each raw
+model-emitted tool call, including invalid names and duplicate samples; only
+native-prepared valid actions can dispatch. The Hermes comparator derives the
+supplier workspace from the source-declared system-prompt cwd/workspace root
+or a consistent recorded `runtime.cwd`, and uses the candidate's recorded
+`runtime.cwd`. Missing or conflicting declarations fail comparison. This
+projection does not establish rerun3 parity or authorize rewriting prompt text.
+
 ## Compiler ownership and admission
 
 `breadboard.product.harness.resolution.compile_e4_harness` connects a verified
@@ -41,6 +61,20 @@ sealed bundle/closure and server compiler. It takes the target inputs, runtime
 configuration, `FilesystemCAS` and `CompileOptions`. Runtime configuration cannot
 replace target-owned prompts, tools, modes or loop behavior. Native target tools
 require `provider_tools.use_native: true`.
+
+The helper publishes the exact `DependencyClosureManifest.canonical_bytes()` to
+CAS with `artifact_id=closure.closure_digest` and `media_type="application/json"`.
+Other composition authors must publish the same original closure. The artifact
+ID is a semantic-digest alias, not the payload byte digest: the serialized object
+also includes its `closure_digest`. Production loading checks both CAS byte
+integrity and the parsed canonical closure identity, bundle binding, provenance
+and member authority. A store written before producers published this alias is
+loaded by rebuilding the closure from compiled provenance, with edge ordinals in
+provenance order; it is admitted only if the rebuilt closure reproduces the
+compiled closure digest exactly. A declared order that provenance cannot express,
+such as Mini's target assets, fails that check, so such stores need the published
+closure. F2 production authoring input v2 therefore requires an explicit
+`authority.config_closure` artifact.
 
 `E4TargetPolicyProjection.from_compiled` reads compiler output; it does not load or
 render package files. Headless and SWE consumers select equivalent projections
@@ -79,15 +113,19 @@ historical v1 descriptor digest forms remain unchanged.
 
 Headless request v1 remains text-only and pairs with target v1. Explicit
 `bb.rl.headless-run-request.v2` accepts JSON values and pairs only with target v2.
+`bb.rl.headless-run-request.v3` requires an explicit, closed
+`provider.request_policy` and supports either target version. Target v1 still
+requires non-empty text inputs; target v2 retains its declared JSON schemas.
+Requests v1/v2 omit `request_policy` and use the historical streaming policy.
 Missing, null, empty, false and zero are distinct. `bind_e4_target_inputs` validates
 the selected declaration without filling omitted values. V1 frames retain JCS
-encoding; v2 byte identity preserves nested object order and numeric representation,
-with outer fields ordered by the declaration.
+encoding; v2/v3 byte identity preserves nested object order and numeric representation,
+with target v2 outer fields ordered by the declaration.
 This frame records supplied inputs, not constructor execution. An omitted
 `omission: default` field stays absent; its declared default remains bound in the
 verified configuration. An admitted source renderer applies omission/default
-rules at its declared phase. The current v2 capability rejection does not execute
-that renderer or claim its default behavior.
+rules at its declared phase. Unsupported renderers are rejected rather than
+executed; loading their declarations does not claim default behavior.
 The installed distribution requires Pydantic `>=2.13.5,<3`, the supported
 dependency floor for both the typed headless request and the public API models.
 

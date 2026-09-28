@@ -20,12 +20,13 @@ from secrets import token_bytes
 from types import MappingProxyType
 from typing import Any, Literal, Mapping, Protocol, Sequence
 
-from breadboard_engine.compilation.bundle import build_dependency_closure
+from breadboard_engine.compilation.bundle import ManifestReader, build_dependency_closure
 from breadboard_engine.compilation.contracts import (
     ClosureMember,
     CompiledConfig,
     CompiledConfigManifest,
     ConfigBundleManifest,
+    DependencyClosureManifest,
     DependencyEdge,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -42,11 +43,13 @@ from .evidence import (
     FilesystemEpisodeLocatorStore,
     V2EvidenceAuthority,
 )
+from .history import HistoricalV1EpisodeReader
 from .materialization import (
     DirectoryStorageBackend,
     FilesystemMaterializationStore,
     SealedSourceManifest,
     SourceManifestEntry,
+    validate_workspace_seed_manifest,
 )
 from .mount_namespace_broker import (
     MountNamespaceBroker,
@@ -63,10 +66,12 @@ from .private_docker_daemon import (
     PinnedFileAuthority,
     PrivateDockerDaemonAuthority,
 )
+from .project_quota import ProjectQuotaStorageBackend
 from .runners.base import RunnerAdapterDescriptor, RunnerAdapterRegistry
 from .runners.conductor import CONDUCTOR_ADAPTER_ID, ConductorAdapter
 from .runners.terminal import TERMINAL_ADAPTER_ID, TerminalResponsesAdapter
 from .sandbox import (
+    NATIVE_PHASE_TOOL_IDS,
     InstalledImage,
     InstalledRuntime,
     InstalledSandboxAuthoritySet,
@@ -76,6 +81,8 @@ from .sandbox import (
     SandboxRuntimeManager,
     SandboxSecurityPolicy,
     TrustedProcessBackend,
+    RuntimeContainment,
+    SandboxLaunchError,
 )
 from .sandbox_docker import (
     DockerRuntimeAdapter,
@@ -102,10 +109,10 @@ PolicyClientResolverFactory = Callable[
 
 
 COMPOSITION_REF_MEDIA_TYPE = (
-    "application/vnd.breadboard.harness-composition+json;version=1"
+    "application/vnd.breadboard.harness-composition+json;version=2"
 )
 COMPOSITION_MEDIA_TYPE = COMPOSITION_REF_MEDIA_TYPE
-COMPOSED_MEDIA_TYPE = "application/vnd.breadboard.harness-composed+json;version=1"
+COMPOSED_MEDIA_TYPE = "application/vnd.breadboard.harness-composed+json;version=2"
 _MAX_AUTHORITY_BYTES = 64 * 1024 * 1024
 _NATIVE_TOOL_SOURCE_SCHEMA_VERSION = "bb.rl.native-tool-source.v1"
 _NATIVE_TOOL_SOURCE_MEDIA_TYPE = (
@@ -192,6 +199,21 @@ def _positive_decimal(value: str) -> str:
     return value
 
 
+def _nonnegative_decimal(value: str) -> str:
+    if (
+        type(value) is not str
+        or re.fullmatch(r"(0|[1-9][0-9]*)", value) is None
+    ):
+        raise ValueError("filesystem identity must be a canonical nonnegative decimal string")
+    return value
+
+
+def _filesystem_inode(value: str) -> str:
+    if type(value) is not str or re.fullmatch(r"[1-9][0-9]*", value) is None:
+        raise ValueError("filesystem inode must be a canonical positive decimal string")
+    return value
+
+
 def _signed_payload(value: BaseModel) -> tuple[dict[str, Any], dict[str, Any]]:
     unsigned = value.model_dump(mode="json")
     unsigned.pop("signature")
@@ -237,7 +259,7 @@ class ArtifactFileRefV1(_ExactModel):
 
 
 class CompositionRefV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composition-ref.v1"]
+    schema_version: Literal["bb.rl.harness-composition-ref.v3"]
     manifest_path: str
     manifest_sha256: str
     manifest_size_bytes: int = Field(gt=0, le=_MAX_AUTHORITY_BYTES)
@@ -251,18 +273,21 @@ class CompositionRefV1(_ExactModel):
 
 
 class CompositionRefV2(CompositionRefV1):
-    schema_version: Literal["bb.rl.harness-composition-ref.v2"]
+    schema_version: Literal["bb.rl.harness-composition-ref.v4"]
 
 
 class DirectoryAuthorityRefV1(_ExactModel):
     authority_id: str = Field(min_length=1, max_length=256)
     path: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     owner_uid: int = Field(ge=0)
     mode: str = Field(pattern=r"0[0-7]{3}")
 
     _path = field_validator("path")(_absolute)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
+
 class InstalledToolAdapterV1(_ExactModel):
     adapter_id: str = Field(min_length=1, max_length=256)
     tool_ids: tuple[str, ...]
@@ -270,9 +295,25 @@ class InstalledToolAdapterV1(_ExactModel):
     manifest_ref: ArtifactFileRefV1
     executable_relative_path: str
     entrypoint_relative_path: str
+    argv: tuple[str, ...] | None = None
 
     _executable_path = field_validator("executable_relative_path")(_relative)
     _entrypoint_path = field_validator("entrypoint_relative_path")(_relative)
+    @model_validator(mode="after")
+    def exact_argv(self) -> "InstalledToolAdapterV1":
+        if self.argv is None:
+            return self
+        if not self.argv or self.argv[0] != PurePosixPath(self.executable_relative_path).name:
+            raise ValueError("native tool argv must begin with its admitted executable")
+        if self.argv[-1] != self.entrypoint_relative_path:
+            raise ValueError("native tool argv must end with its admitted entrypoint")
+        index = 1
+        while index < len(self.argv) - 1:
+            if self.argv[index] != "--import" or index + 1 >= len(self.argv) - 1:
+                raise ValueError("native tool argv contains an unsupported interpreter flag")
+            _relative(self.argv[index + 1].removeprefix("./"))
+            index += 2
+        return self
 
     @model_validator(mode="after")
     def exact_tools(self) -> "InstalledToolAdapterV1":
@@ -286,6 +327,11 @@ class InstalledToolAdapterV1(_ExactModel):
             for tool_id in self.tool_ids
         ):
             raise ValueError("installed tool adapter tool IDs are invalid")
+        if (
+            self.adapter_id in NATIVE_PHASE_TOOL_IDS
+            and self.tool_ids != NATIVE_PHASE_TOOL_IDS[self.adapter_id]
+        ):
+            raise ValueError("native adapter requires its exact source tool set")
         if self.manifest_ref.media_type != _NATIVE_TOOL_SOURCE_REF_MEDIA_TYPE:
             raise ValueError("native tool source manifest media type is not exact")
         return self
@@ -574,6 +620,15 @@ class AuthorityBundleV1(_ExactModel):
 
 
 class StoresV1(_ExactModel):
+    """Pinned store roots and explicit workspace storage enforcement.
+
+    ``directory`` does not enforce a quota. ``project_quota`` requires Linux
+    x86_64, an existing project-quota filesystem and privileged quota control.
+    Production admission also requires hardened Docker and a default-deny
+    seccomp policy that excludes guest mutation of project IDs/inheritance.
+    The backend does not create or mount the containing filesystem.
+    """
+
     cas: DirectoryAuthorityRefV1
     locator: DirectoryAuthorityRefV1
     materialization_cache: DirectoryAuthorityRefV1
@@ -581,6 +636,7 @@ class StoresV1(_ExactModel):
     lease: DirectoryAuthorityRefV1
     security_profile: DirectoryAuthorityRefV1
     lease_ttl_seconds: int = Field(gt=0, le=86400)
+    workspace_storage_backend: Literal["directory", "project_quota"] = "directory"
 
     @model_validator(mode="after")
     def distinct_roots(self) -> "StoresV1":
@@ -738,15 +794,15 @@ class OuterBridgeLeaseV1(_ExactModel):
 
 
 class PreboundServiceSocketPlanV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-prebound-service-socket-plan.v1"]
+    schema_version: Literal["bb.rl.harness-prebound-service-socket-plan.v2"]
     role: str = Field(min_length=1, max_length=128)
     gateway: str
     observed_port: int = Field(ge=1, le=65535)
     family: Literal["AF_INET"]
     socket_type: Literal["SOCK_STREAM"]
     protocol: Literal["IPPROTO_TCP"]
-    socket_device: int = Field(ge=0)
-    socket_inode: int = Field(gt=0)
+    socket_device: str
+    socket_inode: str
     socket_mode: int = Field(gt=0)
     socket_owner_uid: int = Field(ge=0)
     getsockname_host: str
@@ -755,6 +811,8 @@ class PreboundServiceSocketPlanV1(_ExactModel):
     socket_plan_id: str
 
     _id = field_validator("socket_plan_id")(_digest)
+    _socket_device = field_validator("socket_device")(_nonnegative_decimal)
+    _socket_inode = field_validator("socket_inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def exact_socket(self) -> "PreboundServiceSocketPlanV1":
@@ -776,7 +834,7 @@ class PreboundServiceSocketPlanV1(_ExactModel):
 
 
 class PreboundServiceSocketLeaseV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-prebound-service-socket-lease.v1"]
+    schema_version: Literal["bb.rl.harness-prebound-service-socket-lease.v2"]
     role: str = Field(min_length=1, max_length=128)
     socket_plan_digest: str
     socket_plan_id: str
@@ -961,11 +1019,11 @@ class OfflineImageAuthorityV1(_ExactModel):
 
 
 class OpenSslAuthorityV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-openssl-authority.v1"]
+    schema_version: Literal["bb.rl.harness-openssl-authority.v2"]
     path: Literal["/usr/bin/openssl"]
     sha256: str
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     ctime_ns: str
     size_bytes: int = Field(gt=0)
     mode: int = Field(ge=0, le=0o7777)
@@ -976,6 +1034,8 @@ class OpenSslAuthorityV1(_ExactModel):
 
     _digests = field_validator("sha256", "version_stdout_sha256")(_digest)
     _ctime_ns = field_validator("ctime_ns")(_positive_decimal)
+    _device = field_validator("device")(_nonnegative_decimal)
+    _inode = field_validator("inode")(_filesystem_inode)
 
     @model_validator(mode="after")
     def exact_openssl_authority(self) -> "OpenSslAuthorityV1":
@@ -1343,8 +1403,45 @@ class InstalledV1(_ExactModel):
         return self
 
 
+def _validate_project_quota_seccomp(data: bytes) -> None:
+    # In the initial user namespace, inode owners can change project IDs and
+    # inheritance flags. Quota accounting alone does not prevent that escape.
+    mutation_commands = {0x401C5820, 0x40086602, 0x40046602}
+    denied_actions = {
+        "SCMP_ACT_ERRNO", "SCMP_ACT_KILL", "SCMP_ACT_KILL_PROCESS",
+        "SCMP_ACT_KILL_THREAD", "SCMP_ACT_TRAP",
+    }
+    profile = json.loads(data)
+    if type(profile) is not dict or profile.get("defaultAction") not in denied_actions:
+        raise ValueError("project quotas require default-deny seccomp")
+    rules = profile.get("syscalls")
+    if type(rules) is not list:
+        raise ValueError("project quota seccomp syscall rules are missing")
+    for rule in rules:
+        if type(rule) is not dict or type(rule.get("names")) is not list:
+            raise ValueError("project quota seccomp syscall rule is invalid")
+        if "ioctl" not in rule["names"] or rule.get("action") in denied_actions:
+            continue
+        arguments = rule.get("args", [])
+        # runc treats repeated comparisons on one argument as OR alternatives.
+        argument = arguments[0] if type(arguments) is list and len(arguments) == 1 else None
+        if (
+            rule.get("action") != "SCMP_ACT_ALLOW"
+            or not (
+                type(argument) is dict
+                and type(argument.get("index")) is int
+                and argument["index"] == 1
+                and argument.get("op") == "SCMP_CMP_EQ"
+                and type(argument.get("value")) is int
+                and 0 <= argument["value"] < 2**64
+                and argument["value"] & 0xFFFFFFFF not in mutation_commands
+            )
+        ):
+            raise ValueError("project quota seccomp permits attribute mutation")
+
+
 class HarnessCompositionManifestV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composition.v1"]
+    schema_version: Literal["bb.rl.harness-composition.v3"]
     composition_id: str = Field(min_length=1, max_length=256)
     authority_bundle_ref: ArtifactFileRefV1
     config_bundle_ref: ArtifactFileRefV1
@@ -1407,6 +1504,18 @@ class HarnessCompositionManifestV1(_ExactModel):
                 )
             )
         return tuple(bindings)
+
+    @model_validator(mode="after")
+    def project_quota_security(self) -> "HarnessCompositionManifestV1":
+        if self.stores.workspace_storage_backend == "project_quota":
+            if any(
+                runtime.runtime_class != c.RuntimeClass.HARDENED_DOCKER
+                for runtime in self.installed.runtimes
+            ):
+                raise ValueError("project quotas require hardened Docker execution")
+            for policy in self.installed.security_policies:
+                _validate_project_quota_seccomp(policy.seccomp_bytes)
+        return self
 
     @model_validator(mode="after")
     def cross_bind(self) -> "HarnessCompositionManifestV1":
@@ -1538,7 +1647,7 @@ class HarnessCompositionManifestV1(_ExactModel):
 
 
 class HarnessCompositionManifestV2(HarnessCompositionManifestV1):
-    schema_version: Literal["bb.rl.harness-composition.v2"]
+    schema_version: Literal["bb.rl.harness-composition.v4"]
     config_bundle_ref: None = Field(default=None, exclude=True)
     config_bundle_refs: tuple[ArtifactFileRefV1, ...] = Field(min_length=1)
 
@@ -1551,7 +1660,7 @@ class HarnessCompositionManifestV2(HarnessCompositionManifestV1):
 
 
 class ComposedHarnessManifestV1(_ExactModel):
-    schema_version: Literal["bb.rl.harness-composed.v1"]
+    schema_version: Literal["bb.rl.harness-composed.v2"]
     composition_id: str
     input_manifest_digest: str
     authority_bundle_digest: str
@@ -2176,6 +2285,11 @@ class _CASMaterializationSourceReader:
         self._manifests[digest] = manifest
         return manifest
 
+    def validate_workspace_seed_manifest(
+        self, manifest: SealedSourceManifest, expected_digest: str
+    ) -> int:
+        return validate_workspace_seed_manifest(manifest, expected_digest)
+
     def read_member(self, digest: str, logical_path: str, *, max_bytes: int) -> bytes:
         manifest = self._manifests.get(digest)
         if manifest is None:
@@ -2347,8 +2461,8 @@ def _observed_socket(fd: int, plan: OuterBridgePlanV1) -> dict[str, Any]:
         "family": "AF_INET",
         "socket_type": "SOCK_STREAM",
         "protocol": "IPPROTO_TCP",
-        "socket_device": metadata.st_dev,
-        "socket_inode": metadata.st_ino,
+        "socket_device": str(metadata.st_dev),
+        "socket_inode": str(metadata.st_ino),
         "socket_mode": metadata.st_mode,
         "socket_owner_uid": metadata.st_uid,
         "getsockname_host": address[0],
@@ -2550,7 +2664,7 @@ class OuterBridgeLifecycle:
                     )
                 )
                 authorities[role] = PreboundServiceSocketLeaseV1(
-                    schema_version=("bb.rl.harness-prebound-service-socket-lease.v1"),
+                    schema_version=("bb.rl.harness-prebound-service-socket-lease.v2"),
                     role=role,
                     socket_plan_digest=socket_plan.canonical_digest(),
                     socket_plan_id=(socket_plan.socket_plan_id),
@@ -2962,7 +3076,9 @@ class _ProductionCleanupProbe:
             )
         )
         active_leases = {
-            path.stem for path in lease_paths
+            path.stem
+            for path in lease_paths
+            if not path.name.endswith(".native-scratch")
         } | set(getattr(self._sandbox_runtime, "_leases", {})) | set(
             getattr(self._materialization, "_active_workspaces", {})
         )
@@ -3039,10 +3155,16 @@ class _ProductionCleanupProbe:
         )
         cgroup_values = tuple(sorted(os.fspath(path) for path in cgroup_paths))
         workspace_values = tuple(os.fspath(path) for path in workspace_paths)
+        scratch_paths = {
+            os.fspath(path)
+            for path in lease_paths
+            if path.name.endswith(".native-scratch")
+        }
         orphan_ids = tuple(
             sorted(
                 {
                     *active_leases,
+                    *scratch_paths,
                     *container_ids,
                     *(f"pid:{pid}" for pid in live_processes),
                     *cgroup_values,
@@ -3219,6 +3341,7 @@ class ProductionComposition:
         self._runtime_close_lock = asyncio.Lock()
         self._authority_close_lock = asyncio.Lock()
         self._runtime_closed = False
+        self._runtime_close_attempted = False
         self._closed = False
         self._close_task: asyncio.Task[None] | None = None
 
@@ -3248,7 +3371,9 @@ class ProductionComposition:
         return None if lifecycle is None else lifecycle.cleanup_receipt
 
     def observe_cleanup_inventory(self) -> ProductionCleanupInventory:
-        if not self._runtime_closed:
+        if self._runtime_close_lock.locked() or not (
+            self._runtime_closed or self._runtime_close_attempted
+        ):
             raise RuntimeError(
                 "cleanup inventory is unavailable before runtime close"
             )
@@ -3264,6 +3389,7 @@ class ProductionComposition:
                     if not self._runtime_callbacks:
                         self._runtime_closed = True
                         return
+                    self._runtime_close_attempted = True
                     callback = self._runtime_callbacks[-1]
                 try:
                     result = callback()
@@ -3511,8 +3637,8 @@ def _validate_native_tool_closure(
     flags = os.O_RDONLY | os.O_DIRECTORY | getattr(os, "O_NOFOLLOW", 0)
     root_fd = os.open(root.path, flags)
     expected_root = (
-        root.device,
-        root.inode,
+        int(root.device),
+        int(root.inode),
         root.owner_uid,
         int(root.mode, 8),
     )
@@ -3632,6 +3758,12 @@ def _validate_native_tool_closure(
             or entrypoint.kind != "file"
         ):
             raise ValueError("native tool executable or entrypoint is not covered")
+        for argument in (descriptor.argv or ())[1:-1]:
+            if argument == "--import":
+                continue
+            member = entries.get(argument.removeprefix("./"))
+            if member is None or member.kind != "file" or not member.content_digest:
+                raise ValueError("native tool argv import is not covered by its sealed manifest")
         return executable.content_digest or "", entrypoint.content_digest or ""
     finally:
         os.close(root_fd)
@@ -3640,6 +3772,7 @@ def _validate_native_tool_closure(
 def _load_native_tool_bindings(
     installed: InstalledV1,
     receipts: Sequence[c.AdmissionReceipt],
+    compiled_manifests: Mapping[str, CompiledConfigManifest],
 ) -> tuple[InstalledToolAdapter, ...]:
     reachable: dict[str, set[str]] = {}
     for receipt in receipts:
@@ -3647,6 +3780,44 @@ def _load_native_tool_bindings(
             reachable.setdefault(tool.tool_id, set()).add(tool.implementation_digest)
     bindings: list[InstalledToolAdapter] = []
     for descriptor in installed.tool_adapters:
+        matching_receipts = tuple(
+            receipt for receipt in receipts
+            if all(
+                any(
+                    tool.tool_id == tool_id
+                    and tool.implementation_digest == descriptor.manifest_ref.sha256
+                    for tool in receipt.effective_capabilities.tools
+                )
+                for tool_id in descriptor.tool_ids
+            )
+        )
+        declared_argv: set[tuple[str, ...]] = set()
+        for receipt in matching_receipts:
+            compiled = compiled_manifests.get(receipt.compiled.manifest_digest)
+            if compiled is None:
+                raise ValueError("native tool compiled manifest is not pinned")
+            target = compiled.semantic.to_canonical_obj().get("metadata", {}).get("e4_target")
+            if not isinstance(target, Mapping):
+                continue
+            profile = target.get("runtime_profile")
+            worker = profile.get("native_worker") if isinstance(profile, Mapping) else None
+            if not isinstance(worker, Mapping) or "argv" not in worker:
+                continue
+            argv = worker["argv"]
+            if not isinstance(argv, list) or not argv or any(type(arg) is not str for arg in argv):
+                raise ValueError("sealed native worker argv is invalid")
+            declared_argv.add(tuple(argv))
+        if len(declared_argv) > 1:
+            raise ValueError("sealed native worker argv conflicts across receipts")
+        sealed_argv = next(iter(declared_argv), None)
+        if sealed_argv is not None and descriptor.argv is not None and descriptor.argv != sealed_argv:
+            raise ValueError("sealed native worker argv differs from installed descriptor")
+        effective = (
+            InstalledToolAdapterV1.model_validate({
+                **descriptor.model_dump(mode="python"), "argv": sealed_argv,
+            })
+            if sealed_argv is not None and descriptor.argv is None else descriptor
+        )
         digests = {digest for tool_id in descriptor.tool_ids for digest in reachable.get(tool_id, set())}
         if len(digests) != 1 or next(iter(digests), None) != descriptor.manifest_ref.sha256:
             raise ValueError("native tool binding is unadmitted or implementation-mismatched")
@@ -3655,15 +3826,15 @@ def _load_native_tool_bindings(
             payload, expected_digest=descriptor.manifest_ref.sha256
         )
         executable_digest, entrypoint_digest = _validate_native_tool_closure(
-            descriptor, source_manifest
+            effective, source_manifest
         )
         bindings.append(
             InstalledToolAdapter(
                 adapter_id=descriptor.adapter_id,
                 tool_ids=descriptor.tool_ids,
                 runtime_root_path=descriptor.runtime_root.path,
-                runtime_root_device=descriptor.runtime_root.device,
-                runtime_root_inode=descriptor.runtime_root.inode,
+                runtime_root_device=int(descriptor.runtime_root.device),
+                runtime_root_inode=int(descriptor.runtime_root.inode),
                 runtime_root_owner_uid=descriptor.runtime_root.owner_uid,
                 runtime_root_mode=descriptor.runtime_root.mode,
                 manifest_digest=descriptor.manifest_ref.sha256,
@@ -3671,6 +3842,11 @@ def _load_native_tool_bindings(
                 entrypoint_relative_path=descriptor.entrypoint_relative_path,
                 executable_digest=executable_digest,
                 entrypoint_digest=entrypoint_digest,
+                argv=effective.argv,
+                argv_file_digests=tuple(
+                    (argument.removeprefix("./"), next(item.content_digest or "" for item in source_manifest.entries if item.logical_path == argument.removeprefix("./")))
+                    for argument in (effective.argv or ())[1:-1] if argument != "--import"
+                ),
             )
         )
     return tuple(bindings)
@@ -3710,17 +3886,18 @@ def _validate_installed_registry_graph(
     native_tool_adapters: Sequence[InstalledToolAdapter] = (),
 ) -> None:
     capabilities = tuple(item.effective_capabilities for item in receipts)
+    installed_native_tools = {
+        (tool_id, adapter.manifest_digest)
+        for adapter in native_tool_adapters
+        for tool_id in adapter.tool_ids
+    }
     reachable_native_tools = {
         (tool.tool_id, tool.implementation_digest)
         for capability in capabilities
         if capability.runner.adapter_id != TERMINAL_ADAPTER_ID
         for tool in capability.tools
         if tool.tool_id != "terminal"
-    }
-    installed_native_tools = {
-        (tool_id, adapter.manifest_digest)
-        for adapter in native_tool_adapters
-        for tool_id in adapter.tool_ids
+        or (tool.tool_id, tool.implementation_digest) in installed_native_tools
     }
     registered_tools = {
         (record.grant.tool_id, record.grant.implementation_digest)
@@ -3855,6 +4032,79 @@ def _validate_installed_registry_graph(
             raise ValueError("installed verifier registry authority mismatch")
 
 
+def _published_closure(
+    cas: FilesystemCAS, compiled: CompiledConfigManifest
+) -> DependencyClosureManifest:
+    closure_ref = cas.get_ref(compiled.inputs.closure_digest)
+    if closure_ref.media_type != "application/json":
+        raise ValueError("compiled dependency closure media type mismatch")
+    closure_bytes = cas.get_bytes(closure_ref, max_bytes=_MAX_AUTHORITY_BYTES)
+    closure = DependencyClosureManifest.from_json(closure_bytes)
+    if closure.canonical_bytes() != closure_bytes:
+        raise ValueError("compiled dependency closure authority mismatch")
+    return closure
+
+
+def _reconstructed_closure(
+    bundle: ConfigBundleManifest, compiled: CompiledConfigManifest
+) -> DependencyClosureManifest:
+    """Rebuild the closure of a store written before the closure alias existed.
+
+    Edge ordinals follow provenance order. A closure whose declared order differs
+    cannot reproduce the compiled closure digest and is rejected by the caller.
+    """
+    bundled_paths = {entry.logical_path for entry in bundle.entries}
+    edge_values: list[DependencyEdge] = []
+    edge_ordinals: dict[tuple[str, str], int] = {}
+    for item in compiled.source_dependencies:
+        if item.from_logical_path is None or item.raw_reference is None:
+            continue
+        key = (item.from_logical_path, item.dependency_kind)
+        ordinal = edge_ordinals.get(key, 0)
+        edge_ordinals[key] = ordinal + 1
+        edge_values.append(
+            DependencyEdge(
+                from_path=item.from_logical_path,
+                kind=item.dependency_kind,
+                raw_ref=item.raw_reference,
+                logical_path=item.logical_path,
+                ordinal=ordinal,
+            )
+        )
+    entrypoint = next(
+        (
+            item.name
+            for item in bundle.entrypoints
+            if item.logical_path == compiled.inputs.entrypoint
+        ),
+        None,
+    )
+    if entrypoint is None:
+        raise ValueError("compiled entrypoint is absent from config bundle")
+    return build_dependency_closure(
+        bundle,
+        root_entrypoint=entrypoint,
+        member_paths=tuple(
+            item.logical_path
+            for item in compiled.source_dependencies
+            if item.logical_path in bundled_paths
+        ),
+        edges=tuple(edge_values),
+        external_members=tuple(
+            ClosureMember(
+                logical_path=item.logical_path,
+                artifact_id=item.blob_digest,
+                blob_digest=item.blob_digest,
+                size_bytes=item.size_bytes,
+                media_type=item.media_type,
+                source="external",
+            )
+            for item in compiled.source_dependencies
+            if item.logical_path not in bundled_paths
+        ),
+    )
+
+
 def _verify_config_bundle_cas(
     cas: FilesystemCAS,
     bundles: Mapping[str, ConfigBundleManifest],
@@ -3871,70 +4121,49 @@ def _verify_config_bundle_cas(
         raise ValueError("compiled manifest config bundle set mismatch")
     for compiled in parsed_manifests:
         bundle = bundles[compiled.inputs.bundle_digest]
-        bundled_paths = {entry.logical_path for entry in bundle.entries}
-        member_paths = tuple(
-            item.logical_path
-            for item in compiled.source_dependencies
-            if item.logical_path in bundled_paths
+        closure = (
+            _published_closure(cas, compiled)
+            if cas.has(compiled.inputs.closure_digest)
+            else _reconstructed_closure(bundle, compiled)
         )
-        edge_values: list[DependencyEdge] = []
-        edge_ordinals: dict[tuple[str, str], int] = {}
-        for item in compiled.source_dependencies:
-            if item.from_logical_path is None or item.raw_reference is None:
-                continue
-            key = (item.from_logical_path, item.dependency_kind)
-            ordinal = edge_ordinals.get(key, 0)
-            edge_ordinals[key] = ordinal + 1
-            edge_values.append(
-                DependencyEdge(
-                    from_path=item.from_logical_path,
-                    kind=item.dependency_kind,
-                    raw_ref=item.raw_reference,
-                    logical_path=item.logical_path,
-                    ordinal=ordinal,
-                )
-            )
-        edges = tuple(edge_values)
-        external = tuple(
-            ClosureMember(
-                logical_path=item.logical_path,
-                artifact_id=item.blob_digest,
-                blob_digest=item.blob_digest,
-                size_bytes=item.size_bytes,
-                media_type=item.media_type,
-                source="external",
-            )
-            for item in compiled.source_dependencies
-            if item.logical_path not in bundled_paths
-        )
-        for member in external:
-            ref = cas.get_ref(member.artifact_id)
-            if (
-                ref.sha256 != member.blob_digest
-                or ref.size_bytes != member.size_bytes
-                or ref.media_type != member.media_type
-            ):
-                raise ValueError("external closure CAS member authority mismatch")
-            cas.get_bytes(ref, max_bytes=member.size_bytes)
-        entrypoint = next(
-            (
-                item.name
-                for item in bundle.entrypoints
-                if item.logical_path == compiled.inputs.entrypoint
-            ),
-            None,
-        )
-        if entrypoint is None:
-            raise ValueError("compiled entrypoint is absent from config bundle")
-        closure = build_dependency_closure(
-            bundle,
-            root_entrypoint=entrypoint,
-            member_paths=member_paths,
-            edges=edges,
-            external_members=external,
-        )
-        if closure.closure_digest != compiled.inputs.closure_digest:
+        if (
+            closure.closure_digest != compiled.inputs.closure_digest
+            or closure.root_entrypoint != compiled.inputs.entrypoint
+        ):
             raise ValueError("compiled dependency closure authority mismatch")
+        if not any(
+            item.logical_path == compiled.inputs.entrypoint
+            for item in bundle.entrypoints
+        ):
+            raise ValueError("compiled entrypoint is absent from config bundle")
+        reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
+        members = {member.logical_path: member for member in closure.members}
+        root = members[closure.root_entrypoint]
+        expected_dependencies = {
+            (
+                root.logical_path, "config_entrypoint", None, None,
+                root.blob_digest, root.size_bytes, root.media_type,
+            )
+        }
+        for edge in closure.edges:
+            member = members[edge.logical_path]
+            expected_dependencies.add((
+                member.logical_path, edge.kind, edge.from_path, edge.raw_ref,
+                member.blob_digest, member.size_bytes, member.media_type,
+            ))
+        actual_dependencies = {
+            (
+                item.logical_path, item.dependency_kind,
+                item.from_logical_path, item.raw_reference,
+                item.blob_digest, item.size_bytes, item.media_type,
+            )
+            for item in compiled.source_dependencies
+        }
+        if actual_dependencies != expected_dependencies:
+            raise ValueError("compiled dependency provenance differs from closure")
+        for member in closure.members:
+            if member.source == "external":
+                reader.read_bytes(member.logical_path)
         for entry in bundle.entries:
             ref = cas.get_ref(entry.artifact_id)
             if (
@@ -3965,26 +4194,38 @@ class _DirectoryIdentityGuard:
                 raise ValueError(f"{self._label} contains unadmitted profile content")
 
 
-class _PinnedDirectoryStorageBackend(DirectoryStorageBackend):
-    def __init__(self, guard: _DirectoryIdentityGuard) -> None:
+class _PinnedStorageBackend(DirectoryStorageBackend):
+    def __init__(
+        self, guard: _DirectoryIdentityGuard, backend: DirectoryStorageBackend
+    ) -> None:
         super().__init__()
         self._guard = guard
+        self._backend = backend
 
-    def allocate(self, **kwargs: Any) -> Any:
+    def bind_root(self, descriptor: int) -> None:
         self._guard.check()
-        return super().allocate(**kwargs)
+        self._backend.bind_root(descriptor)
 
-    def measure(self, backing: Any) -> Mapping[str, Any]:
-        self._guard.check()
-        return super().measure(backing)
+    def close_root(self) -> None:
+        self._backend.close_root()
 
-    def release(self, backing: Any) -> None:
+    def allocate(self, *, workspace_id: str, root: Path, max_bytes: int) -> Path:
         self._guard.check()
-        super().release(backing)
+        return self._backend.allocate(
+            workspace_id=workspace_id, root=root, max_bytes=max_bytes
+        )
 
-    def verify_absent(self, backing: Any) -> bool:
+    def measure(self, backing: Path) -> Mapping[str, Any]:
         self._guard.check()
-        return super().verify_absent(backing)
+        return self._backend.measure(backing)
+
+    def release(self, backing: Path) -> None:
+        self._guard.check()
+        self._backend.release(backing)
+
+    def verify_absent(self, backing: Path) -> bool:
+        self._guard.check()
+        return self._backend.verify_absent(backing)
 
 
 class _PinnedMaterializationStore(FilesystemMaterializationStore):
@@ -4031,9 +4272,14 @@ class _PinnedMaterializationStore(FilesystemMaterializationStore):
 class _PinnedTrustedProcessBackend(TrustedProcessBackend):
     def __init__(self, guard: _DirectoryIdentityGuard) -> None:
         self._guard = guard
-
     async def launch(self, *args: Any, **kwargs: Any) -> Any:
         self._guard.check_empty()
+        plan = args[0] if args else kwargs.get("plan")
+        if getattr(plan, "containment", RuntimeContainment.ATTESTED) is not RuntimeContainment.ATTESTED:
+            raise SandboxLaunchError(
+                "production composition rejects unconfined trusted-process execution",
+                code="runtime_preflight_failed",
+            )
         return await super().launch(*args, **kwargs)
 
     async def reconcile(self, record: Mapping[str, Any]) -> Any:
@@ -4174,6 +4420,7 @@ def _build_runtime_graph(
     native_tool_adapters = _load_native_tool_bindings(
         manifest.installed,
         admission_receipts,
+        graph.compiler.pinned_manifests,
     )
     _validate_installed_registry_graph(
         manifest.installed,
@@ -4190,18 +4437,6 @@ def _build_runtime_graph(
         verifiers=manifest.installed.verifiers,
         tool_adapters=tuple(native_tool_adapters),
     )
-    adapters = []
-    for descriptor in manifest.installed.runner_adapters:
-        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
-            adapter = ConductorAdapter(descriptor.runtime_abi)
-        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
-            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
-        else:
-            raise ValueError("runner adapter is not installed by the closed switch")
-        if adapter.descriptor != descriptor:
-            raise ValueError("runner adapter descriptor mismatch")
-        adapters.append(adapter)
-    runner_registry = RunnerAdapterRegistry(adapters)
 
     source_reader = _CASMaterializationSourceReader(graph.cas)
     cache_guard = _DirectoryIdentityGuard(
@@ -4220,7 +4455,12 @@ def _build_runtime_graph(
             source_reader=source_reader,
             clock=graph.clock,
             lease_ttl=timedelta(seconds=manifest.stores.lease_ttl_seconds),
-            storage_backend=_PinnedDirectoryStorageBackend(workspace_guard),
+            storage_backend=_PinnedStorageBackend(
+                workspace_guard,
+                ProjectQuotaStorageBackend()
+                if manifest.stores.workspace_storage_backend == "project_quota"
+                else DirectoryStorageBackend(),
+            ),
             random_bytes=token_bytes,
             authority_guard=cache_guard,
             workspace_guard=workspace_guard,
@@ -4363,12 +4603,29 @@ def _build_runtime_graph(
             random_bytes=token_bytes,
             authority_guard=lease_guard,
             lease_root_fd=directory_fds["lease"],
+            containment_authenticator=graph.authenticator,
         )
     )
     rollback.own(sandbox_manager.abort_bootstrap)
     rollback.attempt(
         lambda: revalidate_directory("lease", str(sandbox_manager.lease_root))
     )
+    adapters = []
+    for descriptor in manifest.installed.runner_adapters:
+        if descriptor.adapter_id == CONDUCTOR_ADAPTER_ID:
+            adapter = ConductorAdapter(
+                descriptor.runtime_abi,
+                containment_authenticator=graph.authenticator,
+                admitted_lease_ledger=sandbox_manager.admitted_lease_ledger,
+            )
+        elif descriptor.adapter_id == TERMINAL_ADAPTER_ID:
+            adapter = TerminalResponsesAdapter(descriptor.runtime_abi)
+        else:
+            raise ValueError("runner adapter is not installed by the closed switch")
+        if adapter.descriptor != descriptor:
+            raise ValueError("runner adapter descriptor mismatch")
+        adapters.append(adapter)
+    runner_registry = RunnerAdapterRegistry(adapters)
     cleanup_probe = _ProductionCleanupProbe(
         manifest=manifest,
         materialization=materialization,
@@ -4497,8 +4754,11 @@ def _build_runtime_graph(
         if len(api_specs) != 1:
             raise ValueError("exactly one API bearer authority is required")
         api_token = pinned[api_specs[0].handle_id].data.decode("utf-8")
+        history_reader = rollback.attempt(HistoricalV1EpisodeReader)
+        rollback.own(history_reader.close)
         app = create_app(
             service,
+            history=history_reader,
             auth_token=api_token,
             allow_unauthenticated_loopback=False,
         )
@@ -4520,6 +4780,7 @@ def _build_runtime_graph(
         service,
         (
             materialization.close,
+            history_reader.close,
             locator.close,
             policy_resolver.close,
             *(() if private_daemon_owner is None else (private_daemon_owner.close,)),
@@ -4560,11 +4821,11 @@ def _load_composition_manifest(
         ref_data = composition_ref_data
     _load_json_exact(ref_data)
     ref_schema = json.loads(ref_data).get("schema_version")
-    if ref_schema == "bb.rl.harness-composition-ref.v1":
+    if ref_schema == "bb.rl.harness-composition-ref.v3":
         ref: CompositionRefV1 | CompositionRefV2 = CompositionRefV1.model_validate_json(
             ref_data, strict=True
         )
-    elif ref_schema == "bb.rl.harness-composition-ref.v2":
+    elif ref_schema == "bb.rl.harness-composition-ref.v4":
         ref = CompositionRefV2.model_validate_json(ref_data, strict=True)
     else:
         raise ValueError("unsupported composition ref schema")
@@ -4578,14 +4839,14 @@ def _load_composition_manifest(
     manifest_schema = json.loads(manifest_data).get("schema_version")
     if (
         type(ref) is CompositionRefV1
-        and manifest_schema == "bb.rl.harness-composition.v1"
+        and manifest_schema == "bb.rl.harness-composition.v3"
     ):
         manifest: HarnessCompositionManifestV1 | HarnessCompositionManifestV2 = (
             HarnessCompositionManifestV1.model_validate_json(manifest_data, strict=True)
         )
     elif (
         type(ref) is CompositionRefV2
-        and manifest_schema == "bb.rl.harness-composition.v2"
+        and manifest_schema == "bb.rl.harness-composition.v4"
     ):
         manifest = HarnessCompositionManifestV2.model_validate_json(
             manifest_data, strict=True
@@ -4710,8 +4971,8 @@ def load_production_composition(
                     stat.S_IMODE(metadata.st_mode),
                 )
                 != (
-                    openssl.device,
-                    openssl.inode,
+                    int(openssl.device),
+                    int(openssl.inode),
                     int(openssl.ctime_ns),
                     openssl.size_bytes,
                     openssl.owner_uid,
@@ -4802,8 +5063,8 @@ def load_production_composition(
                 f"0{stat.S_IMODE(current.st_mode):03o}",
             )
             expected = (
-                directory["device"],
-                directory["inode"],
+                int(directory["device"]),
+                int(directory["inode"]),
                 directory["owner_uid"],
                 directory["mode"],
             )
@@ -4813,8 +5074,8 @@ def load_production_composition(
         cas_root = os.fstat(cas._root_fd)
         expected_cas = manifest.stores.cas
         if (cas_root.st_dev, cas_root.st_ino) != (
-            expected_cas.device,
-            expected_cas.inode,
+            int(expected_cas.device),
+            int(expected_cas.inode),
         ):
             raise ValueError("CAS reopened a different directory authority")
 
@@ -4988,7 +5249,7 @@ def load_production_composition(
             *manifest.selector_catalog.weighted,
         )
         composed = ComposedHarnessManifestV1(
-            schema_version="bb.rl.harness-composed.v1",
+            schema_version="bb.rl.harness-composed.v2",
             composition_id=manifest.composition_id,
             input_manifest_digest=ref.manifest_sha256,
             authority_bundle_digest=manifest.authority_bundle_ref.sha256,
@@ -5017,9 +5278,13 @@ def load_production_composition(
                 [asdict(item) for item in manifest.evidence_bindings]
             ),
             store_authority_digests=tuple(
-                _projection_digest(item)
+                _projection_digest(
+                    {**item, "storage_backend": manifest.stores.workspace_storage_backend}
+                    if key == "workspace"
+                    else item
+                )
                 for key, item in sorted(manifest.stores.model_dump(mode="json").items())
-                if key != "lease_ttl_seconds"
+                if key not in {"lease_ttl_seconds", "workspace_storage_backend"}
             ),
             server_authority_digest=_projection_digest(
                 manifest.server.model_dump(mode="json")

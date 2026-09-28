@@ -273,10 +273,10 @@ def _logical_path(value: str, *, allow_root: bool = False) -> str:
     return rendered
 
 
-def _check_path_set(paths: tuple[str, ...]) -> None:
+def _check_path_set(paths: tuple[str, ...], *, allow_root: bool = False) -> None:
     folded: dict[str, str] = {}
     for raw in paths:
-        path = _logical_path(raw)
+        path = _logical_path(raw, allow_root=allow_root)
         alias = path.casefold()
         if alias in folded:
             raise ValueError("mount_collision")
@@ -349,10 +349,18 @@ class SourceManifestEntry:
     content_digest: str | None = None
 
     def __post_init__(self) -> None:
-        _logical_path(self.logical_path)
         if self.kind not in {"file", "directory"}:
             raise ValueError("source manifest kind must be file or directory")
-        if self.byte_count < 0 or self.mode < 0 or self.mode > 0o777:
+        _logical_path(
+            self.logical_path,
+            allow_root=self.logical_path == "." and self.kind == "directory",
+        )
+        if (
+            type(self.mode) is not int
+            or self.byte_count < 0
+            or self.mode < 0
+            or self.mode > 0o777
+        ):
             raise ValueError("invalid source manifest metadata")
         if self.kind == "file" and not (self.content_digest or "").startswith(
             _DIGEST_PREFIX
@@ -410,6 +418,137 @@ class SealedSourceManifest:
         }
 
 
+WORKSPACE_SEED_SCHEMA_VERSION = "bb.rl.workspace-seed-tree.v1"
+WORKSPACE_SEED_MEDIA_TYPE = "application/vnd.breadboard.workspace-seed-tree"
+
+
+def validate_workspace_seed_manifest(
+    manifest: SealedSourceManifest, expected_digest: str
+) -> int:
+    """Validate one typed seed manifest and return its declared root mode."""
+    if (
+        manifest.schema_identity != WORKSPACE_SEED_SCHEMA_VERSION
+        or manifest.media_identity != WORKSPACE_SEED_MEDIA_TYPE
+        or manifest.source_digest != expected_digest
+    ):
+        raise ValueError("workspace seed manifest authority is invalid")
+    roots = tuple(
+        entry for entry in manifest.entries if entry.logical_path == "."
+    )
+    if len(roots) != 1 or roots[0].kind != "directory":
+        raise ValueError("workspace seed manifest root is invalid")
+    if any(
+        type(entry.mode) is not int or not 0 <= entry.mode <= 0o777
+        for entry in manifest.entries
+    ):
+        raise ValueError("workspace seed manifest mode is invalid")
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": roots[0].mode,
+        "entries": [entry.projection() for entry in manifest.entries],
+    }
+    if _digest(identity) != expected_digest:
+        raise ValueError("workspace seed manifest identity mismatch")
+    return roots[0].mode
+
+
+def build_workspace_seed_artifact(
+    files: Mapping[str, bytes],
+    *,
+    file_modes: Mapping[str, int] | None = None,
+    directory_mode: int = 0o700,
+    cas: Any | None = None,
+) -> tuple[str, bytes]:
+    """Build and optionally publish one canonical seed-tree source artifact."""
+    if type(directory_mode) is not int or directory_mode < 0 or directory_mode > 0o777:
+        raise ValueError("workspace seed directory mode is invalid")
+    modes = {} if file_modes is None else dict(file_modes)
+    if any(path not in files for path in modes):
+        raise ValueError("workspace seed mode has no file")
+    normalized: dict[str, bytes] = {}
+    for path, content in files.items():
+        _logical_path(path)
+        if type(content) is not bytes:
+            raise TypeError("workspace seed content must be bytes")
+        mode = modes.get(path, 0o644)
+        if type(mode) is not int or mode < 0 or mode > 0o777:
+            raise ValueError("workspace seed file mode is invalid")
+        normalized[path] = content
+    normalized_paths = tuple(sorted(normalized))
+    folded_paths: dict[str, str] = {}
+    for path in normalized_paths:
+        folded = path.casefold()
+        previous = folded_paths.setdefault(folded, path)
+        if previous != path:
+            raise ValueError("workspace seed paths collide case-insensitively")
+    for path in normalized_paths:
+        for parent in PurePosixPath(path).parents:
+            if parent.as_posix() == ".":
+                continue
+            if parent.as_posix() in normalized:
+                raise ValueError("workspace seed file is an ancestor of another file")
+            if parent.as_posix().casefold() in folded_paths:
+                raise ValueError("workspace seed file is a case-insensitive ancestor")
+    directories = {
+        parent.as_posix()
+        for path in normalized
+        for parent in PurePosixPath(path).parents
+        if parent.as_posix() != "."
+    }
+    folded_entries: dict[str, str] = {}
+    for path in (*sorted(directories), *normalized_paths):
+        previous = folded_entries.setdefault(path.casefold(), path)
+        if previous != path:
+            raise ValueError("workspace seed paths collide case-insensitively")
+    entries: list[SourceManifestEntry] = [
+        SourceManifestEntry(".", "directory", 0, directory_mode, None)
+    ]
+    entries.extend(
+        SourceManifestEntry(path, "directory", 0, 0o700, None)
+        for path in sorted(directories)
+    )
+    entries.extend(
+        SourceManifestEntry(
+            path,
+            "file",
+            len(content),
+            modes.get(path, 0o644),
+            _bytes_digest(content),
+        )
+        for path, content in sorted(normalized.items())
+    )
+    entries.sort(key=lambda item: item.logical_path)
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": directory_mode,
+        "entries": [entry.projection() for entry in entries],
+    }
+    seed_digest = _digest(identity)
+    manifest_payload = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "source_digest": seed_digest,
+        "entries": [entry.projection() for entry in entries],
+        "total_bytes": sum(entry.byte_count for entry in entries),
+        "total_files": len(normalized),
+    }
+    manifest_bytes = canonical_json_bytes(manifest_payload)
+    if cas is not None:
+        for content in normalized.values():
+            cas.put_bytes(content, media_type="application/octet-stream")
+        cas.put_bytes(
+            manifest_bytes,
+            artifact_id=seed_digest,
+            media_type=WORKSPACE_SEED_MEDIA_TYPE,
+        )
+    return seed_digest, manifest_bytes
+
+
+EMPTY_WORKSPACE_SEED_DIGEST = build_workspace_seed_artifact({}, directory_mode=0o700)[0]
+
+
 @dataclass(frozen=True, slots=True)
 class MaterializationEntry:
     source_digest: str
@@ -419,11 +558,21 @@ class MaterializationEntry:
     role: str
 
     def __post_init__(self) -> None:
-        _logical_path(self.target_logical_path)
+        if self.role not in {
+            "repository",
+            "workspace_seed",
+            "dataset",
+            "input",
+            "mount",
+            "setup_input",
+        }:
+            raise ValueError("invalid materialization role")
+        _logical_path(
+            self.target_logical_path,
+            allow_root=self.role in {"repository", "workspace_seed"},
+        )
         if type(self.access) is not MountAccess or self.max_bytes <= 0:
             raise ValueError("invalid materialization entry")
-        if self.role not in {"repository", "dataset", "input", "mount", "setup_input"}:
-            raise ValueError("invalid materialization role")
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -462,7 +611,15 @@ class WorkspaceMaterializationPlan:
             )
         ):
             raise ValueError("materialization entries must be canonical")
-        _check_path_set(tuple(entry.target_logical_path for entry in entries))
+        _check_path_set(
+            tuple(entry.target_logical_path for entry in entries),
+            allow_root=True,
+        )
+        if any(entry.target_logical_path == "." for entry in entries) and (
+            len(entries) != 1
+            or entries[0].role not in {"repository", "workspace_seed"}
+        ):
+            raise ValueError("root_repository_must_be_sole_entry")
         object.__setattr__(self, "entries", entries)
         for name in (
             "sandbox_projection",
@@ -1310,6 +1467,9 @@ class PreMountedTmpfsQuotaStorageBackend(DirectoryStorageBackend):
 class MaterializedWorkspace:
     receipt: WorkspaceMaterializationReceipt
     workspace_path: Path
+    seed_baseline_path: Path | None
+    seed_manifest: SealedSourceManifest | None
+    workspace_directory_mode: int
     cache_token: CacheLeaseToken
     cache_receipt: CacheLeaseReceipt
     _store: FilesystemMaterializationStore
@@ -1585,13 +1745,25 @@ class FilesystemMaterializationStore:
         root_owner: _DirFd | None = None,
         destination: str | None = None,
         destination_owner: _DirFd | None = None,
+        destination_fd: int | None = None,
         read_only: bool = False,
     ) -> None:
         root_owner = self._cache if root_owner is None else root_owner
         if destination is not None and destination_owner is None:
             raise ValueError("destination owner required")
+        if destination is not None and destination_fd is not None:
+            raise ValueError("destination path and descriptor are mutually exclusive")
         expected = {entry.logical_path: entry for entry in manifest.entries}
         seen: set[str] = set()
+        if "." in expected:
+            root_descriptor = root_owner.open_dir(root)
+            try:
+                root_mode = stat.S_IMODE(os.fstat(root_descriptor).st_mode)
+            finally:
+                os.close(root_descriptor)
+            if expected["."].kind != "directory" or root_mode != expected["."].mode:
+                raise RuntimeError("materialization_tampered")
+            seen.add(".")
 
         def walk(directory_fd: int, destination_fd: int | None, prefix: str) -> None:
             names = tuple(sorted(os.listdir(directory_fd)))
@@ -1716,15 +1888,30 @@ class FilesystemMaterializationStore:
         except OSError as exc:
             raise RuntimeError("materialization_tampered") from exc
         destination_root_fd: int | None = None
+        destination_before: tuple[int, int] | None = None
         try:
             root_before = os.fstat(root_fd)
             if not stat.S_ISDIR(root_before.st_mode):
                 raise RuntimeError("materialization_tampered")
-            if destination is not None:
+            if destination_fd is not None:
+                destination_metadata = os.fstat(destination_fd)
+                destination_before = (
+                    destination_metadata.st_dev,
+                    destination_metadata.st_ino,
+                )
+                if tuple(sorted(os.listdir(destination_fd))):
+                    raise RuntimeError("materialization_destination_not_empty")
+                destination_root_fd = os.dup(destination_fd)
+            elif destination is not None:
                 assert destination_owner is not None
                 destination_owner.mkdir(destination)
                 destination_root_fd = destination_owner.open_dir(destination)
             walk(root_fd, destination_root_fd, "")
+            if destination_fd is not None:
+                assert destination_before is not None
+                destination_metadata = os.fstat(destination_fd)
+                if (destination_metadata.st_dev, destination_metadata.st_ino) != destination_before:
+                    raise RuntimeError("materialization_destination_changed")
             if _metadata_identity(os.fstat(root_fd)) != _metadata_identity(root_before):
                 raise RuntimeError("materialization_tampered")
             if destination_root_fd is not None:
@@ -1735,9 +1922,13 @@ class FilesystemMaterializationStore:
             os.close(root_fd)
         if seen != set(expected):
             raise RuntimeError("materialization_tampered")
-        if destination is not None:
-            assert destination_owner is not None
-            destination_fd = destination_owner.open_dir(destination)
+        if destination is not None or destination_fd is not None:
+            if destination is not None:
+                assert destination_owner is not None
+                chmod_destination_fd = destination_owner.open_dir(destination)
+            else:
+                assert destination_fd is not None
+                chmod_destination_fd = os.dup(destination_fd)
             try:
                 directories = (
                     item for item in manifest.entries if item.kind == "directory"
@@ -1750,12 +1941,12 @@ class FilesystemMaterializationStore:
                     os.chmod(
                         item.logical_path,
                         0o500 if read_only else item.mode,
-                        dir_fd=destination_fd,
+                        dir_fd=chmod_destination_fd,
                         follow_symlinks=False,
                     )
-                os.fsync(destination_fd)
+                os.fsync(chmod_destination_fd)
             finally:
-                os.close(destination_fd)
+                os.close(chmod_destination_fd)
 
     def _publish_source(
         self, entry: MaterializationEntry, destination: str
@@ -1763,6 +1954,12 @@ class FilesystemMaterializationStore:
         manifest = self.source_reader.load_manifest(
             entry.source_digest, max_bytes=entry.max_bytes
         )
+        if entry.role == "workspace_seed":
+            validator = getattr(
+                self.source_reader, "validate_workspace_seed_manifest", None
+            )
+            if validator is not None:
+                validator(manifest, entry.source_digest)
         if (
             manifest.source_digest != entry.source_digest
             or manifest.total_bytes > entry.max_bytes
@@ -1770,6 +1967,10 @@ class FilesystemMaterializationStore:
             raise RuntimeError("source_digest_mismatch")
         self._cache.mkdir(destination)
         for item in manifest.entries:
+            if item.logical_path == ".":
+                if item.kind != "directory":
+                    raise RuntimeError("source_digest_mismatch")
+                continue
             relative = destination + "/" + _logical_path(item.logical_path)
             if item.kind == "directory":
                 self._cache.mkdir(relative, mode=0o700, parents=True)
@@ -1793,8 +1994,27 @@ class FilesystemMaterializationStore:
                 os.fsync(descriptor)
             finally:
                 os.close(descriptor)
+        root_item = next(
+            (
+                item
+                for item in manifest.entries
+                if item.logical_path == "." and item.kind == "directory"
+            ),
+            None,
+        )
+        if root_item is not None:
+            descriptor = self._cache.open_dir(destination)
+            try:
+                os.fchmod(descriptor, root_item.mode)
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
         for item in sorted(
-            (item for item in manifest.entries if item.kind == "directory"),
+            (
+                item
+                for item in manifest.entries
+                if item.kind == "directory" and item.logical_path != "."
+            ),
             key=lambda item: item.logical_path.count("/"),
             reverse=True,
         ):
@@ -1867,6 +2087,14 @@ class FilesystemMaterializationStore:
                         manifest = self.source_reader.load_manifest(
                             entry.source_digest, max_bytes=entry.max_bytes
                         )
+                        if entry.role == "workspace_seed":
+                            validator = getattr(
+                                self.source_reader,
+                                "validate_workspace_seed_manifest",
+                                None,
+                            )
+                            if validator is not None:
+                                validator(manifest, entry.source_digest)
                         self._verify_tree(
                             object_relative + f"/source-{index}", manifest
                         )
@@ -1942,22 +2170,53 @@ class FilesystemMaterializationStore:
                     self._workspace.mkdir(workspace_id)
                     workspace = self.workspace_root / workspace_id
                 mounts: list[MaterializedMount] = []
+                seed_baseline_path: Path | None = None
+                workspace_fd: int | None = None
                 try:
+                    workspace_fd = self._workspace.open_dir(workspace_id)
                     for index, entry in enumerate(plan.entries):
-                        target = (
-                            workspace_id
-                            + "/"
-                            + _logical_path(entry.target_logical_path)
+                        target = _logical_path(
+                            entry.target_logical_path,
+                            allow_root=entry.role in {"repository", "workspace_seed"},
                         )
-                        parent = str(PurePosixPath(target).parent)
-                        self._workspace.mkdir(parent, parents=True)
-                        self._verify_tree(
-                            object_relative + f"/source-{index}",
-                            manifests[index],
-                            destination=target,
-                            destination_owner=self._workspace,
-                            read_only=entry.access is MountAccess.READ_ONLY,
-                        )
+                        if target == ".":
+                            assert entry.role in {"repository", "workspace_seed"}
+                            if entry.role == "workspace_seed" and any(
+                                ".git" in PurePosixPath(item.logical_path).parts
+                                for item in manifests[index].entries
+                            ):
+                                raise RuntimeError("workspace_seed_git_forbidden")
+                            if entry.role == "workspace_seed":
+                                seed_baseline_path = (
+                                    self.cache_root / object_relative / f"source-{index}"
+                                )
+                                root_entry = next(
+                                    (
+                                        item
+                                        for item in manifests[index].entries
+                                        if item.logical_path == "."
+                                    ),
+                                    None,
+                                )
+                                if root_entry is not None:
+                                    os.fchmod(workspace_fd, root_entry.mode)
+                            self._verify_tree(
+                                object_relative + f"/source-{index}",
+                                manifests[index],
+                                destination_fd=workspace_fd,
+                                read_only=entry.access is MountAccess.READ_ONLY,
+                            )
+                        else:
+                            target = workspace_id + "/" + target
+                            parent = str(PurePosixPath(target).parent)
+                            self._workspace.mkdir(parent, parents=True)
+                            self._verify_tree(
+                                object_relative + f"/source-{index}",
+                                manifests[index],
+                                destination=target,
+                                destination_owner=self._workspace,
+                                read_only=entry.access is MountAccess.READ_ONLY,
+                            )
                         mounts.append(
                             MaterializedMount(
                                 entry.target_logical_path,
@@ -1967,12 +2226,23 @@ class FilesystemMaterializationStore:
                             )
                         )
                 except BaseException:
+                    if workspace_fd is not None:
+                        os.close(workspace_fd)
+                        workspace_fd = None
                     if isinstance(self.storage_backend, DirectoryStorageBackend):
                         self.storage_backend.release(workspace)
                     else:
                         self._workspace.remove_tree(workspace_id, missing_ok=True)
                     raise
                 manifest_digest = _digest([item.manifest_digest for item in manifests])
+                seed_manifest = next(
+                    (
+                        manifest
+                        for entry, manifest in zip(plan.entries, manifests)
+                        if entry.role == "workspace_seed"
+                    ),
+                    None,
+                )
                 receipt = WorkspaceMaterializationReceipt(
                     workspace_id,
                     lease_id,
@@ -2023,17 +2293,21 @@ class FilesystemMaterializationStore:
                 )
                 payload["state"] = CacheLeaseState.ACTIVE.value
                 self._write_record(record_path, payload)
-                workspace_fd = self._workspace.open_dir(workspace_id)
+                assert workspace_fd is not None
                 workspace_metadata = os.fstat(workspace_fd)
                 materialized = MaterializedWorkspace(
                     receipt,
                     workspace,
+                    seed_baseline_path,
+                    seed_manifest,
+                    stat.S_IMODE(workspace_metadata.st_mode),
                     token,
                     receipt_cache,
                     self,
                     workspace_fd,
                     (workspace_metadata.st_dev, workspace_metadata.st_ino),
                 )
+                workspace_fd = None
                 self._active_workspaces[lease_id] = materialized
                 return materialized
             except BaseException:
@@ -2068,6 +2342,8 @@ class FilesystemMaterializationStore:
             if existing is not None:
                 workspace._close_workspace_fd()
                 return existing
+            # Drop the inode pin before the backend verifies project-quota release.
+            workspace._close_workspace_fd()
             try:
                 if isinstance(self.storage_backend, DirectoryStorageBackend):
                     self.storage_backend.release(workspace.workspace_path)
@@ -2082,7 +2358,6 @@ class FilesystemMaterializationStore:
                 state = CacheLeaseState.RELEASED
             except FileNotFoundError:
                 state = CacheLeaseState.RELEASED
-            workspace._close_workspace_fd()
             self._active_workspaces.pop(workspace.cache_token.lease_id, None)
             record_path = self._record_path(workspace.cache_token.cache_key)
             payload = self._read_record(record_path)

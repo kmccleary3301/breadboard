@@ -188,7 +188,7 @@ def fixed_policy(episode: str) -> tuple[dict[str, object], str, str]:
 
 
 def prebound_socket_plan(role: str, port: int, inode: int) -> PreboundServiceSocketPlanInputs:
-    value = {"schema_version": "bb.rl.harness-prebound-service-socket-plan.v1", "role": role, "gateway": "10.88.0.1", "observed_port": port, "family": "AF_INET", "socket_type": "SOCK_STREAM", "protocol": "IPPROTO_TCP", "socket_device": 7, "socket_inode": inode, "socket_mode": 0o140600, "socket_owner_uid": 1000, "getsockname_host": "10.88.0.1", "getsockname_port": port, "ip_freebind": True}
+    value = {"schema_version": "bb.rl.harness-prebound-service-socket-plan.v2", "role": role, "gateway": "10.88.0.1", "observed_port": port, "family": "AF_INET", "socket_type": "SOCK_STREAM", "protocol": "IPPROTO_TCP", "socket_device": "7", "socket_inode": str(inode), "socket_mode": 0o140600, "socket_owner_uid": 1000, "getsockname_host": "10.88.0.1", "getsockname_port": port, "ip_freebind": True}
     value["socket_plan_id"] = sha256_ref(canonical_json_bytes(value))
     return PreboundServiceSocketPlanInputs.model_validate(value)
 
@@ -556,7 +556,7 @@ def make_attempt(
     socket_leases = []
     for plan in (PreboundServiceSocketPlanInputs.model_validate(value) for value in package_doc["prebound_service_socket_plans"]):
         observation = canonical_json_bytes({"role": plan.role, "host": plan.gateway, "port": plan.observed_port, "device": plan.socket_device, "inode": plan.socket_inode, "mode": plan.socket_mode, "uid": plan.socket_owner_uid, "ip_freebind": True})
-        socket_leases.append(PreboundServiceSocketLeaseV1(schema_version="bb.rl.harness-prebound-service-socket-lease.v1", role=plan.role, socket_plan_digest=plan.canonical_digest(), socket_plan_id=plan.socket_plan_id, bridge_lease_id=bridge_lease["lease_id"], bridge_lease_digest=bridge_lease_digest, pre_create_observation_bytes_base64=base64.b64encode(observation).decode(), pre_create_observation_digest=sha256_ref(observation), post_create_observation_bytes_base64=base64.b64encode(observation).decode(), post_create_observation_digest=sha256_ref(observation), server_handoff_receipt="sha256:" + ("9" if plan.role == "fixed_policy" else "a") * 64).model_dump(mode="json"))
+        socket_leases.append(PreboundServiceSocketLeaseV1(schema_version="bb.rl.harness-prebound-service-socket-lease.v2", role=plan.role, socket_plan_digest=plan.canonical_digest(), socket_plan_id=plan.socket_plan_id, bridge_lease_id=bridge_lease["lease_id"], bridge_lease_digest=bridge_lease_digest, pre_create_observation_bytes_base64=base64.b64encode(observation).decode(), pre_create_observation_digest=sha256_ref(observation), post_create_observation_bytes_base64=base64.b64encode(observation).decode(), post_create_observation_digest=sha256_ref(observation), server_handoff_receipt="sha256:" + ("9" if plan.role == "fixed_policy" else "a") * 64).model_dump(mode="json"))
     attachment_bytes = canonical_json_bytes({"network_id": BRIDGE_ID, "network_name": bridge_plan_model.network_name, "containers": ["outer-container-1", "container-1", "verifier-container-1"]})
     delete_stdout = b"deleted"
     delete_stderr = b""

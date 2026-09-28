@@ -3,22 +3,34 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import os
 import socket
 import threading
 from builtins import ExceptionGroup
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import httpx
 
 from ...contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderMessage,
     ProviderResult,
     ProviderRuntimeContext,
     ProviderRuntimeError,
     sanitize_provider_result,
+)
+from ...contract_wire import ProviderContractError, canonical_json
+from ...native_response import NativeProviderResponse
+from ....compilation.provider_response import (
+    CompiledNativeResponseBinding,
+    MINI_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
+    OMP_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
@@ -60,7 +72,6 @@ class _ConnectionSockets:
                 # Already disconnected, or closed by its connection meanwhile.
                 if exc.errno not in (errno.ENOTCONN, errno.EBADF):
                     raise
-
 
 @dataclass(frozen=True, slots=True)
 class _ProfileClient:
@@ -177,6 +188,83 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             raise AssertionError("profile HTTP client was not created")
         return _ProfileClient(transport, profile, http_client, connections)
 
+    def send_native_http_request(
+        self,
+        *,
+        client: Any,
+        method: str,
+        url: str,
+        headers: Tuple[Tuple[str, str], ...],
+        body: bytes,
+        max_response_bytes: int,
+    ) -> Dict[str, Any]:
+        """Send an admitted source request without SDK request/response projection."""
+        if (
+            not isinstance(client, _ProfileClient)
+            or not isinstance(client.profile, OpenAICompletionsProviderProfile)
+            or client.profile.provider_id != "openai"
+            or client.profile.runtime_id != "openai_chat"
+            or method != "POST"
+            or type(url) is not str
+            or type(body) is not bytes
+            or type(max_response_bytes) is not int
+            or max_response_bytes <= 0
+        ):
+            raise ProviderRuntimeError(
+                "native HTTP client or request is invalid",
+                kind="configuration",
+                details={"code": "native_http_request_invalid"},
+            )
+        profile = client.profile
+        wire_headers: list[tuple[str, str]] = []
+        for name, value in profile.caller_headers.items():
+            wire_headers.append((name, value))
+        for name, value in headers:
+            if name.casefold() == "authorization":
+                continue
+            wire_headers.append((name, value))
+        wire_headers.append(("Authorization", "Bearer " + profile.scoped_credential))
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            *(value for _, value in headers),
+            allow_short=True,
+        ):
+            try:
+                with client.http_client.stream(
+                    method,
+                    url,
+                    headers=wire_headers,
+                    content=body,
+                ) as response:
+                    chunks: list[bytes] = []
+                    total = 0
+                    for chunk in response.iter_raw():
+                        total += len(chunk)
+                        if total > max_response_bytes:
+                            raise ProviderRuntimeError(
+                                "native HTTP response exceeds its byte bound",
+                                kind="protocol",
+                                details={"code": "native_http_response_oversized"},
+                            )
+                        chunks.append(chunk)
+                    return {
+                        "status_code": response.status_code,
+                        "headers": [
+                            [name, value] for name, value in response.headers.multi_items()
+                        ],
+                        "body": b"".join(chunks),
+                    }
+            except ProviderRuntimeError:
+                raise
+            except Exception as exc:
+                return {
+                    "error": {
+                        "type": exc.__class__.__name__,
+                        "message": redaction.safe_exception_message(exc),
+                    }
+                }
+
     def _stream_chat_completion(
         self,
         client: Any,
@@ -233,6 +321,218 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     context=context,
                 )
             )
+    def invoke_native(
+        self,
+        *,
+        client: Any,
+        model: str,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]],
+        stream: bool,
+        context: ProviderRuntimeContext,
+        binding: CompiledNativeResponseBinding,
+        accept_truncated_stream: bool = False,
+    ) -> NativeProviderResponse:
+        """Invoke an admitted profile and retain its native response verbatim.
+
+        ``accept_truncated_stream`` is the native-stream profile's opt-in to a
+        typed termination for a begun stream that ends without a finish_reason.
+        """
+        profile = context.provider_profile
+        if profile is None:
+            raise ProviderRuntimeError(
+                "native Chat invocation requires a bound provider profile",
+                kind="configuration",
+                details={"code": "native_profile_required"},
+            )
+        if not isinstance(binding, CompiledNativeResponseBinding):
+            raise ProviderRuntimeError(
+                "native Chat invocation requires a compiled response binding",
+                kind="configuration",
+                details={"code": "native_binding_required"},
+            )
+        try:
+            binding.validate_invocation(
+                profile,
+                episode_id=context.session_id,
+                effective_plan_digest=context.effective_plan_digest,
+                capability_observation_digest=context.capability_observation_digest,
+            )
+        except ProviderRuntimeError:
+            raise
+        except Exception as exc:
+            raise ProviderRuntimeError(
+                redaction.safe_exception_message(exc),
+                kind="configuration",
+                details={"code": "native_binding_rejected"},
+            ) from None
+        context.raise_if_cancelled()
+        if not isinstance(client, _ProfileClient) or client.profile is not profile:
+            raise ProviderRuntimeError(
+                "OpenAI Completions native client does not match the episode",
+                kind="configuration",
+                details={"code": "profile_client_mismatch"},
+            )
+        if stream is not profile.request_policy.stream:
+            raise ProviderRuntimeError(
+                "OpenAI Completions native invocation does not match request policy",
+                kind="configuration",
+                details={"code": "profile_request_mode_mismatch"},
+            )
+        if model != profile.model:
+            raise ProviderRuntimeError(
+                "OpenAI Completions native model does not match profile",
+                kind="configuration",
+                details={"code": "profile_model_mismatch"},
+            )
+        profile_request = self.profile_chat_request(
+            profile, messages, tools, context=context
+        )
+        omit_stream = (
+            not stream and binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+        )
+        sent_request = (
+            {key: value for key, value in profile_request.items() if key != "stream"}
+            if omit_stream
+            else profile_request
+        )
+        request_digest = hashlib.sha256(
+            canonical_json(sent_request).encode("utf-8")
+        ).hexdigest()
+        request_messages = profile_request["messages"]
+        request_tools = profile_request.get("tools")
+        profile_options = dict(profile_request)
+        profile_options.pop("model")
+        profile_options.pop("messages")
+        profile_options.pop("stream")
+        request_tools = profile_options.pop("tools", request_tools)
+        thinking_control = profile_options.pop("enable_thinking", None)
+        extra_body = (
+            {"enable_thinking": thinking_control}
+            if thinking_control is not None
+            else None
+        )
+        with redaction.secret_value_scope(
+            profile.scoped_credential,
+            *profile.caller_headers.values(),
+            allow_short=True,
+        ):
+            if stream:
+                try:
+                    response = OpenAIChatStreamDecoder(self).native_stream(
+                        client.transport,
+                        model=model,
+                        messages=request_messages,
+                        tools=request_tools,
+                        context=context,
+                        binding_digest=binding.digest,
+                        request_digest=request_digest,
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                        extra_body=extra_body,
+                        request_options=profile_options,
+                        accept_truncated_stream=accept_truncated_stream,
+                    )
+                except ProviderRuntimeError as exc:
+                    # The provider refused the sent request before any output
+                    # (e.g. HTTP 5xx): keep the exact body it received.
+                    if exc.kind != "provider" or exc.output_emitted:
+                        raise
+                    raise NativeProviderRequestFailure(
+                        exc, request_body=sent_request
+                    ) from None
+            else:
+                call_kwargs: Dict[str, Any] = {
+                    "model": model,
+                    "messages": request_messages,
+                    "extra_body": extra_body,
+                }
+                if not omit_stream:
+                    call_kwargs["stream"] = False
+                call_kwargs.update(profile_options)
+                if request_tools:
+                    call_kwargs["tools"] = request_tools
+                try:
+                    raw_response = client.transport.chat.completions.create(
+                        **call_kwargs
+                    )
+                except ProviderRuntimeError:
+                    raise
+                except Exception as exc:
+                    if (
+                        binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                        and (
+                            isinstance(getattr(exc, "status_code", None), int)
+                            or exc.__class__.__name__
+                            in {"APIConnectionError", "APITimeoutError"}
+                        )
+                    ):
+                        raise
+                    kind = (
+                        "adapter"
+                        if isinstance(exc, (AttributeError, TypeError))
+                        else (
+                            "transport"
+                            if exc.__class__.__name__
+                            in {"APIConnectionError", "APITimeoutError"}
+                            else "provider"
+                        )
+                    )
+                    raise ProviderRuntimeError(
+                        redaction.safe_exception_message(exc),
+                        kind=kind,
+                    ) from None
+                response = OpenAIChatStreamDecoder(self).native_response(
+                    raw_response,
+                    binding_digest=binding.digest,
+                    request_digest=request_digest,
+                    max_response_bytes=binding.policy.max_response_bytes,
+                    max_stream_fragments=binding.policy.max_stream_fragments,
+                )
+                if binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID:
+                    # Mini consumes the SDK message as a whole, before argument parsing.
+                    # The recording consumer's existing projection stays byte-compatible.
+                    response = replace(
+                        response, raw_response=raw_response.model_dump(mode="json")
+                    )
+                    response.validate_bounds(
+                        max_response_bytes=binding.policy.max_response_bytes,
+                        max_stream_fragments=binding.policy.max_stream_fragments,
+                    )
+            if (
+                response.request_digest
+                != hashlib.sha256(canonical_json(sent_request).encode("utf-8")).hexdigest()
+            ):
+                raise ProviderRuntimeError(
+                    "native response request receipt does not match the sent body",
+                    kind="protocol",
+                    details={"code": "native_request_digest_mismatch"},
+                )
+            response = replace(response, request_body=sent_request)
+            try:
+                response.validate_bounds(
+                    max_response_bytes=binding.policy.max_response_bytes,
+                    max_stream_fragments=binding.policy.max_stream_fragments,
+                )
+            except ProviderContractError:
+                raise ProviderRuntimeError(
+                    "Chat Completions native response contract violation",
+                    kind="protocol",
+                    details={"code": "invalid_native_chat_response"},
+                ) from None
+            response_payload = response.as_dict()
+            safe_response, problems = redaction.scrub_structure(
+                response_payload, path="$.native_response"
+            )
+            if problems or safe_response != response_payload:
+                raise ProviderRuntimeError(
+                    "native response cannot be preserved inside the operation-secret boundary",
+                    kind="protocol",
+                    output_emitted=True,
+                    details={"code": "native_response_redaction_required"},
+                )
+            context.raise_if_cancelled()
+            return response
 
     def profile_chat_request(
         self,
@@ -242,11 +542,39 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         *,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the exact request used by a profile-bound invocation."""
-        return profile.chat_request(
-            self._convert_messages_to_chat(messages, context=context),
-            self._convert_tools_to_openai(tools),
+        consumer_id = context.extra.get("response_consumer_id")
+        if consumer_id in {
+            MINI_RESPONSE_CONSUMER_ID,
+            PI_RESPONSE_CONSUMER_ID,
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
+            OMP_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
+            chat_messages = [dict(message) for message in messages]
+        else:
+            chat_messages = self._convert_messages_to_chat(messages, context=context)
+        pass_through_tools = {
+            PI_RESPONSE_CONSUMER_ID,
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
+            OMP_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }
+        request = profile.chat_request(
+            chat_messages,
+            tools
+            if consumer_id in pass_through_tools
+            else self._convert_tools_to_openai(tools),
         )
+        if consumer_id in pass_through_tools:
+            # Pinned coding-agent SDKs omit n.
+            request.pop("n")
+        if consumer_id in {PI_RESPONSE_CONSUMER_ID, OMP_RESPONSE_CONSUMER_ID}:
+            # Pi's and OMP's buildParams disable provider-side storage;
+            # OpenClaw's buildOpenAICompletionsParams emits no store member,
+            # and Pi 0.57.1's buildParams emits none under custody compat
+            # supportsStore=false (openai-completions.js:307-309).
+            request["store"] = False
+        return request
 
     def _unbound_request_options(
         self,
@@ -279,15 +607,20 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         stream: bool,
         context: ProviderRuntimeContext,
     ) -> Dict[str, Any]:
-        """Project the complete secret-free HTTP request body for evidence."""
         profile = context.provider_profile
         if profile is not None:
-            return self.profile_chat_request(
+            body = self.profile_chat_request(
                 profile,
                 messages,
                 tools,
                 context=context,
             )
+            if (
+                context.extra.get("response_consumer_id") == MINI_RESPONSE_CONSUMER_ID
+                and profile.request_policy.mode == "non_streaming"
+            ):
+                body.pop("stream", None)
+            return body
         request_messages = self._convert_messages_to_chat(messages, context=context)
         request_tools = self._convert_tools_to_openai(tools)
         role_request, extra_body = self._unbound_request_options(model, context)
@@ -337,11 +670,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     details={"code": "profile_client_mismatch"},
                 )
             client = client.transport
-            if not stream:
+            if stream is not (profile.request_policy.mode == "streaming"):
                 raise ProviderRuntimeError(
-                    "OpenAI Completions profile requires streaming",
+                    "OpenAI Completions invocation does not match the request policy",
                     kind="configuration",
-                    details={"code": "profile_requires_streaming"},
+                    details={"code": "profile_request_mode_mismatch"},
                 )
             if model != profile.model:
                 raise ProviderRuntimeError(

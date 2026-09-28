@@ -227,7 +227,7 @@ def build_artifact_bundle(
     )
     python = venv_root / "bin" / "python"
     _run(
-        (uv, "pip", "install", "--offline", "--python", str(python), str(wheel)),
+        (uv, "pip", "install", "--offline", "--link-mode=copy", "--python", str(python), str(wheel)),
         cwd=work_root,
         environment=environment,
         timeout=300,

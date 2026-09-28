@@ -1,0 +1,31 @@
+{
+  "case_id": "p1_all_tools_sequence",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool ordering, names, descriptions, and JSON schemas",
+    "read, bash, edit, write, grep, find, and ls behavior",
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "JSON event output and terminal result behavior",
+    "no-session behavior"
+  ],
+  "elapsed_seconds": 1.568,
+  "exit_code": 0,
+  "files": {
+    "events_jsonl": "sha256:ea0749f0adc00ad714d34c486a38671ea056567be730c13d4f272b26f5880465",
+    "git_status": "sha256:a2a9dd945224ca26f591c9b9a103c93c2325245274a5367bb692a38da8ca8048",
+    "http_transcript": "sha256:31ef5b71bf8d41fd8a914f8af03a949f093164ed10de1c5e890b5cde87db27a1",
+    "model_patch": "sha256:8a0b10555770ef36084f22c7da2b2619cba0a12909a764dcb7d07438c9fda001",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:5ac966fa92344ae446f640f99cd157da44f0a3c7460f49a27181c0d9a147c244",
+    "workspace_manifest_pre": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Observed from source and verified against all 499 R3 instances: tools read, bash, edit, write, ls execute cleanly in golden workspace; grep and find attempt ensureTool which fails because fd/rg are absent from image PATH and downloadTool network fetch fails under --network none; grep returns isError: true with 'ripgrep (rg) is not available and could not be downloaded'; find returns isError: true with 'fd is not available and could not be downloaded'; tool-result envelopes preserve exact tool-call IDs; final turn concludes with stop.",
+  "requests_served": 8,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}

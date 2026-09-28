@@ -1,0 +1,92 @@
+{
+  "assets": [
+    {
+      "bytes": 4212,
+      "path": "harness.yaml",
+      "sha256": "sha256:e756cecc492dda5b0df96b27b38dad4414165df92fdfeca786a63346efb54f24"
+    },
+    {
+      "bytes": 2030,
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:223ae5bd2b036f97abc63b55ecbecf698b1b284176e62a012cbc982042263005"
+    },
+    {
+      "bytes": 1389,
+      "path": "native-config.json",
+      "sha256": "sha256:1ceaa07e632a34385425314aee86a60db5f3bacfc02824fd48530780d019e60b"
+    },
+    {
+      "bytes": 6229,
+      "path": "tool-surface.json",
+      "sha256": "sha256:84ba60da833a73b3d56a3d70ec7196560572e1b2cfb1045ceb24d4e15b8f7be3"
+    },
+    {
+      "bytes": 1069,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+    },
+    {
+      "bytes": 2947,
+      "path": "source.json",
+      "sha256": "sha256:6e1f4cb8ff9f5d1cd30a9fad84588a43cd90f94f287263aad5794860b48f988f"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "pi",
+  "overlay": {
+    "argv": [
+      "--mode",
+      "json",
+      "--no-session",
+      "--thinking",
+      "off",
+      "--tools",
+      "read,bash,edit,write,grep,find,ls",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates"
+    ],
+    "overlay_id": "breadboard.pi.r3-headless.v0.57.1",
+    "settings": [
+      {
+        "name": "retry.enabled",
+        "value": false
+      },
+      {
+        "name": "retry.maxRetries",
+        "value": 0
+      },
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.timeout_seconds",
+        "value": 45
+      },
+      {
+        "name": "model.retry_enabled",
+        "value": false
+      },
+      {
+        "name": "model.images_enabled",
+        "value": false
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "pi-r3@0.57.1",
+  "version": "0.57.1"
+}

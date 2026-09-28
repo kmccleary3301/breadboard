@@ -9,6 +9,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 import secrets
 import selectors
 import signal
@@ -48,6 +49,11 @@ _MS_RELATIME = 1 << 21
 _MS_PRIVATE = 1 << 18
 _MS_REC = 16384
 _MNT_DETACH = 2
+# Linux UAPI include/uapi/linux/fcntl.h; older Python build headers can
+# omit the names even when the running kernel supports descriptor sealing.
+_LINUX_F_ADD_SEALS = 1033
+_LINUX_F_GET_SEALS = 1034
+_LINUX_DESCRIPTOR_SEALS = 0x0001 | 0x0002 | 0x0004 | 0x0008
 _RUNTIME_AUTHORITY_LIMIT = 64 * 1024 * 1024
 _RUNTIME_TMPFS_OVERHEAD = 1024 * 1024
 _ERROR_PROJECTION_MAX_DEPTH = 8
@@ -503,13 +509,7 @@ def _sealed_payload_fd(payload: bytes) -> int:
                 raise OSError("Docker stdin descriptor write made no progress")
             written += count
         os.lseek(descriptor, 0, os.SEEK_SET)
-        required_seals = (
-            fcntl.F_SEAL_SEAL
-            | fcntl.F_SEAL_SHRINK
-            | fcntl.F_SEAL_GROW
-            | fcntl.F_SEAL_WRITE
-        )
-        fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+        fcntl.fcntl(descriptor, _LINUX_F_ADD_SEALS, _LINUX_DESCRIPTOR_SEALS)
         metadata = os.fstat(descriptor)
         if metadata.st_size != len(payload):
             raise OSError("Docker stdin descriptor size changed")
@@ -533,13 +533,11 @@ def _read_sealed_payload_fd(
             "runtime_unsupported", "broker payload metadata is invalid"
         )
     metadata = os.fstat(descriptor)
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     if (
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size != expected_size
-        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
+        or fcntl.fcntl(descriptor, _LINUX_F_GET_SEALS) & _LINUX_DESCRIPTOR_SEALS
+        != _LINUX_DESCRIPTOR_SEALS
         or _digest_fd_exact(descriptor) != expected_digest
     ):
         raise MountNamespaceBrokerError(
@@ -881,11 +879,8 @@ def _new_output_descriptor() -> int:
 
 
 def _seal_output_descriptor(descriptor: int, size: int) -> None:
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     os.lseek(descriptor, 0, os.SEEK_SET)
-    fcntl.fcntl(descriptor, fcntl.F_ADD_SEALS, required_seals)
+    fcntl.fcntl(descriptor, _LINUX_F_ADD_SEALS, _LINUX_DESCRIPTOR_SEALS)
     metadata = os.fstat(descriptor)
     if metadata.st_size != size:
         raise OSError("Docker output descriptor size changed")
@@ -1041,13 +1036,11 @@ def _read_output_descriptor(descriptor: int, size: int) -> tuple[bytes, str]:
             "runtime_unsupported", "broker output descriptor size is invalid"
         )
     metadata = os.fstat(descriptor)
-    required_seals = (
-        fcntl.F_SEAL_SEAL | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_GROW | fcntl.F_SEAL_WRITE
-    )
     if (
         not stat.S_ISREG(metadata.st_mode)
         or metadata.st_size != size
-        or fcntl.fcntl(descriptor, fcntl.F_GET_SEALS) & required_seals != required_seals
+        or fcntl.fcntl(descriptor, _LINUX_F_GET_SEALS) & _LINUX_DESCRIPTOR_SEALS
+        != _LINUX_DESCRIPTOR_SEALS
     ):
         raise MountNamespaceBrokerError(
             "runtime_unsupported", "broker output descriptor changed"
@@ -1305,7 +1298,7 @@ class _ProgressJournal:
         self._size = current_size + len(payload)
 
 
-SUPERVISOR_JOURNAL_SCHEMA_VERSION = "bb.rl.mount-namespace-supervisor.v2"
+SUPERVISOR_JOURNAL_SCHEMA_VERSION = "bb.rl.mount-namespace-supervisor.v3"
 SUPERVISOR_RECEIPT_SCHEMA_VERSION = SUPERVISOR_JOURNAL_SCHEMA_VERSION
 _SUPERVISOR_JOURNAL_LIMIT = 1024 * 1024
 _JOURNAL_DIGEST_LENGTH = 71
@@ -1377,6 +1370,26 @@ def _journal_digest_value(value: object) -> bool:
     )
 
 
+_JOURNAL_DEVICE_RE = re.compile(r"(0|[1-9][0-9]*)")
+_JOURNAL_INODE_RE = re.compile(r"[1-9][0-9]*")
+
+
+def _journal_identity_text(value: object) -> str:
+    if type(value) is not int or value < 0:
+        raise MountNamespaceBrokerError(
+            "runtime_unsupported", "journal filesystem identity is not exact"
+        )
+    return str(value)
+
+
+def _journal_device_value(value: object) -> bool:
+    return type(value) is str and _JOURNAL_DEVICE_RE.fullmatch(value) is not None
+
+
+def _journal_inode_value(value: object) -> bool:
+    return type(value) is str and _JOURNAL_INODE_RE.fullmatch(value) is not None
+
+
 def _journal_name(lease_id: str) -> str:
     if (
         type(lease_id) is not str
@@ -1402,15 +1415,16 @@ def _journal_process_valid(value: object, *, allow_none: bool = False) -> bool:
         and type(value["pgid"]) is int
         and 0 < value["pgid"] <= (1 << 53) - 1
         and all(
+            _journal_device_value(value[key])
+            for key in ("executable_device", "namespace_device")
+        )
+        and all(
+            _journal_inode_value(value[key])
+            for key in ("executable_inode", "namespace_inode")
+        )
+        and all(
             type(value[key]) is int and value[key] >= 0
-            for key in (
-                "executable_device",
-                "executable_inode",
-                "executable_ctime_ns",
-                "executable_size",
-                "namespace_device",
-                "namespace_inode",
-            )
+            for key in ("executable_ctime_ns", "executable_size")
         )
         and value["executable_size"] > 0
         and _journal_digest_value(value["executable_digest"])
@@ -1431,15 +1445,11 @@ def _journal_path_valid(value: object, *, allow_none: bool = False) -> bool:
         and os.path.normpath(value["parent_path"]) == value["parent_path"]
         and os.path.dirname(value["path"]) == value["parent_path"]
         and all(
-            type(value[key]) is int and value[key] >= 0
-            for key in (
-                "device",
-                "inode",
-                "mode",
-                "parent_device",
-                "parent_inode",
-            )
+            _journal_device_value(value[key]) for key in ("device", "parent_device")
         )
+        and all(_journal_inode_value(value[key]) for key in ("inode", "parent_inode"))
+        and type(value["mode"]) is int
+        and value["mode"] >= 0
         and _journal_digest_value(value["digest"])
     )
 
@@ -1532,18 +1542,25 @@ def _validate_journal_payload(
             or os.path.normpath(stage["source_parent_path"])
             != stage["source_parent_path"]
             or os.path.dirname(stage["source_path"]) != stage["source_parent_path"]
-            or any(
-                type(stage[key]) is not int or stage[key] < 0
+            or not all(
+                _journal_device_value(stage[key])
                 for key in (
                     "source_device",
-                    "source_inode",
-                    "source_mode",
                     "descriptor_device",
-                    "descriptor_inode",
-                    "mount_id",
                     "source_parent_device",
+                )
+            )
+            or not all(
+                _journal_inode_value(stage[key])
+                for key in (
+                    "source_inode",
+                    "descriptor_inode",
                     "source_parent_inode",
                 )
+            )
+            or any(
+                type(stage[key]) is not int or stage[key] < 0
+                for key in ("source_mode", "mount_id")
             )
             or type(stage["readonly"]) is not bool
             for stage in stages
@@ -1871,12 +1888,12 @@ def _journal_process_absent(process: Mapping[str, Any] | None) -> bool:
         return True
     if (
         pgid != process["pgid"]
-        or executable.st_dev != process["executable_device"]
-        or executable.st_ino != process["executable_inode"]
+        or str(executable.st_dev) != process["executable_device"]
+        or str(executable.st_ino) != process["executable_inode"]
         or executable.st_ctime_ns != process["executable_ctime_ns"]
         or executable.st_size != process["executable_size"]
-        or namespace.st_dev != process["namespace_device"]
-        or namespace.st_ino != process["namespace_inode"]
+        or str(namespace.st_dev) != process["namespace_device"]
+        or str(namespace.st_ino) != process["namespace_inode"]
     ):
         raise OSError("live process identity changed")
     descriptor = os.open(
@@ -1911,7 +1928,7 @@ def _journal_path_absent(path: Mapping[str, Any] | None) -> bool:
     )
     try:
         parent = os.fstat(parent_fd)
-        if (parent.st_dev, parent.st_ino) != (
+        if (str(parent.st_dev), str(parent.st_ino)) != (
             path["parent_device"],
             path["parent_inode"],
         ):
@@ -1925,8 +1942,8 @@ def _journal_path_absent(path: Mapping[str, Any] | None) -> bool:
         except FileNotFoundError:
             return True
         if (
-            target.st_dev,
-            target.st_ino,
+            str(target.st_dev),
+            str(target.st_ino),
             stat.S_IMODE(target.st_mode),
         ) != (
             path["device"],
@@ -2280,7 +2297,7 @@ def _child_loop(
                         request.get("expected_inode"),
                     )
                     directory = request.get("directory")
-                    readonly = request.get("readonly", directory is False)
+                    readonly = request.get("readonly")
                     if type(directory) is not bool or type(readonly) is not bool:
                         raise ValueError("invalid stage type")
                     if (metadata.st_dev, metadata.st_ino) != expected:
@@ -2452,17 +2469,11 @@ def _child_loop(
                             raise ValueError("execute input authority is invalid")
                         input_fd = fds[1]
                         input_metadata = os.fstat(input_fd)
-                        required_seals = (
-                            fcntl.F_SEAL_SEAL
-                            | fcntl.F_SEAL_SHRINK
-                            | fcntl.F_SEAL_GROW
-                            | fcntl.F_SEAL_WRITE
-                        )
                         if (
                             not stat.S_ISREG(input_metadata.st_mode)
                             or input_metadata.st_size != input_size
-                            or fcntl.fcntl(input_fd, fcntl.F_GET_SEALS) & required_seals
-                            != required_seals
+                            or fcntl.fcntl(input_fd, _LINUX_F_GET_SEALS)
+                            & _LINUX_DESCRIPTOR_SEALS != _LINUX_DESCRIPTOR_SEALS
                             or _digest_fd_exact(input_fd) != input_digest
                         ):
                             raise OSError("execute input descriptor changed")
@@ -3268,13 +3279,13 @@ class MountNamespaceBroker:
             "pid": pid,
             "starttime": starttime,
             "pgid": os.getpgid(pid),
-            "executable_device": executable_device,
-            "executable_inode": executable_inode,
+            "executable_device": _journal_identity_text(executable_device),
+            "executable_inode": _journal_identity_text(executable_inode),
             "executable_ctime_ns": executable_ctime_ns,
             "executable_size": executable_size,
             "executable_digest": executable_digest,
-            "namespace_device": namespace.st_dev,
-            "namespace_inode": namespace.st_ino,
+            "namespace_device": _journal_identity_text(namespace.st_dev),
+            "namespace_inode": _journal_identity_text(namespace.st_ino),
         }
 
     @staticmethod
@@ -3290,13 +3301,13 @@ class MountNamespaceBroker:
         parent = os.stat(parent_path, follow_symlinks=False)
         return {
             "path": path,
-            "device": device,
-            "inode": inode,
+            "device": _journal_identity_text(device),
+            "inode": _journal_identity_text(inode),
             "mode": mode,
             "digest": digest,
             "parent_path": parent_path,
-            "parent_device": parent.st_dev,
-            "parent_inode": parent.st_ino,
+            "parent_device": _journal_identity_text(parent.st_dev),
+            "parent_inode": _journal_identity_text(parent.st_ino),
         }
 
     def _journal_base(
@@ -3357,8 +3368,8 @@ class MountNamespaceBroker:
             daemon_root_digest = _journal_digest(
                 _canonical(
                     {
-                        "device": daemon_root_metadata.st_dev,
-                        "inode": daemon_root_metadata.st_ino,
+                        "device": _journal_identity_text(daemon_root_metadata.st_dev),
+                        "inode": _journal_identity_text(daemon_root_metadata.st_ino),
                         "mode": stat.S_IMODE(daemon_root_metadata.st_mode),
                     }
                 )
@@ -3388,20 +3399,20 @@ class MountNamespaceBroker:
             if self.containerd_observation is not None:
                 child = self.containerd_observation
                 containerd = self._journal_process(
-                    child.pid,
-                    child.starttime,
-                    executable_device=child.executable_device,
-                    executable_inode=child.executable_inode,
-                    executable_ctime_ns=child.executable_ctime_ns,
-                    executable_size=child.executable_size,
-                    executable_digest=child.executable_digest,
+                    child["pid"],
+                    child["starttime"],
+                    executable_device=child["executable_device"],
+                    executable_inode=child["executable_inode"],
+                    executable_ctime_ns=child["executable_ctime_ns"],
+                    executable_size=child["executable_size"],
+                    executable_digest=child["executable_digest"],
                 )
         stage_root = os.stat(observation.stage_root, follow_symlinks=False)
         stage_digest = _journal_digest(
             _canonical(
                 {
-                    "device": stage_root.st_dev,
-                    "inode": stage_root.st_ino,
+                    "device": _journal_identity_text(stage_root.st_dev),
+                    "inode": _journal_identity_text(stage_root.st_ino),
                     "mode": stat.S_IMODE(stage_root.st_mode),
                 }
             )
@@ -3848,6 +3859,7 @@ class MountNamespaceBroker:
         expected_device: int,
         expected_inode: int,
         directory: bool,
+        readonly: bool,
         lease_id: str,
         destination: str,
     ) -> StagedDockerDescriptorMount:
@@ -3864,7 +3876,7 @@ class MountNamespaceBroker:
                 "expected_device": expected_device,
                 "expected_inode": expected_inode,
                 "lease_id": lease_id,
-                "readonly": not directory,
+                "readonly": readonly,
                 "authority_path": authority_path,
             },
             (descriptor,),
@@ -3962,9 +3974,13 @@ class MountNamespaceBroker:
             parent = os.stat(parent_path, follow_symlinks=False)
             journal_result = {
                 **dict(result),
+                "source_device": _journal_identity_text(staged.source_device),
+                "source_inode": _journal_identity_text(staged.source_inode),
+                "descriptor_device": _journal_identity_text(staged.descriptor_device),
+                "descriptor_inode": _journal_identity_text(staged.descriptor_inode),
                 "source_parent_path": parent_path,
-                "source_parent_device": parent.st_dev,
-                "source_parent_inode": parent.st_ino,
+                "source_parent_device": _journal_identity_text(parent.st_dev),
+                "source_parent_inode": _journal_identity_text(parent.st_ino),
             }
             self._journal_update(
                 lease_id,
@@ -4118,6 +4134,7 @@ class MountNamespaceBroker:
                     ),
                     authority.pid_file,
                     authority.config_path,
+                    authority.containerd_config_path,
                     authority.exec_root,
                     authority.data_root,
                     authority.containerd_root,

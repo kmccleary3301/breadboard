@@ -3,6 +3,7 @@ from builtins import BaseExceptionGroup
 
 import asyncio
 import hashlib
+from dataclasses import replace
 from types import SimpleNamespace
 
 import pytest
@@ -43,6 +44,7 @@ from breadboard.rl.harness.service import (
     V2EpisodeConflict,
     V2EpisodeRejected,
     V2LifecycleDependencies,
+    V2EpisodeUnavailable,
     V2OperationDisposition,
 )
 from breadboard.artifacts.cas import InMemoryCAS
@@ -117,6 +119,143 @@ async def _created(monkeypatch: pytest.MonkeyPatch):
     service, case, preflights = await _service(monkeypatch)
     created = await service.create(case.request)
     return service, case, preflights, created
+
+
+@pytest.mark.parametrize("counterfeit", ["missing", "wrong-lease", "wrong-signature"])
+async def test_public_service_rejects_counterfeit_primary_receipt(
+    monkeypatch: pytest.MonkeyPatch, counterfeit: str
+) -> None:
+    service, case, _ = await _service(monkeypatch)
+    original = case.sandbox.lease.containment_receipt
+    if counterfeit == "missing":
+        case.sandbox.lease.containment_receipt = None
+    elif counterfeit == "wrong-lease":
+        wrong = replace(original, lease_id="lease-counterfeit")
+        case.sandbox.lease.containment_receipt = replace(
+            wrong, signature=case.sandbox._containment_authenticator.sign(wrong.canonical_bytes())
+        )
+    else:
+        case.sandbox.lease.containment_receipt = replace(original, signature=b"\1" * 32)
+    try:
+        with pytest.raises(V2EpisodeUnavailable) as caught:
+            await service.create(case.request)
+        assert caught.value.failure.code == "containment_receipt_invalid"
+        assert "lease.close" in case.calls
+    finally:
+        await service.close()
+
+
+async def test_public_service_rejects_verifier_without_containment_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.verifier.containment_receipt = None
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-verifier"},
+            context={},
+        )
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert "verifier.execute" not in case.calls
+        assert "verifier.close" in case.calls
+    finally:
+        await service.close()
+
+
+async def test_public_service_does_not_close_success_without_teardown_receipt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.lease.emit_teardown_receipt = False
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-teardown"},
+            context={},
+        )
+        assert result.response.closed_envelope_ref is None
+        assert case.sandbox.lease.teardown_receipt is None
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert result.response.primary_failure is not None
+        assert result.response.primary_failure.code == "containment_receipt_invalid"
+        assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
+    finally:
+        await service.close()
+
+
+@pytest.mark.asyncio
+async def test_public_service_quarantines_missing_verifier_teardown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.verifier.emit_teardown_receipt = False
+    try:
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "counterfeit-verifier-teardown"},
+            context={},
+        )
+        assert result.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+        assert result.response.primary_failure is not None
+        assert result.response.primary_failure.code == "containment_receipt_invalid"
+        assert result.response.closed_envelope_ref is None
+        assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
+    finally:
+        await service.close()
+
+@pytest.mark.parametrize("primary_receipt", ("missing", "invalid", "valid"))
+@pytest.mark.parametrize("verifier_receipt", ("missing", "invalid", "valid"))
+@pytest.mark.parametrize("primary_cleanup", ("ok", "failed"))
+@pytest.mark.parametrize("verifier_cleanup", ("ok", "failed"))
+async def test_cleanup_matrix_preserves_failure_fact_and_refuses_closed_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    primary_receipt: str,
+    verifier_receipt: str,
+    primary_cleanup: str,
+    verifier_cleanup: str,
+) -> None:
+    service, case, _ = await _service(monkeypatch)
+    for lease, receipt_mode, cleanup_mode in (
+        (case.sandbox.lease, primary_receipt, primary_cleanup),
+        (case.sandbox.verifier, verifier_receipt, verifier_cleanup),
+    ):
+        if receipt_mode == "missing":
+            lease.emit_teardown_receipt = False
+        elif receipt_mode == "invalid":
+            original_close = lease.close
+
+            async def invalid_close(original_close=original_close, lease=lease):
+                result = await original_close()
+                lease.teardown_receipt = replace(lease.teardown_receipt, signature=b"\1" * 32)
+                return result
+
+            lease.close = invalid_close
+        if cleanup_mode == "failed":
+            lease.close_receipt = failed_receipt(lease.lease_id)
+
+    expected_closed = (
+        primary_receipt, verifier_receipt, primary_cleanup, verifier_cleanup
+    ) == ("valid", "valid", "ok", "ok")
+    try:
+        created = await service.create(case.request)
+        result = await service.run(
+            case.request.episode_id,
+            create_fingerprint=created.response.create_fingerprint,
+            task_input={"case": "cleanup-matrix"},
+            context={},
+        )
+        state = (await service.get_state(case.request.episode_id)).state
+        assert (state is EpisodeLifecycleState.CLOSED) is expected_closed
+        assert (result.response.primary_disposition is EpisodePrimaryDisposition.SUCCEEDED) is expected_closed
+        assert (result.response.closed_envelope_ref is not None) is expected_closed
+        assert bool(case.repository.closed_inputs) is expected_closed
+        assert (result.response.primary_failure is None) is expected_closed
+    finally:
+        await service.close()
 
 
 async def test_v2_materializes_the_terminal_request_selected_by_the_effective_plan() -> None:
@@ -332,8 +471,8 @@ async def test_workspace_diff_too_large_for_evidence_fails_the_episode_before_pu
     recovered = repository.recover(case.request.episode_id)
 
     assert outcome.response.primary_disposition is EpisodePrimaryDisposition.FAILED
-    assert outcome.response.failure is not None
-    assert outcome.response.failure.code == "workspace_diff_too_large"
+    assert outcome.response.primary_failure is not None
+    assert outcome.response.primary_failure.code == "workspace_diff_too_large"
     assert "verifier.execute" not in case.calls
     assert recovered is not None
     assert recovered.locator.current_state == "closed"
@@ -1393,15 +1532,16 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
     original_cancel = service.cancel
+    original_verifier_close = case.sandbox.verifier.close
     publish_closed = repository.publish_closed
 
     async def blocked_verifier_close():
-        case.calls.append("verifier.close")
         verifier_close_entered.set()
         await verifier_close_release.wait()
         if close_fails:
+            case.calls.append("verifier.close")
             raise _CodedFailure("verifier_close_failed")
-        return case.sandbox.verifier.close_receipt
+        return await original_verifier_close()
 
     async def observe_shutdown_cancel(episode_id, reason):
         result = await original_cancel(episode_id, reason)
@@ -1467,8 +1607,9 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
         assert verification_failed.cleanup_fact is not None
         assert verification_failed.cleanup_fact.code == "verifier_close_failed"
         assert recovered.verifier_cleanup_receipt is None
-        assert recovered.closed_envelope is not None
-        assert recovered.locator.current_state == "closed"
+        assert recovered.closed_envelope is None
+        assert recovered.locator.current_state == "quarantined"
+        assert "repo.publish_closed" not in case.calls
     else:
         assert verification_failed.cleanup_fact is None
         assert coordinator.verifier_cleanup_receipt == (
@@ -1484,13 +1625,13 @@ async def test_verifier_close_task_is_owned_observed_and_joined_before_shutdown(
         assert quarantine_event.primary_fact.code == "process_interrupted"
         assert quarantine_event.cleanup_fact is not None
         assert quarantine_event.cleanup_fact.code == "closed_publication_failed"
+        assert case.calls.index("lease.close") < case.calls.index("repo.publish_closed")
+        assert case.calls.index("repo.publish_closed") < case.calls.index(
+            "sandbox.manager.close"
+        )
     assert case.calls.count("verifier.close") == 1
     assert case.calls.count("lease.close") == 1
     assert case.calls.index("verifier.close") < case.calls.index("lease.close")
-    assert case.calls.index("lease.close") < case.calls.index("repo.publish_closed")
-    assert case.calls.index("repo.publish_closed") < case.calls.index(
-        "sandbox.manager.close"
-    )
 
 
 
@@ -1506,14 +1647,17 @@ async def test_terminal_verifier_close_racing_parent_cancel_retains_cancellation
     loop_failures: list[dict[str, object]] = []
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
+    original_verifier_close = case.sandbox.verifier.close
 
     async def terminal_verifier_close():
-        case.calls.append("verifier.close")
+        if child_outcome == "cancel":
+            case.calls.append("verifier.close")
         verifier_close_entered.set()
         await verifier_close_release.wait()
         if child_outcome == "failure":
+            case.calls.append("verifier.close")
             raise _CodedFailure("verifier_close_failed")
-        return case.sandbox.verifier.close_receipt
+        return await original_verifier_close()
 
     monkeypatch.setattr(case.sandbox.verifier, "close", terminal_verifier_close)
     loop.set_exception_handler(lambda _loop, context: loop_failures.append(context))
@@ -1958,11 +2102,12 @@ async def test_verifier_close_failure_still_releases_primary_lease_and_is_durabl
 
     assert outcome.response.primary_disposition is EpisodePrimaryDisposition.FAILED
     assert outcome.response.completed_envelope_ref == ref("completed-envelope")
-    assert outcome.response.closed_envelope_ref == ref("closed-envelope")
+    assert outcome.response.closed_envelope_ref is None
     assert case.calls.count("verifier.close") == 1
     assert case.calls.count("lease.close") == 1
     assert case.repository.failed_completed_inputs[-1].primary_disposition == "failed"
-    assert case.repository.closed_inputs[-1].final_primary_outcome == "failed"
+    assert case.repository.closed_inputs == []
+    assert (await service.get_state(case.request.episode_id)).state is EpisodeLifecycleState.QUARANTINED
     assert any(
         event.primary_fact is not None
         and event.primary_fact.code == "verifier_close_failed"
@@ -2697,4 +2842,162 @@ async def test_publish_closed_and_durable_quarantine_dual_failure_surfaces_excep
     assert not any(event.to_state == "closed" for event in case.repository.events)
     assert case.repository.quarantine_inputs[-1].failure.code == (
         "closed_publication_failed"
+    )
+
+
+async def _real_native_scratch_close_steps(tmp_path: Path) -> tuple[CleanupStepReceipt, ...]:
+    from tests.rl.harness.test_sandbox_runtime import RuntimeHarness, make_runtime_fixture
+    import breadboard.rl.harness.sandbox as sandbox_module
+
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    (scratch / "home").mkdir()
+    (scratch / "home" / "marker").write_text("scratch")
+    receipt = await lease.close()
+    assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
+    return receipt.steps
+
+
+async def test_released_native_scratch_lease_publishes_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from breadboard.rl.harness import evidence as evidence_module
+
+    steps = await _real_native_scratch_close_steps(tmp_path)
+    service, case, _, created = await _created(monkeypatch)
+    receipt = SandboxCleanupReceipt.from_steps(case.sandbox.lease.lease_id, steps)
+    case.sandbox.lease.close_receipt = receipt
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"case": "native-scratch"},
+    )
+    state = await service.get_state(case.request.episode_id)
+
+    assert outcome.response.primary_disposition is EpisodePrimaryDisposition.SUCCEEDED
+    assert outcome.response.closed_envelope_ref is not None
+    assert state.state is EpisodeLifecycleState.CLOSED
+    assert not case.repository.quarantine_inputs
+    assert len(case.repository.closed_inputs) == 1
+    # The production closed-publication validator accepts the same receipt, and
+    # verifier leases still reject primary-only resources (cache_holder, missing snapshot).
+    projected = evidence_module._json_value(receipt)
+    evidence_module._validate_cleanup_projection(projected, expected_lease_id=receipt.lease_id)
+    with pytest.raises(evidence_module.EvidenceValidationError):
+        evidence_module._validate_cleanup_projection(
+            projected,
+            expected_lease_id=receipt.lease_id,
+            required_resources=evidence_module._VERIFIER_CLEANUP_RESOURCES,
+        )
+
+
+@pytest.mark.parametrize("scratch_state", (CleanupState.FAILED, CleanupState.QUARANTINED))
+async def test_unreleased_native_scratch_never_claims_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scratch_state: CleanupState,
+) -> None:
+    steps = await _real_native_scratch_close_steps(tmp_path)
+    service, case, _, created = await _created(monkeypatch)
+    case.sandbox.lease.close_receipt = SandboxCleanupReceipt.from_steps(
+        case.sandbox.lease.lease_id,
+        tuple(
+            CleanupStepReceipt("native_scratch", scratch_state, "scratch not released")
+            if step.resource == "native_scratch"
+            else step
+            for step in steps
+        ),
+    )
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"case": "native-scratch-unreleased"},
+    )
+    state = await service.get_state(case.request.episode_id)
+
+    assert outcome.response.closed_envelope_ref is None
+    assert state.state is EpisodeLifecycleState.QUARANTINED
+    assert not case.repository.closed_inputs
+    assert case.repository.quarantine_inputs[-1].failure.code == "cleanup_not_released"
+
+
+
+@pytest.mark.parametrize(
+    ("scratch_state", "expected_outcome"),
+    [
+        (CleanupState.RELEASED, EpisodePrimaryDisposition.SUCCEEDED),
+        (CleanupState.QUARANTINED, EpisodePrimaryDisposition.FAILED),
+    ],
+)
+async def test_verifier_native_scratch_cleanup_admission(
+    monkeypatch: pytest.MonkeyPatch,
+    scratch_state: CleanupState,
+    expected_outcome: EpisodePrimaryDisposition,
+) -> None:
+    service, case, _, created = await _created(monkeypatch)
+    verifier_steps = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", scratch_state),
+        CleanupStepReceipt("workspace", CleanupState.RELEASED),
+        CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+        CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+    )
+    case.sandbox.verifier.close_receipt = SandboxCleanupReceipt.from_steps(
+        case.sandbox.verifier.lease_id,
+        verifier_steps,
+    )
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"cleanup-resources": f"verifier-native-scratch-{scratch_state.value}"},
+    )
+
+    assert outcome.response.primary_disposition is expected_outcome
+    if scratch_state is CleanupState.RELEASED:
+        assert outcome.response.closed_envelope_ref is not None
+        assert case.repository.closed_inputs
+        assert case.repository.closed_inputs[0].verifier_cleanup_receipt is not None
+        assert case.repository.closed_inputs[0].verifier_cleanup_receipt.lease_id == case.sandbox.verifier.lease_id
+    else:
+        assert outcome.response.closed_envelope_ref is None
+        assert case.repository.quarantine_inputs
+        assert case.repository.quarantine_inputs[-1].failure.code == "verifier_cleanup_not_released"
+
+
+async def test_verifier_cleanup_released_admissions() -> None:
+    released_receipt = SandboxCleanupReceipt.from_steps(
+        "verifier-lease",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+        ),
+    )
+    assert service_module._cleanup_released(
+        released_receipt,
+        required={"runtime", "workspace", "snapshot", "lease_record"},
+        optional={"native_scratch"},
+    )
+    quarantined_receipt = SandboxCleanupReceipt.from_steps(
+        "verifier-lease",
+        (
+            CleanupStepReceipt("runtime", CleanupState.RELEASED),
+            CleanupStepReceipt("native_scratch", CleanupState.QUARANTINED),
+            CleanupStepReceipt("workspace", CleanupState.RELEASED),
+            CleanupStepReceipt("snapshot", CleanupState.RELEASED),
+            CleanupStepReceipt("lease_record", CleanupState.RELEASED),
+        ),
+    )
+    assert not service_module._cleanup_released(
+        quarantined_receipt,
+        required={"runtime", "workspace", "snapshot", "lease_record"},
+        optional={"native_scratch"},
     )

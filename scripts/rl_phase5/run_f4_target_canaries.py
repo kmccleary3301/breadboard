@@ -1058,11 +1058,11 @@ def _load_production_runtime_binding(
         )
     if _sha256(descriptor_raw) != production.composition_descriptor_ref.digest:
         raise F4TargetCanaryError("production composition descriptor digest mismatch")
-    if descriptor_value.get("schema_version") == "bb.rl.harness-composition-ref.v1":
+    if descriptor_value.get("schema_version") == "bb.rl.harness-composition-ref.v3":
         descriptor: CompositionRefV1 | CompositionRefV2 = (
             CompositionRefV1.model_validate_json(descriptor_raw, strict=True)
         )
-    elif descriptor_value.get("schema_version") == "bb.rl.harness-composition-ref.v2":
+    elif descriptor_value.get("schema_version") == "bb.rl.harness-composition-ref.v4":
         descriptor = CompositionRefV2.model_validate_json(descriptor_raw, strict=True)
     else:
         raise F4TargetCanaryError(
@@ -1076,14 +1076,14 @@ def _load_production_runtime_binding(
     manifest_value = canonical_json_loads(manifest_raw)
     if (
         type(descriptor) is CompositionRefV1
-        and manifest_value.get("schema_version") == "bb.rl.harness-composition.v1"
+        and manifest_value.get("schema_version") == "bb.rl.harness-composition.v3"
     ):
         manifest: HarnessCompositionManifestV1 | HarnessCompositionManifestV2 = (
             HarnessCompositionManifestV1.model_validate_json(manifest_raw, strict=True)
         )
     elif (
         type(descriptor) is CompositionRefV2
-        and manifest_value.get("schema_version") == "bb.rl.harness-composition.v2"
+        and manifest_value.get("schema_version") == "bb.rl.harness-composition.v4"
     ):
         manifest = HarnessCompositionManifestV2.model_validate_json(
             manifest_raw, strict=True

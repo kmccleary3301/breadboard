@@ -41,6 +41,8 @@ _RESOLVE_NO_SYMLINKS = 0x04
 _RESOLVE_BENEATH = 0x08
 _DIGEST_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 _NONCE_RE = re.compile(r"[0-9a-f]{64}\Z")
+_DEVICE_RE = re.compile(r"(0|[1-9][0-9]*)\Z")
+_INODE_RE = re.compile(r"[1-9][0-9]*\Z")
 _T = TypeVar("_T", bound=BaseModel)
 
 
@@ -122,6 +124,18 @@ def _validate_nonce(value: str) -> str:
     return value
 
 
+def _validate_device(value: str) -> str:
+    if type(value) is not str or _DEVICE_RE.fullmatch(value) is None:
+        raise ValueError("device must be a canonical nonnegative decimal string")
+    return value
+
+
+def _validate_inode(value: str) -> str:
+    if type(value) is not str or _INODE_RE.fullmatch(value) is None:
+        raise ValueError("inode must be a canonical positive decimal string")
+    return value
+
+
 def _validate_absolute_path(value: str) -> str:
     if type(value) is not str or not value.startswith("/"):
         raise ValueError("path must be absolute")
@@ -141,14 +155,32 @@ class _ExactModel(BaseModel):
 
 
 class NodeIdentity(_ExactModel):
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
     file_type: Literal["directory", "regular"]
+
+    _device = field_validator("device")(_validate_device)
+    _inode = field_validator("inode")(_validate_inode)
+
+    @classmethod
+    def from_stat(cls, metadata: os.stat_result) -> "NodeIdentity":
+        return cls(
+            device=str(metadata.st_dev),
+            inode=str(metadata.st_ino),
+            file_type=_file_type(metadata.st_mode),
+        )
 
 
 class NamespaceIdentity(_ExactModel):
-    device: int = Field(ge=0)
-    inode: int = Field(gt=0)
+    device: str
+    inode: str
+
+    _device = field_validator("device")(_validate_device)
+    _inode = field_validator("inode")(_validate_inode)
+
+    @classmethod
+    def from_stat(cls, metadata: os.stat_result) -> "NamespaceIdentity":
+        return cls(device=str(metadata.st_dev), inode=str(metadata.st_ino))
 
 
 class PeerIdentity(_ExactModel):
@@ -159,7 +191,7 @@ class PeerIdentity(_ExactModel):
 
 
 class BindReplaceManifest(_ExactModel):
-    schema_version: Literal["bb.rl.g4-bind-replace-manifest.v1"]
+    schema_version: Literal["bb.rl.g4-bind-replace-manifest.v2"]
     operation: Literal["bind_replace"]
     subject_pid: int = Field(gt=0)
     subject_starttime: str = Field(pattern=r"[0-9]+")
@@ -254,7 +286,7 @@ class BindReplaceAck(_ExactModel):
 
 
 class BindReplaceResult(_ExactModel):
-    schema_version: Literal["bb.rl.g4-bind-replace-result.v1"]
+    schema_version: Literal["bb.rl.g4-bind-replace-result.v2"]
     status: Literal["ok"]
     operation: Literal["bind_replace"]
     nonce: str
@@ -422,17 +454,11 @@ def _file_type(mode: int) -> Literal["directory", "regular"]:
 
 
 def _node_identity(path: Path) -> NodeIdentity:
-    metadata = path.stat(follow_symlinks=False)
-    return NodeIdentity(
-        device=metadata.st_dev,
-        inode=metadata.st_ino,
-        file_type=_file_type(metadata.st_mode),
-    )
+    return NodeIdentity.from_stat(path.stat(follow_symlinks=False))
 
 
 def _namespace_identity(path: Path) -> NamespaceIdentity:
-    metadata = path.stat(follow_symlinks=False)
-    return NamespaceIdentity(device=metadata.st_dev, inode=metadata.st_ino)
+    return NamespaceIdentity.from_stat(path.stat(follow_symlinks=False))
 
 
 
@@ -595,12 +621,7 @@ def _openat2_path(root_fd: int, path: str) -> int:
 
 
 def _node_identity_fd(descriptor: int) -> NodeIdentity:
-    metadata = os.fstat(descriptor)
-    return NodeIdentity(
-        device=metadata.st_dev,
-        inode=metadata.st_ino,
-        file_type=_file_type(metadata.st_mode),
-    )
+    return NodeIdentity.from_stat(os.fstat(descriptor))
 
 
 def _validate_pinned_path(
@@ -647,11 +668,7 @@ def _setns_exact(subject_pid: int, expected: NamespaceIdentity) -> int:
             )
         _libc_call("setns", ctypes.c_int(namespace_fd), ctypes.c_int(0))
         os.fchdir(root_fd)
-        namespace_metadata = os.fstat(namespace_fd)
-        if (
-            namespace_metadata.st_dev != expected.device
-            or namespace_metadata.st_ino != expected.inode
-        ):
+        if NamespaceIdentity.from_stat(os.fstat(namespace_fd)) != expected:
             raise _ProtocolFailure(
                 "namespace_drift", "entered mount namespace identity changed"
             )
@@ -759,7 +776,7 @@ def _success(
     target_after: NodeIdentity,
 ) -> BindReplaceResult:
     document: dict[str, Any] = {
-        "schema_version": "bb.rl.g4-bind-replace-result.v1",
+        "schema_version": "bb.rl.g4-bind-replace-result.v2",
         "status": "ok",
         "operation": "bind_replace",
         "nonce": manifest.nonce,
@@ -779,7 +796,7 @@ def _directory_identity_fd(descriptor: int) -> NamespaceIdentity:
     metadata = os.fstat(descriptor)
     if not stat.S_ISDIR(metadata.st_mode):
         raise ValueError("pinned control descriptor is not a directory")
-    return NamespaceIdentity(device=metadata.st_dev, inode=metadata.st_ino)
+    return NamespaceIdentity.from_stat(metadata)
 
 
 def _open_pinned_directory(path: Path, expected: NamespaceIdentity) -> int:
@@ -1247,7 +1264,7 @@ def create_manifest(
     nonce = secrets.token_hex(32) if nonce is None else nonce
     starttime = _proc_starttime(subject_pid)
     return BindReplaceManifest(
-        schema_version="bb.rl.g4-bind-replace-manifest.v1",
+        schema_version="bb.rl.g4-bind-replace-manifest.v2",
         operation="bind_replace",
         subject_pid=subject_pid,
         subject_starttime=starttime,

@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import ctypes
 import errno
+import json
 import os
 import socket
+import stat
 import subprocess
 import threading
 import tempfile
@@ -41,12 +43,12 @@ class _SimulatedAttack:
         self.unmount_calls: list[attack.NodeIdentity] = []
         self.tree_fds: list[int] = []
         self.source = attack.NodeIdentity(
-            device=22, inode=220, file_type="directory"
+            device="22", inode="220", file_type="directory"
         )
         self.target = attack.NodeIdentity(
-            device=11, inode=110, file_type="directory"
+            device="11", inode="110", file_type="directory"
         )
-        self.namespace = attack.NamespaceIdentity(device=4, inode=44)
+        self.namespace = attack.NamespaceIdentity(device="4", inode="44")
         self.peer = attack.PeerIdentity(
             pid=os.getpid(), uid=os.getuid(), gid=os.getgid(), starttime="7"
         )
@@ -127,10 +129,7 @@ class _SimulatedAttack:
 
     @staticmethod
     def _directory_identity(path: Path) -> attack.NamespaceIdentity:
-        metadata = path.stat()
-        return attack.NamespaceIdentity(
-            device=metadata.st_dev, inode=metadata.st_ino
-        )
+        return attack.NamespaceIdentity.from_stat(path.stat())
 
     def manifest(
         self, tmp_path: Path, *, deadline: float = 2.0
@@ -140,7 +139,7 @@ class _SimulatedAttack:
         transport = Path(self._transport.name)
         private = Path(self._private.name)
         manifest = attack.BindReplaceManifest(
-            schema_version="bb.rl.g4-bind-replace-manifest.v1",
+            schema_version="bb.rl.g4-bind-replace-manifest.v2",
             operation="bind_replace",
             subject_pid=self.peer.pid,
             subject_starttime=self.peer.starttime,
@@ -246,6 +245,86 @@ def test_prepare_serves_creator_manifest_when_persisted_path_is_replaced(
     assert persisted.source_path == "/attacker"
     assert creator_bytes == retained.canonical_bytes()
     assert creator_digest == retained.digest
+
+
+_LEGACY_MANIFEST_IDENTITIES = (
+    "subject_mount_namespace",
+    "source_before",
+    "target_before",
+    "socket_directory",
+    "state_directory",
+)
+
+
+def test_squashfs_scale_inode_round_trips_as_canonical_decimal_string() -> None:
+    identity = attack.NodeIdentity.from_stat(
+        SimpleNamespace(
+            st_dev=64768,
+            st_ino=9223372036854805903,
+            st_mode=stat.S_IFDIR | 0o755,
+        )
+    )
+    payload = identity.canonical_bytes()
+    assert payload == (
+        b'{"device":"64768","file_type":"directory",'
+        b'"inode":"9223372036854805903"}'
+    )
+    assert attack._parse_exact(payload, attack.NodeIdentity) == identity
+
+
+@pytest.mark.parametrize(
+    "legacy",
+    [
+        "v1-numeric",
+        "v2-numeric-node",
+        "v2-numeric-namespace",
+        "leading-zero",
+        "empty",
+        "negative",
+        "exponent",
+        "zero-inode",
+    ],
+)
+def test_manifest_identities_are_decimal_and_legacy_manifest_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy: str
+) -> None:
+    simulated = _SimulatedAttack(monkeypatch)
+    manifest_path, manifest = simulated.manifest(tmp_path)
+    document = json.loads(manifest_path.read_bytes())
+    assert document["schema_version"] == "bb.rl.g4-bind-replace-manifest.v2"
+    assert document["source_before"] == {
+        "device": "22",
+        "file_type": "directory",
+        "inode": "220",
+    }
+    assert document["subject_mount_namespace"] == {"device": "4", "inode": "44"}
+    assert attack.load_manifest(manifest_path, expected_digest=manifest.digest) == (
+        manifest
+    )
+
+    if legacy == "v1-numeric":
+        document["schema_version"] = "bb.rl.g4-bind-replace-manifest.v1"
+        for field in _LEGACY_MANIFEST_IDENTITIES:
+            document[field]["device"] = int(document[field]["device"])
+            document[field]["inode"] = int(document[field]["inode"])
+    elif legacy == "v2-numeric-node":
+        document["source_before"]["inode"] = 220
+    elif legacy == "v2-numeric-namespace":
+        document["subject_mount_namespace"]["device"] = 4
+    elif legacy == "leading-zero":
+        document["target_before"]["device"] = "011"
+    elif legacy == "empty":
+        document["state_directory"]["inode"] = ""
+    elif legacy == "negative":
+        document["socket_directory"]["device"] = "-1"
+    elif legacy == "exponent":
+        document["source_before"]["inode"] = "1e3"
+    else:
+        document["target_before"]["inode"] = "0"
+    forged = manifest_path.with_name("forged-manifest.json")
+    forged.write_bytes(attack._canonical_bytes(document))
+    with pytest.raises(ValueError):
+        attack.load_manifest(forged)
 
 
 def test_socket_path_replacement_fails_without_unlinking_attacker_node(
@@ -498,7 +577,7 @@ def test_namespace_drift_fails_before_mount(
 ) -> None:
     simulated = _SimulatedAttack(monkeypatch)
     manifest_path, manifest = simulated.manifest(tmp_path)
-    drift = attack.NamespaceIdentity(device=4, inode=45)
+    drift = attack.NamespaceIdentity(device="4", inode="45")
     monkeypatch.setattr(attack, "_namespace_identity", lambda _path: drift)
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = _start_helper(executor, manifest_path, manifest)
@@ -654,7 +733,7 @@ def test_descriptor_bound_mount_rejects_synchronized_path_swaps(
     manifest_path, manifest = simulated.manifest(tmp_path)
     original_attach = attack._attach_mount_tree
     original_openat2 = attack._openat2_path
-    decoy = attack.NodeIdentity(device=99, inode=990, file_type="directory")
+    decoy = attack.NodeIdentity(device="99", inode="990", file_type="directory")
     swap_active = False
 
     def swapping_attach(tree_fd: int, target_fd: int) -> None:
@@ -732,7 +811,7 @@ def test_tampered_result_blocks_and_is_not_acknowledged(
             connection.sendall(attack._challenge(manifest).canonical_bytes())
             connection.recv(attack._MAX_DOCUMENT_BYTES)
             document = {
-                "schema_version": "bb.rl.g4-bind-replace-result.v1",
+                "schema_version": "bb.rl.g4-bind-replace-result.v2",
                 "status": "ok",
                 "operation": "bind_replace",
                 "nonce": manifest.nonce,

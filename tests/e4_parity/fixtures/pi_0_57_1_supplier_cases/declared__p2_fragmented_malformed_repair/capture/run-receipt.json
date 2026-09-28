@@ -1,0 +1,9 @@
+{
+  "case_id": "p2_fragmented_malformed_repair",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 3,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:e132688957a94a7f2eb731016e2b13185f8218095b4460df0b6da8cce0ef999b"
+}

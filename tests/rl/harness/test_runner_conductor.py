@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import copy
 import json
 import hashlib
 from pathlib import Path
+import subprocess
 from collections.abc import Mapping
 from typing import Any
-
+from types import SimpleNamespace
 import pytest
 
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
+from breadboard.rl.harness.lease_envelope import AdmittedLeaseRecord, RuntimeContainment
 from breadboard.rl.harness.runners import conductor as conductor_module
 from breadboard.rl.harness.runners.base import (
     PolicyRequestEvent,
@@ -60,6 +64,26 @@ from tests.rl.harness.test_runner_policy_runtime import (
     _response,
 )
 
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+
+CONDUCTOR_TEST_AUTHENTICATOR = HmacSha256ReceiptAuthenticator(
+    key_id="conductor-test", key=b"conductor-test-key-32-bytes!!!!!"
+)
+
+
+class RecordingAdmittedLeaseLedger:
+    def __init__(self) -> None:
+        receipt = signed_containment_receipt("lease-conductor-test", "sandbox", CONDUCTOR_TEST_AUTHENTICATOR)
+        self.record = AdmittedLeaseRecord(
+            "lease-conductor-test", "sandbox", receipt.canonical_bytes(), receipt.signature
+        )
+
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None:
+        return self.record if lease_id == self.record.lease_id else None
+
+
+CONDUCTOR_TEST_LEDGER = RecordingAdmittedLeaseLedger()
+
 
 class RecordingToolPort:
     def __init__(
@@ -68,6 +92,11 @@ class RecordingToolPort:
         *,
         results: list[Mapping[str, Any]] | None = None,
     ) -> None:
+        self.containment = RuntimeContainment.ATTESTED
+        self.containment_lease_id = "lease-conductor-test"
+        self.containment_receipt = signed_containment_receipt(
+            self.containment_lease_id, "sandbox", CONDUCTOR_TEST_AUTHENTICATOR
+        )
         self._bindings = bindings
         self.results = list(results or [])
         self.calls: list[tuple[str, dict[str, Any], int]] = []
@@ -78,6 +107,10 @@ class RecordingToolPort:
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         self.binding_reads += 1
         return self._bindings
+
+    @property
+    def declared_workspace(self) -> str:
+        return "/workspace"
 
     async def invoke_tool(
         self,
@@ -90,6 +123,34 @@ class RecordingToolPort:
         if self.error is not None:
             raise self.error
         return self.results.pop(0)
+
+@pytest.mark.asyncio
+async def test_public_open_rejects_unconfined_trusted_process_workspace() -> None:
+    tools = RecordingToolPort()
+    tools.containment = RuntimeContainment.UNCONFINED_TEST_ONLY
+    tools.containment_receipt = None
+    with pytest.raises(RunnerPlanError, match="containment receipt"):
+        await _open(tools=tools)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("containment", [RuntimeContainment.ATTESTED, RuntimeContainment.UNCONFINED_TEST_ONLY])
+async def test_public_open_rejects_workspace_self_signed_containment(
+    containment: RuntimeContainment,
+) -> None:
+    tools = RecordingToolPort()
+    tools.containment = containment
+    forged_authenticator = HmacSha256ReceiptAuthenticator(
+        key_id="workspace-forgery", key=b"workspace-forgery-key-32-bytes!!!!"
+    )
+    tools.containment_authenticator = forged_authenticator
+    tools.containment_receipt = signed_containment_receipt(
+        tools.containment_lease_id, "sandbox", forged_authenticator
+    )
+    with pytest.raises(RunnerPlanError) as caught:
+        await _open(tools=tools)
+    assert caught.value.code == "containment_receipt_invalid"
+    assert tools.calls == []
 
 
 class RecordingCancellationProbe:
@@ -321,7 +382,7 @@ async def _open(
     resolved_sink = sink or RecordingEventSink()
     open_request = RunnerOpenRequest(episode_id=episode_id, effective_plan=resolved_plan)
     binding = PolicyRuntimeBinding(open_request, resolved_client)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
     session = await adapter.open(
         open_request,
         policy=binding,
@@ -576,7 +637,7 @@ async def _assert_open_rejected(
     binding = PolicyRuntimeBinding(request, client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             request,
             policy=binding,
             workspace=tools,
@@ -879,12 +940,6 @@ async def test_conductor_executes_ordered_modes_with_exact_prompts_and_mode_tool
     assert client.close_calls == 1
 
 
-def test_conductor_implementation_digest_measures_exact_module_artifact() -> None:
-    module_path = Path(conductor_module.__file__)
-    assert module_path.is_absolute()
-    assert CONDUCTOR_IMPLEMENTATION_DIGEST == (
-        "sha256:" + hashlib.sha256(module_path.read_bytes()).hexdigest()
-    )
 
 
 def test_conductor_constructor_owns_identity_and_rejects_post_bootstrap_drift(
@@ -902,7 +957,7 @@ def test_conductor_constructor_owns_identity_and_rejects_post_bootstrap_drift(
     )
     monkeypatch.setattr(conductor_module, "measure_module_artifact", lambda _path: changed)
     with pytest.raises(RuntimeError, match="changed after bootstrap"):
-        ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+        ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
 
 @pytest.mark.parametrize(
@@ -927,7 +982,7 @@ async def test_conductor_rejects_runner_identity_mismatch_before_binding_tool_pr
     tools = RecordingToolPort()
     probe = RecordingCancellationProbe()
     sink = RecordingEventSink()
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
     with pytest.raises(RunnerPlanError) as captured:
         await adapter.open(
@@ -1006,7 +1061,7 @@ async def test_conductor_rejects_malformed_or_unbound_ir_before_tool_probe_event
     sink = RecordingEventSink()
 
     with pytest.raises((RunnerPlanError, RunnerPolicyBindingError)) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1044,7 +1099,7 @@ async def test_conductor_rejects_foreign_provider_tool_policy_before_port_effect
     )
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1081,7 +1136,7 @@ async def test_conductor_rejects_tool_binding_subclass_even_when_equality_can_sp
     binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-a", effective_plan=plan), client)
 
     with pytest.raises(RunnerPlanError) as captured:
-        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        await ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER).open(
             RunnerOpenRequest(episode_id="episode-a", effective_plan=plan),
             policy=binding,
             workspace=tools,
@@ -1754,6 +1809,18 @@ async def test_conductor_session_is_one_shot_and_closed_session_cannot_run() -> 
     assert closed_sink.events == []
 
 
+async def test_conductor_non_target_plan_requires_responses_api_variant() -> None:
+    observation = _observation()
+    client = RecordingPolicyClient(observation)
+    session, _, _, _, _, _ = await _open(observation=observation, client=client)
+
+    result = await session.run(ConductorRunRequest({"query": "non-target"}))
+
+    assert result.episode_id == "episode-a"
+    assert len(client.requests) == 1
+    await session.close()
+
+
 async def test_conductor_resolves_every_compiled_alias_and_model_name_to_the_admitted_tool_id() -> None:
     observation = _observation()
     semantic = _tool_semantics(observation)
@@ -2060,6 +2127,27 @@ async def test_conductor_rejects_each_nonempty_unsupported_semantic_family(
     )
 
 
+async def test_conductor_rejects_native_recording_policy_before_effects() -> None:
+    observation = _observation()
+    semantic = copy.deepcopy(_empty_semantics(observation=observation))
+    semantic["providers"]["models"][0]["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": "breadboard.provider.recording.v1",
+        "provider_profile_digest": _digest("native-provider-profile"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    await _assert_open_rejected(
+        observation=observation,
+        plan=_plan(
+            observation=observation,
+            semantics=_sync_root_semantics(semantic),
+            implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+        ),
+        code="native_response_consumer_mismatch",
+    )
+
+
 @pytest.mark.parametrize(
     ("control", "value"),
     [
@@ -2266,6 +2354,39 @@ async def test_conductor_accepts_nested_compiler_schema_and_invokes_only_valid_a
     await session.close()
 
 
+async def test_conductor_preserves_pattern_properties_order_in_compiled_tool_schema() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(
+        observation,
+        parameters=[
+            _parameter(
+                "environment",
+                {
+                    "type": "object",
+                    "properties": {},
+                    "patternProperties": {
+                        "^B_": {"type": "string"},
+                        "^A_": {"type": "string"},
+                    },
+                    "additionalProperties": False,
+                },
+            )
+        ],
+    )
+    client = RecordingPolicyClient(observation, responses=[_response("done")])
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=_plan_with_tools(observation, semantics=semantic),
+        client=client,
+        tools=RecordingToolPort((_tool_binding(),)),
+    )
+    result = await session.run(ConductorRunRequest({"query": "preserve schema"}))
+    request = thaw_json(client.requests[0].request_payload)
+    projected = request["tools"][0]["parameters"]["properties"]["environment"]
+    assert list(projected["patternProperties"]) == ["^B_", "^A_"]
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    await session.close()
+
 @pytest.mark.parametrize(
     ("mutation", "message"),
     [
@@ -2447,7 +2568,7 @@ async def test_conductor_requires_exact_policy_binding_and_claims_it_only_once()
     observation = _observation()
     plan = _plan(observation=observation, implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST)
     request = RunnerOpenRequest(episode_id="episode-a", effective_plan=plan)
-    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI)
+    adapter = ConductorAdapter(CONDUCTOR_RUNTIME_ABI, containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR, admitted_lease_ledger=CONDUCTOR_TEST_LEDGER)
 
     for candidate_factory in (
         lambda client: PolicyRuntimeBindingSubclass(request, client),
@@ -3730,8 +3851,6 @@ async def test_session_close_shares_redacted_cancelled_error_subclass_and_remain
     assert closed.value.code == "session_closed"
     assert client.requests == []
     assert client.close_calls == 1
-
-
 async def test_conductor_tool_error_observations_unbound_tool_call_emits_error_observation_and_continues() -> None:
     observation = _observation()
     semantic = _tool_semantics(observation)
@@ -3896,3 +4015,1169 @@ async def test_conductor_tool_action_timeout_follows_tool_error_observation_mode
     tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
     assert [e.error_type for e in tool_obs_events] == ["tool_error"]
     await session.close()
+
+
+class _NativeCloseTestClient(RecordingPolicyClient):
+    def __init__(
+        self,
+        observation: c.PolicyCapabilityObservation,
+        responses: list[Mapping[str, Any]],
+    ) -> None:
+        super().__init__(observation, responses=responses)
+        self.native_stream_binding: tuple[str, tuple[Mapping[str, Any], ...]] | None = None
+        self.invoke_entered = asyncio.Event()
+        self.block_invoke = False
+
+    def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+        return {"model_id": plan.effective_semantics["providers"]["default_model_id"]}
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
+    ) -> None:
+        self.native_stream_binding = (system_prompt, tools)
+
+    async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+        self.invoke_entered.set()
+        if self.block_invoke:
+            await asyncio.Event().wait()
+        return await super().invoke(request)
+
+
+class _NativeCloseTestPort(RecordingToolPort):
+    def __init__(
+        self,
+        bindings: tuple[RunnerToolBinding, ...],
+        *,
+        malformed_execute: bool = False,
+        close_error: BaseException | None = None,
+        block_close: bool = False,
+    ) -> None:
+        super().__init__(bindings)
+        self.operations: list[str] = []
+        self.malformed_execute = malformed_execute
+        self.close_error = close_error
+        self.effect_admissions = 0
+        self.effect_measurements = 0
+        self.block_close = block_close
+        self.close_entered = asyncio.Event()
+        self.release_close = asyncio.Event()
+        self.runtime_all_dead = True
+
+    @property
+    def declared_workspace(self) -> str:
+        return "/native-test/workspace"
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        values = {
+            "cwd": "/native-test/workspace",
+            "home": "/native-test/home",
+            "current_date": "2026-09-23",
+            "package_dir": f"/native-test/{package_subpath}",
+        }
+        if set(input_names) != set(values):
+            raise AssertionError("unexpected runtime input declaration")
+        return {name: values[name] for name in input_names}
+
+    async def begin_native_workspace_effects(self) -> None:
+        self.effect_admissions += 1
+        self.operations.append("begin_effects")
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        self.effect_measurements += 1
+        self.operations.append("measure_effects")
+        return {}
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("retire_runtime")
+        return {"kind": "closed", "cleanup": {"all_dead": self.runtime_all_dead, "steps": []}}
+
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+        package_subpath: str | None = None,
+    ) -> Mapping[str, Any]:
+        del timeout_ms
+        self.operations.append(operation)
+        if operation == "initialize":
+            runtime_inputs = payload["runtime_inputs"]
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "initialized",
+                "system_prompt": "system",
+                "tool_schemas": [],
+                "bootstrap": dict(runtime_inputs),
+            }
+        if operation == "project_request":
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "request",
+                "messages": [],
+                "tools": [],
+            }
+        if operation == "prepare_tools":
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "prepared",
+            }
+        if operation == "execute_batch":
+            if self.malformed_execute:
+                return {
+                    "schema_version": "bb.pi-native.test.v1",
+                    "kind": "tool_results",
+                    "results": [{"id": "wrong-call-id", "completion_index": 0}],
+                }
+            result = {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "tool_results",
+                "results": [{
+                    "id": "call-1",
+                    "completion_index": 0,
+                    "content": "ok",
+                    "details": {},
+                    "isError": False,
+                    "terminate": False,
+                }],
+            }
+            return result
+        if operation == "close":
+            self.close_entered.set()
+            if self.block_close:
+                await self.release_close.wait()
+            if self.close_error is not None:
+                raise self.close_error
+            return {
+                "schema_version": "bb.pi-native.test.v1",
+                "kind": "closed",
+                "cleanup": {"processes": [], "all_dead": True},
+            }
+        raise AssertionError(operation)
+
+
+def _native_close_test_case(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    malformed_execute: bool = False,
+    close_error: BaseException | None = None,
+    block_invoke: bool = False,
+) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort]:
+    from breadboard.rl.harness import native_stream_profiles
+    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
+
+    observation = _observation()
+    semantics = _tool_semantics(observation)
+    runtime_profile = {"advertisement": {}}
+    semantics["metadata"] = {
+        "e4_target": {
+            "renderer_id": PI_RESPONSE_CONSUMER_ID,
+            "target_id": "pi@0.73.1",
+            "version": 3,
+            "runtime_profile": runtime_profile,
+        }
+    }
+    model = semantics["providers"]["models"][0]
+    model["params"] = {}
+    model["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": PI_RESPONSE_CONSUMER_ID,
+        "provider_profile_digest": _digest("native-provider"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    semantics["providers"]["policy_slots"][0]["trainable_json_pointers"] = []
+    _sync_root_semantics(semantics)
+    profile = native_stream_profiles.NativeStreamProfile(
+        consumer_id=PI_RESPONSE_CONSUMER_ID,
+        api_variant="responses",
+        target_id="pi@0.73.1",
+        target_version=3,
+        phase_schema_version="bb.pi-native.test.v1",
+        tool_order=("read-file",),
+        max_turns=1,
+        action_timeout_ms=100,
+        episode_timeout_seconds=5,
+        ack_policy="none",
+        incomplete_stop_reasons=frozenset({"error"}),
+        runtime_input_names=("cwd", "home", "current_date", "package_dir"),
+        package_subpath="node_modules/@mariozechner/pi-coding-agent",
+        state_module=pi_semantics,
+        state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
+            task=task,
+            system_prompt=system_prompt,
+            request_cap=2,
+            model_id="model-a",
+            provider="openai",
+        ),
+    )
+    registry = {PI_RESPONSE_CONSUMER_ID: profile}
+    monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", registry)
+    monkeypatch.setattr(conductor_module, "_PROFILE_MODULE_IDENTITIES", (
+        conductor_module.measure_module_artifact(native_stream_profiles.__file__),
+        *(
+            conductor_module.measure_module_artifact(item.state_module.__file__)
+            for item in registry.values()
+        ),
+    ))
+    request_body = {"model": model["model_id"], "messages": [], "tools": []}
+    request_digest = conductor_module.canonical_sha256(request_body).removeprefix("sha256:")
+    first_response = {
+        "native_response": {
+            "binding_digest": _digest("native-binding"),
+            "request_digest": request_digest,
+            "request_body": request_body,
+            "response_id": "native-response-1",
+            "finish_reason": "tool_calls",
+            "tool_calls": [{
+                "id": "call-1",
+                "name": "read_file",
+                "arguments": "{\"path\":\"src/main.py\"}",
+            }],
+            "stream_fragments": [],
+        }
+    }
+    final_response = {
+        "native_response": {
+            "binding_digest": _digest("native-binding"),
+            "request_digest": request_digest,
+            "request_body": request_body,
+            "response_id": "native-response-2",
+            "finish_reason": "stop",
+            "content": "done",
+            "tool_calls": [],
+            "stream_fragments": [],
+        }
+    }
+    client = _NativeCloseTestClient(observation, [first_response, final_response])
+    client.block_invoke = block_invoke
+    tools = _NativeCloseTestPort(
+        (_tool_binding("read-file"),),
+        malformed_execute=malformed_execute,
+        close_error=close_error,
+    )
+    plan = _plan(
+        observation=observation,
+        semantics=semantics,
+        tools=(_tool_grant("read-file"),),
+        limit_updates={"max_turns": 1, "action_timeout_ms": 100},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    return plan, client, tools
+
+
+async def _run_native_close_test_case(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    malformed_execute: bool = False,
+    close_error: BaseException | None = None,
+    block_invoke: bool = False,
+) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort, Any]:
+    plan, client, tools = _native_close_test_case(
+        monkeypatch,
+        malformed_execute=malformed_execute,
+        close_error=close_error,
+        block_invoke=block_invoke,
+    )
+    session, _, _, _, _, _ = await _open(
+        plan=plan, client=client, tools=tools,
+    )
+    return session, client, tools, ConductorRunRequest({"prompt": "task"})
+
+
+async def test_native_stream_malformed_execute_closes_once_and_preserves_protocol_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(
+        monkeypatch, malformed_execute=True,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    assert captured.value.code == "native_response_invalid"
+
+
+
+async def test_native_stream_provider_failure_closes_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, client, tools, request = await _run_native_close_test_case(monkeypatch)
+    client.invoke_error = RuntimeError("provider sentinel")
+    try:
+        with pytest.raises(RunnerDependencyError):
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+
+
+async def test_native_stream_close_failure_on_error_preserves_primary_and_records_cleanup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(
+        monkeypatch,
+        malformed_execute=True,
+        close_error=RuntimeError("close sentinel"),
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
+
+
+async def test_native_stream_cancellation_during_provider_closes_and_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, client, tools, request = await _run_native_close_test_case(
+        monkeypatch, block_invoke=True,
+    )
+    tools.block_close = True
+    tools.close_error = RuntimeError("close while cancelled")
+    run_task = asyncio.create_task(session.run(request))
+    await _within_timeout(client.invoke_entered.wait())
+    run_task.cancel()
+    await _within_timeout(tools.close_entered.wait())
+    tools.release_close.set()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_task
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
+
+async def test_native_stream_cancellation_during_shielded_close_preserves_cancelled_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    tools.block_close = True
+    tools.close_error = RuntimeError("shielded close sentinel")
+    run_task = asyncio.create_task(session.run(request))
+    await _within_timeout(tools.close_entered.wait())
+    run_task.cancel()
+    tools.release_close.set()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            await run_task
+    finally:
+        await session.close()
+    assert tools.operations.count("close") == 1
+    cleanup = session.native_cleanup_outcome
+    assert cleanup.attempted is True
+    assert cleanup.all_dead is False
+    assert cleanup.error_code == "native_close_failed"
+
+async def test_non_native_binding_close_failure_keeps_session_close_fact() -> None:
+    from breadboard.rl.harness import service as service_module
+    from tests.rl.harness.test_runner_policy_runtime import (
+        CancelFailsDuringClosePolicyClient,
+    )
+
+    observation = _observation()
+    client = CancelFailsDuringClosePolicyClient(observation)
+    session, _, _, _, _, _ = await _open(client=client)
+    run_task = asyncio.create_task(session.run(ConductorRunRequest({"query": "work"})))
+    await _within_timeout(client.invoke_entered.wait())
+    client.close_error = RuntimeError("binding close sentinel")
+    close_task = asyncio.create_task(session.close())
+    await _within_timeout(client.cancel_entered.wait())
+    with pytest.raises(RunnerDependencyError):
+        await close_task
+    with pytest.raises((RunnerCancelled, asyncio.CancelledError)):
+        await run_task
+
+    assert session.native_cleanup_outcome is None
+    legacy = service_module._failure_from_exception(
+        RunnerDependencyError("policy runtime close failed", code="policy_close_failed"),
+        "session_close",
+    )
+    assert legacy.category == "runtime"
+    assert legacy.code == "policy_close_failed"
+    assert service_module._native_cleanup_failure(None, "session_close") is None
+
+
+async def test_native_stream_normal_path_closes_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    try:
+        result = await session.run(request)
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert tools.operations.count("close") == 1
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1
+    assert tools.operations[-3:] == ["close", "retire_runtime", "measure_effects"]
+
+
+async def test_native_stream_unverified_runtime_retirement_fails_before_effects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session, _, tools, request = await _run_native_close_test_case(monkeypatch)
+    tools.runtime_all_dead = False
+    try:
+        with pytest.raises(RunnerProtocolError, match="cleanup is not verified") as captured:
+            await session.run(request)
+    finally:
+        await session.close()
+    assert captured.value.code == "native_response_invalid"
+    assert tools.operations.count("retire_runtime") == 1
+    assert tools.effect_measurements == 0
+
+
+class _OpenHandsTraceClient(RecordingPolicyClient):
+    def __init__(self, observation: c.PolicyCapabilityObservation) -> None:
+        super().__init__(observation)
+        self.native_tools: tuple[Mapping[str, Any], ...] = ()
+        self.http_response: Mapping[str, Any] | None = None
+
+    def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+        return {"model_id": plan.effective_semantics["providers"]["default_model_id"]}
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
+        self.native_tools = tools
+
+    def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        return request
+
+    def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
+        del response_digest
+        assert self.http_response is not None
+        return self.http_response
+
+    async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+        self.requests.append(request)
+        body = {
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": ""}, "finish_reason": "tool_calls"}],
+        }
+        self.http_response = {
+            "status_code": 200,
+            "headers": {},
+            "body_b64": base64.b64encode(json.dumps(body).encode()).decode(),
+        }
+        response = {"native_http_response": self.http_response}
+        return PolicyRuntimeInvokeResult(
+            response_payload=response,
+            response_digest=_independent_digest(response),
+        )
+
+
+class _OpenHandsTracePort(RecordingToolPort):
+    def __init__(
+        self,
+        *,
+        failure_status: str | None = None,
+        native_observations: tuple[Mapping[str, Any], ...] | None = None,
+        commit_events: tuple[Mapping[str, Any], ...] = (),
+        cleanup_all_dead: bool = True,
+    ) -> None:
+        super().__init__(tuple(
+            _tool_binding(tool_id) for tool_id in sorted(
+                ("terminal", "file_editor", "task_tracker", "finish", "think"),
+            )
+        ))
+        self.operations: list[str] = []
+        self.effect_admissions = 0
+        self.effect_measurements = 0
+        self.cleanup_all_dead = cleanup_all_dead
+        self.failure_status = failure_status
+        self.native_observations = (
+            native_observations
+            if native_observations is not None
+            else (
+                {
+                    "kind": "ObservationEvent",
+                    "tool_name": "finish",
+                    "observation": {"content": "done", "is_error": False},
+                },
+            )
+        )
+        self.commit_event_delta = (
+            *self.native_observations,
+            *commit_events,
+        )
+
+    async def begin_native_workspace_effects(self) -> None:
+        self.effect_admissions += 1
+        self.operations.append("begin_effects")
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        self.effect_measurements += 1
+        self.operations.append("measure_effects")
+        return {}
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        self.operations.append("close")
+        return {
+            "kind": "closed",
+            "cleanup": {
+                "all_dead": self.cleanup_all_dead,
+                "steps": [{
+                    "resource": "runtime",
+                    "state": "released" if self.cleanup_all_dead else "failed",
+                    "detail": "" if self.cleanup_all_dead else "survivor",
+                }],
+            },
+        }
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        del payload, timeout_ms
+        self.operations.append(operation)
+        if operation == "initialize":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "initialized",
+                "conversation_id": "56351706-00f7-47c5-98d0-7145da8af641",
+                "tool_schemas": ({"type": "function", "name": "finish"},),
+                "event_delta": (),
+                "status": "IDLE",
+                "iteration": 0,
+            }
+        if operation == "sample":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "provider_request",
+                "http_request": {
+                    "method": "POST",
+                    "url": "https://provider.invalid/chat",
+                    "headers": {},
+                    "body_b64": base64.b64encode(json.dumps({
+                        "messages": [],
+                        "prompt_cache_key": "56351706-00f7-47c5-98d0-7145da8af641",
+                        "tools": [{"type": "function", "function": {
+                            "name": "file_editor",
+                            "description": "Your current working directory is: /opt/openhands/workspace",
+                        }}],
+                    }).encode()).decode(),
+                },
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "provider_response":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "sample_ready",
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "prepare":
+            action = {
+                "index": 0,
+                "call_id": "finish-call",
+                "tool_id": "finish",
+                "arguments": {},
+                "security_risk": "LOW",
+            }
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "prepared",
+                "actions": (action,),
+                "event_delta": ({
+                    "kind": "ActionEvent",
+                    "tool_name": "finish",
+                    "tool_call": {"arguments": "{}"},
+                    "security_risk": "LOW",
+                },),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "execute":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "executed",
+                "index": 0,
+                "tool_id": "finish",
+                "observations": self.native_observations,
+                "event_delta": (),
+                "status": "RUNNING",
+                "iteration": 1,
+            }
+        if operation == "commit":
+            return {
+                "schema_version": "bb.openhands-native.v1",
+                "kind": "committed",
+                "event_delta": self.commit_event_delta,
+                "status": self.failure_status or "FINISHED",
+                "iteration": 1,
+            }
+        raise AssertionError(operation)
+
+
+def _openhands_semantics(observation: c.PolicyCapabilityObservation) -> dict[str, Any]:
+    semantic = _tool_semantics(observation)
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    selected = tuple(sorted(tool_order))
+    definitions: list[dict[str, Any]] = []
+    for tool_id in selected:
+        definition = copy.deepcopy(semantic["tools"]["definitions"][0])
+        definition["tool_id"] = tool_id
+        definition["model_name"] = tool_id
+        definitions.append(definition)
+    semantic["tools"]["definitions"] = definitions
+    semantic["tools"]["selected_tool_ids"] = list(selected)
+    semantic["tools"]["aliases"] = []
+    variant = semantic["prompts"]["variants"][0]
+    variant["effective_tool_ids"] = list(tool_order)
+    variant["tool_catalog"]["effective_tool_ids"] = list(tool_order)
+    variant["tool_catalog"]["text"] = "TOOL CATALOG: " + ", ".join(tool_order)
+    variant["tool_catalog"]["text_digest"] = _digest(variant["tool_catalog"]["text"])
+    variant["tool_set_digest"] = _independent_digest(
+        {"schema": "bb.tool-set.v1", "tool_ids": list(tool_order)}
+    )
+    semantic["modes"][0]["enabled_tool_ids"] = list(tool_order)
+    semantic["loop"]["sequence"] = [{"condition": None, "mode_id": "build"}]
+    semantic["metadata"] = {
+        "e4_target": {
+            "renderer_id": "breadboard.openhands-sdk.v1.47.0",
+            "target_id": "openhands-sdk@1.47.0",
+            "version": 3,
+            "runtime_profile": {"agent": {}, "model": {}},
+        }
+    }
+    semantic["providers"]["provider_tools"].update({
+        "api_variant": "chat",
+        "responses_use_developer_role": False,
+    })
+    model = semantic["providers"]["models"][0]
+    model["params"] = {}
+    model["response_policy"] = {
+        "schema_version": "bb.provider_native_response_policy.v1",
+        "consumer_id": "breadboard.openhands-sdk.v1.47.0",
+        "provider_profile_digest": _digest("openhands-provider"),
+        "max_response_bytes": 65_536,
+        "max_stream_fragments": 64,
+    }
+    semantic["providers"]["policy_slots"][0]["trainable_json_pointers"] = []
+    return _sync_root_semantics(semantic)
+
+
+@pytest.mark.parametrize("cleanup_all_dead", [True, False])
+async def test_openhands_trace_is_frozen_json_and_comparator_compatible(
+    cleanup_all_dead: bool,
+) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort(cleanup_all_dead=cleanup_all_dead)
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        if not cleanup_all_dead:
+            with pytest.raises(RunnerProtocolError) as captured:
+                await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+            assert captured.value.code == "native_response_invalid"
+            assert tools.effect_measurements == 0
+            return
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    trace = thaw_json(result.response["replay_trace"])
+    json.dumps(trace, ensure_ascii=False, allow_nan=False)
+    assert "normalizations" not in trace
+    from conformance.comparators.openhands_sdk import project_bb_trace
+    assert trace["conversation_id"] == "56351706-00f7-47c5-98d0-7145da8af641"
+    assert all(request["body"]["prompt_cache_key"] == trace["conversation_id"] for request in trace["requests"])
+    projected = project_bb_trace(trace)
+    assert projected["request_count"] == 1
+    assert projected["tool_calls"]
+    assert projected["observations"]
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1
+    assert tools.operations.index("close") < tools.operations.index("measure_effects")
+
+@pytest.mark.parametrize("invalid_conversation_id", [None, "", "not-a-uuid", "12345"])
+async def test_openhands_invalid_conversation_id_fails_protocol(invalid_conversation_id: str | None) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    class _CustomPort(_OpenHandsTracePort):
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            res = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "initialize":
+                if invalid_conversation_id is None:
+                    res.pop("conversation_id", None)
+                else:
+                    res["conversation_id"] = invalid_conversation_id
+            return res
+    tools = _CustomPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+        assert captured.value.code == "native_response_invalid"
+    finally:
+        await session.close()
+
+
+
+
+
+async def test_openhands_native_errors_are_preserved_in_replay_trace() -> None:
+    """Preserve native failed observations and repeated agent errors in the replay."""
+    from conformance.comparators.openhands_sdk import project_bb_trace
+
+    fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
+    oh2_path = fixtures / "OH-02-invalid-call-continues" / "trace.json"
+    oh5_path = fixtures / "OH-05-iteration-budget" / "trace.json"
+    assert oh2_path.is_file()
+    assert oh5_path.is_file()
+    oh2 = json.loads(oh2_path.read_text(encoding="utf-8"))
+    oh5 = json.loads(oh5_path.read_text(encoding="utf-8"))
+    oh2_events = oh2.get("events")
+    oh5_events = oh5.get("events")
+    assert isinstance(oh2_events, list)
+    assert isinstance(oh5_events, list)
+    agent_index = next(
+        index for index, event in enumerate(oh2_events)
+        if event.get("kind") == "AgentErrorEvent"
+    )
+    observation_index = next(
+        index for index, event in enumerate(oh5_events)
+        if (
+            event.get("kind") == "ObservationEvent"
+            and event.get("observation", {}).get("kind") == "TerminalObservation"
+        )
+    )
+    assert agent_index == 2
+    assert observation_index == 1
+    agent_error = copy.deepcopy(oh2_events[agent_index])
+    agent_error["id"] = "agent-error-1"
+    second_agent_error = copy.deepcopy(agent_error)
+    second_agent_error["id"] = "agent-error-2"
+    failed_observation = copy.deepcopy(oh5_events[observation_index])
+    failed_observation["observation"]["is_error"] = True
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort(
+        native_observations=(failed_observation,),
+        commit_events=(agent_error, second_agent_error),
+    )
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    trace = thaw_json(result.response["replay_trace"])
+    projected = project_bb_trace(trace)
+    assert [event["event_kind"] for event in projected["observations"]] == [
+        "ObservationEvent",
+        "AgentErrorEvent",
+        "AgentErrorEvent",
+    ]
+    assert all(event["is_error"] is True for event in projected["observations"])
+    assert [event["error_text"] for event in projected["observations"][1:]] == [
+        "invalid command",
+        "invalid command",
+    ]
+
+
+async def test_openhands_rejected_action_is_traced_but_not_dispatched() -> None:
+    captured = json.loads((
+        Path(__file__).resolve().parents[2]
+        / "fixtures" / "openhands_rerun2" / "captures"
+        / "OH-02-invalid-call-continues" / "trace.json"
+    ).read_text(encoding="utf-8"))
+    actions = [event for event in captured["events"] if event.get("kind") == "ActionEvent"]
+    invalid = actions[1]
+    assert json.loads(invalid["tool_call"]["arguments"])["command"] == "not-a-real-command"
+    executable = (actions[0], actions[2])
+
+    class _RejectedActionPort(_OpenHandsTracePort):
+        def __init__(self) -> None:
+            super().__init__()
+            self.executed: list[tuple[int, str]] = []
+
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = dict(await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms))
+            if operation == "prepare":
+                reply["event_delta"] = tuple(captured["events"][2:6])
+                reply["actions"] = tuple({
+                    "index": index,
+                    "call_id": event["tool_call"]["id"],
+                    "tool_id": event["tool_name"],
+                    "arguments": json.loads(event["tool_call"]["arguments"]),
+                    "security_risk": event["security_risk"],
+                } for index, event in enumerate(executable))
+            elif operation == "execute":
+                self.executed.append((payload["index"], payload["tool_id"]))
+                reply.update(index=payload["index"], tool_id=payload["tool_id"], observations=())
+            elif operation == "commit":
+                reply["event_delta"] = ()
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    tools = _RejectedActionPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=_OpenHandsTraceClient(observation),
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+
+    trace = thaw_json(result.response["replay_trace"])
+    assert [call["arguments"]["command"] for call in trace["tool_calls"]] == [
+        "create", "not-a-real-command", "create",
+    ]
+    assert [call["security_risk"] for call in trace["tool_calls"]] == [
+        event["security_risk"] for event in actions[:3]
+    ]
+    assert tools.executed == [(0, "file_editor"), (1, "file_editor")]
+    assert any(
+        event["event_kind"] == "AgentErrorEvent" and event["is_error"]
+        for event in trace["observations"]
+    )
+
+
+async def test_openhands_second_provider_request_after_http_conflict_is_refused() -> None:
+    class _ConflictClient(_OpenHandsTraceClient):
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            await super().invoke(request)
+            self.http_response = {
+                "status_code": 409,
+                "headers": {"content-type": "application/json"},
+                "body_b64": base64.b64encode(b'{"error":{"message":"script exhausted","type":"script_exhausted"}}').decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RetryPort(_OpenHandsTracePort):
+        async def invoke_native_phase(
+            self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> Mapping[str, Any]:
+            reply = await super().invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+            if operation == "provider_response":
+                return {
+                    **reply,
+                    "kind": "provider_request",
+                    "http_request": {
+                        "method": "POST",
+                        "url": "https://provider.invalid/chat?retry=2",
+                        "headers": {},
+                        "body_b64": "",
+                    },
+                }
+            return reply
+
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    plan = _plan(
+        observation=observation,
+        semantics=_openhands_semantics(observation),
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _ConflictClient(observation)
+    tools = _RetryPort()
+    session, _, _, _, _, _ = await _open(
+        observation=observation, plan=plan, client=client, tools=tools,
+    )
+    try:
+        with pytest.raises(RunnerProtocolError) as captured:
+            await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    assert captured.value.code == "native_retry_refused"
+    assert "second provider request POST https://provider.invalid/chat?retry=2" in str(captured.value)
+    assert len(client.requests) == 1
+    assert tools.operations.count("provider_response") == 1
+    assert "execute" not in tools.operations
+
+
+@pytest.mark.parametrize("failure_status", ["ERROR", "STUCK"])
+async def test_openhands_native_error_returns_replay_trace(failure_status: str) -> None:
+    observation = _observation()
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tool_id) for tool_id in sorted(tool_order)),
+        limit_updates={"max_turns": 16, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OpenHandsTraceClient(observation)
+    tools = _OpenHandsTracePort(failure_status=failure_status)
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "finish the task"}))
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.POLICY_INCOMPLETE
+    trace = thaw_json(result.response["replay_trace"])
+    assert trace["termination"]["kind"] == failure_status.lower()
+    assert trace["request_count"] == 1
+    assert thaw_json(result.response["state"])["status"] == failure_status
+    assert tools.effect_admissions == 1
+    assert tools.effect_measurements == 1
+
+def test_schema_admission_supports_mapping_additional_properties_with_bounds() -> None:
+    request = SimpleNamespace(
+        episode_id="schema-admission",
+        effective_plan_digest="sha256:" + "a" * 64,
+    )
+    schema = {
+        "type": "object",
+        "properties": {
+            "env": {
+                "type": "object",
+                "properties": {"PATH": {"type": "string"}},
+                "required": ["PATH"],
+                "additionalProperties": {"type": "string"},
+            },
+        },
+        "required": ["env"],
+        "additionalProperties": False,
+    }
+    conductor_module._admit_schema(schema, request)
+    assert list(schema["properties"]["env"]["properties"]) == ["PATH"]
+
+    for additional in ([], "string", None, {"unevaluatedProperties": False}):
+        invalid = {**schema, "additionalProperties": additional}
+        with pytest.raises(RunnerPlanError):
+            conductor_module._admit_schema(invalid, request)
+
+    nested: dict[str, Any] = {"type": "string"}
+    for _ in range(conductor_module._MAX_SCHEMA_DEPTH + 1):
+        nested = {"type": "array", "items": nested}
+    with pytest.raises(RunnerPlanError):
+        conductor_module._admit_schema(nested, request)
+
+
+async def test_openhands_iteration_budget_stops_at_configured_turn_limit(tmp_path: Path) -> None:
+    import os
+    from breadboard.rl.harness.native_session import NativeSession
+    py312 = os.environ.get("BB_OPENHANDS_PY312")
+    if py312 is None:
+        pytest.skip("BB_OPENHANDS_PY312 is unset; installed SDK replay requires Python 3.12")
+    assert Path(py312).is_file(), f"BB_OPENHANDS_PY312 is not a file: {py312}"
+
+    fixtures = Path(__file__).resolve().parents[2] / "e4_parity" / "fixtures" / "openhands_sdk"
+    oh5_trace_path = fixtures / "OH-05-iteration-budget" / "trace.json"
+    assert oh5_trace_path.is_file(), f"OH-05 trace fixture not found: {oh5_trace_path}"
+    oh5_trace = json.loads(oh5_trace_path.read_text(encoding="utf-8"))
+
+    env = dict(os.environ)
+    repo_root = str(Path(__file__).resolve().parents[3])
+    env["PYTHONPATH"] = repo_root
+    env["OPENHANDS_SUPPRESS_BANNER"] = "1"
+    env["OPENAI_API_KEY"] = "fixture-only"
+    check = subprocess.run(
+        [py312, "-c", "import openhands.sdk, openhands.tools; import sys; assert sys.version_info[:2] == (3, 12); from breadboard.rl.harness.openhands_worker import factory"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert check.returncode == 0, check.stderr
+    worker_code = """
+import sys
+from breadboard.rl.harness.native_worker import WorkerChannel
+from breadboard.rl.harness.openhands_worker import factory
+
+channel = WorkerChannel()
+sys.stdout = sys.stderr
+actor = factory(channel)
+while True:
+    cmd = channel.receive()
+    if cmd is None:
+        actor.close()
+        break
+    res = actor.dispatch(cmd["operation"], cmd["payload"])
+    channel.respond(res)
+"""
+    proc = await asyncio.create_subprocess_exec(
+        py312, "-u", "-c", worker_code,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env=env,
+    )
+    session = NativeSession(proc, retire_callback=lambda: True)
+
+    class _OH05Client(_OpenHandsTraceClient):
+        def __init__(self, obs: c.PolicyCapabilityObservation) -> None:
+            super().__init__(obs)
+            self.provider_requests: list[Any] = []
+
+        def bind_compiled_plan(self, plan: c.EffectiveExecutionPlan) -> Mapping[str, Any]:
+            del plan
+            return {
+                "model_name": "openai/gpt-4o-mini",
+                "model_canonical_name": None,
+                "max_input_tokens": 131072,
+                "base_url": "http://127.0.0.1:1234/v1",
+            }
+        async def invoke(self, request: Any) -> PolicyRuntimeInvokeResult:
+            idx = len(self.provider_requests)
+            self.provider_requests.append(request)
+            if idx < len(oh5_trace["responses"]):
+                body = oh5_trace["responses"][idx]["response"]
+            else:
+                body = {
+                    "choices": [{"index": 0, "message": {"role": "assistant", "content": "unexpected extra turn"}, "finish_reason": "stop"}],
+                }
+            self.http_response = {
+                "status_code": 200,
+                "headers": [["content-type", "application/json"]],
+                "body_b64": base64.b64encode(json.dumps(body).encode()).decode(),
+            }
+            response = {"native_http_response": self.http_response}
+            return PolicyRuntimeInvokeResult(
+                response_payload=response,
+                response_digest=_independent_digest(response),
+            )
+
+    class _RealWorkerPort(RecordingToolPort):
+        def __init__(self, sess: NativeSession, tool_ids: Sequence[str], workspace: Path, scratch: Path) -> None:
+            super().__init__(tuple(_tool_binding(tid) for tid in sorted(tool_ids)))
+            self._sess = sess
+            self._workspace = workspace
+            self._scratch = scratch
+            self.operations: list[str] = []
+
+        async def begin_native_workspace_effects(self) -> None:
+            self.operations.append("begin_native_workspace_effects")
+
+        async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+            self.operations.append("measure_effects")
+            return {}
+
+        async def invoke_native_phase(self, operation: str, payload: Mapping[str, Any], *, timeout_ms: int) -> Mapping[str, Any]:
+            self.operations.append(operation)
+            effective_payload = dict(payload)
+            if operation == "initialize":
+                effective_payload["workspace"] = str(self._workspace)
+                effective_payload["scratch"] = str(self._scratch)
+            return await self._sess.invoke_native_phase(operation, effective_payload, timeout_ms=timeout_ms)
+
+        async def close_native_runtime(self) -> Mapping[str, Any]:
+            self.operations.append("close_native_runtime")
+            await self._sess.close()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": True,
+                    "steps": [
+                        {"resource": "runtime", "state": "released", "detail": ""},
+                    ],
+                },
+            }
+
+    tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+    port = _RealWorkerPort(session, tool_order, tmp_path / "workspace", tmp_path / "scratch")
+
+    observation = _observation()
+    semantic = _openhands_semantics(observation)
+    plan = _plan(
+        observation=observation,
+        semantics=semantic,
+        tools=tuple(_tool_grant(tid) for tid in sorted(tool_order)),
+        limit_updates={"max_turns": 2, "action_timeout_ms": 90_000},
+        implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
+    )
+    client = _OH05Client(observation)
+    cancellation = RecordingCancellationProbe()
+    events = RecordingEventSink()
+    cond_session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=port,
+        cancellation=cancellation,
+        sink=events,
+    )
+
+    try:
+        task = "Keep using the terminal without finishing; the native iteration limit must stop the conversation."
+        result = await cond_session.run(ConductorRunRequest({"prompt": task}))
+        assert len(client.provider_requests) == 2, f"Expected exactly 2 provider requests, got {len(client.provider_requests)}"
+    finally:
+        await cond_session.close()

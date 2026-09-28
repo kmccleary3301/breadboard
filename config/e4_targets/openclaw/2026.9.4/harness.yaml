@@ -1,0 +1,140 @@
+schema_version: bb.e4.target_config.v2
+target_id: openclaw@2026.9.4
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.openclaw.native-chat.v1
+  revision: breadboard.openclaw.2026.9.4
+prompt:
+  source: openclaw:pinned-attempt-prompt
+  dynamic_fields: []
+tools:
+  ordered:
+  - edit
+  - exec
+  - ls
+  - process
+  - read
+  - write
+  surface_asset: tool-surface.json
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: native_chat_stream
+    stream: true
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 45
+  action:
+    protocol: native_tools
+    decoder: breadboard.openclaw.2026.9.4
+    repair: null
+    argument_processors: []
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: false
+    malformed: stop_before_recovery
+    empty_reply: native_quiescence
+    max_consecutive_format_errors: null
+  execution:
+    scheduler: parallel_prepare_dispatch_ordered_join
+    history_commit: assistant_then_effects_then_tool_results
+    terminal_policy: native_quiescence_error_or_public_request_cap
+    bounded_controls:
+      max_model_calls: 8
+      episode_wall_seconds: 120
+      single_tool_wall_seconds: 40
+      raw_evidence_bytes_per_outcome: 1048576
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.openclaw.native-chat.v1
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: pipes_and_bounded_ptys
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - gateway_service
+  - durable_sessions
+  - provider_retries
+  - model_fallback
+  - compaction
+  - multimodal_model
+  - network_tools
+  - subagents
+  - apply_patch
+  - channels
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: model
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: headless_provider_route/model
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - model
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: openclaw@3a9d69db/harness
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: src/agents/core-coding-tools.ts
+  - path: native-config.json
+    role: runtime
+    required: true
+    source_ref: src/commands/agent-exec.ts
+  - path: bootstrap/AGENTS.md
+    role: bootstrap
+    required: true
+    source_ref: decision-15-answer
+  - path: bootstrap/SOUL.md
+    role: bootstrap
+    required: true
+    source_ref: decision-15-answer
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: decision-15-answer
+  - path: source.json
+    role: source
+    required: true
+    source_ref: 12_SOURCE_PINS.json
+  order:
+  - harness.yaml
+  - tool-surface.json
+  - native-config.json
+  - bootstrap/AGENTS.md
+  - bootstrap/SOUL.md
+  - LICENSE.txt
+  - source.json
+required_capabilities:
+- native_action_processors.v1
+- native_process_scope.required_all.v1
+- provider_native_response.v1
+- native_stream_consumer.v1

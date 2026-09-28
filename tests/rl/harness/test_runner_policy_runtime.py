@@ -320,6 +320,7 @@ def _plan(
     adapter_id: str = "breadboard.conductor.v1",
     runtime_abi: str = RUNTIME_ABI,
     implementation_digest: str = IMPLEMENTATION_DIGEST,
+    sandbox_runtime_id: str = "sandbox",
 ) -> c.EffectiveExecutionPlan:
     observed = observation or _observation(label)
     granted = authority or observed
@@ -366,7 +367,7 @@ def _plan(
     limit_payload.update(limit_updates or {})
     limits = c.ExecutionLimits.model_validate(limit_payload)
     sandbox = c.SandboxGrant(
-        runtime_id="sandbox",
+        runtime_id=sandbox_runtime_id,
         runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
         driver_implementation_digest=_digest("sandbox-driver"),
         runtime_binary_digest=_digest("runtime-binary"),

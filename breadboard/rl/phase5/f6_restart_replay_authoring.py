@@ -189,8 +189,8 @@ def _capture_secret_ref(
         ):
             raise ValueError("secret authority changed while being captured")
         identity = F6FileIdentity(
-            device=opened.st_dev,
-            inode=opened.st_ino,
+            device=str(opened.st_dev),
+            inode=str(opened.st_ino),
             size_bytes=opened.st_size,
             mtime_ns=str(opened.st_mtime_ns),
             ctime_ns=str(opened.st_ctime_ns),
@@ -226,8 +226,8 @@ def _revalidate_secret_ref(
             "secret authority changed before target publication"
         ) from exc
     expected = (
-        source.identity.device,
-        source.identity.inode,
+        int(source.identity.device),
+        int(source.identity.inode),
         source.identity.size_bytes,
         int(source.identity.mtime_ns),
         int(source.identity.ctime_ns),
@@ -448,8 +448,8 @@ def _pin_manifest_authorities(
             metadata.st_ctime_ns,
             metadata.st_size,
         ) != (
-            item.device,
-            item.inode,
+            int(item.device),
+            int(item.inode),
             int(item.ctime_ns),
             item.size_bytes,
         ):
@@ -494,8 +494,8 @@ def _pin_manifest_authorities(
                 f"0{stat.S_IMODE(current.st_mode):03o}",
             )
             expected = (
-                value["device"],
-                value["inode"],
+                int(value["device"]),
+                int(value["inode"]),
                 value["owner_uid"],
                 value["mode"],
             )
@@ -806,8 +806,8 @@ def _resolve_immutable_identity(
         cas = FilesystemCAS(manifest.stores.cas.path)
         cas_stat = os.fstat(cas._root_fd)
         if (cas_stat.st_dev, cas_stat.st_ino) != (
-            manifest.stores.cas.device,
-            manifest.stores.cas.inode,
+            int(manifest.stores.cas.device),
+            int(manifest.stores.cas.inode),
         ):
             raise F6RestartReplayAuthoringError(
                 "CAS directory authority mismatch"
@@ -974,8 +974,8 @@ def _write_exclusive(path: str, payload: bytes) -> F6FileIdentity:
                 "persisted F6 target input changed during directory fsync"
             )
         return F6FileIdentity(
-            device=after.st_dev,
-            inode=after.st_ino,
+            device=str(after.st_dev),
+            inode=str(after.st_ino),
             size_bytes=after.st_size,
             mtime_ns=str(after.st_mtime_ns),
             ctime_ns=str(after.st_ctime_ns),
@@ -1081,7 +1081,7 @@ def build_f6_restart_replay_input(
             strict=True,
         )
         target_input = F6RestartReplayInput(
-            schema_version="bb.rl.phase5-f6-restart-replay-input.v1",
+            schema_version="bb.rl.phase5-f6-restart-replay-input.v2",
             production=production,
             target=spec.target,
             immutable_identity=identity,

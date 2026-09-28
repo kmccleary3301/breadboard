@@ -223,6 +223,17 @@ ALLOWED_LANE_SOURCE_PATHS = {
     "config/e4_lanes/oh_my_pi_p6_6_task_job_subagent.lock.json",
 }
 
+# Lane IDs admitted after the freeze, each naming its authority. A lane document
+# with an admitted ID must keep the pinned field values; drift is a freeze violation.
+ALLOWED_LANE_IDS: dict[str, dict[str, Any]] = {
+    "oh_my_pi_p6_6_task_job_subagent_v2": {},  # NS05B; runtime surface remains frozen.
+    "mini_swe_agent_2_4_6_replay": {  # AM33 evidence-only lane.
+        "kind": "target_support",
+        "status": "compared",
+        "points": 0,
+    },
+}
+
 # Packet M1 owns closeout files. The pattern is deliberately restricted to root-level
 # files that identify both the M track and the otherwise-frozen governance surface.
 M_TRACK_GOVERNANCE_FILE = re.compile(
@@ -376,6 +387,30 @@ def _lane_inventory(tracked_files: set[Path]) -> tuple[set[str], set[str]]:
                 raise InventoryError(f"{relative_path}: {key} must be a non-empty string")
             target.add(value)
     return lane_ids, lane_kinds
+
+
+def _lane_pin_problems(tracked_files: set[Path]) -> dict[str, str]:
+    """Map each admitted lane ID whose document drifts from its pins to the drift."""
+    problems: dict[str, str] = {}
+    lane_paths = (
+        path
+        for path in tracked_files
+        if path.parent == LANE_ROOT and path.suffix in {".json", ".yaml", ".yml"}
+    )
+    for path in sorted(lane_paths):
+        document = _lane_document(path)
+        lane_id = None if document is None else document.get("lane_id")
+        pins = ALLOWED_LANE_IDS.get(lane_id) if isinstance(lane_id, str) else None
+        if not pins:
+            continue
+        found = {key: document.get(key) for key in pins}
+        # Canonical JSON keeps bool and number distinct: points=false is not points=0.
+        if json.dumps(found, sort_keys=True) != json.dumps(pins, sort_keys=True):
+            problems[lane_id] = (
+                f"{_relative(path)} must keep {json.dumps(pins, sort_keys=True)}; "
+                f"found {json.dumps(found, sort_keys=True)}"
+            )
+    return problems
 
 
 def _governance_files(tracked_files: set[Path]) -> set[str]:
@@ -607,9 +642,10 @@ def _added_values(
         baseline.get("sdk_packages"), "sdk_packages"
     )
 
+    lane_pin_problems = _lane_pin_problems(tracked_files)
     lane_id_additions = _string_set(current.get("lane_ids"), "lane_ids") - _string_set(
         baseline.get("lane_ids"), "lane_ids"
-    ) - {"oh_my_pi_p6_6_task_job_subagent_v2"}  # NS05B evidence-only lane; runtime surface remains frozen.
+    ) - (set(ALLOWED_LANE_IDS) - set(lane_pin_problems))
     lane_kind_additions = _string_set(current.get("lane_kinds"), "lane_kinds") - _string_set(
         baseline.get("lane_kinds"), "lane_kinds"
     )
@@ -627,7 +663,10 @@ def _added_values(
         "schema_ids": sorted(schema_additions),
         "schema_content_drift": sorted(schema_content_drift),
         "sdk_packages": sorted(f"{name} ({path})" for name, path in package_additions),
-        "lane_ids": sorted(lane_id_additions),
+        "lane_ids": sorted(
+            f"{lane_id} ({lane_pin_problems[lane_id]})" if lane_id in lane_pin_problems else lane_id
+            for lane_id in lane_id_additions
+        ),
         "lane_kinds": sorted(lane_kind_additions),
         "top_level_governance_files": sorted(governance_additions),
     }

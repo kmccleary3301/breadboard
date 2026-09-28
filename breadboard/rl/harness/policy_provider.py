@@ -1,33 +1,53 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable, Iterator, Mapping
+import base64
+import functools
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping
 from builtins import BaseExceptionGroup
 from dataclasses import dataclass
 from concurrent.futures import Future
 import json
+import os
+import traceback
 import re
 import threading
-from typing import Any
+from typing import Any, overload
+from urllib.parse import urlsplit, urlunsplit
 
 from breadboard_engine.compilation.contracts import (
     CompiledConfigManifest,
     canonical_sha256,
     require_sha256,
 )
-
+from breadboard_engine.compilation.provider_response import (
+    CompiledNativeResponseBinding,
+    HERMES_RESPONSE_CONSUMER_ID,
+    MINI_RESPONSE_CONSUMER_ID,
+    PI_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
+    NATIVE_CHAT_RESPONSE_TARGETS,
+    OMP_RESPONSE_CONSUMER_ID,
+    OPENHANDS_RESPONSE_CONSUMER_ID,
+    OPENCLAW_RESPONSE_CONSUMER_ID,
+    admit_native_response_binding,
+    is_native_response_consumer_registered,
+)
 from breadboard_engine.provider.contracts import (
+    NativeProviderRequestFailure,
     OpenAICompletionsProviderProfile,
     ProviderContractError,
     ProviderMessage,
     ProviderRuntimeContext,
 )
+from breadboard_engine.provider.native_response import NativeProviderResponse
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
 
-from .contracts import PolicyBindingRef, PolicyCapabilityObservation
+from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
     FrozenJsonObject,
+    MiniProviderFailure,
     PolicyRuntimeClientPort,
     PolicyRuntimeInvokeRequest,
     PolicyRuntimeInvokeResult,
@@ -38,6 +58,64 @@ from .runners.base import (
     thaw_json,
 )
 from .service import PolicyRuntimeClientResolver
+
+
+def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
+    """Re-run LiteLLM's OpenAI response conversion for Mini's native consumer."""
+    from openai.types.chat import ChatCompletion
+    from litellm import ModelResponse
+    from litellm.litellm_core_utils.llm_response_utils.convert_dict_to_response import (
+        convert_to_model_response_object,
+    )
+
+    sdk_response = ChatCompletion.model_validate(thaw_json(raw_response))
+    return convert_to_model_response_object(
+        response_object=sdk_response.model_dump(),
+        model_response_object=ModelResponse(),
+    )
+
+
+def _mini_native_cost(response: Any, *, model: str) -> float:
+    """Price one converted Mini response as the pinned source's cost hook does."""
+    import litellm
+
+    try:
+        cost = litellm.cost_calculator.completion_cost(response, model=model)
+        if cost <= 0.0:
+            raise ValueError(f"Cost must be > 0.0, got {cost}")
+    except Exception:
+        # Exact source cost_tracking=ignore_errors behavior.
+        cost = 0.0
+    return cost
+
+
+def _mini_provider_exception(exception: Exception, *, model: str) -> MiniProviderFailure:
+    """Map an OpenAI SDK failure through the locked LiteLLM exception mapper."""
+    import litellm
+    from litellm.litellm_core_utils.exception_mapping_utils import exception_type
+
+    previous_suppress_debug_info = litellm.suppress_debug_info
+    # The mapper otherwise prints help text to stdout; it does not alter str(e).
+    litellm.suppress_debug_info = True
+    try:
+        exception_type(
+            model="openai/" + model,
+            original_exception=exception,
+            custom_llm_provider="openai",
+            completion_kwargs={},
+            extra_kwargs={},
+        )
+    except Exception as mapped:
+        return MiniProviderFailure(mapped, traceback.format_exc())
+    finally:
+        litellm.suppress_debug_info = previous_suppress_debug_info
+    raise RuntimeError("LiteLLM exception mapping returned without raising")
+
+
+def _is_mini_provider_exception(exception: BaseException) -> bool:
+    import openai
+
+    return isinstance(exception, (openai.APIStatusError, openai.APIConnectionError))
 
 
 def _provider_descriptor() -> ProviderDescriptor:
@@ -107,6 +185,29 @@ def _project_effective_chat_tool(definition: Mapping[str, Any]) -> dict[str, Any
             "parameters": parameter_schema,
         },
     }
+# Pinned sources whose tool builders omit ``required`` when it is empty:
+# OpenClaw's tool builder, and Pi 0.57.1's TypeBox ``Type.Object`` with only
+# optional members (pi-coding-agent ls.js:6; r6 captured wire ls schema).
+_EMPTY_REQUIRED_OMITTED_TARGETS = frozenset({
+    OPENCLAW_RESPONSE_CONSUMER_ID,
+    PI_0_57_1_RESPONSE_CONSUMER_ID,
+})
+
+
+def _empty_required_omitted_tools(chat_tools: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Project compiled tools onto a pinned wire form that omits empty ``required``.
+
+    The compiler records every tool with a ``required`` list; the pinned tool
+    builders of ``_EMPTY_REQUIRED_OMITTED_TARGETS`` omit the key when the list is empty.
+    """
+    tools = [thaw_json(tool) for tool in chat_tools]
+    for tool in tools:
+        parameters = tool["function"]["parameters"]
+        if parameters["required"] == []:
+            del parameters["required"]
+    return tools
+
+
 def _join_prompt_parts(*parts: str) -> str:
     return "\n\n".join(part for part in parts if part)
 
@@ -185,21 +286,53 @@ _TARGET_BINDING_DIGESTS = (
     "rendered_prompt_digest", "input_digest", "index_digest",
     "descriptor_bytes_digest", "tool_surface_digest", "harness_lock_digest",
 )
-
-
 def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     binding = metadata.get("e4_target")
+    if not isinstance(binding, Mapping) or type(binding.get("version")) is not int:
+        raise ValueError("compiled semantics lack a supported E4 target binding")
+    version = binding["version"]
+    extra_fields = {"runtime_profile"} if version in (2, 3) else set()
+    expected_fields = {
+        *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
+    }
+    deferred_targets = {
+        OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
+        PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
+        OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
+        OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
+        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
+    }
+    renderer_id = binding["renderer_id"]
     if (
-        not isinstance(binding, Mapping)
-        or set(binding) != {*_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest"}
-        or type(binding.get("version")) is not int
-        or binding["version"] != 1
+        version not in (1, 2, 3)
+        or set(binding) != expected_fields
+        or version == 1
+        and renderer_id != "breadboard.e4.legacy-string-template.v1"
+        or version == 2
+        and (
+            renderer_id != MINI_RESPONSE_CONSUMER_ID
+            or binding.get("target_id") != "mini-swe-agent@2.4.6"
+            or not isinstance(binding.get("runtime_profile"), Mapping)
+        )
+        or version == 3
+        and (
+            renderer_id not in deferred_targets
+            or binding.get("target_id") != deferred_targets[renderer_id]
+            or not isinstance(binding.get("runtime_profile"), Mapping)
+            or binding.get("rendered_prompt_digest") is not None
+        )
     ):
         raise ValueError("compiled semantics lack a supported E4 target binding")
     for name in _TARGET_BINDING_FIELDS:
-        if name != "ordered_tool_names" and (
-            type(binding[name]) is not str or not binding[name]
-        ):
+        if name == "ordered_tool_names":
+            continue
+        value = binding[name]
+        if name == "rendered_prompt_digest" and version == 3:
+            if value is not None:
+                raise ValueError("deferred native prompt digest must be null")
+            continue
+        if type(value) is not str or not value:
             raise ValueError("compiled target identity is malformed")
     names = binding["ordered_tool_names"]
     if (
@@ -209,13 +342,113 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     ):
         raise ValueError("compiled target tool order is malformed")
     for name in _TARGET_BINDING_DIGESTS:
+        if name == "rendered_prompt_digest" and version == 3:
+            continue
         require_sha256(binding[name], name)
     return binding
+
+
+_PI_0_57_1_MODEL_REGISTRY_FIELDS = frozenset(
+    {"provider_id", "api", "reasoning", "input", "cost", "compat"}
+)
+
+
+def _pi_0_57_1_public_config(
+    profile: OpenAICompletionsProviderProfile, runtime_profile: Any,
+) -> dict[str, Any]:
+    """Build the pinned 0.57.1 model object from the compiled model registry.
+
+    The registry carries the non-episode fields of the R3 custody models.json;
+    identity, endpoint, and token limits come from the episode profile.
+    """
+    native = thaw_json(runtime_profile)
+    if not isinstance(native, Mapping) or "model_registry" not in native:
+        raise ValueError("Pi 0.57.1 target runtime profile lacks its model registry")
+    registry = native["model_registry"]
+    if not isinstance(registry, Mapping) or set(registry) != _PI_0_57_1_MODEL_REGISTRY_FIELDS:
+        raise ValueError("Pi 0.57.1 model registry fields are malformed")
+    compat = registry["compat"]
+    if (
+        registry["api"] != "openai-completions"
+        or type(registry["provider_id"]) is not str
+        or not registry["provider_id"]
+        or registry["provider_id"] == "openai"
+        or type(registry["reasoning"]) is not bool
+        or not isinstance(registry["input"], list)
+        or not isinstance(registry["cost"], Mapping)
+        or not isinstance(compat, Mapping)
+        or "supportsDeveloperRole" not in compat
+        or compat["supportsDeveloperRole"] is not False
+    ):
+        raise ValueError("Pi 0.57.1 model registry values are not admitted")
+    return {
+        "id": profile.model,
+        "name": profile.model,
+        "api": registry["api"],
+        "provider": registry["provider_id"],
+        "baseUrl": profile.base_url,
+        "reasoning": registry["reasoning"],
+        "input": list(registry["input"]),
+        "cost": dict(registry["cost"]),
+        "contextWindow": profile.context_window,
+        "maxTokens": profile.max_output_tokens,
+        "compat": dict(compat),
+    }
+
+
+
+def _validate_request_features(
+    profile: OpenAICompletionsProviderProfile,
+    observation: PolicyCapabilityObservation,
+    *,
+    tools: bool,
+    target_projection: E4TargetPolicyProjection | None,
+    episode_id: str,
+    effective_plan_digest: str,
+) -> set[str]:
+    required = set(profile.required_request_features(tools=tools))
+    if (
+        target_projection is not None
+        and target_projection.renderer_id in {
+            *NATIVE_CHAT_RESPONSE_TARGETS,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+            # Pinned 0.57.1 buildParams emits no n and, under custody compat
+            # supportsStore=false, no store (openai-completions.js:295-356).
+            PI_0_57_1_RESPONSE_CONSUMER_ID,
+        }
+    ):
+        # Native source clients emit their own wire and omit profile-inserted n.
+        required.discard("n")
+    elif (
+        target_projection is not None
+        and target_projection.renderer_id == PI_RESPONSE_CONSUMER_ID
+    ):
+        # Pi's buildParams removes n and adds store=false before transport.
+        required.discard("n")
+        required.add("store")
+    missing = required.difference(observation.capabilities.request_features)
+    unsupported_tools = tools and (
+        not observation.capabilities.tool_calling
+        or not profile.capabilities.supports_tools
+        or (
+            profile.request_policy.strict_tools is not None
+            and not profile.capabilities.supports_strict_tools
+        )
+    )
+    if missing or unsupported_tools:
+        raise RunnerPolicyBindingError(
+            "admitted provider does not support the selected request features",
+            code="provider_request_features_unsupported",
+            episode_id=episode_id,
+            effective_plan_digest=effective_plan_digest,
+        )
+    return required
 
 
 def _validate_owned_profile_observation(
     *,
     profile: OpenAICompletionsProviderProfile,
+    target_projection: E4TargetPolicyProjection | None,
     observation: PolicyCapabilityObservation,
     authority_model_id: str,
     authority_wire_model: str,
@@ -242,6 +475,14 @@ def _validate_owned_profile_observation(
             episode_id=episode_id,
             effective_plan_digest=effective_plan_digest,
         )
+    _validate_request_features(
+        profile,
+        observation,
+        tools=False,
+        target_projection=target_projection,
+        episode_id=episode_id,
+        effective_plan_digest=effective_plan_digest,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -251,8 +492,8 @@ class E4TargetPolicyProjection:
     descriptor_digest: str
     execution_config_digest: str
     overlay_digest: str
-    rendered_prompt_digest: str
-    system_prompt: str
+    rendered_prompt_digest: str | None
+    system_prompt: str | None
     ordered_tool_names: tuple[str, ...]
     chat_tools: tuple[FrozenJsonObject, ...]
     input_digest: str
@@ -261,6 +502,8 @@ class E4TargetPolicyProjection:
     target_schema_version: str
     request_schema_version: str
     renderer_id: str
+    runtime_profile: FrozenJsonObject | None = None
+    source_manifest: CompiledConfigManifest | None = None
 
     @classmethod
     def from_compiled(
@@ -287,21 +530,47 @@ class E4TargetPolicyProjection:
             ):
                 raise ValueError("compiled target modes have divergent projections")
             system_prompt, chat_tools = system_text, projected_tools
-        if system_prompt is None or chat_tools is None:
-            raise ValueError("compiled target has no model-visible projection")
+        if chat_tools is None:
+            raise ValueError("compiled target has no model-visible tool projection")
+        deferred_prompt = binding["version"] == 3
+        if deferred_prompt:
+            if system_prompt != "":
+                raise ValueError("OpenHands target must defer its static system prompt")
+            system_prompt_value: str | None = None
+        else:
+            if system_prompt is None:
+                raise ValueError("compiled target has no model-visible projection")
+            system_prompt_value = system_prompt
+        prompt_digest = binding["rendered_prompt_digest"]
         if (
-            canonical_sha256({"text": system_prompt}) != binding["rendered_prompt_digest"]
+            (
+                deferred_prompt
+                and prompt_digest is not None
+            )
+            or (
+                not deferred_prompt
+                and canonical_sha256({"text": system_prompt}) != prompt_digest
+            )
             or canonical_sha256(chat_tools) != binding["tool_surface_digest"]
-            or tuple(tool["function"]["name"] for tool in chat_tools) != binding["ordered_tool_names"]
+            or tuple(tool["function"]["name"] for tool in chat_tools)
+            != binding["ordered_tool_names"]
         ):
             raise ValueError("compiled target outputs differ from their source binding")
         return cls(
             **{name: binding[name] for name in _TARGET_BINDING_FIELDS},
-            system_prompt=system_prompt,
+            system_prompt=system_prompt_value,
             chat_tools=tuple(
                 freeze_json_object(tool, field_name="compiled E4 target tool")
                 for tool in chat_tools
             ),
+            runtime_profile=(
+                freeze_json_object(
+                    binding["runtime_profile"],
+                    field_name="compiled E4 native profile",
+                )
+                if binding["version"] in (2, 3) else None
+            ),
+            source_manifest=manifest if binding["version"] in (2, 3) else None,
         )
 
     def identity_dict(self) -> dict[str, Any]:
@@ -316,6 +585,10 @@ class E4TargetPolicyProjection:
             "tool_surface_digest": canonical_sha256(
                 [thaw_json(tool) for tool in self.chat_tools]
             ),
+            **(
+                {"runtime_profile_digest": canonical_sha256(self.runtime_profile)}
+                if self.runtime_profile is not None else {}
+            ),
         }
 
     def validate_semantics(self, semantics: Mapping[str, Any]) -> None:
@@ -325,18 +598,50 @@ class E4TargetPolicyProjection:
         binding = _checked_target_binding(metadata)
         if any(binding[name] != getattr(self, name) for name in _TARGET_BINDING_FIELDS):
             raise ValueError("effective target binding differs from the requested target")
+        if binding.get("runtime_profile") != self.runtime_profile:
+            raise ValueError("effective runtime profile differs from the compiled target")
         # The selected plan owns its complete lock, including runtime configuration.
         # Bootstrap candidates may differ there while sharing this target projection.
         target_tools = tuple(thaw_json(tool) for tool in self.chat_tools)
         if canonical_sha256(target_tools) != binding["tool_surface_digest"]:
             raise ValueError("effective target tool identity differs from the projection")
+        deferred_prompt = binding["version"] == 3
         for system_text, per_turn_text, projected_tools in _target_mode_projections(semantics):
             if (
-                system_text != self.system_prompt
+                (
+                    deferred_prompt
+                    and (system_text != "" or per_turn_text != "")
+                )
+                or (
+                    not deferred_prompt
+                    and system_text != self.system_prompt
+                )
                 or per_turn_text != ""
                 or projected_tools != target_tools
             ):
                 raise ValueError("effective semantics do not match the selected E4 target")
+
+_MAX_NATIVE_HTTP_REQUEST_BYTES = 16 * 1024 * 1024
+_MAX_NATIVE_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024
+_NATIVE_HTTP_SECRET_HEADERS = frozenset(
+    {"authorization", "cookie", "proxy-authorization", "x-api-key", "api-key"}
+)
+_NATIVE_HTTP_BODY_FIELDS = frozenset({
+    "model", "messages", "tools", "stream", "temperature",
+    "max_tokens", "max_completion_tokens", "reasoning_effort",
+})
+_CANONICAL_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_UNPINNED = object()
+
+
+@dataclass(frozen=True, slots=True)
+class _PendingNativeHTTPRequest:
+    method: str
+    url: str
+    headers: tuple[tuple[str, str], ...]
+    body: bytes
+    request_payload: Mapping[str, Any]
+    request_digest: str
 
 
 class EpisodeOpenAICompletionsPolicyClient:
@@ -351,6 +656,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         profile: OpenAICompletionsProviderProfile,
         timeout_seconds: float = 600.0,
         target_projection: E4TargetPolicyProjection | None = None,
+        max_requests: int | None = None,
         on_close: Callable[[EpisodeOpenAICompletionsPolicyClient], Awaitable[None]]
         | None = None,
     ) -> None:
@@ -363,6 +669,10 @@ class EpisodeOpenAICompletionsPolicyClient:
             or not 0 < timeout_seconds <= 3_600
         ):
             raise ValueError("timeout_seconds must be within (0, 3600]")
+        if max_requests is not None and (
+            type(max_requests) is not int or not 0 < max_requests <= 2**53 - 1
+        ):
+            raise ValueError("max_requests must be a positive safe integer")
         if (
             target_projection is not None
             and type(target_projection) is not E4TargetPolicyProjection
@@ -370,6 +680,9 @@ class EpisodeOpenAICompletionsPolicyClient:
             raise TypeError(
                 "target_projection must be an exact E4TargetPolicyProjection"
             )
+        if target_projection is not None and target_projection.runtime_profile is not None:
+            if timeout_seconds != 45:
+                raise ValueError("source-native targets require their 45-second provider timeout")
         self._episode_id = episode_id
         self._effective_plan_digest = effective_plan_digest
         self._observation = observation
@@ -387,26 +700,529 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._invoke_lock = asyncio.Lock()
         self._close_lock = asyncio.Lock()
         self._closed = False
+        self._closing = False
         self._worker_retired = False
         self._transport_closed = False
         self._on_close = on_close
+        self._max_requests = max_requests
+        self._request_attempts = 0
+        self._native_binding: CompiledNativeResponseBinding | None = None
+        self._native_plan: EffectiveExecutionPlan | None = None
+        self._native_cost: Callable[[Any], float] | None = None
+        self._native_pending: _PendingNativeHTTPRequest | None = None
+        self._native_private_responses: dict[str, Mapping[str, Any]] = {}
+        self._native_tool_schemas: tuple[Mapping[str, Any], ...] | None = None
+        self._native_stream_prompt: str | None = None
+        self._native_accept_truncated_stream = False
+        # One conversation key (or its absence) per episode, pinned on first staging.
+        self._native_conversation_key: str | None | object = _UNPINNED
 
-    @property
-    def profile_identity(self) -> Mapping[str, Any]:
+    def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]:
+        """Join a source-native client to the actual selected compiled plan."""
+        target = self._target_projection
         profile = self._profile
-        if profile is None:
-            raise RuntimeError("episode provider profile is closed")
-        return profile.identity_dict()
+        if (
+            self._native_binding is not None
+            or target is None
+            or target.renderer_id not in {
+                MINI_RESPONSE_CONSUMER_ID,
+                PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
+                *NATIVE_CHAT_RESPONSE_TARGETS,
+                OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }
+            or target.source_manifest is None
+            or profile is None
+        ):
+            raise ValueError("native client lacks a fresh compiled target")
+        target.validate_semantics(plan.effective_semantics)
+        manifest = target.source_manifest
+        binding = admit_native_response_binding(
+            manifest.canonical_bytes(),
+            expected_compiler_input_digest=manifest.inputs.compiler_input_digest,
+            authority_model_id=self._observation.model_id,
+            profile=profile,
+            capability_observation_digest=self._observation.canonical_digest(),
+            episode_id=self._episode_id,
+            effective_plan_digest=self._effective_plan_digest,
+        )
+        if (
+            plan.canonical_digest() != self._effective_plan_digest
+            or plan.base_compiled.manifest_digest != binding.compiled_manifest_digest
+        ):
+            raise ValueError("native client source manifest differs from the effective plan")
 
-    @property
-    def target_identity(self) -> Mapping[str, Any] | None:
-        projection = self._target_projection
-        return None if projection is None else projection.identity_dict()
+        is_mini = target.renderer_id == MINI_RESPONSE_CONSUMER_ID
+        if is_mini:
+            # This is the pinned source's pricing hook, not a zero-cost assertion.
+            # Installation is a producer responsibility; missing dependencies fail admission.
+            from importlib.metadata import version
 
-    def observe(self) -> PolicyCapabilityObservation:
-        return self._observation
+            if version("litellm") != "1.101.0":
+                raise ValueError("Mini pricing requires the sealed LiteLLM 1.101.0 assembly")
+            if os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP", "").lower() != "true":
+                raise ValueError("Mini requires the installed local-only pricing catalog")
+            from litellm.litellm_core_utils.get_model_cost_map import (
+                get_model_cost_map_source_info,
+            )
 
-    async def invoke(
+            if get_model_cost_map_source_info() != {
+                "source": "local",
+                "url": None,
+                "is_env_forced": True,
+                "fallback_reason": None,
+            }:
+                raise ValueError("Mini pricing catalog was not loaded from its sealed assembly")
+
+            self._native_cost = functools.partial(
+                _mini_native_cost, model="openai/" + profile.model
+            )
+            runtime_profile = thaw_json(target.runtime_profile)
+            if not isinstance(runtime_profile, Mapping):
+                raise ValueError("Mini target runtime profile is malformed")
+            model_config = runtime_profile.get("model")
+            if not isinstance(model_config, Mapping):
+                raise ValueError("Mini target model configuration is malformed")
+            public_config = {
+                **dict(model_config),
+                "model_name": "openai/" + profile.model,
+            }
+        elif target.renderer_id in {
+            PI_RESPONSE_CONSUMER_ID,
+            OPENCLAW_RESPONSE_CONSUMER_ID,
+        }:
+            public_config = {
+                "id": profile.model,
+                "name": profile.model,
+                "api": "openai-completions",
+                "provider": "openai",
+                "baseUrl": profile.base_url,
+                "reasoning": False,
+                "input": ["text"],
+                "contextWindow": profile.context_window,
+                "maxTokens": profile.max_output_tokens,
+                "compat": {
+                    "supportsStore": True,
+                    "supportsDeveloperRole": True,
+                    "supportsUsageInStreaming": True,
+                    "maxTokensField": "max_tokens",
+                    "supportsStrictMode": False,
+                },
+            }
+        elif target.renderer_id == PI_0_57_1_RESPONSE_CONSUMER_ID:
+            public_config = _pi_0_57_1_public_config(profile, target.runtime_profile)
+        elif target.renderer_id == OMP_RESPONSE_CONSUMER_ID:
+            public_config = {
+                "id": profile.model,
+                "name": profile.model,
+                "api": "openai-completions",
+                "provider": "openai",
+                "baseUrl": profile.base_url,
+                "reasoning": False,
+                "input": ["text"],
+                "contextWindow": profile.context_window,
+                "maxTokens": profile.max_output_tokens,
+                "compat": {
+                    "supportsStore": True,
+                    "supportsDeveloperRole": True,
+                    "supportsUsageInStreaming": True,
+                    "maxTokensField": "max_completion_tokens",
+                    "supportsStrictMode": False,
+                },
+            }
+        else:
+            self._native_cost = None
+            runtime_profile = thaw_json(target.runtime_profile)
+            if not isinstance(runtime_profile, Mapping):
+                raise ValueError("native Chat target runtime profile is malformed")
+            public_config = {
+                "model_name": (
+                    "openai/" + profile.model
+                    if target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                    else profile.model
+                ),
+                "model_canonical_name": None,
+                "base_url": profile.base_url,
+                "max_input_tokens": self._observation.capabilities.max_context_tokens,
+            }
+
+        self._native_binding = binding
+        self._native_plan = plan
+        return public_config
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
+        """Bind the measured worker's once-rendered, workspace-dependent tools."""
+        target = self._target_projection
+        if (
+            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or self._native_binding is None or self._native_tool_schemas is not None
+            or not isinstance(target.runtime_profile, Mapping)
+            or type(tools) is not tuple
+        ):
+            raise RunnerPolicyBindingError(
+                "native tools require a fresh compiled Chat binding",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
+            )
+        expected = target.runtime_profile["tool_schemas"]
+        if len(tools) != len(expected):
+            raise ValueError("native tool count differs from the compiled recipe")
+        snapshots = []
+        for actual, reference in zip(tools, expected, strict=True):
+            snapshot = freeze_json_object(actual, field_name="native tool")
+            comparison = thaw_json(snapshot)
+            # FileEditorTool.create appends the actual conversation workspace.
+            # The measured worker owns that rendering; every other field is fixed.
+            if (
+                target.renderer_id == OPENHANDS_RESPONSE_CONSUMER_ID
+                and reference["function"]["name"] == "file_editor"
+            ):
+                description = comparison["function"].get("description")
+                if type(description) is not str or not description:
+                    raise ValueError("native editor description is invalid")
+                comparison["function"]["description"] = reference["function"]["description"]
+            if canonical_sha256(comparison) != canonical_sha256(reference):
+                raise ValueError("native tools differ from the compiled source recipe")
+            snapshots.append(snapshot)
+        self._native_tool_schemas = tuple(snapshots)
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
+    ) -> None:
+        """Seal the admitted worker's bootstrap before the first stream."""
+        target = self._target_projection
+        if (
+            target is None
+            or target.renderer_id not in {
+                PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }
+            or self._native_binding is None
+            or self._native_stream_prompt is not None
+            or self._request_attempts
+            or type(system_prompt) is not str or not system_prompt
+            or type(tools) is not tuple
+            or canonical_sha256(tools) != canonical_sha256(
+                _empty_required_omitted_tools(target.chat_tools)
+                if target.renderer_id in _EMPTY_REQUIRED_OMITTED_TARGETS
+                else target.chat_tools
+            )
+            or type(accept_truncated_stream) is not bool
+        ):
+            raise RunnerPolicyBindingError(
+                "native stream bootstrap differs from its compiled source binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id, effective_plan_digest=self._effective_plan_digest,
+            )
+        self._native_stream_prompt = system_prompt
+        self._native_accept_truncated_stream = accept_truncated_stream
+
+    def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        """Admit exactly one source SDK HTTP request without exposing its headers."""
+        target = self._target_projection
+        profile = self._profile
+        if (
+            target is None
+            or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or self._native_binding is None
+            or profile is None
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP request has no compiled binding",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        candidate: Mapping[str, Any] = request
+        if isinstance(request, Mapping) and set(request) == {"http_request"}:
+            nested = request["http_request"]
+            if not isinstance(nested, Mapping):
+                raise RunnerProtocolError(
+                    "native HTTP request wrapper is malformed",
+                    code="native_http_request_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            candidate = nested
+        if not isinstance(candidate, Mapping):
+            raise RunnerProtocolError(
+                "native HTTP request must be an object",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        allowed = {"method", "url", "headers", "body_b64", "declared_capabilities"}
+        if set(candidate) - allowed or not {"method", "url", "headers", "body_b64"} <= set(candidate):
+            raise RunnerProtocolError(
+                "native HTTP request fields are invalid",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        method = candidate["method"]
+        url = candidate["url"]
+        headers = candidate["headers"]
+        body_b64 = candidate["body_b64"]
+        if method != "POST" or type(url) is not str or not url:
+            raise RunnerProtocolError(
+                "native HTTP request must be a POST",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        try:
+            actual_url = urlsplit(url)
+            base_url = urlsplit(profile.base_url)
+            expected_path = base_url.path.rstrip("/") + "/chat/completions"
+            expected_url = urlunsplit(
+                (base_url.scheme, base_url.netloc, expected_path, "", "")
+            )
+            if (
+                actual_url.scheme.lower() != base_url.scheme.lower()
+                or actual_url.netloc.lower() != base_url.netloc.lower()
+                or actual_url.path != expected_path
+                or actual_url.query
+                or actual_url.fragment
+                or urlunsplit(
+                    (
+                        actual_url.scheme,
+                        actual_url.netloc,
+                        actual_url.path,
+                        "",
+                        "",
+                    )
+                )
+                != expected_url
+            ):
+                raise ValueError
+        except (TypeError, ValueError):
+            raise RunnerPolicyBindingError(
+                "native HTTP request origin or path is not admitted",
+                code="native_http_route_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            ) from None
+        if (
+            not isinstance(headers, (list, tuple))
+            or any(
+                not isinstance(pair, (list, tuple))
+                or len(pair) != 2
+                or type(pair[0]) is not str
+                or type(pair[1]) is not str
+                or not pair[0]
+                or "\r" in pair[0]
+                or "\n" in pair[0]
+                or "\r" in pair[1]
+                or "\n" in pair[1]
+                for pair in headers
+            )
+            or len(headers) > 256
+        ):
+            raise RunnerProtocolError(
+                "native HTTP request headers are invalid",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        try:
+            encoded = body_b64.encode("ascii") if type(body_b64) is str else b""
+            if (
+                not encoded
+                or len(encoded) > ((_MAX_NATIVE_HTTP_REQUEST_BYTES + 2) // 3) * 4
+            ):
+                raise ValueError
+            body = base64.b64decode(encoded, validate=True)
+            if (
+                not body
+                or len(body) > _MAX_NATIVE_HTTP_REQUEST_BYTES
+                or base64.b64encode(body) != encoded
+            ):
+                raise ValueError
+            body_object = json.loads(body.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError, json.JSONDecodeError):
+            raise RunnerProtocolError(
+                "native HTTP request body is invalid or oversized",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            ) from None
+        conversation_field = profile.request_policy.conversation_key_field
+        admitted_fields = _NATIVE_HTTP_BODY_FIELDS
+        if conversation_field is not None:
+            admitted_fields = admitted_fields | {conversation_field}
+        if (
+            not isinstance(body_object, dict)
+            or body_object.get("model") != profile.model
+            or body_object.get("stream", False) is not False
+            or set(body_object) - admitted_fields
+            or (
+                target.renderer_id == HERMES_RESPONSE_CONSUMER_ID
+                and set(body_object) != {"model", "messages", "tools", "max_tokens"}
+            )
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP request model or streaming mode is not admitted",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        conversation_present = (
+            conversation_field is not None and conversation_field in body_object
+        )
+        conversation_key = body_object[conversation_field] if conversation_present else None
+        if conversation_present and (
+            type(conversation_key) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_key) is None
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP conversation key is not a canonical UUID",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        messages = body_object.get("messages")
+        if (
+            type(messages) is not list
+            or not messages
+            or any(type(message) is not dict for message in messages)
+        ):
+            raise RunnerProtocolError(
+                "native HTTP messages must be a nonempty object array",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        tools_present = "tools" in body_object
+        if (
+            self._native_tool_schemas is None
+            or canonical_sha256(body_object.get("tools"))
+            != canonical_sha256(self._native_tool_schemas)
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP tools differ from the compiled source recipe",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        token_fields = [name for name in ("max_tokens", "max_completion_tokens") if name in body_object]
+        if (
+            token_fields != [profile.request_policy.max_token_field]
+            or type(body_object[token_fields[0]]) is not int
+            or body_object[token_fields[0]] != 2048
+            or "temperature" in body_object and (
+                type(body_object["temperature"]) not in (int, float)
+                or body_object["temperature"] != 0
+            )
+            or "reasoning_effort" in body_object and body_object["reasoning_effort"] != "none"
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP sampling controls differ from the admitted profile",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        required_features = _validate_request_features(
+            profile,
+            self._observation,
+            tools=tools_present,
+            target_projection=target,
+            episode_id=self._episode_id,
+            effective_plan_digest=self._effective_plan_digest,
+        )
+        declared = candidate.get("declared_capabilities")
+        if declared is not None:
+            if (
+                type(declared) is not list
+                or any(type(item) is not str or not item for item in declared)
+                or len(set(declared)) != len(declared)
+            ):
+                raise RunnerProtocolError(
+                    "native HTTP declared capabilities are malformed",
+                    code="native_http_request_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            declared_set = set(declared)
+            supported = set(self._observation.capabilities.request_features)
+            if not declared_set <= supported or not required_features <= declared_set:
+                raise RunnerPolicyBindingError(
+                    "native HTTP declared capabilities are not admitted",
+                    code="native_http_capability_mismatch",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+        with self._state_lock:
+            if self._native_pending is not None:
+                raise RunnerProtocolError(
+                    "native HTTP request is already staged",
+                    code="native_http_request_duplicate",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            if self._closed or self._closing or self._cancelled.is_set():
+                raise RunnerDependencyError(
+                    "episode provider client is closed",
+                    code="provider_client_closed",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            pinned_key = self._native_conversation_key
+            if pinned_key is not _UNPINNED and pinned_key != conversation_key:
+                raise RunnerPolicyBindingError(
+                    "native HTTP conversation key changed within the episode",
+                    code="native_http_capability_mismatch",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            header_pairs = tuple((pair[0], pair[1]) for pair in headers)
+            public_request = {
+                "model": self._observation.model_id,
+                "native_http_request": {
+                    "method": method,
+                    "url": url,
+                    "body_b64": body_b64,
+                    "headers_digest": canonical_sha256(headers),
+                },
+            }
+            request_digest = canonical_sha256(public_request)
+            self._native_conversation_key = conversation_key
+            self._native_pending = _PendingNativeHTTPRequest(
+                method=method,
+                url=url,
+                headers=header_pairs,
+                body=body,
+                request_payload=public_request,
+                request_digest=request_digest,
+            )
+        return public_request
+
+    def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
+        """Consume one private native response receipt bound to its public digest."""
+        try:
+            require_sha256(response_digest, "native HTTP response digest")
+        except (TypeError, ValueError):
+            raise RunnerProtocolError(
+                "native HTTP response digest is invalid",
+                code="native_http_response_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            ) from None
+        with self._state_lock:
+            response = self._native_private_responses.pop(response_digest, None)
+        if response is None:
+            raise RunnerProtocolError(
+                "native HTTP response is missing or already consumed",
+                code="native_http_response_consumed",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return dict(response)
+
+    async def _invoke_native_http(
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         if type(request) is not PolicyRuntimeInvokeRequest:
@@ -422,9 +1238,17 @@ class EpisodeOpenAICompletionsPolicyClient:
                 effective_plan_digest=request.effective_plan_digest,
             )
         async with self._invoke_lock:
+            if not await self._retire_worker():
+                raise RunnerDependencyError(
+                    "previous provider worker has not retired",
+                    code="provider_cleanup_failed",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
             with self._state_lock:
                 profile = self._profile
-                if self._closed or profile is None:
+                pending = self._native_pending
+                if self._closing or self._closed or profile is None:
                     raise RunnerDependencyError(
                         "episode provider client is closed",
                         code="provider_client_closed",
@@ -433,47 +1257,41 @@ class EpisodeOpenAICompletionsPolicyClient:
                     )
                 if self._cancelled.is_set():
                     raise asyncio.CancelledError
-            try:
-                messages, tools = _responses_request_to_chat(
-                    thaw_json(request.request_payload),
-                    expected_model_id=self._observation.model_id,
-                    target_projection=self._target_projection,
-                )
-            except (ProviderContractError, TypeError, ValueError) as exc:
-                error = RunnerProtocolError(
-                    "policy request cannot be projected to Chat Completions",
-                    code="policy_request_invalid",
-                    episode_id=request.episode_id,
-                    effective_plan_digest=request.effective_plan_digest,
-                )
-                error.__cause__ = exc
-                raise error
-
-            context = ProviderRuntimeContext(
-                None,
-                {},
-                stream=True,
-                session_id=request.episode_id,
-                input_id=request.request_digest,
-                turn_id=str(request.turn),
-                cancel_requested=self._cancelled.is_set,
-                provider_profile=profile,
-            )
-
-            def run() -> Any:
-                return self._runtime.invoke(
-                    client=self._transport,
-                    model=profile.model,
-                    messages=messages,
-                    tools=tools,
-                    stream=True,
-                    context=context,
-                )
-
-            with self._state_lock:
-                if self._closed or self._cancelled.is_set():
-                    raise asyncio.CancelledError
+                if pending is None or pending.request_digest != request.request_digest:
+                    raise RunnerPolicyBindingError(
+                        "native HTTP request does not match the policy invocation",
+                        code="native_http_request_mismatch",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                if self._native_private_responses:
+                    raise RunnerProtocolError(
+                        "previous native HTTP response was not consumed",
+                        code="native_http_response_unconsumed",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                if self._max_requests is not None and self._request_attempts >= self._max_requests:
+                    raise RunnerDependencyError(
+                        "episode provider request budget exhausted",
+                        code="provider_request_budget_exhausted",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                self._native_pending = None
                 active: Future[Any] = Future()
+
+                def run() -> Any:
+                    with self._state_lock:
+                        self._request_attempts += 1
+                    return self._runtime.send_native_http_request(
+                        client=self._transport,
+                        method=pending.method,
+                        url=pending.url,
+                        headers=pending.headers,
+                        body=pending.body,
+                        max_response_bytes=_MAX_NATIVE_HTTP_RESPONSE_BYTES,
+                    )
 
                 def worker() -> None:
                     try:
@@ -497,9 +1315,11 @@ class EpisodeOpenAICompletionsPolicyClient:
                     self._worker = None
                     raise
             try:
-                result = await asyncio.shield(asyncio.wrap_future(active))
+                raw = await asyncio.shield(asyncio.wrap_future(active))
             except asyncio.CancelledError:
                 self._cancelled.set()
+                raise
+            except RunnerDependencyError:
                 raise
             except Exception:
                 if self._cancelled.is_set():
@@ -515,6 +1335,418 @@ class EpisodeOpenAICompletionsPolicyClient:
                     with self._state_lock:
                         if self._active is active:
                             self._active = None
+            if not isinstance(raw, Mapping):
+                raise RunnerProtocolError(
+                    "native HTTP transport returned an invalid result",
+                    code="native_http_response_invalid",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+            if "error" in raw:
+                error = raw["error"]
+                if (
+                    not isinstance(error, Mapping)
+                    or type(error.get("type")) is not str
+                    or type(error.get("message")) is not str
+                ):
+                    raise RunnerProtocolError(
+                        "native HTTP transport error is malformed",
+                        code="native_http_response_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                private_response: dict[str, Any] = {
+                    "error": {
+                        "type": error["type"],
+                        "message": error["message"],
+                    }
+                }
+                public_response = private_response
+            else:
+                status_code = raw.get("status_code")
+                response_headers = raw.get("headers")
+                response_body = raw.get("body")
+                if (
+                    type(status_code) is not int
+                    or not 100 <= status_code <= 599
+                    or type(response_headers) is not list
+                    or any(
+                        type(pair) is not list
+                        or len(pair) != 2
+                        or type(pair[0]) is not str
+                        or type(pair[1]) is not str
+                        for pair in response_headers
+                    )
+                    or type(response_body) is not bytes
+                    or len(response_body) > _MAX_NATIVE_HTTP_RESPONSE_BYTES
+                ):
+                    raise RunnerProtocolError(
+                        "native HTTP response is invalid or oversized",
+                        code="native_http_response_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                encoded_body = base64.b64encode(response_body).decode("ascii")
+                private_response = {
+                    "status_code": status_code,
+                    "headers": response_headers,
+                    "body_b64": encoded_body,
+                }
+                public_response = {
+                    "status_code": status_code,
+                    "body_b64": encoded_body,
+                    "headers_digest": canonical_sha256(response_headers),
+                }
+            response_payload = {"native_http_response": public_response}
+            response_digest = canonical_sha256(response_payload)
+            with self._state_lock:
+                self._native_private_responses[response_digest] = private_response
+            return PolicyRuntimeInvokeResult(
+                response_payload=response_payload,
+                response_digest=response_digest,
+            )
+
+    @property
+    def profile_identity(self) -> Mapping[str, Any]:
+        profile = self._profile
+        if profile is None:
+            raise RuntimeError("episode provider profile is closed")
+        return profile.identity_dict()
+
+    @property
+    def target_identity(self) -> Mapping[str, Any] | None:
+        projection = self._target_projection
+        return None if projection is None else projection.identity_dict()
+
+    def observe(self) -> PolicyCapabilityObservation:
+        return self._observation
+
+    @property
+    def request_attempts(self) -> int:
+        with self._state_lock:
+            return self._request_attempts
+
+    async def invoke(
+        self, request: PolicyRuntimeInvokeRequest
+    ) -> PolicyRuntimeInvokeResult:
+        target = self._target_projection
+        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS:
+            if self._native_binding is None or self._native_plan is None:
+                raise RunnerPolicyBindingError(
+                    "native Chat provider has no compiled-plan binding",
+                    code="native_http_binding_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            return await self._invoke_native_http(request)
+        if target is not None and target.runtime_profile is not None:
+            if self._native_binding is None or self._native_plan is None:
+                raise RunnerPolicyBindingError(
+                    "source-native provider client has no compiled-plan binding",
+                    code="native_response_binding_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            result = await self.invoke_native(
+                request, binding=self._native_binding, effective_plan=self._native_plan
+            )
+            if target.renderer_id in {
+                PI_RESPONSE_CONSUMER_ID,
+                PI_0_57_1_RESPONSE_CONSUMER_ID,
+                OMP_RESPONSE_CONSUMER_ID,
+                OPENCLAW_RESPONSE_CONSUMER_ID,
+            }:
+                payload = {"native_response": result.as_dict()}
+                return PolicyRuntimeInvokeResult(
+                    response_payload=payload, response_digest=canonical_sha256(payload)
+                )
+            if self._native_cost is None:
+                raise RunnerPolicyBindingError(
+                    "Mini provider client has no pricing hook",
+                    code="native_response_binding_invalid",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            if result.raw_response is None:
+                raise RunnerProtocolError("Mini requires the original provider sample", code="native_response_invalid")
+            response = _mini_model_response(result.raw_response)
+            mini_response = {
+                "message": response.choices[0].message.model_dump(),
+                "response": response.model_dump(),
+                "response_json": response.model_dump(mode="json"),
+            }
+            payload = {
+                "native_response": result.as_dict(),
+                "mini_response": mini_response,
+                "cost": self._native_cost(response),
+            }
+            return PolicyRuntimeInvokeResult(
+                response_payload=payload, response_digest=canonical_sha256(payload)
+            )
+        return await self._invoke(request, native_binding=None)
+
+    async def invoke_native(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        binding: CompiledNativeResponseBinding,
+        effective_plan: EffectiveExecutionPlan,
+    ) -> NativeProviderResponse:
+        if (
+            type(binding) is not CompiledNativeResponseBinding
+            or type(effective_plan) is not EffectiveExecutionPlan
+        ):
+            raise TypeError("native recording requires an exact binding and execution plan")
+        providers = effective_plan.effective_semantics.get("providers")
+        models = providers.get("models") if isinstance(providers, Mapping) else None
+        selected = None
+        if isinstance(models, tuple):
+            selected = next(
+                (
+                    model for model in models
+                    if isinstance(model, Mapping)
+                    and model.get("model_id") == binding.authority_model_id
+                ),
+                None,
+            )
+        if (
+            effective_plan.canonical_digest() != self._effective_plan_digest
+            or effective_plan.base_compiled.manifest_digest != binding.compiled_manifest_digest
+            or effective_plan.policy_capability_observation_digest
+            != self._observation.canonical_digest()
+            or selected is None
+            or canonical_sha256(thaw_json(selected)) != binding.compiled_model_digest
+        ):
+            raise RunnerPolicyBindingError(
+                "native response policy is not bound to the owned execution plan",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return await self._invoke(request, native_binding=binding)
+
+    @overload
+    async def _invoke(
+        self, request: PolicyRuntimeInvokeRequest, *, native_binding: None
+    ) -> PolicyRuntimeInvokeResult: ...
+
+    @overload
+    async def _invoke(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        native_binding: CompiledNativeResponseBinding,
+    ) -> NativeProviderResponse: ...
+
+    async def _invoke(
+        self,
+        request: PolicyRuntimeInvokeRequest,
+        *,
+        native_binding: CompiledNativeResponseBinding | None,
+    ) -> PolicyRuntimeInvokeResult | NativeProviderResponse:
+        if type(request) is not PolicyRuntimeInvokeRequest:
+            raise TypeError("request must be an exact PolicyRuntimeInvokeRequest")
+        if (
+            request.episode_id != self._episode_id
+            or request.effective_plan_digest != self._effective_plan_digest
+        ):
+            raise RunnerPolicyBindingError(
+                "episode provider invocation does not match its policy binding",
+                code="policy_binding_mismatch",
+                episode_id=request.episode_id,
+                effective_plan_digest=request.effective_plan_digest,
+            )
+        async with self._invoke_lock:
+            if not await self._retire_worker():
+                raise RunnerDependencyError(
+                    "previous provider worker has not retired",
+                    code="provider_cleanup_failed",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+            with self._state_lock:
+                profile = self._profile
+                if self._closing or self._closed or profile is None:
+                    raise RunnerDependencyError(
+                        "episode provider client is closed",
+                        code="provider_client_closed",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                if self._cancelled.is_set():
+                    raise asyncio.CancelledError
+            try:
+                messages, tools = _responses_request_to_chat(
+                    thaw_json(request.request_payload),
+                    expected_model_id=self._observation.model_id,
+                    target_projection=self._target_projection,
+                    native_system_prompt=self._native_stream_prompt,
+                )
+            except (ProviderContractError, TypeError, ValueError) as exc:
+                error = RunnerProtocolError(
+                    "policy request cannot be projected to Chat Completions",
+                    code="policy_request_invalid",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+                error.__cause__ = exc
+                raise error
+            _validate_request_features(
+                profile,
+                self._observation,
+                tools=bool(tools),
+                target_projection=self._target_projection,
+                episode_id=request.episode_id,
+                effective_plan_digest=request.effective_plan_digest,
+            )
+            if native_binding is not None:
+                if (
+                    type(native_binding) is not CompiledNativeResponseBinding
+                    or (
+                        self._target_projection is not None
+                        and (
+                            native_binding.policy.consumer_id
+                            != self._target_projection.renderer_id
+                            or not is_native_response_consumer_registered(
+                                self._target_projection.renderer_id
+                            )
+                            or native_binding != self._native_binding
+                        )
+                    )
+                    or native_binding.authority_model_id != self._observation.model_id
+                ):
+                    raise RunnerPolicyBindingError(
+                        "native recording requires its compiled standalone binding",
+                        code="native_response_binding_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                native_binding.validate_invocation(
+                    profile,
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                    capability_observation_digest=self._observation.canonical_digest(),
+                )
+
+            stream = profile.request_policy.mode == "streaming"
+            context = ProviderRuntimeContext(
+                None,
+                {},
+                stream=stream,
+                extra=(
+                    {"response_consumer_id": native_binding.policy.consumer_id}
+                    if native_binding is not None
+                    and is_native_response_consumer_registered(
+                        native_binding.policy.consumer_id
+                    )
+                    else {}
+                ),
+                session_id=request.episode_id,
+                input_id=request.request_digest,
+                turn_id=str(request.turn),
+                cancel_requested=self._cancelled.is_set,
+                provider_profile=profile,
+                effective_plan_digest=request.effective_plan_digest,
+                capability_observation_digest=self._observation.canonical_digest(),
+            )
+
+            def run() -> Any:
+                context.raise_if_cancelled()
+                with self._state_lock:
+                    self._request_attempts += 1
+                if native_binding is not None:
+                    return self._runtime.invoke_native(
+                        client=self._transport,
+                        model=profile.model,
+                        messages=messages,
+                        tools=tools,
+                        stream=stream,
+                        context=context,
+                        binding=native_binding,
+                        accept_truncated_stream=self._native_accept_truncated_stream,
+                    )
+                return self._runtime.invoke(
+                    client=self._transport,
+                    model=profile.model,
+                    messages=messages,
+                    tools=tools,
+                    stream=stream,
+                    context=context,
+                )
+
+            with self._state_lock:
+                if self._closed or self._cancelled.is_set():
+                    raise asyncio.CancelledError
+                if self._max_requests is not None and self._request_attempts >= self._max_requests:
+                    raise RunnerDependencyError(
+                        "episode provider request budget exhausted",
+                        code="provider_request_budget_exhausted",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                active: Future[Any] = Future()
+
+                def worker() -> None:
+                    try:
+                        outcome = run()
+                    except BaseException as exc:
+                        if (
+                            native_binding is not None
+                            and native_binding.policy.consumer_id == MINI_RESPONSE_CONSUMER_ID
+                            and isinstance(exc, Exception)
+                            and _is_mini_provider_exception(exc)
+                        ):
+                            exc = _mini_provider_exception(exc, model=profile.model)
+                        active.set_exception(exc)
+                    else:
+                        active.set_result(outcome)
+
+                thread = threading.Thread(
+                    target=worker,
+                    name=f"bb-policy-{self._episode_id}",
+                    daemon=True,
+                )
+                self._active = active
+                self._worker = thread
+                try:
+                    thread.start()
+                except BaseException:
+                    self._active = None
+                    self._worker = None
+                    raise
+            try:
+                result = await asyncio.shield(asyncio.wrap_future(active))
+            except asyncio.CancelledError:
+                self._cancelled.set()
+                raise
+            except RunnerDependencyError:
+                raise
+            except Exception as exc:
+                if self._cancelled.is_set():
+                    raise asyncio.CancelledError
+                error = RunnerDependencyError(
+                    "episode provider invocation failed",
+                    code="provider_invocation_failed",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+                if isinstance(exc, (MiniProviderFailure, NativeProviderRequestFailure)):
+                    raise error from exc
+                raise error from None
+            finally:
+                if active.done():
+                    with self._state_lock:
+                        if self._active is active:
+                            self._active = None
+            if native_binding is not None:
+                if not isinstance(result, NativeProviderResponse):
+                    raise RunnerProtocolError(
+                        "native provider returned an invalid response",
+                        code="native_response_invalid",
+                        episode_id=request.episode_id,
+                        effective_plan_digest=request.effective_plan_digest,
+                    )
+                return result
             try:
                 payload = _provider_result_to_responses(result)
             except (ProviderContractError, TypeError, ValueError) as exc:
@@ -543,8 +1775,29 @@ class EpisodeOpenAICompletionsPolicyClient:
                     return
             self._transport_closed = True
 
+    async def _retire_worker(self) -> bool:
+        with self._state_lock:
+            worker = self._worker
+        if worker is None:
+            return True
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + 5.0
+        while worker.is_alive():
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                return False
+            await asyncio.sleep(min(0.01, remaining))
+        worker.join(timeout=0)
+        with self._state_lock:
+            if self._worker is worker:
+                self._worker = None
+                self._active = None
+        return True
+
     async def close(self) -> None:
         async with self._close_lock:
+            with self._state_lock:
+                self._closing = True
             self._cancelled.set()
             transport_failure = False
             if not self._transport_closed:
@@ -559,25 +1812,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                 else:
                     self._transport_closed = True
             if not self._worker_retired:
-                with self._state_lock:
-                    active = self._active
-                if active is not None:
-                    try:
-                        await asyncio.wait_for(
-                            asyncio.shield(asyncio.wrap_future(active)),
-                            timeout=5.0,
-                        )
-                    except (Exception, asyncio.CancelledError):
-                        pass
-                    if active.done():
-                        with self._state_lock:
-                            if self._active is active:
-                                self._active = None
-                with self._state_lock:
-                    if self._active is None:
-                        self._profile = None
-                        self._target_projection = None
-                        self._worker = None
+                if await self._retire_worker():
+                    with self._state_lock:
                         self._worker_retired = True
             if transport_failure or not self._worker_retired:
                 raise RunnerDependencyError(
@@ -586,7 +1822,12 @@ class EpisodeOpenAICompletionsPolicyClient:
                     episode_id=self._episode_id,
                     effective_plan_digest=self._effective_plan_digest,
                 )
-            self._closed = True
+            with self._state_lock:
+                self._profile = None
+                self._target_projection = None
+                self._native_pending = None
+                self._native_private_responses.clear()
+                self._closed = True
             if self._on_close is not None:
                 await self._on_close(self)
                 self._on_close = None
@@ -605,6 +1846,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
         expected_observation_digests: Mapping[str, str],
         target_projections: Mapping[str, E4TargetPolicyProjection] | None = None,
         timeout_seconds: Mapping[str, float] | None = None,
+        request_limits: Mapping[str, int] | None = None,
     ) -> None:
         if not profiles:
             raise ValueError("at least one episode provider profile is required")
@@ -670,11 +1912,20 @@ class EpisodeOpenAICompletionsPolicyResolver:
             if type(value) not in (int, float) or not 0 < value <= 3_600:
                 raise ValueError("provider timeout must be within (0, 3600]")
             copied_timeouts[episode_id] = float(value)
+        copied_request_limits: dict[str, int] = {}
+        if request_limits is not None:
+            if set(request_limits) != set(copied) or any(
+                type(value) is not int or not 0 < value <= 2**53 - 1
+                for value in request_limits.values()
+            ):
+                raise ValueError("request limits must positively bound each provider profile")
+            copied_request_limits = dict(request_limits)
         self._authority_resolver = authority_resolver
         self._profiles = copied
         self._target_projections = copied_projections
         self._credential_handle_ids = copied_credential_handles
         self._timeout_seconds = copied_timeouts
+        self._request_limits = copied_request_limits
         self._authority_model_ids = copied_model_ids
         self._authority_wire_models = copied_wire_models
         self._expected_observation_digests = copied_observation_digests
@@ -689,6 +1940,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
             raise RuntimeError("cannot abort provider resolver after runtime admission")
         self._profiles.clear()
         self._timeout_seconds.clear()
+        self._request_limits.clear()
         self._target_projections.clear()
         self._credential_handle_ids.clear()
         self._expected_observation_digests.clear()
@@ -760,6 +2012,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 )
             _validate_owned_profile_observation(
                 profile=profile,
+                target_projection=target_projection,
                 observation=observation,
                 authority_model_id=authority_model_id,
                 authority_wire_model=authority_wire_model,
@@ -775,10 +2028,12 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 timeout_seconds=timeout_seconds,
                 target_projection=target_projection,
                 on_close=self._deregister,
+                max_requests=self._request_limits.get(episode_id),
             )
             self._profiles.pop(episode_id)
             self._target_projections.pop(episode_id, None)
             self._timeout_seconds.pop(episode_id, None)
+            self._request_limits.pop(episode_id, None)
             self._credential_handle_ids.pop(episode_id)
             self._authority_model_ids.pop(episode_id)
             self._authority_wire_models.pop(episode_id)
@@ -800,6 +2055,7 @@ class EpisodeOpenAICompletionsPolicyResolver:
                 self._profiles.clear()
                 self._target_projections.clear()
                 self._timeout_seconds.clear()
+                self._request_limits.clear()
                 self._credential_handle_ids.clear()
                 self._authority_model_ids.clear()
                 self._authority_wire_models.clear()
@@ -833,6 +2089,7 @@ def _responses_request_to_chat(
     *,
     expected_model_id: str,
     target_projection: E4TargetPolicyProjection | None = None,
+    native_system_prompt: str | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
     if type(request) is not dict:
         raise TypeError("policy request must be an exact object")
@@ -840,6 +2097,64 @@ def _responses_request_to_chat(
         raise ProviderContractError(
             "policy request model does not match the admitted policy observation"
         )
+    if target_projection is not None and target_projection.runtime_profile is not None:
+        if set(request) != {"model", "messages", "tools"}:
+            raise ProviderContractError("source-native request fields differ from its source protocol")
+        messages = request["messages"]
+        tools = request["tools"]
+        system_prompt = target_projection.system_prompt
+        target_binding = (
+            target_projection.source_manifest.semantic.metadata.get("e4_target")
+            if target_projection.source_manifest is not None
+            else None
+        )
+        profile_version = (
+            target_binding.get("version")
+            if isinstance(target_binding, Mapping)
+            else None
+        )
+        deferred_native_prompt = (
+            profile_version == 3
+            and target_projection.rendered_prompt_digest is None
+        )
+        if target_projection.renderer_id == OPENCLAW_RESPONSE_CONSUMER_ID:
+            # The OpenClaw wire system message relocates the bound prompt's
+            # runtime line; the Conductor compares it to the pinned builder.
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = None
+        elif deferred_native_prompt:
+            if native_system_prompt is None:
+                raise ProviderContractError("native stream bootstrap has not been bound")
+            system_prompt = native_system_prompt
+        elif native_system_prompt is not None:
+            raise ProviderContractError("native stream bootstrap is not admitted for this target")
+        expected_tools = (
+            _empty_required_omitted_tools(target_projection.chat_tools)
+            if target_projection.renderer_id in _EMPTY_REQUIRED_OMITTED_TARGETS
+            else [thaw_json(tool) for tool in target_projection.chat_tools]
+        )
+        if (
+            type(messages) is not list
+            or len(messages) < 2
+            or any(type(message) is not dict or "extra" in message for message in messages)
+            or (
+                system_prompt is not None
+                and messages[0] != {"role": "system", "content": system_prompt}
+            )
+            or messages[1].get("role") != "user"
+            or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
+            or tools != expected_tools
+        ):
+            raise ProviderContractError("source-native request does not match its compiled source surface")
+        if target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID:
+            return messages, tools
+        # No assistant splitting, argument decoding, null coercion or reordering: Mini's
+        # LitellmModel sends through litellm.completion, whose message validation drops
+        # only top-level null fields and keeps every other key verbatim.
+        from litellm.utils import validate_and_fix_openai_messages
+
+        return validate_and_fix_openai_messages(messages=messages), tools
     instructions = request.get("instructions")
     if type(instructions) is not str:
         raise ProviderContractError("policy request instructions must be text")

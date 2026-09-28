@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 437
+live_script_count: 438
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -994,6 +994,11 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, tests/test_diff_terminal_semantics.py]
     expiry: none (durable tooling)
+  - path: scripts/e4_hermes_native_replay.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/rl/harness/test_hermes_packet_replay.py]
+    expiry: none (durable tooling)
   - path: scripts/e4_parity/__init__.py
     class: live-wired
     owner: kmccleary3301
@@ -1287,7 +1292,7 @@ entries:
   - path: scripts/e4_parity/run_lane.py
     class: live-wired
     owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/refresh_lane_descriptor_pins.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_e4_cookbook_v2.py, tests/e4_parity/test_north_star_c4_packets.py, tests/e4_parity/test_regenerate_evidence.py]
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/e4_parity/refresh_lane_descriptor_pins.py, scripts/e4_parity/regenerate_evidence.py, tests/e4_parity/test_e4_cookbook_v2.py, tests/e4_parity/test_mini_swe_agent_comparator.py, tests/e4_parity/test_north_star_c4_packets.py]
     expiry: none (durable tooling)
   - path: scripts/e4_parity/scaffold_e4_target_lane.py
     class: live-wired

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import json
 import os
 import signal
 from builtins import BaseExceptionGroup
+from datetime import timedelta
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 import uvicorn
@@ -17,12 +21,19 @@ from breadboard.rl.harness.composition import (
     _DirectoryIdentityGuard,
     _measure_installed_runtime,
     _ProductionCleanupProbe,
-    _PinnedDirectoryStorageBackend,
+    _PinnedStorageBackend,
     _non_repeating_close_callback,
 )
-from breadboard.rl.harness.contracts import RuntimeClass
+from breadboard.rl.harness.contracts import MountAccess, RuntimeClass
+from breadboard.rl.harness.materialization import (
+    DirectoryStorageBackend,
+    FilesystemMaterializationStore,
+    MaterializationEntry,
+    build_workspace_seed_artifact,
+)
 from breadboard.rl.harness.sandbox import InstalledRuntime
 from breadboard.artifacts.cas import FilesystemCAS
+from tests.rl.harness.wp7_fixtures import FrozenClock, MemorySourceReader, digest, make_effective_plan, make_materialization_plan, make_store_roots
 
 
 def _digest(payload: bytes) -> str:
@@ -55,6 +66,83 @@ def test_cleanup_probe_excludes_only_authenticated_supervisor_journal(
         errors,
     ) == (active_lease, journal)
 
+@pytest.mark.asyncio
+async def test_failed_public_close_exposes_inventory_and_retry_releases_resources(
+    tmp_path: Path,
+) -> None:
+    lease_root = tmp_path / "leases"
+    workspace_root = tmp_path / "workspaces"
+    lease_root.mkdir()
+    workspace_root.mkdir()
+    live_lease = lease_root / "episode-live"
+    live_workspace = workspace_root / "workspace-live"
+    leftover_scratch = lease_root / "episode-left.native-scratch"
+    live_lease.mkdir()
+    live_workspace.mkdir()
+    leftover_scratch.mkdir(mode=0o700)
+    probe = _ProductionCleanupProbe(
+        manifest=SimpleNamespace(
+            stores=SimpleNamespace(
+                lease=SimpleNamespace(path=lease_root),
+                workspace=SimpleNamespace(path=workspace_root),
+            )
+        ),
+        materialization=SimpleNamespace(),
+        sandbox_runtime=SimpleNamespace(_leases={}, _snapshots={}),
+        broker=None,
+        pinned={},
+        directory_fds={},
+    )
+    started = asyncio.Event()
+    release = asyncio.Event()
+    failed_once = False
+
+    async def close_runtime() -> None:
+        nonlocal failed_once
+        started.set()
+        await release.wait()
+        if not failed_once:
+            failed_once = True
+            raise RuntimeError("runtime cleanup pending")
+        live_lease.rmdir()
+        live_workspace.rmdir()
+        leftover_scratch.rmdir()
+
+    composition = ProductionComposition(
+        app=None,
+        service=None,
+        server=None,
+        manifest=None,
+        manifest_ref=None,
+        authority_graph=None,
+        bridge_lifecycle=None,
+        cleanup_probe=probe,
+        runtime_close_callbacks=(close_runtime,),
+        authority_close_callbacks=(),
+    )
+
+    with pytest.raises(RuntimeError):
+        composition.observe_cleanup_inventory()
+
+    first_close = asyncio.create_task(composition.close())
+    await started.wait()
+    with pytest.raises(RuntimeError):
+        composition.observe_cleanup_inventory()
+    release.set()
+    with pytest.raises(BaseExceptionGroup):
+        await first_close
+
+    inventory = composition.observe_cleanup_inventory()
+    assert os.fspath(leftover_scratch) in inventory.orphan_resource_ids
+    assert inventory.active_lease_ids == ("episode-live",)
+    assert inventory.workspace_paths == (os.fspath(live_workspace),)
+
+    await composition.close()
+
+    inventory = composition.observe_cleanup_inventory()
+    assert inventory.active_lease_ids == ()
+    assert inventory.workspace_paths == ()
+    assert inventory.orphan_resource_ids == ()
 
 @pytest.mark.asyncio
 async def test_composition_retries_failed_runtime_cleanup_before_authorities() -> None:
@@ -264,12 +352,72 @@ def test_cas_materialization_reader_rejects_noncanonical_manifest(tmp_path) -> N
     source_digest = "sha256:" + "b" * 64
     noncanonical = b'{"schema_version": "bb.rl.sealed-source.v1"}'
     cas.put_bytes(noncanonical, artifact_id=source_digest)
-
     with pytest.raises(ValueError, match="not canonical"):
         _CASMaterializationSourceReader(cas).load_manifest(
             source_digest, max_bytes=len(noncanonical)
         )
     cas.close()
+
+
+
+def test_cas_materialization_reader_recomputes_seed_identity(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    seed_digest, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o700,
+    )
+    document = json.loads(payload)
+    declared_digest = "sha256:" + "c" * 64
+    document["source_digest"] = declared_digest
+    tampered = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    cas.put_bytes(tampered, artifact_id=declared_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(declared_digest, max_bytes=len(tampered))
+
+    with pytest.raises(ValueError, match="identity mismatch"):
+        reader.validate_workspace_seed_manifest(manifest, declared_digest)
+    assert seed_digest != declared_digest
+    cas.close()
+
+
+def test_cas_materialization_reader_requires_typed_seed_manifest(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    declared_digest = "sha256:" + "d" * 64
+    document = json.loads(
+        build_workspace_seed_artifact(
+            {"AGENTS.md": b"seed\n"},
+            file_modes={"AGENTS.md": 0o600},
+            directory_mode=0o700,
+        )[1]
+    )
+    document["schema_version"] = "bb.rl.sealed-source.v1"
+    document["media_type"] = "application/vnd.breadboard.sealed-source+json;version=1"
+    document["source_digest"] = declared_digest
+    payload = json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
+    cas.put_bytes(payload, artifact_id=declared_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(declared_digest, max_bytes=len(payload))
+
+    with pytest.raises(ValueError, match="authority is invalid"):
+        reader.validate_workspace_seed_manifest(manifest, declared_digest)
+    cas.close()
+
+
+def test_cas_materialization_reader_accepts_profile_seed_root_mode(tmp_path) -> None:
+    cas = FilesystemCAS(tmp_path / "cas")
+    seed_digest, payload = build_workspace_seed_artifact(
+        {"AGENTS.md": b"seed\n"},
+        file_modes={"AGENTS.md": 0o600},
+        directory_mode=0o755,
+    )
+    cas.put_bytes(payload, artifact_id=seed_digest)
+    reader = _CASMaterializationSourceReader(cas)
+    manifest = reader.load_manifest(seed_digest, max_bytes=len(payload))
+
+    assert reader.validate_workspace_seed_manifest(manifest, seed_digest) == 0o755
+    cas.close()
+
 
 
 def test_installed_runtime_is_measured_before_app_construction(tmp_path) -> None:
@@ -298,7 +446,7 @@ def test_workspace_swap_is_rejected_before_path_mutation(tmp_path) -> None:
     workspace.mkdir(mode=0o700)
     descriptor = os.open(workspace, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     guard = _DirectoryIdentityGuard(descriptor, str(workspace), "workspace")
-    backend = _PinnedDirectoryStorageBackend(guard)
+    backend = _PinnedStorageBackend(guard, DirectoryStorageBackend())
     original = tmp_path / "workspace-original"
     workspace.rename(original)
     workspace.mkdir(mode=0o700)
@@ -308,6 +456,50 @@ def test_workspace_swap_is_rejected_before_path_mutation(tmp_path) -> None:
         assert not (workspace / "must-not-exist").exists()
         assert not (original / "must-not-exist").exists()
     finally:
+        os.close(descriptor)
+
+
+def test_materialization_does_not_bypass_pinned_storage_rejection(tmp_path: Path) -> None:
+    class FullStorage(DirectoryStorageBackend):
+        def allocate(self, *, workspace_id: str, root: Path, max_bytes: int) -> Path:
+            raise OSError(errno.ENOSPC, "workspace capacity exhausted")
+
+    cache_root, workspace_root = make_store_roots(tmp_path)
+    descriptor = os.open(workspace_root, os.O_RDONLY | os.O_DIRECTORY)
+    source_digest = digest("pinned-storage-input")
+
+    reader = MemorySourceReader({source_digest: {"input.txt": b"bounded"}})
+    store = FilesystemMaterializationStore(
+        cache_root=cache_root,
+        workspace_root=workspace_root,
+        source_reader=reader,
+        clock=FrozenClock(),
+        lease_ttl=timedelta(minutes=5),
+        storage_backend=_PinnedStorageBackend(
+            _DirectoryIdentityGuard(descriptor, str(workspace_root), "workspace"),
+            FullStorage(),
+        ),
+    )
+    plan = make_materialization_plan(
+        make_effective_plan(),
+        entries=(MaterializationEntry(
+            source_digest=source_digest,
+            target_logical_path=".",
+            access=MountAccess.READ_WRITE,
+            max_bytes=4096,
+            role="repository",
+        ),),
+    )
+    workspace = None
+    try:
+        with pytest.raises(OSError) as caught:
+            workspace = store.materialize(plan)
+        assert caught.value.errno == errno.ENOSPC
+        assert tuple(workspace_root.iterdir()) == ()
+    finally:
+        if workspace is not None:
+            workspace.close()
+        store.close()
         os.close(descriptor)
 
 

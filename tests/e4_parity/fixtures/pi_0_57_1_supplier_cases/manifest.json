@@ -1,0 +1,833 @@
+{
+  "blob_store": {
+    "layout": "blobs/<sha256 hex>: workspace file bytes addressed by the sha256 recorded in workspace-manifest-pre/post.json",
+    "reason": "content-addressed so repository ignore rules (e.g. AGENTS.md) and symlinks cannot drop golden-tree members"
+  },
+  "cases": [
+    "declared__p0_text_stop",
+    "declared__p1_all_tools_sequence",
+    "declared__p2_fragmented_malformed_repair",
+    "declared__p3_context_compaction",
+    "declared__p4_bash_timeout_nonzero_cancel",
+    "declared__p5_retry_default_http500_exhausted",
+    "declared__p6_disabled_resources_and_agents_md",
+    "declared__p7_retry_session_recovers",
+    "declared__p8_retry_sdk_recovers"
+  ],
+  "derived_files": [
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p2_fragmented_malformed_repair/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p3_context_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p5_retry_default_http500_exhausted/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p7_retry_session_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p8_retry_sdk_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba",
+      "sha256": "sha256:1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".pi/skills/planted-skill/SKILL.md",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/2c08888138863bbe050388811cf51d6c117e19c7fac1e342c0e4eae5afc8b43a",
+      "sha256": "sha256:2c08888138863bbe050388811cf51d6c117e19c7fac1e342c0e4eae5afc8b43a"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p2_fragmented_malformed_repair/testbed/p2-split.txt",
+          "entry": "p2-split.txt",
+          "manifest": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:3bc4db3ceb928cab7ee07e0f2630f43b671d2106df1cf800f6ca01cb31d71bd5"
+        }
+      ],
+      "path": "blobs/3bc4db3ceb928cab7ee07e0f2630f43b671d2106df1cf800f6ca01cb31d71bd5",
+      "sha256": "sha256:3bc4db3ceb928cab7ee07e0f2630f43b671d2106df1cf800f6ca01cb31d71bd5"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/README.txt",
+          "entry": "README.txt",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:5f42b8c442e8cf94ed1a6d7a96937c77d564eb1c20d30db2dd7c519f983f34c5"
+        }
+      ],
+      "path": "blobs/5f42b8c442e8cf94ed1a6d7a96937c77d564eb1c20d30db2dd7c519f983f34c5",
+      "sha256": "sha256:5f42b8c442e8cf94ed1a6d7a96937c77d564eb1c20d30db2dd7c519f983f34c5"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".pi/prompts/planted-prompt.md",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/77be41633c4c86189d20f189a9fcfcbd7c1b68f06c580422e3e8b57403d85c8b",
+      "sha256": "sha256:77be41633c4c86189d20f189a9fcfcbd7c1b68f06c580422e3e8b57403d85c8b"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "AGENTS.md",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/7c0c5214334da5ed2924b5e214d155158ae6f42bd10e420014c729bda1903a85",
+      "sha256": "sha256:7c0c5214334da5ed2924b5e214d155158ae6f42bd10e420014c729bda1903a85"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/p1-created.txt",
+          "entry": "p1-created.txt",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-post.json",
+          "member_sha256": "sha256:98af0b7c5e45f5be81200751b0b5f2860c29e4939189fe895c79e0682de9ac86"
+        }
+      ],
+      "path": "blobs/98af0b7c5e45f5be81200751b0b5f2860c29e4939189fe895c79e0682de9ac86",
+      "sha256": "sha256:98af0b7c5e45f5be81200751b0b5f2860c29e4939189fe895c79e0682de9ac86"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p2_fragmented_malformed_repair/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p3_context_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p5_retry_default_http500_exhausted/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p7_retry_session_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p8_retry_sdk_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "nested/dir/inner.txt",
+          "manifest": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d",
+      "sha256": "sha256:b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": ".pi/extensions/planted-ext/index.js",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/d913a4c6cc920b4e88e59577910f939a4c7a7943e662925a6ade548244ffbb0e",
+      "sha256": "sha256:d913a4c6cc920b4e88e59577910f939a4c7a7943e662925a6ade548244ffbb0e"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p2_fragmented_malformed_repair/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p3_context_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p5_retry_default_http500_exhausted/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p7_retry_session_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p8_retry_sdk_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "script.sh",
+          "manifest": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd",
+      "sha256": "sha256:fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd"
+    },
+    {
+      "bound_by": [
+        {
+          "derived_from": "packet/cases/declared__p0_text_stop/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p1_all_tools_sequence/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p2_fragmented_malformed_repair/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p3_context_compaction/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p5_retry_default_http500_exhausted/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p6_disabled_resources_and_agents_md/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p7_retry_session_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json"
+        },
+        {
+          "derived_from": "packet/cases/declared__p8_retry_sdk_recovers/testbed/.git/objects (loose blob, content lookup by sha256)",
+          "entry": "binary.bin",
+          "manifest": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json"
+        }
+      ],
+      "path": "blobs/fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108",
+      "sha256": "sha256:fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108"
+    }
+  ],
+  "files": [
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/trace.json",
+      "path": "declared__p0_text_stop/capture/trace.json",
+      "sha256": "sha256:f079d2d97227f9f4fc802120b544f014e02f59ed961fcfa91b0febcd0552b77f"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/run-receipt.json",
+      "path": "declared__p0_text_stop/capture/run-receipt.json",
+      "sha256": "sha256:46d196de9429e8973e09ef691ec1c5529ed42cca3f567238975650713b797dc2"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/scenario.json",
+      "path": "declared__p0_text_stop/capture/scenario.json",
+      "sha256": "sha256:d7d30a14a0d9c1090d56b2ba2dab81059ff64a5249153189da73d7f87002db78"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p0_text_stop/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p0_text_stop/capture/http-transcript.jsonl",
+      "path": "declared__p0_text_stop/capture/http-transcript.jsonl",
+      "sha256": "sha256:945d629804aa707a9da24a609c6cb5b718a7b6b0b2f067d0b355137e276a66de"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/pi-events.jsonl",
+      "path": "declared__p0_text_stop/capture/pi-events.jsonl",
+      "sha256": "sha256:85e47263cbe901542903c75d24c5f822ab94274699042ba4541227ae58e1d52f"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-pre.json",
+      "path": "declared__p0_text_stop/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/workspace-manifest-post.json",
+      "path": "declared__p0_text_stop/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/capture/model.patch",
+      "path": "declared__p0_text_stop/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/pi-config/models.json",
+      "path": "declared__p0_text_stop/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p0_text_stop/pi-config/settings.json",
+      "path": "declared__p0_text_stop/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/trace.json",
+      "path": "declared__p1_all_tools_sequence/capture/trace.json",
+      "sha256": "sha256:38cc53538c4e8ae232cd3ccc02792f304351f0f9bacaf178abfb23f2b3c9ac83"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/run-receipt.json",
+      "path": "declared__p1_all_tools_sequence/capture/run-receipt.json",
+      "sha256": "sha256:9723fa22889fbe4876eb2219ffda707692d16431728c117f7d186823d7950a1a"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/scenario.json",
+      "path": "declared__p1_all_tools_sequence/capture/scenario.json",
+      "sha256": "sha256:2c7a7b3a54643d627b8e5f7333b8658748a0cec4b8583710566b7fce39400827"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p1_all_tools_sequence/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/http-transcript.jsonl",
+      "path": "declared__p1_all_tools_sequence/capture/http-transcript.jsonl",
+      "sha256": "sha256:31ef5b71bf8d41fd8a914f8af03a949f093164ed10de1c5e890b5cde87db27a1"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/pi-events.jsonl",
+      "path": "declared__p1_all_tools_sequence/capture/pi-events.jsonl",
+      "sha256": "sha256:ea0749f0adc00ad714d34c486a38671ea056567be730c13d4f272b26f5880465"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json",
+      "path": "declared__p1_all_tools_sequence/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/workspace-manifest-post.json",
+      "path": "declared__p1_all_tools_sequence/capture/workspace-manifest-post.json",
+      "sha256": "sha256:5ac966fa92344ae446f640f99cd157da44f0a3c7460f49a27181c0d9a147c244"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/capture/model.patch",
+      "path": "declared__p1_all_tools_sequence/capture/model.patch",
+      "sha256": "sha256:8a0b10555770ef36084f22c7da2b2619cba0a12909a764dcb7d07438c9fda001"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/pi-config/models.json",
+      "path": "declared__p1_all_tools_sequence/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p1_all_tools_sequence/pi-config/settings.json",
+      "path": "declared__p1_all_tools_sequence/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/trace.json",
+      "path": "declared__p2_fragmented_malformed_repair/capture/trace.json",
+      "sha256": "sha256:e132688957a94a7f2eb731016e2b13185f8218095b4460df0b6da8cce0ef999b"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/run-receipt.json",
+      "path": "declared__p2_fragmented_malformed_repair/capture/run-receipt.json",
+      "sha256": "sha256:6b899d1eac4d888dfbb49d2c884fe1f653057aa2c5889738e8e3c54ef6e49431"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/scenario.json",
+      "path": "declared__p2_fragmented_malformed_repair/capture/scenario.json",
+      "sha256": "sha256:db67afc616ea79a18c60df6042f3d22a36929684ec75ec612185eac9ea8064a6"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p2_fragmented_malformed_repair/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/http-transcript.jsonl",
+      "path": "declared__p2_fragmented_malformed_repair/capture/http-transcript.jsonl",
+      "sha256": "sha256:1ccddc64badcb4aa476fefa92e529fe2880d3bdb9a628cdb1882a7dd4e8ed58a"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/pi-events.jsonl",
+      "path": "declared__p2_fragmented_malformed_repair/capture/pi-events.jsonl",
+      "sha256": "sha256:fdde72739209e9a38d10483f28a8fd5df2029d2e58bca6177770b5e84c45fe1e"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json",
+      "path": "declared__p2_fragmented_malformed_repair/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/workspace-manifest-post.json",
+      "path": "declared__p2_fragmented_malformed_repair/capture/workspace-manifest-post.json",
+      "sha256": "sha256:71ea0daceb06cdf4e2d35b8e6d4493fee25deeee3b091ba7228ce3fb068e25a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/capture/model.patch",
+      "path": "declared__p2_fragmented_malformed_repair/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/pi-config/models.json",
+      "path": "declared__p2_fragmented_malformed_repair/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p2_fragmented_malformed_repair/pi-config/settings.json",
+      "path": "declared__p2_fragmented_malformed_repair/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/trace.json",
+      "path": "declared__p3_context_compaction/capture/trace.json",
+      "sha256": "sha256:2a3dc816c4f0b3212adc619cbfc7fd79e57c73ef205cba2c7207948476fe4f09"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/run-receipt.json",
+      "path": "declared__p3_context_compaction/capture/run-receipt.json",
+      "sha256": "sha256:23b12e3ef14d37d67de7751ca9fc77b848e300dfb6120412505ffc695bf93ee0"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/scenario.json",
+      "path": "declared__p3_context_compaction/capture/scenario.json",
+      "sha256": "sha256:103e86d57b5c24a015df3c5fc190fe928654c4202d29f0352f4c359b912fb269"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p3_context_compaction/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/http-transcript.jsonl",
+      "path": "declared__p3_context_compaction/capture/http-transcript.jsonl",
+      "sha256": "sha256:eed6703690c52f4129463c036f57c8fbcebb41c7a701c331959b50911a48d376"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/pi-events.jsonl",
+      "path": "declared__p3_context_compaction/capture/pi-events.jsonl",
+      "sha256": "sha256:bc17f5e300078b6c95171af348856398d8378676bec655cb47df5984feca6bb3"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-pre.json",
+      "path": "declared__p3_context_compaction/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/workspace-manifest-post.json",
+      "path": "declared__p3_context_compaction/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/capture/model.patch",
+      "path": "declared__p3_context_compaction/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/pi-config/models.json",
+      "path": "declared__p3_context_compaction/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p3_context_compaction/pi-config/settings.json",
+      "path": "declared__p3_context_compaction/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/trace.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/trace.json",
+      "sha256": "sha256:083e5eb00e4d9d93ba3062d7beaf1d45044c89c203081468458ff00efab6f5e4"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/run-receipt.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/run-receipt.json",
+      "sha256": "sha256:8c54720eb4726a8cbd42448df5bad77f61fa4a48f4a876979badd3140bbe7fa4"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/scenario.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/scenario.json",
+      "sha256": "sha256:2eed1d3f107c46e9d29f23e9369565c87f548ef7850b6c08242d686f57f4b557"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/http-transcript.jsonl",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/http-transcript.jsonl",
+      "sha256": "sha256:fbe355a28078dfec0e69bea3a1abe1341394e311dda22bb4fe2aeda24b12cd35"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/pi-events.jsonl",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/pi-events.jsonl",
+      "sha256": "sha256:d51bf6eeabd61eb97f5fe677b5a82dcfc63ab217f871cc31ef43c8baa9660e66"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-post.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/capture/model.patch",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/pi-config/models.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p4_bash_timeout_nonzero_cancel/pi-config/settings.json",
+      "path": "declared__p4_bash_timeout_nonzero_cancel/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/trace.json",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/trace.json",
+      "sha256": "sha256:cc5919d0c14af9b35535d548b27b30bfe6a26e647760fac36262a2fc2699b918"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/run-receipt.json",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/run-receipt.json",
+      "sha256": "sha256:f7288828fc3f61500bbf87621c68af5a835b15b05c1e2899ebfa6da707a0fed4"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/scenario.json",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/scenario.json",
+      "sha256": "sha256:60492ecb8152a4ab16f8e1a83ae7542eb6b2415ac0dad8889cf493ea7e645c84"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p5_retry_default_http500_exhausted/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/http-transcript.jsonl",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/http-transcript.jsonl",
+      "sha256": "sha256:2f9b9acc4264f858a5c5a0ab60f597ef6e432bdcf3aecc17b60533f131ea8fe3"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/pi-events.jsonl",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/pi-events.jsonl",
+      "sha256": "sha256:d73a4f4e09b785cd06e32b8a950e648065b07cfa85597707ecd4d162ec36f9ee"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-post.json",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/capture/model.patch",
+      "path": "declared__p5_retry_default_http500_exhausted/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/pi-config/models.json",
+      "path": "declared__p5_retry_default_http500_exhausted/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p5_retry_default_http500_exhausted/pi-config/settings.json",
+      "path": "declared__p5_retry_default_http500_exhausted/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/trace.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/trace.json",
+      "sha256": "sha256:9e7804f644d20e3afa1622ffe8fba75448e216a758547f87da1762e075c8346a"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/run-receipt.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/run-receipt.json",
+      "sha256": "sha256:7c32ef2f9222711faf80a87da563370c8d34a7edee046f7d17341b2a941a596a"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/scenario.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/scenario.json",
+      "sha256": "sha256:11d8d47c59f3a1b69f89b12669936fbde639e6ae7fff0f227a82c406581c1822"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/http-transcript.jsonl",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/http-transcript.jsonl",
+      "sha256": "sha256:cbbf1356ef792a92e048fca2c1608fd41bfc8ec33a1756face942120d78ac042"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/pi-events.jsonl",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/pi-events.jsonl",
+      "sha256": "sha256:c2ebb97146ae64696d74dcd868f6fbeff12004cb11cb95bd8bbde294da773f32"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:31b3d96f8a4b2df5236e3f42acc7d51a6549e49b0176d2ebf4c1efd13cfd2631"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-post.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/workspace-manifest-post.json",
+      "sha256": "sha256:31b3d96f8a4b2df5236e3f42acc7d51a6549e49b0176d2ebf4c1efd13cfd2631"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/capture/model.patch",
+      "path": "declared__p6_disabled_resources_and_agents_md/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/pi-config/models.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p6_disabled_resources_and_agents_md/pi-config/settings.json",
+      "path": "declared__p6_disabled_resources_and_agents_md/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/trace.json",
+      "path": "declared__p7_retry_session_recovers/capture/trace.json",
+      "sha256": "sha256:a4403c4e702f9c1d7980ceaee562ed66a998b311d9970747f8e57a93a5684e2b"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/run-receipt.json",
+      "path": "declared__p7_retry_session_recovers/capture/run-receipt.json",
+      "sha256": "sha256:661741b0e207832d4a394638cc9b48eec075acf574a35c73c1382793159cf4db"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/scenario.json",
+      "path": "declared__p7_retry_session_recovers/capture/scenario.json",
+      "sha256": "sha256:199413009fcd9dc00d293a860f72d1fbc872c958236d45e9abb2a019487c0346"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p7_retry_session_recovers/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/http-transcript.jsonl",
+      "path": "declared__p7_retry_session_recovers/capture/http-transcript.jsonl",
+      "sha256": "sha256:3eaa55afb807c6b7046de8b22a6a6cfc6f4abcae766a3e6cf931ca8cde18e91b"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/pi-events.jsonl",
+      "path": "declared__p7_retry_session_recovers/capture/pi-events.jsonl",
+      "sha256": "sha256:f7f8b48839c877b9faf7f560f89e6b4daf31cce0e9754028d6d7408fd68cbf45"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json",
+      "path": "declared__p7_retry_session_recovers/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/workspace-manifest-post.json",
+      "path": "declared__p7_retry_session_recovers/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/capture/model.patch",
+      "path": "declared__p7_retry_session_recovers/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/pi-config/models.json",
+      "path": "declared__p7_retry_session_recovers/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p7_retry_session_recovers/pi-config/settings.json",
+      "path": "declared__p7_retry_session_recovers/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/trace.json",
+      "path": "declared__p8_retry_sdk_recovers/capture/trace.json",
+      "sha256": "sha256:0a8ef81e233031579ba84303be2bdaaa481dd399b61d244934e5218efa6b622c"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/run-receipt.json",
+      "path": "declared__p8_retry_sdk_recovers/capture/run-receipt.json",
+      "sha256": "sha256:c036258fe93f7109d8852b8ed2274b472a6fc90464cfcd797f24dfd7826b6b67"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/scenario.json",
+      "path": "declared__p8_retry_sdk_recovers/capture/scenario.json",
+      "sha256": "sha256:c5ab263f5c255f15ec850bd811000aaa7db2a9c4f7383f398949915fa51d03d3"
+    },
+    {
+      "identical_member_paths": [
+        "packet/cases/declared__p8_retry_sdk_recovers/capture/receiver/http-transcript.jsonl"
+      ],
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/http-transcript.jsonl",
+      "path": "declared__p8_retry_sdk_recovers/capture/http-transcript.jsonl",
+      "sha256": "sha256:339fe127ad09dfefe95ece2214d5c8bfb6f8e23b52e41423e1be280178153bc5"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/pi-events.jsonl",
+      "path": "declared__p8_retry_sdk_recovers/capture/pi-events.jsonl",
+      "sha256": "sha256:24e87745c7ee92d5f7e3371a4949291fc3085b9cc84feb10edce45dd6df758a4"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json",
+      "path": "declared__p8_retry_sdk_recovers/capture/workspace-manifest-pre.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/workspace-manifest-post.json",
+      "path": "declared__p8_retry_sdk_recovers/capture/workspace-manifest-post.json",
+      "sha256": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/capture/model.patch",
+      "path": "declared__p8_retry_sdk_recovers/capture/model.patch",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/pi-config/models.json",
+      "path": "declared__p8_retry_sdk_recovers/pi-config/models.json",
+      "sha256": "sha256:a4bb5d2157b1aee18a165e4ba35377d420271544ac9e29323f2d58584150bfcc"
+    },
+    {
+      "member_path": "packet/cases/declared__p8_retry_sdk_recovers/pi-config/settings.json",
+      "path": "declared__p8_retry_sdk_recovers/pi-config/settings.json",
+      "sha256": "sha256:55492dc8d07dc70a59a63a70ba36a97241c05ea7efca2461441f5753858623a8"
+    }
+  ],
+  "omitted": [
+    {
+      "member_glob": "packet/cases/declared__*/testbed/.git/**",
+      "reason": "git object store of the golden commit. The golden (pre-run) regular files are recovered from its loose blob objects by sha256 content lookup into blobs/<sha256> and bound by capture/workspace-manifest-pre.json. Replay only needs `.git/` to exist as a directory: the pinned ls result in declared__p1 lists `.git/`; no tool reads git data in any declared case (fd/rg absent, no git commands)."
+    },
+    {
+      "member_glob": "packet/cases/declared__*/testbed/** (unchanged files and symlinks)",
+      "reason": "post-run tree entries identical to workspace-manifest-pre.json entries carry no effect; only changed regular files are kept, as blobs/<sha256> bound by workspace-manifest-post.json"
+    },
+    {
+      "member_glob": "packet/cases/declared__*/capture/receiver/http-transcript.jsonl",
+      "reason": "byte-identical (same SHA256SUMS digest) to capture/http-transcript.jsonl; recorded as identical_member_paths on that entry"
+    },
+    {
+      "member_glob": "packet/cases/declared__*/capture/{receiver/ready.json,receiver/closed.json,git-status.txt,pi-stderr.log}, supplier.stdout, supplier.stderr, pi-config/auth.json",
+      "reason": "capture-harness bookkeeping or credential placeholder; not an input of the comparator projection or replay"
+    },
+    {
+      "member_glob": "packet/cases/p*",
+      "reason": "r3_readonly historical runs (retry-enabled R3 facts), not the declared clone target"
+    }
+  ],
+  "replay_workspace": {
+    "extra_directories": [
+      ".git"
+    ],
+    "extra_directories_reason": "git object store of the golden commit. The golden (pre-run) regular files are recovered from its loose blob objects by sha256 content lookup into blobs/<sha256> and bound by capture/workspace-manifest-pre.json. Replay only needs `.git/` to exist as a directory: the pinned ls result in declared__p1 lists `.git/`; no tool reads git data in any declared case (fd/rg absent, no git commands).",
+    "golden_tree": "workspace-manifest-pre.json entries: directories and modes as recorded, files from blobs/<sha256>, symlinks from target"
+  },
+  "schema_version": "bb.e4.pi057-declared-fixture-manifest.v1",
+  "source_packet": {
+    "archive": "pi057-capture-packet.tar.gz",
+    "identity": {
+      "base_digest": "sha256:9c47360a2a0355e2da18516d0b1c2126ec22c195d2185e97347c9d98398c5bef",
+      "fd_rg_provisioned": false,
+      "node_archive_sha256": "sha256:d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307",
+      "node_version": "22.23.2",
+      "notes": "Exact R3 environment had no fd or rg pre-installed; find and grep return native unavailable errors.",
+      "package": "@mariozechner/pi-coding-agent",
+      "profile": "pi",
+      "published_package_sha256": "sha256:8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+      "source_commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+      "version": "0.57.1"
+    },
+    "identity_sha256": "sha256:efaf0232c509a39a1afc42acafd7aae7588fdeaaf23eb9b5889b48e6b3e7d9a8",
+    "manifest_member_sha256": "sha256:174dfdd2f1adf33a39d51925734776e21b1368b83b98291370874855652d70e7",
+    "member_root": "packet/",
+    "sha256": "sha256:14527fc6370808897647861cf2da09e9e7c29e48a233d517211105b8d17799a4",
+    "sha256sums_member": "packet/SHA256SUMS",
+    "sha256sums_sha256": "sha256:4940a6d1e3d05a000f37e95faad1b1cdbbcc386a78f8adeb9f0fe5aba74ee3d5"
+  }
+}

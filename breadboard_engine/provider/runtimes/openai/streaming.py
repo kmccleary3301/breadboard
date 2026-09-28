@@ -739,8 +739,8 @@ class OpenAIBaseRuntime(OpenAIConversionMixin, ProviderRuntime):
             if extra_headers:
                 kwargs["extra_headers"] = extra_headers
 
-        # Small, bounded retry plan per V11 next steps
-        max_retries = 2
+        # Episode profiles forbid retries; preserve the unbound runtime policy.
+        max_retries = 0 if context.provider_profile is not None else 2
         backoffs = [0.4, 0.9]
         retry_schedule: List[float] = []
 

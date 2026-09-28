@@ -17,6 +17,7 @@ from .contract_wire import (
     _strict_dict,
     canonical_json,
 )
+from .profiles import validate_wire_model
 
 
 @dataclass
@@ -528,11 +529,7 @@ class ProviderIdentity:
                 raise ProviderContractError(
                     "provider.route_id is not canonical"
                 )
-        model = _require_text(self.model, "provider.model", max_length=256)
-        if not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9._:/@+-]{0,255}", model
-        ):
-            raise ProviderContractError("provider.model is not canonical")
+        validate_wire_model(self.model)
 
     def as_dict(self) -> Dict[str, Any]:
         return {

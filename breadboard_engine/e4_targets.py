@@ -352,9 +352,13 @@ def _validate_v2_configuration(
             f"{config_label}.target_id does not match descriptor target_id"
         )
     prompt = config["prompt"]
-    if prompt["asset"] != descriptor["execution"]["system_prompt_asset"]:
+    execution = descriptor["execution"]
+    if (
+        prompt.get("asset") != execution.get("system_prompt_asset")
+        or prompt.get("source") != execution.get("system_prompt_source")
+    ):
         raise E4TargetError(
-            f"{config_label}.prompt.asset must match the declared system prompt asset"
+            f"{config_label}.prompt must match the declared system prompt asset or source"
         )
     input_names = _validate_v2_input_relations(config, config_label)
     if not set(prompt["dynamic_fields"]) <= input_names:

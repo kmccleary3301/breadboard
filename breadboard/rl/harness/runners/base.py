@@ -414,6 +414,8 @@ class RunnerTermination(str, Enum):
     INVALID_POLICY_OUTPUT = "invalid_policy_output"
     ASSISTANT_COMPLETE = "assistant_complete"
     SUBMITTED = "submitted"
+    LIMITS_EXCEEDED = "limits_exceeded"
+    REPEATED_FORMAT_ERROR = "repeated_format_error"
 
 
 @dataclass(frozen=True, slots=True)
@@ -568,6 +570,79 @@ class PolicyResponseEvent:
         object.__setattr__(self, "response_payload", freeze_json_object(self.response_payload, field_name="policy response"))
         object.__setattr__(self, "normalized_output", tuple(freeze_json_object(item, field_name="policy output") for item in self.normalized_output))
 
+
+@dataclass(frozen=True, slots=True)
+class SourceHistoryCommitEvent:
+    """A source-history delta, distinct from a provider sample or native effect."""
+
+    sequence: int
+    episode_id: str
+    effective_plan_digest: str
+    turn: int | None
+    phase: str
+    messages: tuple[FrozenJsonObject, ...]
+    history_digest: str
+    model_calls: int
+    model_cost: float
+    runtime_frame: FrozenJsonObject | None = None
+
+    def __post_init__(self) -> None:
+        _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
+        if self.turn is not None:
+            _positive_turn(self.turn)
+        if self.phase not in {"initial", "assistant", "format_error", "observation_batch", "exit"}:
+            raise ValueError("source history phase is unsupported")
+        _implementation_digest(self.history_digest)
+        if type(self.model_calls) is not int or self.model_calls < 0:
+            raise ValueError("source model call count must be nonnegative")
+        if type(self.model_cost) not in (int, float) or not math.isfinite(self.model_cost):
+            raise ValueError("source model cost must be finite")
+        object.__setattr__(
+            self, "messages",
+            tuple(freeze_json_object(message, field_name="source history message") for message in self.messages),
+        )
+        if self.runtime_frame is not None:
+            if self.phase != "initial":
+                raise ValueError("runtime frame belongs to initial source history")
+            object.__setattr__(self, "runtime_frame", freeze_json_object(self.runtime_frame, field_name="source runtime frame"))
+
+@dataclass(frozen=True, slots=True)
+class SourceEventCommitEvent:
+    sequence: int
+    episode_id: str
+    effective_plan_digest: str
+    turn: int | None
+    source_id: str
+    phase: str
+    events: tuple[FrozenJsonObject, ...]
+    history_digest: str
+    state: FrozenJsonObject
+
+    def __post_init__(self) -> None:
+        _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
+        _positive_turn(self.turn, optional=True)
+        _nonempty_text(self.source_id, field_name="source_id")
+        if self.phase not in {
+            "initial",
+            "before_policy",
+            "assistant",
+            "observation_batch",
+            "observation",
+            "exit",
+        }:
+            raise ValueError("source event phase is unsupported")
+        _implementation_digest(self.history_digest)
+        object.__setattr__(
+            self,
+            "events",
+            tuple(freeze_json_object(event, field_name="source event") for event in self.events),
+        )
+        object.__setattr__(
+            self,
+            "state",
+            freeze_json_object(self.state, field_name="source state"),
+        )
+
 @dataclass(frozen=True, slots=True)
 class ToolCallEvent:
     sequence: int
@@ -613,6 +688,7 @@ class ToolObservationEvent:
             raise TypeError("submitted must be a bool")
         _optional_nonempty_text(self.error_type, field_name="error_type")
         object.__setattr__(self, "observation", freeze_json_object(self.observation, field_name="tool observation event"))
+
 
 @dataclass(frozen=True, slots=True)
 class RunnerTerminationEvent:
@@ -678,6 +754,8 @@ class RunnerErrorEvent:
 RunnerEvent: TypeAlias = (
     PolicyRequestEvent
     | PolicyResponseEvent
+    | SourceHistoryCommitEvent
+    | SourceEventCommitEvent
     | PolicyRuntimeRequestEvent
     | PolicyRuntimeResponseEvent
     | ToolCallEvent
@@ -712,6 +790,8 @@ class RunnerResult:
         event_types = (
             PolicyRequestEvent,
             PolicyResponseEvent,
+            SourceHistoryCommitEvent,
+            SourceEventCommitEvent,
             PolicyRuntimeRequestEvent,
             PolicyRuntimeResponseEvent,
             ToolCallEvent,
@@ -740,6 +820,8 @@ class RunnerResult:
                 if type(event) in {
                     PolicyRequestEvent,
                     PolicyResponseEvent,
+                    SourceHistoryCommitEvent,
+                    SourceEventCommitEvent,
                     PolicyRuntimeRequestEvent,
                     PolicyRuntimeResponseEvent,
                     ToolCallEvent,
@@ -840,6 +922,19 @@ class RunnerDependencyError(RunnerError):
     category = "dependency"
 
 
+class MiniProviderFailure(Exception):
+    """Mini provider failure as the locked LiteLLM client would raise it.
+
+    Carries the mapped exception and its traceback so the conductor can commit
+    Mini's native uncaught-exception exit before the typed outer failure.
+    """
+
+    def __init__(self, exception: Exception, traceback_text: str) -> None:
+        super().__init__(str(exception))
+        self.exception = exception
+        self.traceback_text = traceback_text
+
+
 class RunnerEventSinkError(RunnerError):
     category = "event_sink"
 
@@ -910,6 +1005,108 @@ class PolicyRuntimeClientPort(Protocol):
     ) -> PolicyRuntimeInvokeResult: ...
     async def cancel(self, reason: str) -> None: ...
     async def close(self) -> None: ...
+
+
+@runtime_checkable
+class CompiledPolicyRuntimeClientPort(PolicyRuntimeClientPort, Protocol):
+    """Native consumers bind their verified source manifest before any sample."""
+
+    def bind_compiled_plan(self, plan: EffectiveExecutionPlan) -> Mapping[str, Any]: ...
+
+ 
+@runtime_checkable
+class NativeSourceSessionPort(Protocol):
+    """Lease-owned persistent source-native phase session."""
+    @property
+    def declared_workspace(self) -> str: ...
+
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+        package_subpath: str | None = None,
+    ) -> Mapping[str, Any]: ...
+
+@runtime_checkable
+class NativeFinalizationPhasePort(Protocol):
+    """Lease-owned one-shot phase after native runtime retirement."""
+
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
+
+
+
+@runtime_checkable
+class NativeRuntimeInputPort(Protocol):
+    """Typed authority for profile-declared native worker runtime inputs."""
+
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]: ...
+
+
+@runtime_checkable
+class NativeWorkspaceEffectsPort(Protocol):
+    """Trusted, BB-owned diff of the materialized policy workspace.
+
+    ``close_native_runtime`` retires the native runtime through the lease's
+    runtime authority (beyond worker-tracked groups) and must report
+    ``all_dead`` before ``measure_workspace_effects`` runs. Its reach is the
+    runtime class's containment: trusted-process drains only the process
+    groups the runtime tracks, so setsid escapees there are unconfined
+    (issue 27 residual debt).
+    """
+
+    async def begin_native_workspace_effects(self) -> None: ...
+
+    async def close_native_runtime(self) -> Mapping[str, Any]: ...
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]: ...
+
+@runtime_checkable
+class NativeHTTPPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
+    """Compiled provider authority for a source-native HTTP exchange."""
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None: ...
+
+    def stage_native_http_request(
+        self, request: Mapping[str, Any]
+    ) -> Mapping[str, Any]: ...
+
+    def take_native_http_response(
+        self, response_digest: str
+    ) -> Mapping[str, Any]: ...
+
+ 
+
+
+
+@runtime_checkable
+class NativeStreamPolicyRuntimeClientPort(CompiledPolicyRuntimeClientPort, Protocol):
+    """Bind a measured source prompt and tools before native streaming."""
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
+    ) -> None: ...
+
+
+@runtime_checkable
+class MiniTemplateFramePort(Protocol):
+    """Runtime-owned template facts for the pinned Mini local environment."""
+
+    def mini_template_frame(self) -> Mapping[str, Any]: ...
 
 
 @runtime_checkable

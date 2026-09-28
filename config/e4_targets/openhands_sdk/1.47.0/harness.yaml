@@ -1,0 +1,166 @@
+schema_version: bb.e4.target_config.v2
+target_id: openhands-sdk@1.47.0
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.openhands-sdk.v1.47.0
+  revision: breadboard.openhands-sdk.v1.47.0
+prompt:
+  asset: prompts/captured-system.txt
+  dynamic_fields: []
+tools:
+  ordered:
+  - terminal
+  - file_editor
+  - task_tracker
+  - finish
+  - think
+  surface_asset: tool-surface.json
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: openai_chat_completions
+    stream: false
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 45
+  action:
+    protocol: native_tools
+    decoder: breadboard.openhands-sdk.v1.47.0
+    repair: null
+    argument_processors: []
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: false
+    malformed: native_per_call_error_then_continue
+    empty_reply: native_no_content_nudge
+    max_consecutive_format_errors: null
+  execution:
+    scheduler: serial_in_assistant_call_order
+    history_commit: native_incremental_events_then_ordered_observation_batch
+    terminal_policy: first_valid_finish_or_text_or_source_error_or_iteration_limit
+    bounded_controls:
+      max_model_calls: 16
+      episode_wall_seconds: 180
+      single_tool_wall_seconds: 90
+      raw_evidence_bytes_per_outcome: 16777216
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.openhands-sdk.v1.47.0
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: noninteractive
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - interactive_agent
+  - streaming
+  - provider_retries
+  - model_fallback
+  - compaction
+  - network_tools
+  - subagents
+  - browser
+  - remote_workspace
+  - tmux
+  - security_analyzer
+  - confirmation_policy
+  - plugins
+  - skills
+  - critic
+  - iterative_refinement
+  - openrouter
+  - external_model_metadata
+  - production_admission
+  - hard_sandbox_isolation
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: model
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: headless_provider_route/model
+    omission: required
+    value_schema:
+      type: string
+  - name: workspace
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: owned_lease/repository_root
+    omission: required
+    value_schema:
+      type: string
+  - name: environment_digest
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: installed_runtime/fixed_environment
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - model
+  - workspace
+  - environment_digest
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: prompts/captured-system.txt
+    role: prompt
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: prompts/source-registry.json
+    role: source
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: native-config.json
+    role: runtime
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  - path: source.json
+    role: source
+    required: true
+    source_ref: openhands-sdk@50080b58d35b4824fda25fca2345d80bcd08aeff
+  order:
+  - harness.yaml
+  - prompts/captured-system.txt
+  - prompts/source-registry.json
+  - native-config.json
+  - tool-surface.json
+  - LICENSE.txt
+  - source.json
+required_capabilities:
+- openhands_sdk.local.v1
+- provider_native_http.v1
+- native_source_session.v1

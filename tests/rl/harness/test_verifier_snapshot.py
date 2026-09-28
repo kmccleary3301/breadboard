@@ -20,9 +20,14 @@ from breadboard.rl.harness import sandbox as sandbox_module
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
+    EMPTY_WORKSPACE_SEED_DIGEST,
     IsolationDisposition,
     SandboxCleanupReceipt,
+    SealedSourceManifest,
+    SourceManifestEntry,
     WorkspaceLeaseState,
+    WorkspaceOpenRequest,
+    build_workspace_seed_artifact,
 )
 from breadboard.rl.harness.sandbox import (
     SandboxAttestationError,
@@ -103,6 +108,162 @@ async def _opened_snapshot(tmp_path: Path) -> tuple[RuntimeHarness, Any, Any]:
     await primary.runner_workspace.write_text("work/candidate.txt", "candidate")
     snapshot = await primary.seal_for_verifier()
     return harness, primary, snapshot
+
+
+@pytest.mark.asyncio
+async def test_seeded_workspace_has_no_policy_files_after_run_and_seal(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    source_digest = EMPTY_WORKSPACE_SEED_DIGEST
+    seed_mount = c.MountGrant(
+        source_artifact_digest=source_digest,
+        target_logical_path=".",
+        access=fixture.plan.sandbox.mounts[0].access,
+        max_bytes=fixture.plan.sandbox.mounts[0].max_bytes,
+    )
+    sandbox_values = fixture.plan.sandbox.model_dump(mode="python")
+    sandbox_values["mounts"] = (seed_mount,)
+    seeded_sandbox = c.SandboxGrant.model_validate(sandbox_values)
+    task_values = fixture.plan.task.model_dump(mode="python")
+    task_values["repository_snapshot_digest"] = None
+    task_values["input_artifact_digests"] = (source_digest,)
+    seeded_task = c.TaskGrant.model_validate(task_values)
+    capability_values = fixture.plan.effective_capabilities.model_dump(mode="python")
+    capability_values["sandbox"] = seeded_sandbox
+    capability_values["task"] = seeded_task
+    seeded_capabilities = c.CapabilityVector.model_validate(capability_values)
+    plan_values = fixture.plan.model_dump(mode="python")
+    plan_values["sandbox"] = seeded_sandbox
+    plan_values["task"] = seeded_task
+    plan_values["effective_capabilities"] = seeded_capabilities
+    plan_values["effective_capability_digest"] = seeded_capabilities.canonical_digest()
+    seeded_plan = c.EffectiveExecutionPlan.model_validate(plan_values)
+    seeded_request = WorkspaceOpenRequest(fixture.request.episode_id, seeded_plan)
+    seeded_fixture = replace(fixture, plan=seeded_plan, request=seeded_request)
+    harness = RuntimeHarness(tmp_path, seeded_fixture)
+    harness.reader.sources[source_digest] = {}
+    monkeypatch.setattr(
+        sandbox_module,
+        "_sealed_repository_diff",
+        lambda **kwargs: {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "base_commit": kwargs["base_commit"],
+            "git_executable_digest": digest("git"),
+        },
+    )
+    primary = await harness.manager.open(seeded_request)
+    try:
+        await primary.execute(("true",))
+        assert list(primary._materialized.workspace_path.iterdir()) == []
+        snapshot = await primary.seal_for_verifier()
+        assert snapshot.file_count == 0
+        assert snapshot.byte_count == 0
+    finally:
+        await primary.close()
+
+@pytest.mark.asyncio
+async def test_seeded_verifier_rejects_mutated_seed_baseline(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    source_digest = EMPTY_WORKSPACE_SEED_DIGEST
+    seed_mount = c.MountGrant(
+        source_artifact_digest=source_digest,
+        target_logical_path=".",
+        access=fixture.plan.sandbox.mounts[0].access,
+        max_bytes=fixture.plan.sandbox.mounts[0].max_bytes,
+    )
+    sandbox_values = fixture.plan.sandbox.model_dump(mode="python")
+    sandbox_values["mounts"] = (seed_mount,)
+    seeded_sandbox = c.SandboxGrant.model_validate(sandbox_values)
+    task_values = fixture.plan.task.model_dump(mode="python")
+    task_values["repository_snapshot_digest"] = None
+    task_values["input_artifact_digests"] = (source_digest,)
+    seeded_task = c.TaskGrant.model_validate(task_values)
+    capability_values = fixture.plan.effective_capabilities.model_dump(mode="python")
+    capability_values["sandbox"] = seeded_sandbox
+    capability_values["task"] = seeded_task
+    seeded_capabilities = c.CapabilityVector.model_validate(capability_values)
+    plan_values = fixture.plan.model_dump(mode="python")
+    plan_values["sandbox"] = seeded_sandbox
+    plan_values["task"] = seeded_task
+    plan_values["effective_capabilities"] = seeded_capabilities
+    plan_values["effective_capability_digest"] = seeded_capabilities.canonical_digest()
+    seeded_plan = c.EffectiveExecutionPlan.model_validate(plan_values)
+    seeded_request = WorkspaceOpenRequest(fixture.request.episode_id, seeded_plan)
+    seeded_fixture = replace(fixture, plan=seeded_plan, request=seeded_request)
+    harness = RuntimeHarness(tmp_path, seeded_fixture)
+    harness.reader.sources[source_digest] = {}
+    monkeypatch.setattr(
+        sandbox_module,
+        "_sealed_repository_diff",
+        lambda **kwargs: {
+            "returncode": 0,
+            "stdout": "",
+            "stderr": "",
+            "base_commit": kwargs["base_commit"],
+            "git_executable_digest": digest("git"),
+        },
+    )
+    primary = await harness.manager.open(seeded_request)
+    try:
+        baseline = primary._materialized.seed_baseline_path
+        assert baseline is not None
+        (baseline / "tampered.txt").write_text("tampered", encoding="utf-8")
+        with pytest.raises(VerifierSnapshotError) as captured:
+            await primary.seal_for_verifier()
+        assert captured.value.code == "workspace seed baseline identity changed"
+        assert primary.state is WorkspaceLeaseState.QUARANTINED
+    finally:
+        if primary.state is not WorkspaceLeaseState.QUARANTINED:
+            await primary.close()
+
+
+def test_seed_baseline_digest_walks_nested_directories_within_depth_limit(
+    tmp_path: Path,
+) -> None:
+    files = {"README": b"readme\n", "pkg/sub/module.py": b"value = 1\n"}
+    seed_digest, payload = build_workspace_seed_artifact(files, directory_mode=0o700)
+    raw = json.loads(payload)
+    manifest = SealedSourceManifest(
+        source_digest=raw["source_digest"],
+        schema_identity=raw["schema_version"],
+        media_identity=raw["media_type"],
+        entries=tuple(
+            SourceManifestEntry(
+                entry["path"], entry["kind"], entry["bytes"], entry["mode"], entry["digest"]
+            )
+            for entry in raw["entries"]
+        ),
+        total_bytes=raw["total_bytes"],
+        total_files=raw["total_files"],
+    )
+    root = tmp_path / "baseline"
+    (root / "pkg" / "sub").mkdir(parents=True)
+    for directory in (root, root / "pkg", root / "pkg" / "sub"):
+        directory.chmod(0o700)
+    for logical_path, content in files.items():
+        (root / logical_path).write_bytes(content)
+        (root / logical_path).chmod(0o644)
+
+    assert (
+        sandbox_module._workspace_seed_baseline_digest(
+            root, manifest, max_bytes=4_096, max_inodes=16, max_depth=2
+        )
+        == seed_digest
+    )
+    with pytest.raises(VerifierSnapshotError, match="exceeds depth limit") as captured:
+        sandbox_module._workspace_seed_baseline_digest(
+            root, manifest, max_bytes=4_096, max_inodes=16, max_depth=1
+        )
+    assert captured.value.code == "snapshot_tampered"
+
+
 async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -699,10 +860,62 @@ async def test_forged_snapshot_identity_starts_no_verifier_and_preserves_primary
     assert len(list(harness.workspace_root.iterdir())) == 1
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
-    assert receipt.steps[0] == CleanupStepReceipt(
-        "child_verifier",
-        CleanupState.ALREADY_RELEASED,
+    assert receipt.steps[0].resource == "child_verifier"
+    assert receipt.steps[0].state is CleanupState.RELEASED
+    assert json.loads(receipt.steps[0].detail)["snapshot_steps"] == [
+        {"detail": "", "resource": "snapshot", "state": "released"},
+    ]
+    assert await harness.manager.close() == ()
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+async def test_primary_close_retains_owned_storage_when_snapshot_retirement_is_incomplete(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    harness, primary, snapshot = await _opened_snapshot(tmp_path)
+    snapshot_object = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
     )
+    primary_workspace = primary._materialized.workspace_path
+    record_path = harness.lease_root / f"{primary.lease_id}.json"
+    release_snapshot = harness.store.release_snapshot
+
+    def fail_release(*args: Any, **kwargs: Any) -> bool:
+        raise OSError("snapshot release failed")
+
+    monkeypatch.setattr(harness.store, "release_snapshot", fail_release)
+
+    first = await primary.close()
+
+    assert first.state is CleanupState.QUARANTINED
+    assert tuple(step.resource for step in first.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert first.steps[0].state is CleanupState.FAILED
+    assert json.loads(first.steps[0].detail) == {
+        "incomplete_child_lease_ids": [],
+        "snapshot_steps": [
+            {"detail": "OSError", "resource": "snapshot", "state": "failed"},
+        ],
+    }
+    assert primary_workspace.exists()
+    assert snapshot_object.exists()
+    assert record_path.exists()
+
+    monkeypatch.setattr(harness.store, "release_snapshot", release_snapshot)
+    second = await primary.close()
+    assert second.state is CleanupState.RELEASED
+    assert not primary_workspace.exists()
+    assert not snapshot_object.exists()
+    assert not record_path.exists()
     assert await harness.manager.close() == ()
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
@@ -844,6 +1057,7 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
         "sha256:"
     )
+    primary_workspace = primary._materialized.workspace_path
     candidate = object_root / "work" / "candidate.txt"
     if mutation == "content":
         candidate.chmod(0o600)
@@ -867,10 +1081,22 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     assert list((harness.cache_root / "staging").iterdir()) == []
     receipt = await primary.close()
     assert receipt.state is CleanupState.RELEASED
-    assert receipt.steps[0] == CleanupStepReceipt(
+    assert tuple(step.resource for step in receipt.steps) == (
         "child_verifier",
-        CleanupState.ALREADY_RELEASED,
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
     )
+    assert receipt.steps[0].state is CleanupState.RELEASED
+    assert json.loads(receipt.steps[0].detail) == {
+        "incomplete_child_lease_ids": [],
+        "snapshot_steps": [
+            {"detail": "", "resource": "snapshot", "state": "released"},
+        ],
+    }
+    assert not primary_workspace.exists()
+    assert not object_root.exists()
     assert await harness.manager.close() == ()
     assert list(harness.workspace_root.iterdir()) == []
     assert list(harness.lease_root.iterdir()) == []
@@ -1491,6 +1717,8 @@ class BlockingVerifierBackend(RecordingBackend):
         handle, measurement = await super().launch(*args, **kwargs)
         if len(self.handles) == 2:
             blocking = BlockingVerifierHandle()
+            blocking.containment_receipt = handle.containment_receipt
+            blocking.containment_authenticator = handle.containment_authenticator
             self.handles[-1] = blocking
             return blocking, measurement
         return handle, measurement

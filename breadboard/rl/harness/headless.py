@@ -5,8 +5,8 @@ from builtins import BaseExceptionGroup
 from dataclasses import asdict
 import ipaddress
 import hashlib
-from importlib.metadata import PackageNotFoundError, version
 import json
+from importlib.metadata import PackageNotFoundError, version
 import os
 import re
 from pathlib import Path
@@ -16,25 +16,30 @@ import uuid
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
+from pydantic.json_schema import SkipJsonSchema
 
 from breadboard.product.harness.targets import bind_e4_target_inputs, serialize_e4_target_inputs
 from breadboard_engine.e4_targets import E4TargetPackage, load_e4_target
 from breadboard_engine.provider.contracts import OpenAICompletionsProviderProfile
-
+from breadboard_engine.provider.profiles import OpenAICompletionsRequestPolicy, validate_wire_model
 from . import contracts as c
 from .composition import (
     ManagedPolicyRuntimeClientResolver,
     PinnedServerCompilerAdapter,
     ProductionComposition,
+    _CASMaterializationSourceReader,
     load_pinned_compiler,
     load_production_composition,
 )
+from .materialization import validate_workspace_seed_manifest
 from .policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyResolver,
 )
 from .runner_identity import measure_module_artifact
 from .runners.base import freeze_json_object, thaw_json
+from .service import EpisodePrimaryDisposition, V2RunResult
+from .lease_envelope import RuntimeContainment
 
 
 _MAX_REQUEST_BYTES = 4 * 1024 * 1024
@@ -44,6 +49,22 @@ _GIT_COMMIT_PATTERN = r"^[0-9a-f]{40}$"
 _HEADLESS_MODULE_IDENTITY = measure_module_artifact(__file__)
 _POLICY_PROVIDER_PATH = Path(__file__).with_name("policy_provider.py")
 _POLICY_PROVIDER_IDENTITY = measure_module_artifact(str(_POLICY_PROVIDER_PATH))
+
+class ObsoleteOuterIsolationError(TypeError):
+    """Raised when an obsolete outer_isolation declaration is supplied."""
+
+
+def _raise_obsolete_outer_isolation(_value: Any) -> None:
+    """Reject the hidden, excluded ``outer_isolation`` field when supplied.
+
+    This runs as a field-scoped before validator. A mode="before"/"wrap" model
+    validator would make ``model_validate_json(..., strict=True)`` re-validate
+    the parsed payload in strict Python mode, rejecting JSON arrays for every
+    tuple field.
+    """
+    raise ObsoleteOuterIsolationError(
+        "outer_isolation is obsolete and has been replaced by per-lease verified containment attestation"
+    )
 
 
 class HeadlessEpisodeFailed(RuntimeError):
@@ -62,26 +83,75 @@ class HeadlessEpisodeFailed(RuntimeError):
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    workspace_mode: Literal["repository", "seeded"] = "repository"
+    workspace_directory_mode: int = Field(default=0o700, ge=0, le=0o777, strict=True)
+    workspace_seed_digest: str | None = Field(default=None, pattern=_DIGEST_PATTERN)
     repository_snapshot_digest: str | None = Field(
         default=None, pattern=_DIGEST_PATTERN
     )
-    base_commit: str = Field(pattern=_GIT_COMMIT_PATTERN)
+    base_commit: str | None = Field(default=None, pattern=_GIT_COMMIT_PATTERN)
     task_image_digest: str = Field(pattern=_DIGEST_PATTERN)
-    outer_isolation: Literal["apptainer"] | None = None
+    containment: Literal["attested", "unconfined_test_only"] = "attested"
 
+    outer_isolation: SkipJsonSchema[None] = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("outer_isolation", mode="before")
+    @classmethod
+    def _reject_obsolete_outer_isolation(cls, value: Any) -> None:
+        _raise_obsolete_outer_isolation(value)
+
+    @model_validator(mode="after")
+    def _workspace_authority_is_exact(self) -> HeadlessWorkspaceInput:
+        if self.workspace_mode == "repository":
+            if self.base_commit is None:
+                raise ValueError("repository workspace requires base_commit")
+            if self.workspace_seed_digest is not None:
+                raise ValueError("repository workspace cannot declare a seed tree")
+        else:
+            if (
+                type(self.workspace_directory_mode) is not int
+                or self.workspace_directory_mode < 0
+                or self.workspace_directory_mode > 0o777
+            ):
+                raise ValueError("seeded workspace directory mode is invalid")
+            if (
+                self.repository_snapshot_digest is not None
+                or self.base_commit is not None
+                or self.workspace_seed_digest is None
+            ):
+                raise ValueError(
+                    "seeded workspace requires a seed tree and cannot declare repository authority"
+                )
+        return self
+
+    def identity_dict(self) -> dict[str, Any]:
+        identity = self.model_dump(mode="json")
+        if self.workspace_mode == "repository":
+            # These defaults were not present in the original request schema.
+            identity.pop("workspace_mode", None)
+            identity.pop("workspace_directory_mode", None)
+            identity.pop("workspace_seed_digest", None)
+        return identity
 
 class HeadlessProviderInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    model: str
+    model: str = Field(min_length=1, max_length=256)
     authority_model_id: str = Field(min_length=1, max_length=256)
     credential_handle: str = Field(min_length=1, max_length=256)
-    context_window: int
-    max_output_tokens: int
+    context_window: int = Field(gt=0, le=2**53 - 1, strict=True)
+    max_output_tokens: int = Field(gt=0, le=2**53 - 1, strict=True)
     timeout_seconds: float = Field(gt=0, le=3_600)
     sampling: Mapping[str, Any] = Field(default_factory=dict)
     capabilities: Mapping[str, Any] = Field(default_factory=dict)
     compatibility: Mapping[str, Any] = Field(default_factory=dict)
+    request_policy: OpenAICompletionsRequestPolicy | None = None
+
+    @field_validator("model", "authority_model_id")
+    @classmethod
+    def _identifiers_have_no_controls(cls, value: str) -> str:
+        return validate_wire_model(value)
+
 
     def load_profile(
         self,
@@ -99,10 +169,15 @@ class HeadlessProviderInput(BaseModel):
             caller_headers=route.caller_headers,
             capabilities=self.capabilities,
             compatibility=self.compatibility,
+            request_policy=(
+                OpenAICompletionsRequestPolicy()
+                if self.request_policy is None
+                else self.request_policy
+            ),
         )
 
     def identity_dict(self) -> dict[str, Any]:
-        return {
+        identity = {
             "model": self.model,
             "authority_model_id": self.authority_model_id,
             "credential_handle": self.credential_handle,
@@ -117,6 +192,9 @@ class HeadlessProviderInput(BaseModel):
             ),
             "timeout_seconds": self.timeout_seconds,
         }
+        if self.request_policy is not None:
+            identity["request_policy"] = self.request_policy.as_dict()
+        return identity
 
 
 class HeadlessProviderRouteAuthority(BaseModel):
@@ -125,7 +203,7 @@ class HeadlessProviderRouteAuthority(BaseModel):
     schema_version: Literal["bb.rl.headless-provider-route-authority.v1"] = (
         "bb.rl.headless-provider-route-authority.v1"
     )
-    model: str = Field(min_length=1, max_length=512)
+    model: str = Field(min_length=1, max_length=256)
     authority_model_id: str = Field(min_length=1, max_length=256)
     base_url: str
     caller_headers: Mapping[str, str] = Field(default_factory=dict)
@@ -156,6 +234,11 @@ class HeadlessProviderRouteAuthority(BaseModel):
         ):
             raise ValueError("provider base_url must use an explicit loopback port")
         return value
+
+    @field_validator("model", "authority_model_id")
+    @classmethod
+    def _identifiers_have_no_controls(cls, value: str) -> str:
+        return validate_wire_model(value)
 
     @model_validator(mode="after")
     def _caller_headers_are_exact(self) -> HeadlessProviderRouteAuthority:
@@ -197,7 +280,9 @@ class HeadlessRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     schema_version: Literal[
-        "bb.rl.headless-run-request.v1", "bb.rl.headless-run-request.v2"
+        "bb.rl.headless-run-request.v1",
+        "bb.rl.headless-run-request.v2",
+        "bb.rl.headless-run-request.v3",
     ] = "bb.rl.headless-run-request.v1"
     target_id: str
     target_overlay_id: str
@@ -214,6 +299,13 @@ class HeadlessRunRequest(BaseModel):
     result_path: str
     event_log_path: str
     patch_path: str | None = None
+
+    outer_isolation: SkipJsonSchema[None] = Field(default=None, exclude=True, repr=False)
+
+    @field_validator("outer_isolation", mode="before")
+    @classmethod
+    def _reject_obsolete_outer_isolation(cls, value: Any) -> None:
+        _raise_obsolete_outer_isolation(value)
 
     @field_validator("result_path", "event_log_path")
     @classmethod
@@ -242,6 +334,13 @@ class HeadlessRunRequest(BaseModel):
             raise ValueError("target and overlay identities are required")
         if any(type(name) is not str or not name for name in self.target_dynamic_fields):
             raise ValueError("target_dynamic_fields requires non-empty field names")
+        if self.schema_version == "bb.rl.headless-run-request.v3":
+            if self.provider.request_policy is None:
+                raise ValueError("headless request v3 requires an explicit request policy")
+        elif self.provider.request_policy is not None:
+            raise ValueError(
+                "request policy is only supported by headless request v3"
+            )
         inputs = serialize_e4_target_inputs(self.schema_version, self.target_dynamic_fields)
         if len(inputs) > _MAX_REQUEST_BYTES:
             raise ValueError("target input frame exceeds the request byte limit")
@@ -266,6 +365,7 @@ class HeadlessRunRequest(BaseModel):
         provider_profile: OpenAICompletionsProviderProfile,
         provider_route: HeadlessProviderRouteAuthority,
     ) -> dict[str, Any]:
+        provider_profile_identity = provider_profile.identity_dict()
         identity = {
             "schema_version": "bb.rl.headless-run-identity.v1",
             "composition_manifest_ref": composition_manifest_ref,
@@ -277,25 +377,34 @@ class HeadlessRunRequest(BaseModel):
                     freeze_json_object(self.context, field_name="headless context")
                 )
             ),
-            "workspace": self.workspace.model_dump(mode="json"),
+            "workspace": self.workspace.identity_dict(),
             "expected_resources": self.expected_resources.model_dump(mode="json"),
             "expected_limits": self.expected_limits.model_dump(mode="json"),
             "tool_allowlist": list(self.tool_allowlist),
             "expected_sandbox": self.expected_sandbox.model_dump(mode="json"),
-            "provider_profile": provider_profile.identity_dict(),
+            "provider_profile": provider_profile_identity,
             "provider": self.provider.identity_dict(),
             "provider_route": provider_route.identity_dict(),
             "provider_timeout_seconds": self.provider.timeout_seconds,
         }
-        if self.schema_version == "bb.rl.headless-run-request.v2":
-            identity.update({
-                "schema_version": "bb.rl.headless-run-identity.v2",
-                "request_schema_version": self.schema_version,
-                "target_input_digest": target.input_digest,
-                "target_index_digest": target.index_digest,
-                "target_descriptor_bytes_digest": target.descriptor_bytes_digest,
-                "target_renderer_id": target.renderer_id,
-            })
+        if self.schema_version in {
+            "bb.rl.headless-run-request.v2",
+            "bb.rl.headless-run-request.v3",
+        }:
+            identity.update(
+                {
+                    "schema_version": (
+                        "bb.rl.headless-run-identity.v2"
+                        if self.schema_version.endswith(".v2")
+                        else "bb.rl.headless-run-identity.v3"
+                    ),
+                    "request_schema_version": self.schema_version,
+                    "target_input_digest": target.input_digest,
+                    "target_index_digest": target.index_digest,
+                    "target_descriptor_bytes_digest": target.descriptor_bytes_digest,
+                    "target_renderer_id": target.renderer_id,
+                }
+            )
         return identity
 
 
@@ -384,10 +493,11 @@ async def run_headless_request(
     try:
         if (
             request.expected_sandbox.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
-            and request.workspace.outer_isolation != "apptainer"
+            and request.workspace.containment
+            != RuntimeContainment.ATTESTED.value
         ):
             raise ValueError(
-                "headless trusted-process execution requires outer Apptainer isolation"
+                "headless trusted-process execution rejects the unconfined lane"
             )
         composition_secrets = _secret_file_bindings(
             secret_files,
@@ -460,6 +570,7 @@ async def run_headless_request(
                     episode_id: route.policy_observation_digest
                 },
                 timeout_seconds={episode_id: request.provider.timeout_seconds},
+                request_limits={episode_id: request.expected_limits.max_turns},
             )
 
         composition = load_production_composition(
@@ -539,7 +650,7 @@ async def run_headless_request(
             effective_plan = _load_effective_plan(
                 composition, create.effective_plan_ref
             )
-            _validate_effective_plan(request, target, effective_plan)
+            _validate_effective_plan(request, target, effective_plan, composition)
             run_started = True
             run_operation = await composition.service.run(
                 episode_id,
@@ -552,7 +663,11 @@ async def run_headless_request(
                 result,
                 run,
                 composition,
-                expected_base_commit=request.workspace.base_commit,
+                expected_base_commit=(
+                    request.workspace.base_commit
+                    if request.workspace.workspace_mode == "repository"
+                    else request.workspace.workspace_seed_digest
+                ),
             )
             close_operation = await composition.service.close_episode(episode_id)
             closed = await composition.service.get_closed_envelope(episode_id)
@@ -581,7 +696,11 @@ async def run_headless_request(
                         result,
                         run,
                         composition,
-                        expected_base_commit=request.workspace.base_commit,
+                        expected_base_commit=(
+                            request.workspace.base_commit
+                            if request.workspace.workspace_mode == "repository"
+                            else request.workspace.workspace_seed_digest
+                        ),
                     )
                     terminal_unsuccessful = run.primary_disposition.value != "succeeded"
             except BaseException as exc:
@@ -625,10 +744,8 @@ async def run_headless_request(
                 **result["event_log"],
                 "publication_failure": _safe_failure_projection(exc),
             }
-    if request.patch_path is not None:
+    if request.patch_path is not None and patch_bytes is not None:
         try:
-            if patch_bytes is None:
-                raise ValueError("headless run did not produce a workspace patch")
             _atomic_write(request.patch_path, patch_bytes)
         except Exception as exc:
             publication_failure = publication_failure or exc
@@ -716,6 +833,10 @@ def _validate_repository_base_commit_binding(
     request: HeadlessRunRequest,
     bindings: Mapping[str, str],
 ) -> None:
+    if request.workspace.workspace_mode == "seeded":
+        if bindings:
+            raise ValueError("seeded workspace cannot have repository base bindings")
+        return
     if any(
         type(digest) is not str
         or re.fullmatch(_DIGEST_PATTERN, digest) is None
@@ -730,18 +851,36 @@ def _validate_repository_base_commit_binding(
     )
     expected_commit = request.workspace.base_commit
     if (
-        set(bindings) != {expected_digest}
+        expected_commit is None
+        or set(bindings) != {expected_digest}
         or bindings[expected_digest] != expected_commit
     ):
         raise ValueError(
             "repository base commit is not bound to the admitted workspace authority"
         )
 
+def _validate_seed_workspace_directory_mode(
+    declared_mode: int, manifest_root_mode: int
+) -> None:
+    if (
+        type(declared_mode) is not int
+        or type(manifest_root_mode) is not int
+        or not 0 <= declared_mode <= 0o777
+        or not 0 <= manifest_root_mode <= 0o777
+    ):
+        raise ValueError("seeded workspace directory mode is invalid")
+    if declared_mode != manifest_root_mode:
+        raise ValueError(
+            "seeded workspace directory mode does not match seed manifest root"
+        )
+
+
 
 def _validate_effective_plan(
     request: HeadlessRunRequest,
     target: E4TargetPolicyProjection,
     plan: c.EffectiveExecutionPlan,
+    composition: ProductionComposition,
 ) -> None:
     if plan.effective_capabilities.resources != request.expected_resources:
         raise ValueError("effective resource limits do not match the headless request")
@@ -749,6 +888,28 @@ def _validate_effective_plan(
         raise ValueError("effective execution limits do not match the headless request")
     if plan.sandbox != request.expected_sandbox:
         raise ValueError("effective sandbox grant does not match the headless request")
+    if request.workspace.workspace_mode == "seeded":
+        root_mounts = tuple(
+            mount for mount in plan.sandbox.mounts if mount.target_logical_path == "."
+        )
+        if (
+            request.workspace.workspace_seed_digest is None
+            or len(root_mounts) != 1
+            or root_mounts[0].source_artifact_digest
+            != request.workspace.workspace_seed_digest
+        ):
+            raise ValueError("seeded workspace root is not bound to its seed artifact")
+        reader = _CASMaterializationSourceReader(composition.authority_graph.cas)
+        manifest = reader.load_manifest(
+            request.workspace.workspace_seed_digest,
+            max_bytes=root_mounts[0].max_bytes,
+        )
+        root_mode = validate_workspace_seed_manifest(
+            manifest, request.workspace.workspace_seed_digest
+        )
+        _validate_seed_workspace_directory_mode(
+            request.workspace.workspace_directory_mode, root_mode
+        )
     if plan.sandbox.image_digest != request.workspace.task_image_digest:
         raise ValueError("effective sandbox image does not match the workspace input")
     if (
@@ -839,11 +1000,16 @@ def _preflight_failure_result(
         else:
             encoded = serialize_e4_target_inputs(request.schema_version, {name: value})
         dynamic_field_digests[name] = _digest_bytes(encoded)
+    profile_identity = None if profile is None else profile.identity_dict()
     config_identity = {
         "schema_version": (
             "bb.rl.headless-preflight-identity.v1"
             if request.schema_version == "bb.rl.headless-run-request.v1"
-            else "bb.rl.headless-preflight-identity.v2"
+            else (
+                "bb.rl.headless-preflight-identity.v2"
+                if request.schema_version == "bb.rl.headless-run-request.v2"
+                else "bb.rl.headless-preflight-identity.v3"
+            )
         ),
         "composition_ref_digest": (
             _digest_bytes(composition_ref_data)
@@ -869,15 +1035,16 @@ def _preflight_failure_result(
                 freeze_json_object(request.context, field_name="headless context")
             )
         ),
-        "workspace": request.workspace.model_dump(mode="json"),
+        "workspace": request.workspace.identity_dict(),
         "tool_allowlist": list(request.tool_allowlist),
         "expected_resources": request.expected_resources.model_dump(mode="json"),
         "expected_limits": request.expected_limits.model_dump(mode="json"),
         "expected_sandbox": request.expected_sandbox.model_dump(mode="json"),
-        "provider": request.provider.identity_dict(),
-        "provider_profile": (None if profile is None else profile.identity_dict()),
+        "provider_profile": profile_identity,
         "provider_route": None if route is None else route.identity_dict(),
     }
+    if request.schema_version == "bb.rl.headless-run-request.v3":
+        config_identity["request_schema_version"] = request.schema_version
     try:
         distribution_version = version("breadboard-harness-cli")
     except PackageNotFoundError:
@@ -975,7 +1142,7 @@ def _base_result(
 
 def _project_headless_run(
     result: dict[str, Any],
-    run: Any,
+    run: V2RunResult,
     composition: ProductionComposition,
     *,
     expected_base_commit: str,
@@ -985,6 +1152,14 @@ def _project_headless_run(
         "reason": run.termination,
         "turn_count": run.turn_count,
         "response": None if run.response is None else thaw_json(run.response),
+        "run_failure": (
+            None
+            if run.primary_failure is None
+            else {
+                "category": run.primary_failure.category,
+                "code": run.primary_failure.code,
+            }
+        ),
     }
     result["evidence"] = {
         "completed_envelope_ref": _optional_ref(run.completed_envelope_ref),
@@ -1000,8 +1175,8 @@ def _project_headless_run(
         "reward_components": dict(run.reward_components),
     }
     if run.evidence_manifest_ref is None:
-        if run.failure is not None:
-            raise HeadlessEpisodeFailed(run.failure)
+        if run.primary_failure is not None:
+            raise HeadlessEpisodeFailed(run.primary_failure)
         raise ValueError("headless evidence manifest is unavailable")
     evidence_projection, event_bytes = _load_evidence_projection(
         composition,
@@ -1009,8 +1184,11 @@ def _project_headless_run(
     )
     workspace_diff = run.workspace_diff
     if workspace_diff is None:
-        if run.failure is not None:
-            raise HeadlessEpisodeFailed(run.failure)
+        if run.primary_failure is not None:
+            raise HeadlessEpisodeFailed(run.primary_failure)
+        if run.primary_disposition is not EpisodePrimaryDisposition.SUCCEEDED:
+            result["workspace_evidence"] = evidence_projection
+            return event_bytes, None
         raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
         "returncode", "stdout", "stderr", "base_commit", "baseline_tree",
@@ -1301,6 +1479,7 @@ __all__ = [
     "HeadlessRunFailed",
     "HeadlessRunRequest",
     "HeadlessWorkspaceInput",
+    "ObsoleteOuterIsolationError",
     "load_headless_request",
     "load_headless_provider_route_authority",
     "run_headless_request",

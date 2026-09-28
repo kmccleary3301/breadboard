@@ -63,8 +63,11 @@
       "additionalProperties": false,
       "required": [
         "config_asset",
-        "system_prompt_asset",
         "tool_surface_asset"
+      ],
+      "oneOf": [
+        {"required": ["system_prompt_asset"]},
+        {"required": ["system_prompt_source"]}
       ],
       "properties": {
         "config_asset": {
@@ -72,6 +75,9 @@
         },
         "system_prompt_asset": {
           "$ref": "#/$defs/relative_path"
+        },
+        "system_prompt_source": {
+          "$ref": "#/$defs/identifier"
         },
         "tool_surface_asset": {
           "$ref": "#/$defs/relative_path"

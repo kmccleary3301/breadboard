@@ -517,4 +517,9 @@ def compile_e4_harness(
     )
     reader = ManifestReader(cas=cas, bundle=bundle, closure=closure)
     manifest = compile_config(reader, closure, options)
+    cas.put_bytes(
+        closure.canonical_bytes(),
+        artifact_id=closure.closure_digest,
+        media_type="application/json",
+    )
     return E4CompiledHarness(harness, bundle, closure, manifest)

@@ -17,9 +17,9 @@ import tempfile
 import time
 import uuid
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import datetime, timezone
 from importlib.resources import files
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 
@@ -41,7 +41,10 @@ from .materialization import (
     MaterializationEntry,
     MaterializedWorkspace,
     SandboxCleanupReceipt,
+    SealedSourceManifest,
     VerifierSnapshotReceipt,
+    WORKSPACE_SEED_MEDIA_TYPE,
+    WORKSPACE_SEED_SCHEMA_VERSION,
     WorkspaceLeaseState,
     WorkspaceMaterializationPlan,
     WorkspaceOpenRequest,
@@ -51,8 +54,28 @@ from .runners.base import (
     RunnerToolBinding,
     ToolActionTimeout,
     freeze_json_object,
+    thaw_json,
 )
+from .native_session import NativeSession, NativeSessionError
+from .native_worker import MAX_FRAME_BYTES
 from .sandbox_docker import VERIFIER_RESULT_MAX_BYTES
+from .lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
+    ContainmentReceipt,
+    ContainmentReceiptError,
+    DescriptorPath,
+    EnvelopeLaunch,
+    EnvelopeLaunchError,
+    EnvelopeUnsupportedHostError,
+    RuntimeContainment,
+    launch_envelope,
+    verify_containment_receipt,
+    preflight_host_containment,
+    spawn_envelope_process,
+)
+
+EMPTY_TREE_BASE_COMMIT = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 VERIFIER_REQUEST_RELATIVE_PATH = "input/verifier-request.json"
 VERIFIER_REQUEST_SCHEMA_VERSION = "bb.rl.verifier-request.v1"
@@ -62,6 +85,8 @@ SANDBOX_CAPABILITY_MATRIX_SHA256 = (
     "c24e24766e0e34527af921ba3794b06da4bec468df0e059e90e5deb0a20147df"
 )
 _MAX_SANDBOX_CAPABILITY_MATRIX_BYTES = 64 * 1024
+_NATIVE_PHASE_PAYLOAD_MAX_DEPTH = 64
+EFFECT_CONTENT_UTF8_MAX_BYTES = 64 * 1024
 _SANDBOX_ADAPTER_STATUSES = {
     "docker": "experimental",
     "firecracker": "unsupported",
@@ -80,6 +105,83 @@ _SANDBOX_CAPABILITY_KEYS = {
     "persistent_workspace",
     "isolated",
 }
+
+OPENHANDS_SDK_LOCAL_ADAPTER_ID: str = "openhands-sdk.local.v1.47.0"
+OPENHANDS_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "file_editor",
+    "finish",
+    "task_tracker",
+    "terminal",
+    "think",
+)
+PI_CODING_AGENT_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.73.1"
+PI_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+PI_0_57_1_LOCAL_ADAPTER_ID: str = "pi-coding-agent.local.v0.57.1"
+PI_0_57_1_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "bash", "edit", "find", "grep", "ls", "read", "write",
+)
+OMP_NATIVE_LOCAL_ADAPTER_ID: str = "oh-my-pi.local.v18.1.17"
+OMP_NATIVE_TOOL_IDS: tuple[str, ...] = ("bash", "edit", "read", "write")
+OPENCLAW_LOCAL_ADAPTER_ID: str = "openclaw.local.v2026.9.4"
+OPENCLAW_NATIVE_TOOL_IDS: tuple[str, ...] = ("edit", "exec", "ls", "process", "read", "write")
+HERMES_AGENT_LOCAL_ADAPTER_ID: str = "hermes-agent.local.v2026.9.11"
+HERMES_NATIVE_TOOL_IDS: tuple[str, ...] = (
+    "patch", "read_file", "search_files", "skill_view",
+    "skills_list", "terminal", "write_file",
+)
+NATIVE_PHASE_TOOL_IDS: Mapping[str, tuple[str, ...]] = MappingProxyType({
+    OPENHANDS_SDK_LOCAL_ADAPTER_ID: OPENHANDS_NATIVE_TOOL_IDS,
+    PI_CODING_AGENT_LOCAL_ADAPTER_ID: PI_NATIVE_TOOL_IDS,
+    PI_0_57_1_LOCAL_ADAPTER_ID: PI_0_57_1_NATIVE_TOOL_IDS,
+    HERMES_AGENT_LOCAL_ADAPTER_ID: HERMES_NATIVE_TOOL_IDS,
+    OMP_NATIVE_LOCAL_ADAPTER_ID: OMP_NATIVE_TOOL_IDS,
+    OPENCLAW_LOCAL_ADAPTER_ID: OPENCLAW_NATIVE_TOOL_IDS,
+})
+MINI_SWE_AGENT_LOCAL_ADAPTER_ID: str = "mini-swe-agent.local.v2.4.6"
+MINI_SWE_AGENT_TOOL_ID: str = "bash"
+
+
+def _admit_native_phase_payload(
+    operation: str,
+    payload: Mapping[str, Any],
+    *,
+    adapter_id: str,
+    workspace: str | Path | None,
+    scratch: str | Path | None,
+    runtime_root: str | Path,
+    package_subpath: str | None = None,
+) -> dict[str, Any]:
+    admitted = dict(payload)
+    if operation != "initialize":
+        return admitted
+    if {"workspace", "scratch", "package_dir"} & set(admitted):
+        raise WorkspaceStateError(
+            "native initialize cannot supply workspace authority",
+            code="workspace_authority_mismatch",
+        )
+    package_path: Path | None = None
+    if package_subpath is not None:
+        if type(package_subpath) is not str or not package_subpath:
+            raise WorkspaceStateError(
+                "native package subpath is invalid",
+                code="workspace_authority_mismatch",
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+            )
+    if workspace is None or scratch is None:
+        return admitted
+    admitted["workspace"] = str(workspace)
+    admitted["scratch"] = str(scratch)
+    package_dir = (
+        None if package_path is None else str(Path(runtime_root) / package_path)
+    )
+    if package_dir is not None:
+        admitted["package_dir"] = package_dir
+    return admitted
 
 
 def _read_sandbox_capability_matrix_resource() -> bytes:
@@ -309,6 +411,35 @@ def _runtime_cleanup_released(steps: Sequence[CleanupStepReceipt]) -> bool:
         step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
         for step in steps
     )
+
+
+def _cleanup_steps_projection(
+    steps: Sequence[CleanupStepReceipt],
+) -> list[dict[str, str]]:
+    return [
+        {
+            "resource": step.resource,
+            "state": step.state.value,
+            "detail": step.detail,
+        }
+        for step in steps
+    ]
+
+
+def _runtime_to_lease_cleanup_step(
+    steps: Sequence[CleanupStepReceipt],
+) -> CleanupStepReceipt:
+    if len(steps) == 1 and steps[0].resource == "runtime":
+        return steps[0]
+    if not steps:
+        return CleanupStepReceipt(
+            "runtime",
+            CleanupState.FAILED,
+            "runtime cleanup returned no receipts",
+        )
+    aggregate = SandboxCleanupReceipt.from_steps("runtime", tuple(steps))
+    detail = canonical_json_bytes(_cleanup_steps_projection(steps)).decode("utf-8")
+    return CleanupStepReceipt("runtime", aggregate.state, detail)
 
 
 def _atomic_regular_write(root: Path, logical_path: str, payload: bytes) -> None:
@@ -609,7 +740,7 @@ def _snapshot_installed_executable(
         if fcntl.fcntl(snapshot_fd, _LINUX_F_GET_SEALS) & seals != seals:
             raise OSError("executable snapshot sealing was incomplete")
         snapshot = os.fstat(snapshot_fd)
-        proc_fd_path = f"/proc/self/fd/{snapshot_fd}"
+        proc_fd_path = DescriptorPath(snapshot_fd)
         proc_snapshot = os.stat(proc_fd_path)
         if (proc_snapshot.st_dev, proc_snapshot.st_ino) != (
             snapshot.st_dev,
@@ -811,6 +942,8 @@ class InstalledToolAdapter:
     entrypoint_relative_path: str
     executable_digest: str
     entrypoint_digest: str
+    argv: tuple[str, ...] | None = None
+    argv_file_digests: tuple[tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -845,6 +978,25 @@ class InstalledToolAdapter:
             raise ValueError("native tool adapter authority is not exact")
         if self.executable_relative_path == self.entrypoint_relative_path:
             raise ValueError("native tool executable and entrypoint must be distinct")
+        if self.argv is not None:
+            if (
+                type(self.argv) is not tuple
+                or not self.argv
+                or self.argv[0] != Path(self.executable_relative_path).name
+                or self.argv[-1] != self.entrypoint_relative_path
+                or len(self.argv[1:-1]) != 2 * len(self.argv_file_digests)
+                or any(
+                    self.argv[index] != "--import"
+                    or not _exact_relative_path(self.argv[index + 1].removeprefix("./"))
+                    for index in range(1, len(self.argv) - 1, 2)
+                )
+                or tuple(path for path, _ in self.argv_file_digests)
+                != tuple(self.argv[index].removeprefix("./") for index in range(2, len(self.argv) - 1, 2))
+                or any(not _exact_sha256_digest(digest) for _, digest in self.argv_file_digests)
+            ):
+                raise ValueError("native tool argv authority is not exact")
+        elif self.argv_file_digests:
+            raise ValueError("native tool argv digest has no declared argument")
 
 
 @dataclass(frozen=True, slots=True)
@@ -882,6 +1034,81 @@ def _native_member_path(binding: InstalledToolAdapter, relative_path: str) -> st
             code="runtime_preflight_failed",
         )
     return str(Path(binding.runtime_root_path) / relative_path)
+
+
+def _native_worker_argv(binding: InstalledToolAdapter, executable: str) -> tuple[str, ...]:
+    """Resolve admitted interpreter flags and sealed import files at launch."""
+    if binding.argv is None:
+        return executable, _native_member_path(binding, binding.entrypoint_relative_path)
+    arguments: list[str] = [executable]
+    for path, digest in binding.argv_file_digests:
+        member = _native_member_path(binding, path)
+        _measure_native_file(member, digest)
+        arguments.extend(("--import", member))
+    arguments.append(_native_member_path(binding, binding.entrypoint_relative_path))
+    return tuple(arguments)
+
+
+def _native_worker_environment(
+    plan: SandboxExecutionPlan, binding: InstalledToolAdapter, *, lease_id: str
+) -> dict[str, str]:
+    """Build the admitted environment for every launch of a native worker."""
+    runtime_root = Path(binding.runtime_root_path)
+    environment = dict(plan.runtime.fixed_environment)
+    if binding.adapter_id == PI_CODING_AGENT_LOCAL_ADAPTER_ID:
+        # Pinned framed worker imports Pi only from the sealed root.
+        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+    elif binding.adapter_id == PI_0_57_1_LOCAL_ADAPTER_ID:
+        # Pinned 0.57.1 framed worker imports Pi only from the sealed root;
+        # offline mode keeps its tools-manager from attempting fd/rg downloads.
+        environment["PI_NATIVE_WORKER_FRAMED"] = "1"
+        environment["PI_CODING_AGENT_NODE_MODULES"] = str(runtime_root / "node_modules")
+        environment["PI_OFFLINE"] = "1"
+    elif binding.adapter_id == OMP_NATIVE_LOCAL_ADAPTER_ID:
+        # Pinned OMP Bun worker resolves modules via absolute paths from its sealed root.
+        pass
+    elif binding.adapter_id == OPENCLAW_LOCAL_ADAPTER_ID:
+        environment["OPENCLAW_DIST"] = str(runtime_root / "dist")
+        # The pinned supplier capture environment
+        # (kit/openclaw_capture_supplier.py:123) disables bundled plugins
+        # and leads PATH with node's own directory. Skill eligibility
+        # (config-eval hasBinary) reads both, so the sealed node's
+        # directory takes that place here.
+        environment["OPENCLAW_DISABLE_BUNDLED_PLUGINS"] = "1"
+        # The supplier's exec shim raises each child's oom_score_adj through
+        # /proc/self, which the envelope mounts read-only; the failed write
+        # would surface in tool output. The supplier's opt-out keeps the
+        # command output its capture recorded.
+        environment["OPENCLAW_CHILD_OOM_SCORE_ADJ"] = "0"
+        if "PATH" not in environment:
+            raise SandboxLaunchError(
+                "OpenClaw native worker runtime declares no PATH",
+                code="runtime_preflight_failed",
+                lease_id=lease_id,
+            )
+        environment["PATH"] = os.pathsep.join((
+            str(Path(_native_member_path(binding, binding.executable_relative_path)).parent),
+            environment["PATH"],
+        ))
+    elif binding.adapter_id in {
+        OPENHANDS_SDK_LOCAL_ADAPTER_ID, HERMES_AGENT_LOCAL_ADAPTER_ID,
+    }:
+        environment["PYTHONHOME"] = str(runtime_root / "python")
+        environment["PYTHONNOUSERSITE"] = "1"
+        environment["LD_LIBRARY_PATH"] = str(runtime_root / "python/lib")
+        if binding.adapter_id == HERMES_AGENT_LOCAL_ADAPTER_ID:
+            # Hermes requires canonical identity despite sealed descriptor execution.
+            environment["PYTHONEXECUTABLE"] = str(
+                _native_member_path(binding, binding.executable_relative_path)
+            )
+    else:
+        raise SandboxLaunchError(
+            f"native tool adapter {binding.adapter_id!r} is unsupported",
+            code="runtime_unsupported",
+            lease_id=lease_id,
+        )
+    return environment
 
 
 def _validate_native_root(binding: InstalledToolAdapter) -> None:
@@ -945,6 +1172,83 @@ def _measure_native_file(path: str, expected_digest: str) -> None:
     finally:
         os.close(descriptor)
 
+
+def _decode_native_tool_result(
+    result: Mapping[str, Any], *, lease_id: str | None
+) -> Mapping[str, Any]:
+    if result.get("returncode") != 0:
+        examined = _native_raw_output_limit(result)
+        if examined is not None:
+            # The helper's explicit outer error (mini_tools.RawOutputLimitExceeded):
+            # never an observation, never folded into a generic launch failure.
+            raise SandboxLaunchError(
+                "native tool raw output exceeded its limit",
+                code="native_output_limit_exceeded",
+                lease_id=lease_id,
+                details={"examined_bytes": examined},
+            )
+        raise SandboxLaunchError(
+            "native tool process exited unsuccessfully",
+            code="runtime_launch_failed",
+            lease_id=lease_id,
+            details={
+                "returncode": result.get("returncode"),
+                "stderr": result.get("stderr", ""),
+                "stdout": result.get("stdout", ""),
+            },
+        )
+    stdout = result.get("stdout")
+    if type(stdout) is not str:
+        raise SandboxLaunchError(
+            "native tool result is malformed",
+            code="runtime_protocol_error",
+            lease_id=lease_id,
+        )
+    try:
+        def collect(items: list[tuple[str, Any]]) -> dict[str, Any]:
+            keys = [key for key, _ in items]
+            if len(keys) != len(set(keys)):
+                raise ValueError("duplicate JSON member")
+            return dict(items)
+
+        decoder = json.JSONDecoder(
+            object_pairs_hook=collect,
+            parse_constant=lambda _value: (_ for _ in ()).throw(
+                ValueError("non-finite JSON number")
+            ),
+        )
+        start = len(stdout) - len(stdout.lstrip())
+        payload, end = decoder.raw_decode(stdout, start)
+        if stdout[end:].strip() or type(payload) is not dict:
+            raise ValueError("native tool result must be one object")
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise SandboxLaunchError(
+            "native tool result is malformed",
+            code="runtime_protocol_error",
+            lease_id=lease_id,
+        ) from exc
+    return payload
+
+
+def _native_raw_output_limit(result: Mapping[str, Any]) -> int | None:
+    """Return examined bytes for the helper's raw-output outer error, else None."""
+    stdout = result.get("stdout")
+    if result.get("returncode") != 1 or type(stdout) is not str:
+        return None
+    try:
+        payload = json.loads(stdout)
+    except ValueError:
+        return None
+    if (
+        type(payload) is not dict
+        or set(payload) != {"outer_error", "raw_prefix_base64", "examined_bytes"}
+        or payload["outer_error"] != "raw_output_limit_exceeded"
+        or type(payload["examined_bytes"]) is not int
+        or payload["examined_bytes"] <= 0
+    ):
+        return None
+    return payload["examined_bytes"]
+
 @dataclass(frozen=True, slots=True)
 class SandboxExecutionPlan:
     episode_id: str
@@ -963,6 +1267,7 @@ class SandboxExecutionPlan:
     tool_bindings: tuple[RunnerToolBinding, ...]
     isolation_disposition: IsolationDisposition
     installed_tool_adapters: tuple[InstalledToolAdapter, ...] = ()
+    containment: RuntimeContainment = RuntimeContainment.ATTESTED
 
 
 @dataclass(frozen=True, slots=True)
@@ -1022,6 +1327,12 @@ class RuntimeLaunchContext:
     record_process_identity: (
         Callable[[str, Mapping[str, Any] | None], None] | None
     ) = None
+    containment_authenticator: Any | None = None
+    native_scratch_path: Path | None = None
+    record_scratch_identity: (
+        Callable[[tuple[int, int]], None] | None
+    ) = None
+    lease_root_identity: tuple[int, int] | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -1036,6 +1347,10 @@ class RuntimeLaunchContext:
                 self.record_process_identity is not None
                 and not callable(self.record_process_identity)
             )
+            or (
+                self.record_scratch_identity is not None
+                and not callable(self.record_scratch_identity)
+            )
             or (self.workspace_fd is None) != (self.workspace_identity is None)
             or (
                 self.workspace_fd is not None
@@ -1045,6 +1360,14 @@ class RuntimeLaunchContext:
                     or type(self.workspace_identity) is not tuple
                     or len(self.workspace_identity) != 2
                     or any(type(value) is not int or value < 0 for value in self.workspace_identity)
+                )
+            )
+            or (
+                self.lease_root_identity is not None
+                and (
+                    type(self.lease_root_identity) is not tuple
+                    or len(self.lease_root_identity) != 2
+                    or any(type(value) is not int or value < 0 for value in self.lease_root_identity)
                 )
             )
             or (
@@ -1225,9 +1548,19 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
             adapter if selected_ids == adapter.tool_ids else replace(adapter, tool_ids=selected_ids)
         )
     native_tool_adapters = tuple(selected_adapters)
-    if native_tool_adapters and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+    if native_tool_adapters and runtime.runtime_class not in {
+        RuntimeClass.TRUSTED_PROCESS, RuntimeClass.HARDENED_DOCKER
+    }:
         raise SandboxPlanError(
             "native tool bindings are unsupported for this runtime class",
+            code="runtime_unsupported",
+        )
+    if any(
+        adapter.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        for adapter in native_tool_adapters
+    ) and runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+        raise SandboxPlanError(
+            "mini tool adapter requires trusted process runtime",
             code="runtime_unsupported",
         )
     mounts_by_digest = {mount.source_artifact_digest: mount for mount in plan.sandbox.mounts}
@@ -1236,7 +1569,26 @@ def build_sandbox_execution_plan(request: WorkspaceOpenRequest, registries: Regi
         required.append((plan.task.repository_snapshot_digest, "repository"))
     required += [(value, "dataset") for value in plan.task.dataset_digests]
     required += [(value, "input") for value in plan.task.input_artifact_digests]
-    required += [(value, "setup_input") for record in setup_records for value in record.input_digests]
+    if plan.task.repository_snapshot_digest is None:
+        root_mounts = tuple(
+            mount for mount in plan.sandbox.mounts if mount.target_logical_path == "."
+        )
+        if len(root_mounts) > 1:
+            raise SandboxPlanError(
+                "seed workspace has multiple root mounts", code="task_input_unmapped"
+            )
+        root_digests = {mount.source_artifact_digest for mount in root_mounts}
+        required = [
+            (digest, "workspace_seed" if role == "input" and digest in root_digests else role)
+            for digest, role in required
+        ]
+        if len(root_mounts) == 1:
+            required.append((root_mounts[0].source_artifact_digest, "workspace_seed"))
+    required += [
+        (value, "setup_input")
+        for record in setup_records
+        for value in record.input_digests
+    ]
     if any(digest not in mounts_by_digest for digest, _ in required):
         raise SandboxPlanError("task or setup input has no admitted target", code="task_input_unmapped")
     role_by_digest = {digest: role for digest, role in required}
@@ -1309,6 +1661,15 @@ class RuntimeHandle(Protocol):
         input_bytes: bytes = b"",
     ) -> Mapping[str, Any]: ...
 
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]: ...
     async def run_native_tool(
         self,
         binding: InstalledToolAdapter,
@@ -1324,6 +1685,10 @@ class RuntimeHandle(Protocol):
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
     ) -> Mapping[str, Any]: ...
+    containment_receipt: ContainmentReceipt | None
+    teardown_receipt: ContainmentReceipt | None
+
+
 @dataclass(frozen=True, slots=True)
 class RepositoryBaseline:
     """Lease-start repository state the sealed workspace patch is relative to.
@@ -1355,7 +1720,7 @@ def _pin_host_git(plan: SandboxExecutionPlan) -> tuple[str, _PinnedExecutable]:
             "sealed workspace diff requires installed host git",
             code="runtime_unsupported",
         )
-    return git_path, _snapshot_installed_executable(git_path, None)
+    return git_path, _snapshot_installed_executable(os.path.realpath(git_path), None)
 
 
 def _run_pinned_git(
@@ -1366,13 +1731,14 @@ def _run_pinned_git(
     environment: Mapping[str, str],
     stdout_limit: int,
     timeout_seconds: int,
+    input_data: bytes | None = None,
 ) -> tuple[int, bytes, bytes]:
     try:
         process = subprocess.Popen(
             (pinned.proc_fd_path, *arguments),
             cwd=cwd,
             env=dict(environment),
-            stdin=subprocess.DEVNULL,
+            stdin=subprocess.PIPE if input_data is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             pass_fds=(pinned.fd,),
@@ -1388,6 +1754,9 @@ def _run_pinned_git(
         raise VerifierSnapshotError(
             "sealed workspace diff pipes are unavailable", code="snapshot_tampered"
         )
+    if input_data is not None and process.stdin is not None:
+        process.stdin.write(input_data)
+        process.stdin.close()
     stdout = bytearray()
     stderr = bytearray()
     streams = {
@@ -1453,6 +1822,8 @@ def _run_pinned_git(
         selector.close()
         process.stdout.close()
         process.stderr.close()
+        if process.stdin is not None:
+            process.stdin.close()
         if process.poll() is None:
             kill_process_group()
 
@@ -1523,7 +1894,7 @@ class _PrivateGit:
         plan: SandboxExecutionPlan,
         private_root: Path,
         work_tree: Path,
-        alternates: Sequence[Path],
+        alternates: Sequence[Path] = (),
     ) -> None:
         self._pinned = pinned
         self._work_tree = work_tree
@@ -1537,6 +1908,12 @@ class _PrivateGit:
             "GIT_CONFIG_NOSYSTEM": "1",
             "GIT_OPTIONAL_LOCKS": "0",
             "GIT_TERMINAL_PROMPT": "0",
+            "GIT_AUTHOR_NAME": "BreadBoard Verifier",
+            "GIT_AUTHOR_EMAIL": "verifier@breadboard.invalid",
+            "GIT_AUTHOR_DATE": "1970-01-01T00:00:00+0000",
+            "GIT_COMMITTER_NAME": "BreadBoard Verifier",
+            "GIT_COMMITTER_EMAIL": "verifier@breadboard.invalid",
+            "GIT_COMMITTER_DATE": "1970-01-01T00:00:00+0000",
             "HOME": str(private_root),
             "LANG": "C",
             "LC_ALL": "C",
@@ -1566,33 +1943,41 @@ class _PrivateGit:
             )
         attributes_directory = git_directory / "info"
         attributes_directory.mkdir(mode=0o700, exist_ok=True)
-        (attributes_directory / "attributes").write_text(
-            "* -text -filter -diff -working-tree-encoding -eol\n",
+        self.attributes_path = attributes_directory / "attributes"
+        self.attributes_path.write_text(
+            "* -text -filter !diff -working-tree-encoding -eol\n",
             encoding="utf-8",
         )
         self.object_directory = git_directory / "objects"
         self._environment = {
             **base_environment,
-            "GIT_ALTERNATE_OBJECT_DIRECTORIES": os.pathsep.join(
-                str(path) for path in alternates
-            ),
             "GIT_DIR": str(git_directory),
             "GIT_INDEX_FILE": str(private_root / "index"),
             "GIT_NO_REPLACE_OBJECTS": "1",
             "GIT_OBJECT_DIRECTORY": str(self.object_directory),
             "GIT_WORK_TREE": str(work_tree),
         }
+        if alternates:
+            self._environment["GIT_ALTERNATE_OBJECT_DIRECTORIES"] = os.pathsep.join(
+                str(path) for path in alternates
+            )
 
     def run(
-        self, *arguments: str, stdout_limit: int = 64 * 1024
+        self,
+        *arguments: str,
+        stdout_limit: int = 64 * 1024,
+        cwd: Path | None = None,
+        environment: Mapping[str, str] | None = None,
+        input_data: bytes | None = None,
     ) -> tuple[bytes, bytes]:
         returncode, stdout, stderr = _run_pinned_git(
             self._pinned,
             (*self._COMMON, *arguments),
-            cwd=self._work_tree,
-            environment=self._environment,
+            cwd=self._work_tree if cwd is None else cwd,
+            environment=self._environment if environment is None else environment,
             stdout_limit=stdout_limit,
             timeout_seconds=self._timeout_seconds,
+            input_data=input_data,
         )
         if returncode != 0:
             raise VerifierSnapshotError(
@@ -1602,13 +1987,16 @@ class _PrivateGit:
             )
         return stdout, stderr
 
-    def stage_work_tree(self, tree: str) -> None:
+    def stage_work_tree(self, tree: str, *, exclude_git: bool = True) -> None:
         # Stage like the stock AnySWE collector (``git add -A``): tracked and
         # untracked content, but not new files the checkout's ignore rules
         # exclude. Policy-run builds (``pip install -e .``) write ignored
         # products into the checkout that are not part of the answer.
         self.run("read-tree", tree)
-        self.run("add", "--all", "--", ".", ":(top,exclude).git")
+        if exclude_git:
+            self.run("add", "--all", "--", ".", ":(top,exclude).git")
+        else:
+            self.run("add", "--all", "--", ".")
 
 
 def _capture_repository_baseline(
@@ -1662,17 +2050,46 @@ def _sealed_repository_diff(
     repository: Path,
     scratch_directory: Path,
     base_commit: str,
-    baseline: RepositoryBaseline,
     plan: SandboxExecutionPlan,
+    baseline: RepositoryBaseline | None = None,
+    empty_base: bool = False,
+    seed_baseline: Path | None = None,
 ) -> Mapping[str, Any]:
-    """Binary patch from the lease-start baseline to the sealed checkout."""
-    if not _is_git_object_id(base_commit) or not _is_git_object_id(baseline.tree):
-        raise VerifierSnapshotError(
-            "workspace base commit is invalid", code="snapshot_tampered"
-        )
+    """Binary patch from the base/baseline to the sealed checkout."""
+    seed_base = empty_base or seed_baseline is not None
+    if seed_base:
+        if (
+            re.fullmatch(r"sha256:[0-9a-f]{64}", base_commit) is None
+            and base_commit != EMPTY_TREE_BASE_COMMIT
+        ):
+            raise VerifierSnapshotError(
+                "workspace seed identity is invalid", code="snapshot_tampered"
+            )
+    else:
+        if not _is_git_object_id(base_commit) or (
+            baseline is not None and not _is_git_object_id(baseline.tree)
+        ):
+            raise VerifierSnapshotError(
+                "workspace base commit is invalid", code="snapshot_tampered"
+            )
     git_path, pinned = _pin_host_git(plan)
     try:
-        source_objects = _validated_repository_objects(repository)
+        if seed_base:
+            identity = repository.stat(follow_symlinks=False)
+            if not stat.S_ISDIR(identity.st_mode):
+                raise VerifierSnapshotError(
+                    "sealed workspace repository layout is unsupported",
+                    code="snapshot_tampered",
+                )
+            for current, directories, files in os.walk(repository):
+                if ".git" in directories or ".git" in files:
+                    raise VerifierSnapshotError(
+                        "sealed workspace contains an embedded Git repository",
+                        code="snapshot_tampered",
+                    )
+            source_objects = None
+        else:
+            source_objects = _validated_repository_objects(repository)
         scratch_identity = scratch_directory.stat(follow_symlinks=False)
         if not stat.S_ISDIR(scratch_identity.st_mode):
             raise VerifierSnapshotError(
@@ -1683,15 +2100,51 @@ def _sealed_repository_diff(
             prefix=".breadboard-sealed-diff-",
             dir=scratch_directory,
         ) as temporary_text:
+            alternates = []
+            if source_objects is not None:
+                alternates.append(source_objects)
+            if baseline is not None:
+                alternates.append(baseline.object_directory)
             git = _PrivateGit(
                 git_path=git_path,
                 pinned=pinned,
                 plan=plan,
                 private_root=Path(temporary_text),
                 work_tree=repository,
-                alternates=(source_objects, baseline.object_directory),
+                alternates=tuple(alternates),
             )
-            git.stage_work_tree(baseline.tree)
+            base_tree = baseline.tree if baseline is not None else base_commit
+            if seed_baseline is not None:
+                seed_index = Path(temporary_text) / "seed-index"
+                seed_env = {
+                    **git._environment,
+                    "GIT_INDEX_FILE": str(seed_index),
+                    "GIT_WORK_TREE": str(seed_baseline),
+                }
+                git.run(
+                    "add", "--all", "--force", "--", ".",
+                    cwd=seed_baseline,
+                    environment=seed_env,
+                )
+                stdout, _ = git.run(
+                    "write-tree",
+                    cwd=seed_baseline,
+                    environment=seed_env,
+                )
+                base_tree = stdout.decode("ascii", "replace").strip()
+            elif empty_base:
+                stdout, _ = git.run(
+                    "mktree",
+                    cwd=Path(temporary_text),
+                    input_data=b"",
+                )
+                base_tree = stdout.decode("ascii", "replace").strip()
+                if base_tree != EMPTY_TREE_BASE_COMMIT:
+                    raise VerifierSnapshotError(
+                        "sealed workspace empty-tree initialization failed",
+                        code="snapshot_tampered",
+                    )
+            git.stage_work_tree(base_tree, exclude_git=not seed_base)
             stdout, stderr = git.run(
                 "diff",
                 "--cached",
@@ -1701,18 +2154,42 @@ def _sealed_repository_diff(
                 "--full-index",
                 "--no-renames",
                 "--ignore-submodules=none",
-                baseline.tree,
+                base_tree,
                 "--",
                 ".",
                 stdout_limit=plan.limits.artifact_bytes_each,
             )
+            try:
+                patch = stdout.decode("utf-8", "strict")
+            except UnicodeDecodeError:
+                # Git's content check emits non-UTF-8 text as a text hunk. The patch is a
+                # UTF-8 string, so such a snapshot is re-derived with every path binary.
+                git.attributes_path.write_text(
+                    "* -text -filter -diff -working-tree-encoding -eol\n",
+                    encoding="utf-8",
+                )
+                stdout, stderr = git.run(
+                    "diff",
+                    "--cached",
+                    "--no-ext-diff",
+                    "--no-textconv",
+                    "--binary",
+                    "--full-index",
+                    "--no-renames",
+                    "--ignore-submodules=none",
+                    base_tree,
+                    "--",
+                    ".",
+                    stdout_limit=plan.limits.artifact_bytes_each,
+                )
+                patch = stdout.decode("utf-8", "strict")
             return MappingProxyType(
                 {
                     "returncode": 0,
-                    "stdout": stdout.decode("utf-8", "strict"),
+                    "stdout": patch,
                     "stderr": stderr.decode("utf-8", "replace"),
                     "base_commit": base_commit,
-                    "baseline_tree": baseline.tree,
+                    "baseline_tree": base_tree,
                     "git_executable_digest": pinned.digest,
                 }
             )
@@ -1743,6 +2220,8 @@ class TrustedProcessHandle:
         workspace_fd: int,
         workspace_identity: tuple[int, int],
         command_executable: _PinnedExecutable | None = None,
+        envelope: EnvelopeLaunch | None = None,
+        native_scratch_identity: tuple[int, int] | None = None,
     ) -> None:
         self.plan = plan
         self.workspace = workspace
@@ -1753,8 +2232,17 @@ class TrustedProcessHandle:
         self._git_executable = git_executable
         self._workspace_fd = workspace_fd
         self._workspace_identity = workspace_identity
+        self._envelope = envelope
+        self.native_scratch_identity = native_scratch_identity
+        self.containment_receipt: ContainmentReceipt | None = (
+            None if envelope is None else envelope.receipt
+        )
+        self.teardown_receipt: ContainmentReceipt | None = None
         self._groups: dict[int, Mapping[str, Any]] = {}
+        self._native_session: NativeSession | None = None
+        self._native_session_lock = asyncio.Lock()
         self._launch_lock = asyncio.Lock()
+        self._terminate_task: asyncio.Task[tuple[CleanupStepReceipt, ...]] | None = None
         self._closing = False
         self._closed = False
         self._native_executables: dict[str, _PinnedExecutable] = {}
@@ -1944,6 +2432,131 @@ class TrustedProcessHandle:
             await cleanup
             raise
 
+    @staticmethod
+    def _validate_native_binding(
+        plan: SandboxExecutionPlan,
+        binding: InstalledToolAdapter,
+    ) -> None:
+        if (
+            type(binding) is not InstalledToolAdapter
+            or binding.adapter_id not in NATIVE_PHASE_TOOL_IDS
+            or tuple(binding.tool_ids) != NATIVE_PHASE_TOOL_IDS[binding.adapter_id]
+            or plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
+            or len(plan.installed_tool_adapters) != 1
+            or plan.installed_tool_adapters[0] != binding
+        ):
+            raise SandboxLaunchError(
+                "source-native session is not admitted",
+                code="runtime_unsupported",
+            )
+        compiled = tuple(plan.tool_bindings)
+        if (
+            len(compiled) != len(binding.tool_ids)
+            or tuple(item.tool_id for item in compiled) != tuple(binding.tool_ids)
+            or any(
+                item.implementation_digest != binding.manifest_digest
+                for item in compiled
+            )
+        ):
+            raise SandboxLaunchError(
+                "source-native tool bindings are not exact",
+                code="tool_binding_projection_mismatch",
+            )
+
+    async def invoke_native_phase(
+        self,
+        binding: InstalledToolAdapter,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        self._validate_native_binding(self.plan, binding)
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise SandboxLaunchError(
+                "native operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if not isinstance(payload, Mapping):
+            raise SandboxLaunchError(
+                "native payload is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        if (
+            type(timeout_ms) is not int
+            or timeout_ms <= 0
+            or timeout_ms > self.plan.limits.action_timeout_ms
+        ):
+            raise SandboxLaunchError(
+                "native timeout exceeds admitted ceiling",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        async with self._native_session_lock:
+            session = self._native_session
+            if session is None:
+                _validate_native_root(binding)
+                node_path = _native_member_path(
+                    binding, binding.executable_relative_path
+                )
+                entrypoint_path = _native_member_path(
+                    binding, binding.entrypoint_relative_path
+                )
+                _measure_native_file(entrypoint_path, binding.entrypoint_digest)
+                node = _snapshot_installed_executable(
+                    node_path, binding.executable_digest
+                )
+                environment = _native_worker_environment(self.plan, binding, lease_id=self.lease_id)
+                process: asyncio.subprocess.Process | None = None
+                try:
+                    process = await self._start_stopped_process(
+                        (
+                            self._executable.proc_fd_path,
+                            # Not a login shell: the image's /etc/profile would
+                            # replace the admitted worker PATH.
+                            "-c",
+                            'exec "$@"',
+                            "breadboard-native-worker",
+                            *_native_worker_argv(binding, node.proc_fd_path),
+                        ),
+                        timeout_ms=min(timeout_ms, self.plan.limits.setup_timeout_ms),
+                        extra_fds=(node.fd,),
+                        environment=environment,
+                    )
+
+                    async def retire() -> bool:
+                        assert process is not None
+                        return await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+
+                    session = NativeSession(
+                        process,
+                        max_frame_bytes=MAX_FRAME_BYTES,
+                        retire_callback=retire,
+                    )
+                    self._native_session = session
+                except BaseException:
+                    if process is not None and self._native_session is None:
+                        await self._cleanup_process_shielded(
+                            process, clear_identity=True
+                        )
+                    raise
+                finally:
+                    node.close()
+        try:
+            return await session.invoke_native_phase(
+                operation, payload, timeout_ms=timeout_ms
+            )
+        except NativeSessionError as exc:
+            raise SandboxLaunchError(
+                str(exc),
+                code=exc.code,
+                lease_id=self.lease_id,
+            ) from exc
+
     async def run_shell(
         self,
         command: str,
@@ -1989,61 +2602,42 @@ class TrustedProcessHandle:
                 node_path, binding.executable_digest
             )
         node = self._native_executables[node_path]
-        result = await self._run_pinned_argv(
-            (
+        execution_environment = None
+        if binding.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID:
+            execution_argv = (node.proc_fd_path, entrypoint_path)
+            if self.repository_relative_path not in (None, "."):
+                # Same directory the sealed diff reads (seal_for_verifier).
+                execution_argv = (
+                    self._executable.proc_fd_path,
+                    "-c",
+                    'cd -P -- "$1" || exit 126; shift; exec "$@"',
+                    "breadboard-mini-tool",
+                    self.repository_relative_path,
+                    *execution_argv,
+                )
+            python_home = str(Path(node_path).parent.parent)
+            execution_environment = dict(self.plan.runtime.fixed_environment) | {
+                "PYTHONHOME": python_home,
+                "LD_LIBRARY_PATH": str(Path(python_home) / "lib"),
+            }
+        else:
+            execution_argv = (
                 self._executable.proc_fd_path,
                 "-lc",
                 'exec "$@"',
                 "breadboard-native-tool",
                 node.proc_fd_path,
                 entrypoint_path,
-            ),
+            )
+        result = await self._run_pinned_argv(
+            execution_argv,
             timeout_ms=timeout_ms,
             output_limit=output_limit,
             input_bytes=request_bytes,
             extra_fds=(node.fd,),
+            environment=execution_environment,
         )
-        if result.get("returncode") != 0:
-            raise SandboxLaunchError(
-                "native tool process exited unsuccessfully",
-                code="runtime_launch_failed",
-                lease_id=self.lease_id,
-                details={
-                    "returncode": result.get("returncode"),
-                    "stderr": result.get("stderr", ""),
-                },
-            )
-        stdout = result.get("stdout")
-        if type(stdout) is not str:
-            raise SandboxLaunchError(
-                "native tool result is malformed",
-                code="runtime_protocol_error",
-                lease_id=self.lease_id,
-            )
-        try:
-            def collect(items: list[tuple[str, Any]]) -> dict[str, Any]:
-                keys = [key for key, _ in items]
-                if len(keys) != len(set(keys)):
-                    raise ValueError("duplicate JSON member")
-                return dict(items)
-
-            decoder = json.JSONDecoder(
-                object_pairs_hook=collect,
-                parse_constant=lambda _value: (_ for _ in ()).throw(
-                    ValueError("non-finite JSON number")
-                ),
-            )
-            start = len(stdout) - len(stdout.lstrip())
-            payload, end = decoder.raw_decode(stdout, start)
-            if stdout[end:].strip() or type(payload) is not dict:
-                raise ValueError("native tool result must be one object")
-        except (ValueError, json.JSONDecodeError) as exc:
-            raise SandboxLaunchError(
-                "native tool result is malformed",
-                code="runtime_protocol_error",
-                lease_id=self.lease_id,
-            ) from exc
-        return payload
+        return _decode_native_tool_result(result, lease_id=self.lease_id)
 
     async def run_argv(
         self, argv: Sequence[str], *, timeout_ms: int, output_limit: int
@@ -2086,29 +2680,15 @@ class TrustedProcessHandle:
             timeout_ms=timeout_ms,
             output_limit=output_limit,
         )
-
-    async def _run_pinned_argv(
+    async def _start_stopped_process(
         self,
         argv: Sequence[str],
         *,
         timeout_ms: int,
-        output_limit: int,
-        input_bytes: bytes = b"",
         extra_fds: Sequence[int] = (),
-    ) -> Mapping[str, Any]:
-        if (
-            not argv
-            or any(type(item) is not str or "\x00" in item for item in argv)
-            or type(input_bytes) is not bytes
-            or len(input_bytes) > output_limit
-            or any(type(fd) is not int or fd < 0 for fd in extra_fds)
-        ):
-            raise SandboxLaunchError(
-                "fixed process invocation is invalid",
-                code="runtime_preflight_failed",
-                lease_id=self.lease_id,
-            )
-        process: asyncio.subprocess.Process | None = None
+        environment: Mapping[str, str] | None = None,
+    ) -> asyncio.subprocess.Process:
+        process: Any = None
         identity_published = False
         try:
             async with self._launch_lock:
@@ -2125,44 +2705,127 @@ class TrustedProcessHandle:
                         code="workspace_authority_mismatch",
                         lease_id=self.lease_id,
                     )
-                bootstrap = 'printf B; kill -STOP $$; exec "$@"'
-                process = await asyncio.create_subprocess_exec(
-                    self._executable.proc_fd_path,
-                    "-c",
-                    bootstrap,
-                    "breadboard-bootstrap",
-                    *argv,
-                    executable=self._executable.proc_fd_path,
-                    pass_fds=tuple(
-                        executable.fd
-                        for executable in (
-                            self._executable,
-                            self._command_executable,
-                        )
-                        if executable is not None
-                    )
-                    + tuple(extra_fds)
-                    + (self._workspace_fd,),
-                    preexec_fn=lambda: os.fchdir(self._workspace_fd),
-                    env=dict(self.plan.runtime.fixed_environment),
-                    start_new_session=True,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+                launch_environment = (
+                    dict(self.plan.runtime.fixed_environment)
+                    if environment is None
+                    else dict(environment)
                 )
+                if self._envelope is not None:
+                    launch_environment["HOME"] = str(
+                        Path(self._envelope.scratch) / "home"
+                    )
+                    # The composed TMPDIR names a runtime path outside the
+                    # envelope's read-only view; the envelope's lease-private
+                    # /tmp tmpfs (lease_envelope._setup_mount_view) replaces it.
+                    launch_environment["TMPDIR"] = "/tmp"
+                if self._envelope is not None:
+                    process = await spawn_envelope_process(
+                        self._envelope,
+                        argv=argv,
+                        argv0_path=(
+                            self._command_executable.source_path
+                            if (
+                                self._command_executable is not None
+                                and argv
+                                and argv[0] == self._command_executable.proc_fd_path
+                            )
+                            else (
+                                self._executable.source_path
+                                if argv and argv[0] == self._executable.proc_fd_path
+                                else None
+                            )
+                        ),
+                        environment=launch_environment,
+                        executable_fd=self._executable.fd,
+                        command_fd=(
+                            None
+                            if self._command_executable is None
+                            else self._command_executable.fd
+                        ),
+                        extra_fds=extra_fds,
+                        cwd_fd=self._workspace_fd,
+                        timeout_ms=timeout_ms,
+                    )
+                else:
+                    process = await asyncio.create_subprocess_exec(
+                        self._executable.proc_fd_path,
+                        "-c",
+                        'printf B; kill -STOP $$; exec "$@"',
+                        "breadboard-bootstrap",
+                        *argv,
+                        executable=self._executable.proc_fd_path,
+                        pass_fds=tuple(
+                            executable.fd
+                            for executable in (
+                                self._executable,
+                                self._command_executable,
+                            )
+                            if executable is not None
+                        )
+                        + tuple(extra_fds)
+                        + (self._workspace_fd,),
+                        preexec_fn=lambda: os.fchdir(self._workspace_fd),
+                        env=(
+                            dict(self.plan.runtime.fixed_environment)
+                            if environment is None
+                            else dict(environment)
+                        ),
+                        start_new_session=True,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
                 if process.stdout is None:
                     raise RuntimeError("trusted process bootstrap pipe is unavailable")
                 loop = asyncio.get_running_loop()
                 deadline = loop.time() + timeout_ms / 1000
-                try:
-                    marker = await asyncio.wait_for(
-                        process.stdout.readexactly(1),
-                        min(timeout_ms / 1000, 1.0),
-                    )
-                except (asyncio.IncompleteReadError, asyncio.TimeoutError):
-                    raise RuntimeError("trusted process bootstrap failed") from None
-                if marker != b"B":
-                    raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is None:
+                    try:
+                        marker = await asyncio.wait_for(
+                            process.stdout.readexactly(1),
+                            min(timeout_ms / 1000, 1.0),
+                        )
+                    except (asyncio.IncompleteReadError, asyncio.TimeoutError) as exc:
+                        raise SandboxLaunchError(
+                            "trusted process bootstrap did not become ready",
+                            code="runtime_preflight_failed", lease_id=self.lease_id,
+                        ) from exc
+                    if marker != b"B":
+                        raise RuntimeError("trusted process bootstrap failed")
+                if self._envelope is not None:
+                    identity = self._observe_group_identity(process.pid)
+                    process_group = int(identity["process_group_id"])
+                    self._groups[process_group] = identity
+                    recorder = getattr(self, "_identity_recorder", None)
+                    if recorder is None:
+                        raise RuntimeError(
+                            "trusted process identity recorder is unavailable"
+                        )
+                    process.admit()
+                    identity_published = True
+                    admitted_executable = self._executable
+                    if (
+                        self._command_executable is not None
+                        and argv
+                        and argv[0] == self._command_executable.proc_fd_path
+                    ):
+                        admitted_executable = self._command_executable
+                    try:
+                        await process.wait_exec(timeout_ms)
+                    except (OSError, asyncio.TimeoutError) as exc:
+                        process.kill()
+                        raise SandboxLaunchError(
+                            "attested process exec did not succeed",
+                            code="runtime_preflight_failed",
+                            lease_id=self.lease_id,
+                        ) from exc
+                    identity = {
+                        **identity,
+                        "process_executable_digest": admitted_executable.digest,
+                        "process_exec_succeeded": True,
+                    }
+                    recorder(f"process-group-{process_group}", identity)
+                    return process
                 stop_deadline = min(deadline, loop.time() + 0.25)
                 while True:
                     fields = self._proc_fields(process.pid)
@@ -2181,15 +2844,47 @@ class TrustedProcessHandle:
                     raise RuntimeError(
                         "trusted process identity recorder is unavailable"
                     )
-                recorder(f"process-group-{process_group}", identity)
                 identity_published = True
+                recorder(f"process-group-{process_group}", identity)
                 os.kill(process.pid, signal.SIGCONT)
+                return process
         except BaseException:
             if process is not None:
                 await self._cleanup_process_shielded(
                     process, clear_identity=identity_published
                 )
             raise
+
+
+    async def _run_pinned_argv(
+        self,
+        argv: Sequence[str],
+        *,
+        timeout_ms: int,
+        output_limit: int,
+        input_bytes: bytes = b"",
+        extra_fds: Sequence[int] = (),
+        environment: Mapping[str, str] | None = None,
+    ) -> Mapping[str, Any]:
+        if (
+            not argv
+            or any(not isinstance(item, str) or "\x00" in item for item in argv)
+            or type(input_bytes) is not bytes
+            or len(input_bytes) > output_limit
+            or any(type(fd) is not int or fd < 0 for fd in extra_fds)
+        ):
+            raise SandboxLaunchError(
+                "fixed process invocation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=self.lease_id,
+            )
+        process = await self._start_stopped_process(
+            argv,
+            timeout_ms=timeout_ms,
+            extra_fds=extra_fds,
+            environment=environment,
+        )
+        deadline = asyncio.get_running_loop().time() + timeout_ms / 1000
 
         total = 0
         count_lock = asyncio.Lock()
@@ -2235,6 +2930,13 @@ class TrustedProcessHandle:
             async with asyncio.timeout_at(deadline):
                 stdout, stderr, _, _ = await asyncio.gather(*stream_tasks, wait_task)
             stream_result = (stdout, stderr)
+            exec_error = getattr(process, "exec_error", None)
+            if exec_error is not None:
+                primary_error = SandboxLaunchError(
+                    "attested executable failed during admission",
+                    code="runtime_preflight_failed",
+                    lease_id=self.lease_id,
+                )
         except TimeoutError as exc:
             primary_error = SandboxActionTimeout(
                 "process action timed out",
@@ -2352,11 +3054,40 @@ class TrustedProcessHandle:
         return result
 
     async def terminate(self) -> tuple[CleanupStepReceipt, ...]:
+        task = self._terminate_task
+        if task is None:
+            self._closing = True
+            task = asyncio.create_task(self._terminate_once())
+            self._terminate_task = task
+        return await asyncio.shield(task)
+
+    async def _terminate_once(self) -> tuple[CleanupStepReceipt, ...]:
         async with self._launch_lock:
             if self._closed:
                 return (CleanupStepReceipt("runtime", CleanupState.ALREADY_RELEASED),)
-            self._closing = True
         failed = False
+        failure_detail = ""
+        async with self._native_session_lock:
+            native_session = self._native_session
+            self._native_session = None
+        if native_session is not None:
+            try:
+                await native_session.close()
+            except asyncio.CancelledError:
+                failed = True
+                failure_detail = "native_session:CancelledError"
+            except BaseException:
+                failed = True
+        if self._envelope is not None:
+            try:
+                self.teardown_receipt = await self._envelope.terminate()
+                if (
+                    self.teardown_receipt.outcome is None
+                    or not all(self.teardown_receipt.outcome.values())
+                ):
+                    failed = True
+            except BaseException:
+                failed = True
         for process_group, identity in tuple(self._groups.items()):
             if not await self._drain_group(process_group, identity):
                 failed = True
@@ -2379,7 +3110,8 @@ class TrustedProcessHandle:
                 self._closed = True
         return (
             CleanupStepReceipt(
-                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED
+                "runtime", CleanupState.FAILED if failed else CleanupState.RELEASED,
+                failure_detail,
             ),
         )
 
@@ -2415,6 +3147,12 @@ class TrustedProcessBackend:
                 plan.runtime.executable_path,
                 plan.runtime.measured_binary_digest,
             )
+            if executable.execution_format != "elf":
+                raise SandboxLaunchError(
+                    "trusted process executable must be an ELF binary",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             if context.role == "verifier":
                 if (
                     plan.verifier.runtime_id != plan.runtime.runtime_id
@@ -2435,6 +3173,134 @@ class TrustedProcessBackend:
                         plan.runtime.measured_binary_digest,
                     )
                     interpreter.close()
+            envelope: EnvelopeLaunch | None = None
+            native_scratch_identity: tuple[int, int] | None = None
+            if plan.containment is RuntimeContainment.ATTESTED:
+                if context.containment_authenticator is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process requires a receipt authenticator",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                scratch = context.native_scratch_path
+                if scratch is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process native scratch is unavailable",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                if context.lease_root_identity is None:
+                    raise SandboxLaunchError(
+                        "attested trusted process lease root authority is unavailable",
+                        code="runtime_preflight_failed",
+                        lease_id=lease_id,
+                    )
+                parent_fd = -1
+                scratch_fd = -1
+                try:
+                    try:
+                        parent_fd = os.open(
+                            scratch.parent,
+                            os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        )
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process lease root authority is unavailable: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    parent_meta = os.fstat(parent_fd)
+                    if (
+                        not stat.S_ISDIR(parent_meta.st_mode)
+                        or (parent_meta.st_dev, parent_meta.st_ino) != context.lease_root_identity
+                    ):
+                        raise SandboxLaunchError(
+                            "attested trusted process lease root authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    scratch_name = _native_scratch_name(lease_id)
+                    if scratch.name != scratch_name:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    await asyncio.to_thread(preflight_host_containment)
+                    try:
+                        os.mkdir(scratch_name, mode=0o700, dir_fd=parent_fd)
+                    except FileExistsError as exc:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch already exists",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process native scratch creation failed: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    # In POSIX, mkdirat and openat are separate syscalls. Opening relative to
+                    # the pinned lease root with O_NOFOLLOW and verifying mode, ownership,
+                    # emptiness, and device ensures substitution races fail closed.
+                    scratch_fd = os.open(
+                        scratch_name,
+                        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=parent_fd,
+                    )
+                    scratch_meta = os.fstat(scratch_fd)
+                    if (
+                        not stat.S_ISDIR(scratch_meta.st_mode)
+                        or scratch_meta.st_uid != os.geteuid()
+                        or stat.S_IMODE(scratch_meta.st_mode) != 0o700
+                        or scratch_meta.st_dev != parent_meta.st_dev
+                    ):
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch authority is invalid",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    try:
+                        entries = os.listdir(scratch_fd)
+                    except OSError as exc:
+                        raise SandboxLaunchError(
+                            f"attested trusted process native scratch verification failed: {exc}",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        ) from exc
+                    if entries:
+                        raise SandboxLaunchError(
+                            "attested trusted process native scratch is not empty",
+                            code="runtime_preflight_failed",
+                            lease_id=lease_id,
+                        )
+                    native_scratch_identity = (scratch_meta.st_dev, scratch_meta.st_ino)
+                    if context.record_scratch_identity is not None:
+                        context.record_scratch_identity(native_scratch_identity)
+                    envelope = await asyncio.to_thread(
+                        launch_envelope,
+                        lease_id=lease_id,
+                        runtime_id=plan.runtime.runtime_id,
+                        workspace=workspace,
+                        scratch=scratch,
+                        workspace_fd=context.workspace_fd,
+                        scratch_fd=scratch_fd,
+                        scratch_identity=native_scratch_identity,
+                        authenticator=context.containment_authenticator,
+                        tmpfs_size_bytes=plan.resources.storage_bytes,
+                    )
+                finally:
+                    if parent_fd >= 0:
+                        os.close(parent_fd)
+                    if scratch_fd >= 0:
+                        os.close(scratch_fd)
+            elif plan.containment is not RuntimeContainment.UNCONFINED_TEST_ONLY:
+                raise SandboxLaunchError(
+                    "trusted process containment disposition is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease_id,
+                )
             handle = TrustedProcessHandle(
                 plan,
                 workspace,
@@ -2444,6 +3310,8 @@ class TrustedProcessBackend:
                 context.workspace_fd,
                 context.workspace_identity,
                 command_executable,
+                envelope,
+                native_scratch_identity=native_scratch_identity,
             )
             if context.record_process_identity is None:
                 raise SandboxLaunchError(
@@ -2496,12 +3364,20 @@ class TrustedProcessBackend:
                 False,
                 False,
             )
-        except BaseException:
+        except BaseException as exc:
             if command_executable is not None:
                 command_executable.close()
             if executable is not None:
                 executable.close()
             os.close(context.workspace_fd)
+            if isinstance(exc, EnvelopeUnsupportedHostError):
+                raise SandboxLaunchError(
+                    str(exc), code="runtime_unsupported", lease_id=lease_id
+                ) from exc
+            if isinstance(exc, EnvelopeLaunchError):
+                raise SandboxLaunchError(
+                    str(exc), code=exc.code, lease_id=lease_id
+                ) from exc
             raise
         return handle, measurement
 
@@ -2552,6 +3428,648 @@ class TrustedProcessBackend:
             ),
         )
 
+def _sole_writable_policy_workspace_mount(
+    lease: SandboxWorkspaceLease,
+) -> MaterializationEntry:
+    entries = tuple(
+        entry
+        for entry in lease.plan.materialization_plan.entries
+        if entry.access.value == "rw"
+    )
+    if len(entries) != 1:
+        raise WorkspaceStateError(
+            "source-native workspace mount is not unique",
+            code="workspace_authority_mismatch",
+            lease_id=lease.lease_id,
+        )
+    return entries[0]
+
+_NATIVE_SCRATCH_SUFFIX = ".native-scratch"
+
+
+def _native_scratch_name(lease_id: str) -> str:
+    return lease_id + _NATIVE_SCRATCH_SUFFIX
+
+
+def _native_scratch_path(manager: SandboxRuntimeManager, lease_id: str) -> Path:
+    return manager.lease_root / _native_scratch_name(lease_id)
+
+
+def _create_native_scratch(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+    *,
+    expected_identity: tuple[int, int] | None = None,
+) -> Path:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        raise WorkspaceStateError(
+            "native scratch authority is unavailable",
+            code="workspace_authority_mismatch",
+            lease_id=lease_id,
+        )
+    name = _native_scratch_name(lease_id)
+    root_device = os.fstat(root_fd).st_dev
+    if expected_identity is not None:
+        descriptor = -1
+        try:
+            try:
+                descriptor = os.open(
+                    name,
+                    os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                    dir_fd=root_fd,
+                )
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "native scratch authority is unavailable",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                ) from exc
+            metadata = os.fstat(descriptor)
+            if (
+                not stat.S_ISDIR(metadata.st_mode)
+                or metadata.st_uid != os.geteuid()
+                or stat.S_IMODE(metadata.st_mode) != 0o700
+                or metadata.st_dev != root_device
+                or (metadata.st_dev, metadata.st_ino) != expected_identity
+            ):
+                raise WorkspaceStateError(
+                    "native scratch authority is invalid",
+                    code="workspace_authority_mismatch",
+                    lease_id=lease_id,
+                )
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+        return _native_scratch_path(manager, lease_id)
+
+    try:
+        os.mkdir(name, mode=0o700, dir_fd=root_fd)
+    except OSError as exc:
+        raise WorkspaceStateError(
+            "native scratch authority is unavailable",
+            code="workspace_authority_mismatch",
+            lease_id=lease_id,
+        ) from exc
+    descriptor = -1
+    try:
+        try:
+            descriptor = os.open(
+                name,
+                os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0),
+                dir_fd=root_fd,
+            )
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "native scratch authority is unavailable",
+                code="workspace_authority_mismatch",
+                lease_id=lease_id,
+            ) from exc
+        metadata = os.fstat(descriptor)
+        if (
+            not stat.S_ISDIR(metadata.st_mode)
+            or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+            or metadata.st_dev != root_device
+        ):
+            raise WorkspaceStateError(
+                "native scratch authority is invalid",
+                code="workspace_authority_mismatch",
+                lease_id=lease_id,
+            )
+    except BaseException:
+        try:
+            os.rmdir(name, dir_fd=root_fd)
+        except OSError:
+            pass
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return _native_scratch_path(manager, lease_id)
+
+
+def _native_scratch_present(manager: SandboxRuntimeManager, lease_id: str) -> bool:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return False
+    try:
+        os.stat(
+            _native_scratch_name(lease_id),
+            dir_fd=root_fd,
+            follow_symlinks=False,
+        )
+    except FileNotFoundError:
+        return False
+    except OSError:
+        return True
+    return True
+
+
+def _remove_native_scratch(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+    *,
+    expected_identity: tuple[int, int] | None = None,
+) -> CleanupStepReceipt:
+    root_fd = manager._lease_root_fd
+    if root_fd is None:
+        return CleanupStepReceipt(
+            "native_scratch", CleanupState.QUARANTINED, "lease_root_unavailable"
+        )
+    name = _native_scratch_name(lease_id)
+
+    if not hasattr(os, "O_NOFOLLOW") or not hasattr(os, "O_DIRECTORY"):
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, "no_follow_unavailable")
+    root_device = os.fstat(root_fd).st_dev
+    directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+
+    try:
+        scratch_fd = os.open(name, directory_flags, dir_fd=root_fd)
+    except FileNotFoundError:
+        return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
+    except BaseException as exc:
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+
+    current_fd: int | None = scratch_fd
+    try:
+        current_stat = os.fstat(scratch_fd)
+        if current_stat.st_dev != root_device:
+            raise OSError(errno.EXDEV, "native scratch crosses a device")
+        if expected_identity is not None and (current_stat.st_dev, current_stat.st_ino) != expected_identity:
+            return CleanupStepReceipt(
+                "native_scratch",
+                CleanupState.QUARANTINED,
+                "scratch_identity_mismatch",
+            )
+
+        current_name = name
+        current_subdirs: list[tuple[str, int, int]] | None = None
+        ancestors: list[tuple[str, int, int]] = []
+        subdirs_stack: list[list[tuple[str, int, int]]] = []
+        active_child_stack: list[tuple[str, int, int]] = []
+
+        while True:
+            if current_subdirs is None:
+                os.fchmod(current_fd, stat.S_IMODE(os.fstat(current_fd).st_mode) | 0o700)
+                current_subdirs = []
+                for entry_name in os.listdir(current_fd):
+                    entry_meta = os.stat(entry_name, dir_fd=current_fd, follow_symlinks=False)
+                    if entry_meta.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if stat.S_ISDIR(entry_meta.st_mode):
+                        if (stat.S_IMODE(entry_meta.st_mode) & 0o700) != 0o700:
+                            os.chmod(
+                                entry_name,
+                                stat.S_IMODE(entry_meta.st_mode) | 0o700,
+                                dir_fd=current_fd,
+                                follow_symlinks=False,
+                            )
+                        current_subdirs.append((entry_name, entry_meta.st_dev, entry_meta.st_ino))
+                    else:
+                        os.unlink(entry_name, dir_fd=current_fd)
+
+            if current_subdirs:
+                child_name, child_dev, child_ino = current_subdirs.pop()
+                child_fd = os.open(child_name, directory_flags, dir_fd=current_fd)
+                try:
+                    child_meta = os.fstat(child_fd)
+                    if child_meta.st_dev != root_device:
+                        raise OSError(errno.EXDEV, "native scratch crosses a device")
+                    if (child_meta.st_dev, child_meta.st_ino) != (child_dev, child_ino):
+                        return CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "scratch_identity_mismatch",
+                        )
+                    ancestors.append((current_name, current_stat.st_dev, current_stat.st_ino))
+                    subdirs_stack.append(current_subdirs)
+                    active_child_stack.append((child_name, child_dev, child_ino))
+
+                    os.close(current_fd)
+                    current_fd = child_fd
+                    child_fd = None
+                    current_name = child_name
+                    current_stat = child_meta
+                    current_subdirs = None
+                finally:
+                    if child_fd is not None:
+                        os.close(child_fd)
+                continue
+
+            os.fsync(current_fd)
+            if not ancestors:
+                break
+
+            expected_parent = ancestors.pop()
+            restored_subdirs = subdirs_stack.pop()
+            active_child = active_child_stack.pop()
+
+            parent_fd = os.open("..", directory_flags, dir_fd=current_fd)
+            try:
+                parent_meta = os.fstat(parent_fd)
+                if parent_meta.st_dev != root_device:
+                    raise OSError(errno.EXDEV, "native scratch crosses a device")
+                if (parent_meta.st_dev, parent_meta.st_ino) != (expected_parent[1], expected_parent[2]):
+                    return CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "scratch_identity_mismatch",
+                    )
+                os.close(current_fd)
+                current_fd = parent_fd
+                parent_fd = None
+                current_name = expected_parent[0]
+                current_stat = parent_meta
+                current_subdirs = restored_subdirs
+            finally:
+                if parent_fd is not None:
+                    os.close(parent_fd)
+
+            child_meta = os.stat(active_child[0], dir_fd=current_fd, follow_symlinks=False)
+            if child_meta.st_dev != root_device:
+                raise OSError(errno.EXDEV, "native scratch crosses a device")
+            if (child_meta.st_dev, child_meta.st_ino) != (active_child[1], active_child[2]):
+                return CleanupStepReceipt(
+                    "native_scratch",
+                    CleanupState.QUARANTINED,
+                    "scratch_identity_mismatch",
+                )
+            os.rmdir(active_child[0], dir_fd=current_fd)
+    except BaseException as exc:
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+    finally:
+        if current_fd is not None:
+            try:
+                os.close(current_fd)
+            except OSError:
+                pass
+        current_fd = None
+
+    try:
+        final_meta = os.stat(name, dir_fd=root_fd, follow_symlinks=False)
+        if final_meta.st_dev != root_device:
+            raise OSError(errno.EXDEV, "native scratch crosses a device")
+        if expected_identity is not None and (final_meta.st_dev, final_meta.st_ino) != expected_identity:
+            return CleanupStepReceipt(
+                "native_scratch",
+                CleanupState.QUARANTINED,
+                "scratch_identity_mismatch",
+            )
+        os.rmdir(name, dir_fd=root_fd)
+        os.fsync(root_fd)
+        return CleanupStepReceipt("native_scratch", CleanupState.RELEASED)
+    except FileNotFoundError:
+        return CleanupStepReceipt("native_scratch", CleanupState.ALREADY_RELEASED)
+    except BaseException as exc:
+        return CleanupStepReceipt("native_scratch", CleanupState.FAILED, type(exc).__name__)
+
+
+def _cleanup_native_scratch_step(
+    manager: SandboxRuntimeManager,
+    lease_id: str,
+    *,
+    created_scratch_identities: Sequence[tuple[int, int]] | None = None,
+    runtime: Any = None,
+    runtime_released: bool,
+) -> CleanupStepReceipt | None:
+    if not _native_scratch_present(manager, lease_id):
+        return None
+    created_identity = (
+        created_scratch_identities[0]
+        if created_scratch_identities
+        else getattr(runtime, "native_scratch_identity", None)
+    )
+    if created_identity is not None:
+        return (
+            _remove_native_scratch(
+                manager,
+                lease_id,
+                expected_identity=created_identity,
+            )
+            if runtime_released
+            else CleanupStepReceipt(
+                "native_scratch",
+                CleanupState.QUARANTINED,
+                "dependent runtime cleanup incomplete",
+            )
+        )
+    return CleanupStepReceipt(
+        "native_scratch",
+        CleanupState.QUARANTINED,
+        "preexisting_scratch_preserved",
+    )
+
+
+def _workspace_effect_snapshot(
+    root: Path,
+    *,
+    exclude_root_git: bool,
+    max_total_bytes: int,
+    max_inodes: int,
+    max_depth: int,
+    expected_root_identity: tuple[int, int] | None = None,
+) -> tuple[dict[str, dict[str, Any]], tuple[int, int]]:
+    """Hash one materialized policy workspace through no-follow dirfds.
+
+    Logical file sizes are checked against ``max_total_bytes`` (the lease's
+    admitted storage bound) before any content is read, so sparse or
+    oversized files fail closed instead of being hashed without bound.
+    Every visited node counts against ``max_inodes`` as it is listed and
+    nesting beyond ``max_depth`` is rejected (the security policy's snapshot
+    traversal ceilings), so empty-node floods cannot grow the scan unbounded.
+    """
+    if any(
+        type(bound) is not int or bound < 0
+        for bound in (max_total_bytes, max_inodes, max_depth)
+    ) or max_total_bytes == 0:
+        raise WorkspaceStateError(
+            "workspace effect traversal bound is invalid",
+            code="workspace_authority_mismatch",
+        )
+    scanned_bytes = 0
+    visited_nodes = 0
+    snapshot: dict[str, dict[str, Any]] = {}
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    file_flags = (
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+    )
+
+    try:
+        root_fd = os.open(root, directory_flags)
+    except OSError as exc:
+        raise WorkspaceStateError(
+            "workspace effects cannot be measured",
+            code="workspace_authority_mismatch",
+        ) from exc
+    try:
+        root_stat = os.fstat(root_fd)
+        root_identity = (root_stat.st_dev, root_stat.st_ino)
+        if expected_root_identity is not None and root_identity != expected_root_identity:
+            raise WorkspaceStateError(
+                "workspace root identity changed",
+                code="workspace_authority_mismatch",
+            )
+
+        def walk(directory_fd: int, prefix: str, depth: int) -> None:
+            nonlocal scanned_bytes, visited_nodes
+            entries: list[os.DirEntry[str]] = []
+            try:
+                with os.scandir(directory_fd) as iterator:
+                    for entry in iterator:
+                        if exclude_root_git and not prefix and entry.name == ".git":
+                            continue
+                        visited_nodes += 1
+                        if visited_nodes > max_inodes or depth > max_depth:
+                            raise WorkspaceStateError(
+                                "workspace effects exceed the admitted traversal ceiling",
+                                code="output_limit_exceeded",
+                                details={
+                                    "path": f"{prefix}/{entry.name}" if prefix else entry.name,
+                                    "visited_nodes": visited_nodes,
+                                    "max_inodes": max_inodes,
+                                    "depth": depth,
+                                    "max_depth": max_depth,
+                                },
+                            )
+                        entries.append(entry)
+            except OSError as exc:
+                raise WorkspaceStateError(
+                    "workspace effects cannot be measured",
+                    code="workspace_authority_mismatch",
+                ) from exc
+            entries.sort(key=lambda entry: entry.name)
+            for entry in entries:
+                relative = f"{prefix}/{entry.name}" if prefix else entry.name
+                try:
+                    metadata = entry.stat(follow_symlinks=False)
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "workspace effects cannot be measured",
+                        code="workspace_authority_mismatch",
+                    ) from exc
+                if stat.S_ISDIR(metadata.st_mode):
+                    try:
+                        child_fd = os.open(entry.name, directory_flags, dir_fd=directory_fd)
+                    except OSError as exc:
+                        raise WorkspaceStateError(
+                            "workspace effects cannot be measured",
+                            code="workspace_authority_mismatch",
+                        ) from exc
+                    try:
+                        walk(child_fd, relative, depth + 1)
+                    finally:
+                        os.close(child_fd)
+                    continue
+                if not stat.S_ISREG(metadata.st_mode) or metadata.st_nlink != 1:
+                    raise WorkspaceStateError(
+                        "workspace contains an unauthorized effect node",
+                        code="workspace_authority_mismatch",
+                    )
+                descriptor = -1
+                digest = hashlib.sha256()
+                content = bytearray()
+                total_bytes = 0
+                try:
+                    descriptor = os.open(
+                        entry.name,
+                        file_flags,
+                        dir_fd=directory_fd,
+                    )
+                    opened_metadata = os.fstat(descriptor)
+                    if (
+                        not stat.S_ISREG(opened_metadata.st_mode)
+                        or opened_metadata.st_dev != metadata.st_dev
+                        or opened_metadata.st_ino != metadata.st_ino
+                        or opened_metadata.st_nlink != 1
+                    ):
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
+                    logical_size = opened_metadata.st_size
+                    if logical_size > max_total_bytes - scanned_bytes:
+                        raise WorkspaceStateError(
+                            "workspace effects exceed the admitted storage bound",
+                            code="output_limit_exceeded",
+                            details={
+                                "path": relative,
+                                "logical_bytes": logical_size,
+                                "scanned_bytes": scanned_bytes,
+                                "max_total_bytes": max_total_bytes,
+                            },
+                        )
+                    while True:
+                        chunk = os.read(descriptor, 1024 * 1024)
+                        if not chunk:
+                            break
+                        total_bytes += len(chunk)
+                        if total_bytes > logical_size:
+                            raise WorkspaceStateError(
+                                "workspace effect node changed during measurement",
+                                code="workspace_authority_mismatch",
+                            )
+                        digest.update(chunk)
+                        consumed = total_bytes - len(chunk)
+                        if consumed < EFFECT_CONTENT_UTF8_MAX_BYTES:
+                            content.extend(chunk[: EFFECT_CONTENT_UTF8_MAX_BYTES - consumed])
+                    if total_bytes != logical_size:
+                        raise WorkspaceStateError(
+                            "workspace effect node changed during measurement",
+                            code="workspace_authority_mismatch",
+                        )
+                    scanned_bytes += total_bytes
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "workspace effects cannot be measured",
+                        code="workspace_authority_mismatch",
+                    ) from exc
+                finally:
+                    if descriptor >= 0:
+                        os.close(descriptor)
+                value: dict[str, Any] = {
+                    "exists": True,
+                    "bytes": total_bytes,
+                    "sha256": "sha256:" + digest.hexdigest(),
+                }
+                if total_bytes <= EFFECT_CONTENT_UTF8_MAX_BYTES:
+                    value["content_utf8"] = bytes(content).decode("utf-8", "replace")
+                snapshot[relative] = value
+
+        walk(root_fd, "", 0)
+        return snapshot, root_identity
+    finally:
+        os.close(root_fd)
+
+def _workspace_seed_baseline_digest(
+    root: Path,
+    manifest: SealedSourceManifest,
+    *,
+    max_bytes: int,
+    max_inodes: int,
+    max_depth: int,
+) -> str:
+    root_stat = root.lstat()
+    if not stat.S_ISDIR(root_stat.st_mode):
+        raise VerifierSnapshotError(
+            "workspace seed baseline root is not a directory",
+            code="snapshot_tampered",
+        )
+    entries: list[dict[str, Any]] = [
+        {
+            "path": ".",
+            "kind": "directory",
+            "bytes": 0,
+            "mode": stat.S_IMODE(root_stat.st_mode),
+            "digest": None,
+        }
+    ]
+    total_bytes = 0
+    total_nodes = 0
+    for current, directories, files in os.walk(root, followlinks=False):
+        current_path = Path(current)
+        relative_parent = current_path.relative_to(root).as_posix()
+        if relative_parent == ".":
+            relative_parent = ""
+        depth = 0 if not relative_parent else len(PurePosixPath(relative_parent).parts)
+        if depth > max_depth:
+            raise VerifierSnapshotError(
+                "workspace seed baseline exceeds depth limit",
+                code="snapshot_tampered",
+            )
+        directories.sort()
+        files.sort()
+        for name in directories:
+            path = current_path / name
+            info = path.lstat()
+            total_nodes += 1
+            if total_nodes > max_inodes or not stat.S_ISDIR(info.st_mode):
+                raise VerifierSnapshotError(
+                    "workspace seed baseline contains an unauthorized directory",
+                    code="snapshot_tampered",
+                )
+            logical = f"{relative_parent}/{name}" if relative_parent else name
+            entries.append(
+                {
+                    "path": logical,
+                    "kind": "directory",
+                    "bytes": 0,
+                    "mode": stat.S_IMODE(info.st_mode),
+                    "digest": None,
+                }
+            )
+        for name in files:
+            path = current_path / name
+            info = path.lstat()
+            total_nodes += 1
+            if (
+                total_nodes > max_inodes
+                or not stat.S_ISREG(info.st_mode)
+                or info.st_nlink != 1
+            ):
+                raise VerifierSnapshotError(
+                    "workspace seed baseline contains an unauthorized file",
+                    code="snapshot_tampered",
+                )
+            payload = path.read_bytes()
+            if len(payload) != info.st_size or len(payload) > max_bytes - total_bytes:
+                raise VerifierSnapshotError(
+                    "workspace seed baseline exceeds byte limit",
+                    code="snapshot_tampered",
+                )
+            total_bytes += len(payload)
+            logical = f"{relative_parent}/{name}" if relative_parent else name
+            entries.append(
+                {
+                    "path": logical,
+                    "kind": "file",
+                    "bytes": len(payload),
+                    "mode": stat.S_IMODE(info.st_mode),
+                    "digest": "sha256:" + hashlib.sha256(payload).hexdigest(),
+                }
+            )
+    entries.sort(key=lambda item: item["path"])
+    identity = {
+        "schema_version": WORKSPACE_SEED_SCHEMA_VERSION,
+        "media_type": WORKSPACE_SEED_MEDIA_TYPE,
+        "directory_mode": stat.S_IMODE(root_stat.st_mode),
+        "entries": entries,
+    }
+    digest = _wp7_digest(identity)
+    if digest != manifest.source_digest:
+        raise VerifierSnapshotError(
+            "workspace seed baseline identity changed",
+            code="snapshot_tampered",
+        )
+
+    return digest
+
+def _workspace_effect_baseline(
+    snapshot: Mapping[str, Mapping[str, Any]],
+) -> dict[str, tuple[int, str]]:
+    return {
+        path: (value["bytes"], value["sha256"])
+        for path, value in snapshot.items()
+    }
+
+def _changed_workspace_effects(
+    baseline: Mapping[str, tuple[int, str]],
+    current: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Mapping[str, Any]]:
+    changed: dict[str, Mapping[str, Any]] = {}
+    for path, value in current.items():
+        identity = (value["bytes"], value["sha256"])
+        if baseline.get(path) != identity:
+            changed[path] = value
+    for path in baseline.keys() - current.keys():
+        changed[path] = {"exists": False}
+    return changed
+
+
+
 
 class LeaseBackedRunnerWorkspace:
     def __init__(self, lease: SandboxWorkspaceLease, effective_plan_digest: str,
@@ -2570,8 +4088,378 @@ class LeaseBackedRunnerWorkspace:
         self.__lease = lease
         self.__tool_bindings = bindings
 
+        self.__effects_root: Path | None = None
+        self.__effects_exclude_root_git = False
+        self.__effects_baseline: dict[str, tuple[int, str]] | None = None
+        self.__effects_root_identity: tuple[int, int] | None = None
+        self.__native_runtime_retired = False
     @property
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]: return self.__tool_bindings
+    @property
+    def declared_workspace(self) -> str:
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
+        return str(self.__lease._resolve(workspace_mount.target_logical_path, writable=True))
+
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return self.__lease.containment_receipt
+
+    @property
+    def containment_lease_id(self) -> str:
+        return self.__lease.lease_id
+    @property
+    def containment(self) -> RuntimeContainment:
+        return self.__lease.plan.containment
+
+
+    async def begin_native_workspace_effects(self) -> None:
+        lease = self.__lease
+        lease._assert_active()
+        if self.__effects_baseline is not None:
+            raise WorkspaceStateError(
+                "native workspace effects were already admitted",
+                code="workspace_authority_mismatch",
+                lease_id=lease.lease_id,
+            )
+        workspace_mount = _sole_writable_policy_workspace_mount(lease)
+        workspace_root = lease._resolve(
+            workspace_mount.target_logical_path,
+            writable=True,
+        )
+        await lease._begin_operation()
+        try:
+            snapshot, root_identity = await asyncio.to_thread(
+                _workspace_effect_snapshot,
+                workspace_root,
+                exclude_root_git=workspace_mount.role == "repository",
+                max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
+            )
+            self.__effects_root = workspace_root
+            self.__effects_exclude_root_git = workspace_mount.role == "repository"
+            self.__effects_root_identity = root_identity
+            self.__effects_baseline = _workspace_effect_baseline(snapshot)
+        finally:
+            await lease._end_operation()
+
+    async def measure_workspace_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        lease = self.__lease
+        if (
+            self.__effects_root is None
+            or self.__effects_baseline is None
+            or self.__effects_root_identity is None
+        ):
+            raise WorkspaceStateError(
+                "native workspace effects were not admitted",
+                code="workspace_authority_mismatch",
+                lease_id=lease.lease_id,
+            )
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            current, _ = await asyncio.to_thread(
+                _workspace_effect_snapshot,
+                self.__effects_root,
+                exclude_root_git=self.__effects_exclude_root_git,
+                max_total_bytes=lease.plan.resources.storage_bytes,
+                max_inodes=lease.plan.security_policy.snapshot_max_inodes,
+                max_depth=lease.plan.security_policy.snapshot_max_depth,
+                expected_root_identity=self.__effects_root_identity,
+            )
+            return _changed_workspace_effects(self.__effects_baseline, current)
+        finally:
+            await lease._end_operation()
+
+    async def close_native_runtime(self) -> Mapping[str, Any]:
+        """Retire the native worker before workspace effects are measured."""
+        lease = self.__lease
+        lease._assert_active()
+        await lease._begin_operation()
+        try:
+            steps = await lease._runtime.terminate()
+            return {
+                "kind": "closed",
+                "cleanup": {
+                    "all_dead": bool(steps) and all(
+                        step.state
+                        in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                        for step in steps
+                    ),
+                    "steps": [
+                        {
+                            "resource": step.resource,
+                            "state": step.state.value,
+                            "detail": step.detail,
+                        }
+                        for step in steps
+                    ],
+                },
+            }
+        finally:
+            self.__native_runtime_retired = True
+            await lease._end_operation()
+
+    async def invoke_native_finalization_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+    ) -> Mapping[str, Any]:
+        """Run a sealed, credential-free phase after cleanup has settled."""
+        lease = self.__lease
+        lease._assert_active()
+        if not self.__native_runtime_retired:
+            raise WorkspaceStateError(
+                "native runtime cleanup must settle before finalization",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(operation) is not str or not operation or "\x00" in operation:
+            raise WorkspaceStateError(
+                "native finalization operation is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        if type(timeout_ms) is not int or not 0 < timeout_ms <= lease.plan.limits.action_timeout_ms:
+            raise WorkspaceStateError(
+                "native finalization timeout is invalid",
+                code="runtime_preflight_failed",
+                lease_id=lease.lease_id,
+            )
+        frozen_payload = freeze_json_object(
+            payload,
+            field_name="native finalization payload",
+            max_depth=8,
+            max_nodes=lease.plan.limits.observation_bytes + 1,
+            max_encoded_bytes=lease.plan.limits.observation_bytes,
+        )
+        adapters = tuple(
+            adapter for adapter in lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native finalizer adapter is unavailable",
+                code="runtime_unsupported",
+                lease_id=lease.lease_id,
+            )
+        binding = adapters[0]
+        TrustedProcessHandle._validate_native_binding(lease.plan, binding)
+        _validate_native_root(binding)
+        entrypoint = _native_member_path(binding, binding.entrypoint_relative_path)
+        _measure_native_file(entrypoint, binding.entrypoint_digest)
+        node = _snapshot_installed_executable(
+            _native_member_path(binding, binding.executable_relative_path),
+            binding.executable_digest,
+        )
+        session: NativeSession | None = None
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *_native_worker_argv(binding, node.proc_fd_path),
+                "--finalize-only",
+                cwd=binding.runtime_root_path,
+                env=_native_worker_environment(lease.plan, binding, lease_id=lease.lease_id),
+                pass_fds=(node.fd,),
+                start_new_session=True,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            session = NativeSession(process, max_frame_bytes=MAX_FRAME_BYTES)
+            return await session.invoke_native_phase(
+                operation, thaw_json(frozen_payload), timeout_ms=timeout_ms,
+            )
+        except NativeSessionError as exc:
+            raise WorkspaceStateError(
+                "native finalization failed",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        except OSError as exc:
+            raise WorkspaceStateError(
+                "native finalizer could not launch",
+                code="native_finalization_failed",
+                lease_id=lease.lease_id,
+            ) from exc
+        finally:
+            if session is not None:
+                await session.close()
+            node.close()
+
+    def native_runtime_inputs(
+        self,
+        *,
+        input_names: tuple[str, ...],
+        package_subpath: str,
+    ) -> Mapping[str, str]:
+        if (
+            type(input_names) is not tuple
+            or not input_names
+            or any(type(name) is not str or not name for name in input_names)
+            or len(set(input_names)) != len(input_names)
+            or type(package_subpath) is not str
+            or not package_subpath
+        ):
+            raise WorkspaceStateError(
+                "source-native runtime input declaration is invalid",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        package_path = Path(package_subpath)
+        if package_path.is_absolute() or ".." in package_path.parts:
+            raise WorkspaceStateError(
+                "source-native package subpath escapes adapter runtime root",
+                code="workspace_escape",
+                lease_id=self.__lease.lease_id,
+            )
+        workspace_mount = _sole_writable_policy_workspace_mount(self.__lease)
+        adapters = tuple(
+            adapter
+            for adapter in self.__lease.plan.installed_tool_adapters
+            if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+        )
+        if len(adapters) != 1:
+            raise WorkspaceStateError(
+                "source-native runtime inputs are unavailable",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        now = datetime.now(timezone.utc)
+        scratch = _native_scratch_path(self.__lease._manager, self.__lease.lease_id)
+        available = {
+            "cwd": str(self.__lease._resolve(workspace_mount.target_logical_path, writable=False)),
+            "home": str(scratch / "home"),
+            "current_date": now.date().isoformat(),
+            "message_timestamp_ms": str(int(now.timestamp() * 1000)),
+            "package_dir": str(Path(adapters[0].runtime_root_path) / package_path),
+            "session_id": self.__lease.lease_id,
+        }
+        unknown = set(input_names) - set(available)
+        if unknown:
+            raise WorkspaceStateError(
+                "source-native runtime input is not supported",
+                code="runtime_unsupported",
+                lease_id=self.__lease.lease_id,
+            )
+        return {name: available[name] for name in input_names}
+
+    async def invoke_native_phase(
+        self,
+        operation: str,
+        payload: Mapping[str, Any],
+        *,
+        timeout_ms: int,
+        package_subpath: str | None = None,
+    ) -> Mapping[str, Any]:
+        lease = self.__lease
+        await lease._begin_operation()
+        try:
+            adapters = tuple(
+                adapter
+                for adapter in lease.plan.installed_tool_adapters
+                if adapter.adapter_id in NATIVE_PHASE_TOOL_IDS
+            )
+            if len(adapters) != 1:
+                raise WorkspaceStateError(
+                    "source-native adapter is not exactly installed",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
+            adapter = adapters[0]
+            try:
+                TrustedProcessHandle._validate_native_binding(lease.plan, adapter)
+            except SandboxRuntimeError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
+            try:
+                from .runners.base import thaw_json
+                frozen_payload = freeze_json_object(
+                    payload,
+                    field_name="native phase payload",
+                    max_depth=_NATIVE_PHASE_PAYLOAD_MAX_DEPTH,
+                    max_nodes=lease.plan.limits.observation_bytes + 1,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
+            except (JsonSnapshotError, TypeError, ValueError) as exc:
+                raise WorkspaceStateError(
+                    "native phase payload is invalid",
+                    code="runtime_preflight_failed",
+                    lease_id=lease.lease_id,
+                ) from exc
+            try:
+                native_payload = _admit_native_phase_payload(
+                    operation,
+                    thaw_json(frozen_payload),
+                    adapter_id=adapter.adapter_id,
+                    workspace=None,
+                    scratch=None,
+                    runtime_root=adapter.runtime_root_path,
+                    package_subpath=package_subpath,
+                )
+            except WorkspaceStateError as exc:
+                raise WorkspaceStateError(
+                    str(exc),
+                    code=exc.code,
+                    lease_id=lease.lease_id,
+                ) from exc
+            if operation == "initialize":
+                workspace = Path(self.declared_workspace)
+                scratch = _native_scratch_path(lease._manager, lease.lease_id)
+                try:
+                    native_payload = _admit_native_phase_payload(
+                        operation,
+                        native_payload,
+                        adapter_id=adapter.adapter_id,
+                        workspace=workspace,
+                        scratch=scratch,
+                        runtime_root=adapter.runtime_root_path,
+                        package_subpath=package_subpath,
+                    )
+                except WorkspaceStateError as exc:
+                    raise WorkspaceStateError(
+                        str(exc),
+                        code=exc.code,
+                        lease_id=lease.lease_id,
+                    ) from exc
+                try:
+                    expected_identity = getattr(
+                        lease._runtime, "native_scratch_identity", None
+                    )
+                    _create_native_scratch(
+                        lease._manager,
+                        lease.lease_id,
+                        expected_identity=expected_identity,
+                    )
+                except WorkspaceStateError:
+                    raise
+                except OSError as exc:
+                    raise WorkspaceStateError(
+                        "native scratch authority is unavailable",
+                        code="workspace_authority_mismatch",
+                        lease_id=lease.lease_id,
+                    ) from exc
+            if operation == "execute":
+                tool_id = native_payload.get("tool_id")
+                if type(tool_id) is not str or tool_id not in adapter.tool_ids:
+                    raise WorkspaceStateError(
+                        "native execute tool identity is not admitted",
+                        code="tool_binding_projection_mismatch",
+                        lease_id=lease.lease_id,
+                    )
+            return await lease._runtime.invoke_native_phase(
+                adapter,
+                operation,
+                native_payload,
+                timeout_ms=timeout_ms,
+            )
+        finally:
+            await lease._end_operation()
+
     async def invoke_tool(
         self,
         tool_id: str,
@@ -2586,14 +4474,49 @@ class LeaseBackedRunnerWorkspace:
                 code="tool_binding_projection_mismatch",
                 lease_id=lease.lease_id,
             )
+        bindings = tuple(
+            binding for binding in self.__tool_bindings if binding.tool_id == tool_id
+        )
+        native_bindings = tuple(
+            binding
+            for adapter in lease.plan.installed_tool_adapters
+            if tool_id in adapter.tool_ids
+            for binding in (adapter,)
+        )
+        is_mini = (
+            len(native_bindings) == 1
+            and native_bindings[0].adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        )
+        if is_mini:
+            if tool_id != MINI_SWE_AGENT_TOOL_ID:
+                raise WorkspaceStateError(
+                    "mini adapter admits bash tool only",
+                    code="tool_binding_projection_mismatch",
+                    lease_id=lease.lease_id,
+                )
+            if lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+                raise WorkspaceStateError(
+                    "mini adapter is unsupported for this runtime class",
+                    code="runtime_unsupported",
+                    lease_id=lease.lease_id,
+                )
         try:
-            frozen_arguments = freeze_json_object(
-                arguments,
-                field_name="workspace tool arguments",
-                max_depth=8,
-                max_nodes=64,
-                max_encoded_bytes=lease.plan.limits.observation_bytes,
-            )
+            if is_mini:
+                frozen_arguments = freeze_json_object(
+                    arguments,
+                    field_name="workspace tool arguments",
+                    max_depth=lease.plan.limits.observation_bytes,
+                    max_nodes=lease.plan.limits.observation_bytes,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
+            else:
+                frozen_arguments = freeze_json_object(
+                    arguments,
+                    field_name="workspace tool arguments",
+                    max_depth=8,
+                    max_nodes=64,
+                    max_encoded_bytes=lease.plan.limits.observation_bytes,
+                )
         except (JsonSnapshotError, TypeError, ValueError):
             raise WorkspaceStateError(
                 "tool arguments are invalid",
@@ -2602,15 +4525,6 @@ class LeaseBackedRunnerWorkspace:
             ) from None
         await lease._begin_operation()
         try:
-            bindings = tuple(
-                binding for binding in self.__tool_bindings if binding.tool_id == tool_id
-            )
-            native_bindings = tuple(
-                binding
-                for adapter in lease.plan.installed_tool_adapters
-                if tool_id in adapter.tool_ids
-                for binding in (adapter,)
-            )
             if len(bindings) != 1 and len(native_bindings) != 1:
                 raise WorkspaceStateError(
                     "tool is not exactly admitted",
@@ -2658,15 +4572,30 @@ class LeaseBackedRunnerWorkspace:
                     code="tool_binding_projection_mismatch",
                     lease_id=lease.lease_id,
                 )
-            if lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+            if lease.plan.runtime.runtime_class not in {
+                RuntimeClass.TRUSTED_PROCESS, RuntimeClass.HARDENED_DOCKER
+            }:
                 raise WorkspaceStateError(
                     "native tools are unsupported for this runtime class",
                     code="runtime_unsupported",
                     lease_id=lease.lease_id,
                 )
-            request_bytes = canonical_json_bytes(
-                {"tool_id": tool_id, "arguments": dict(frozen_arguments)}
-            )
+            if is_mini:
+                from .runners.base import thaw_json
+                request_bytes = json.dumps(
+                    {
+                        "tool_id": tool_id,
+                        "arguments": thaw_json(frozen_arguments),
+                        "environment": dict(lease.plan.runtime.fixed_environment),
+                    },
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                    allow_nan=False,
+                ).encode("utf-8")
+            else:
+                request_bytes = canonical_json_bytes(
+                    {"tool_id": tool_id, "arguments": dict(frozen_arguments)}
+                )
             return await lease._runtime.run_native_tool(
                 native_bindings[0],
                 tool_id,
@@ -2693,6 +4622,43 @@ class LeaseBackedRunnerWorkspace:
                                                   output_limit=lease.plan.limits.observation_bytes)
         finally:
             await lease._end_operation()
+
+    def mini_template_frame(self) -> Mapping[str, Any]:
+        lease = self.__lease
+        lease._assert_active()
+        adapters = tuple(
+            adapter
+            for adapter in lease.plan.installed_tool_adapters
+            if adapter.adapter_id == MINI_SWE_AGENT_LOCAL_ADAPTER_ID
+        )
+        if (
+            len(adapters) != 1
+            or lease.plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS
+        ):
+            raise WorkspaceStateError(
+                "mini template frame requires admitted mini adapter and trusted process runtime",
+                code="runtime_unsupported",
+                lease_id=lease.lease_id,
+            )
+        import platform
+        from .mini_tools import MINI_ENVIRONMENT_OVERRIDES
+        env_overrides = dict(MINI_ENVIRONMENT_OVERRIDES)
+        # Mini's LocalEnvironment runs in the process cwd: the repository, as the
+        # sealed diff sees it, not the enclosing workspace root.
+        relative_path = getattr(lease._runtime, "repository_relative_path", None)
+        cwd = lease._materialized.workspace_path
+        if relative_path is not None and relative_path != ".":
+            cwd = cwd.joinpath(*_workspace_parts(relative_path))
+        # Upstream LocalEnvironment.get_template_vars is recursive_merge(config,
+        # platform.uname(), os.environ, kwargs): later wins, so the process
+        # environment (here the fixed environment) overrides platform facts.
+        return {
+            "cwd": str(cwd),
+            "env": env_overrides,
+            "timeout": 30,
+            **platform.uname()._asdict(),
+            **dict(lease.plan.runtime.fixed_environment),
+        }
 
     async def read_text(self, path: str, *, offset: int = 0, limit: int | None = None) -> Mapping[str, Any]:
         lease = self.__lease
@@ -2825,6 +4791,13 @@ class SandboxWorkspaceLease:
     @property
     def cleanup_receipt(self) -> SandboxCleanupReceipt | None:
         return self._latest_cleanup
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
     async def execute(
         self, argv: Sequence[str], *, timeout_ms: int | None = None
     ) -> Mapping[str, Any]:
@@ -2833,7 +4806,7 @@ class SandboxWorkspaceLease:
             type(item) is not str or not item or "\x00" in item for item in argv
         ):
             raise WorkspaceStateError(
-                "execution argv is invalid",
+                "argv is invalid",
                 code="runtime_preflight_failed",
                 lease_id=self.lease_id,
             )
@@ -2864,6 +4837,31 @@ class SandboxWorkspaceLease:
         self._assert_active()
         await self._begin_operation()
         try:
+            repositories = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "repository"
+            )
+            seeds = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "workspace_seed"
+            )
+            if not repositories and seeds:
+                if len(seeds) > 1:
+                    raise WorkspaceStateError(
+                        "workspace seed authority is not unique",
+                        code="workspace_escape",
+                        lease_id=self.lease_id,
+                    )
+                return await asyncio.to_thread(
+                    _sealed_repository_diff,
+                    repository=self._materialized.workspace_path,
+                    scratch_directory=self._manager.lease_root,
+                    base_commit=seeds[0].source_digest,
+                    plan=self.plan,
+                    seed_baseline=self._materialized.seed_baseline_path,
+                )
             remote_diff = getattr(self._runtime, "workspace_diff", None)
             if callable(remote_diff):
                 return await remote_diff()
@@ -3019,9 +5017,37 @@ class SandboxWorkspaceLease:
                 )
             base_commit = getattr(self._runtime, "repository_base_commit", None)
             relative_path = getattr(self._runtime, "repository_relative_path", None)
-            if (base_commit is None) != (relative_path is None) or (
-                base_commit is None
-            ) != (self._repository_baseline is None):
+            seed_entries = tuple(
+                entry
+                for entry in self.plan.materialization_plan.entries
+                if entry.role == "workspace_seed"
+            )
+            if len(seed_entries) > 1:
+                self._state = WorkspaceLeaseState.QUARANTINED
+                raise VerifierSnapshotError(
+                    "workspace seed authority is not unique",
+                    code="snapshot_tampered",
+                    lease_id=self.lease_id,
+                )
+            if not seed_entries and (
+                (base_commit is None) != (relative_path is None)
+                or (base_commit is None) != (self._repository_baseline is None)
+            ):
+                self._state = WorkspaceLeaseState.QUARANTINED
+                raise VerifierSnapshotError(
+                    "workspace base authority is incomplete",
+                    code="snapshot_tampered",
+                    lease_id=self.lease_id,
+                )
+            if seed_entries and self._repository_baseline is not None:
+                self._state = WorkspaceLeaseState.QUARANTINED
+                raise VerifierSnapshotError(
+                    "workspace base authority is incomplete",
+                    code="snapshot_tampered",
+                    lease_id=self.lease_id,
+                )
+            if base_commit is None and seed_entries:
+                base_commit = seed_entries[0].source_digest
                 self._state = WorkspaceLeaseState.QUARANTINED
                 raise VerifierSnapshotError(
                     "workspace base authority is incomplete",
@@ -3029,6 +5055,24 @@ class SandboxWorkspaceLease:
                     lease_id=self.lease_id,
                 )
             try:
+                if seed_entries:
+                    seed_manifest = self._materialized.seed_manifest
+                    seed_baseline = self._materialized.seed_baseline_path
+                    if seed_manifest is None or seed_baseline is None:
+                        self._state = WorkspaceLeaseState.QUARANTINED
+                        raise VerifierSnapshotError(
+                            "workspace seed baseline authority is unavailable",
+                            code="snapshot_tampered",
+                            lease_id=self.lease_id,
+                        )
+                    await asyncio.to_thread(
+                        _workspace_seed_baseline_digest,
+                        seed_baseline,
+                        seed_manifest,
+                        max_bytes=self.plan.resources.storage_bytes,
+                        max_inodes=self.plan.security_policy.snapshot_max_inodes,
+                        max_depth=self.plan.security_policy.snapshot_max_depth,
+                    )
                 seal_task = asyncio.create_task(
                     asyncio.to_thread(
                         self._manager.materialization_store.seal_snapshot,
@@ -3064,18 +5108,31 @@ class SandboxWorkspaceLease:
                         self._state = WorkspaceLeaseState.QUARANTINED
                     raise
                 self._manager._snapshots[receipt.snapshot_id] = (receipt, path)
-                if base_commit is not None and self._repository_baseline is not None:
+                if base_commit is not None:
                     snapshot_repository = (
-                        path if relative_path == "." else path.joinpath(*_workspace_parts(relative_path))
+                        path
+                        if relative_path in {None, "."}
+                        else path.joinpath(*_workspace_parts(relative_path))
                     )
+                    seeded_base = bool(seed_entries)
                     diff_task = asyncio.create_task(
                         asyncio.to_thread(
                             _sealed_repository_diff,
                             repository=snapshot_repository,
-                            scratch_directory=self._materialized.workspace_path,
-                            base_commit=base_commit,
+                            scratch_directory=self._manager.lease_root,
+                            base_commit=(
+                                base_commit
+                                if base_commit is not None
+                                else EMPTY_TREE_BASE_COMMIT
+                            ),
                             baseline=self._repository_baseline,
                             plan=self.plan,
+                            empty_base=not seeded_base and relative_path is None,
+                            seed_baseline=(
+                                self._materialized.seed_baseline_path
+                                if seeded_base
+                                else None
+                            ),
                         )
                     )
                     try:
@@ -3148,6 +5205,14 @@ class VerifierWorkspaceLease:
         self._cleanup: SandboxCleanupReceipt | None = None
 
         self._close_task: asyncio.Task[SandboxCleanupReceipt] | None = None
+    @property
+    def containment_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "containment_receipt", None)
+
+    @property
+    def teardown_receipt(self) -> ContainmentReceipt | None:
+        return getattr(self._runtime, "teardown_receipt", None)
+
     async def execute(self) -> Mapping[str, Any]:
         task = asyncio.current_task()
         if task is None:
@@ -3263,6 +5328,7 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             self._closing = True
             self._fenced = True
+            self._manager._admitted_leases.pop(self.lease_id, None)
             active_tasks = tuple(
                 task
                 for task in self._active_operation_tasks
@@ -3275,33 +5341,77 @@ class VerifierWorkspaceLease:
                 return self._cleanup
             while self._active_operation_tasks:
                 await self._operations_drained.wait()
-            steps = list(await self._runtime.terminate())
-            runtime_released = all(
-                step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
-                for step in steps
+            runtime_step = self._manager._verified_runtime_cleanup_step(
+                self.plan, self.lease_id, self._runtime,
+                await self._runtime.terminate(),
             )
+            runtime_released = runtime_step.state in {
+                CleanupState.RELEASED,
+                CleanupState.ALREADY_RELEASED,
+            }
+            steps = [runtime_step]
+            if _native_scratch_present(self._manager, self.lease_id):
+                scratch_identity = getattr(self._runtime, "native_scratch_identity", None)
+                steps.append(
+                    _remove_native_scratch(
+                        self._manager,
+                        self.lease_id,
+                        expected_identity=scratch_identity,
+                    )
+                    if runtime_released
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             if runtime_released:
                 try:
-                    for root, dirs, files in os.walk(self.workspace, topdown=True, followlinks=False):
+                    for root, dirs, files in os.walk(
+                        self.workspace, topdown=True, followlinks=False
+                    ):
                         root_path = Path(root)
                         os.chmod(root_path, 0o700, follow_symlinks=False)
                         for name in dirs + files:
                             candidate = root_path / name
                             if candidate.is_symlink():
                                 continue
-                            os.chmod(candidate, 0o700 if candidate.is_dir() else 0o600,
-                                     follow_symlinks=False)
-                    await asyncio.to_thread(self._manager.materialization_store.storage_backend.release, self.workspace)
-                    absent = self._manager.materialization_store.storage_backend.verify_absent(self.workspace)
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.RELEASED if absent else CleanupState.FAILED))
+                            os.chmod(
+                                candidate,
+                                0o700 if candidate.is_dir() else 0o600,
+                                follow_symlinks=False,
+                            )
+                    await asyncio.to_thread(
+                        self._manager.materialization_store.storage_backend.release,
+                        self.workspace,
+                    )
+                    absent = self._manager.materialization_store.storage_backend.verify_absent(
+                        self.workspace
+                    )
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace",
+                            CleanupState.RELEASED if absent else CleanupState.FAILED,
+                        )
+                    )
                 except FileNotFoundError:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED))
+                    steps.append(
+                        CleanupStepReceipt("workspace", CleanupState.ALREADY_RELEASED)
+                    )
                 except Exception as exc:
-                    steps.append(CleanupStepReceipt("workspace", CleanupState.FAILED, type(exc).__name__))
+                    steps.append(
+                        CleanupStepReceipt(
+                            "workspace", CleanupState.FAILED, type(exc).__name__
+                        )
+                    )
             else:
-                steps.append(CleanupStepReceipt(
-                    "workspace", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
-                ))
+                steps.append(
+                    CleanupStepReceipt(
+                        "workspace",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {
                     CleanupState.RELEASED,
@@ -3352,15 +5462,25 @@ class _PendingLaunchCleanup:
     backend_cleanup_pending: bool
 
 
+@dataclass(frozen=True, slots=True)
+class _AdmittedLeaseLedgerView:
+    records: Mapping[str, AdmittedLeaseRecord]
+
+    def lookup(self, lease_id: str) -> AdmittedLeaseRecord | None:
+        return self.records.get(lease_id)
+
+
 class SandboxRuntimeManager:
     def __init__(self, *, registries: RegistrySnapshotSet,
                  installed_authorities: InstalledSandboxAuthoritySet,
                  materialization_store: FilesystemMaterializationStore,
                  lease_root: str | Path, process_backend: RuntimeBackend,
                  docker_backend: RuntimeBackend | None, random_bytes: Any,
-                 lease_root_fd: int | None = None) -> None:
+                 lease_root_fd: int | None = None,
+                 containment_authenticator: Any | None = None) -> None:
         self.registries = registries; self.installed_authorities = installed_authorities
         self.materialization_store = materialization_store
+        self._lease_root_identity: tuple[int, int] | None = None
         supplied_lease_root = Path(lease_root).resolve(strict=True)
         self._lease_root_fd = (
             os.dup(lease_root_fd)
@@ -3380,9 +5500,18 @@ class SandboxRuntimeManager:
             os.close(self._lease_root_fd)
             self._lease_root_fd = None
             raise
+        self._lease_root_identity = (
+            opened_root.st_dev,
+            opened_root.st_ino,
+        )
         self.lease_root = supplied_lease_root
         self.process_backend = process_backend; self.docker_backend = docker_backend
+        self._containment_authenticator = containment_authenticator
         self._random_bytes = random_bytes; self._leases: dict[str, SandboxWorkspaceLease] = {}
+        self._admitted_leases: dict[str, AdmittedLeaseRecord] = {}
+        self.admitted_lease_ledger: AdmittedLeaseLedger = _AdmittedLeaseLedgerView(
+            MappingProxyType(self._admitted_leases)
+        )
         self._snapshots: dict[str, tuple[VerifierSnapshotReceipt, Path]] = {}
         self._pending_launch_cleanups: dict[str, _PendingLaunchCleanup] = {}
         self._lease_owner_locks: dict[str, int] = {}
@@ -3390,6 +5519,52 @@ class SandboxRuntimeManager:
         self._reconcile_lock = asyncio.Lock()
         self._close_task: asyncio.Future[list[SandboxCleanupReceipt]] | None = None
         self._last_close_receipts: tuple[SandboxCleanupReceipt, ...] | None = None
+
+    def _verify_runtime_containment(
+        self, plan: SandboxExecutionPlan, lease_id: str, runtime: RuntimeHandle
+    ) -> ContainmentReceipt | None:
+        if plan.runtime.runtime_class is not RuntimeClass.TRUSTED_PROCESS:
+            return None
+        try:
+            if self._containment_authenticator is None:
+                raise ContainmentReceiptError("containment authenticator is missing")
+            return verify_containment_receipt(
+                getattr(runtime, "containment_receipt", None),
+                lease_id=lease_id,
+                runtime_id=plan.runtime.runtime_id,
+                authenticator=self._containment_authenticator,
+            )
+        except (ContainmentReceiptError, TypeError, AttributeError) as exc:
+            raise SandboxAttestationError(
+                "trusted process containment receipt was rejected",
+                code="containment_receipt_invalid",
+                lease_id=lease_id,
+            ) from exc
+
+    def _verified_runtime_cleanup_step(
+        self,
+        plan: SandboxExecutionPlan,
+        lease_id: str,
+        runtime: RuntimeHandle,
+        steps: Sequence[CleanupStepReceipt],
+    ) -> CleanupStepReceipt:
+        runtime_step = _runtime_to_lease_cleanup_step(steps)
+        if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            try:
+                if self._containment_authenticator is None:
+                    raise ContainmentReceiptError("containment authenticator is missing")
+                verify_containment_receipt(
+                    getattr(runtime, "teardown_receipt", None),
+                    lease_id=lease_id,
+                    runtime_id=plan.runtime.runtime_id,
+                    authenticator=self._containment_authenticator,
+                    require_teardown=True,
+                )
+            except (ContainmentReceiptError, TypeError, AttributeError):
+                return CleanupStepReceipt(
+                    "runtime", CleanupState.FAILED, "containment_receipt_invalid"
+                )
+        return runtime_step
 
     def abort_bootstrap(self) -> None:
         """Release constructor-owned descriptors before any lease can be admitted."""
@@ -3404,6 +5579,7 @@ class SandboxRuntimeManager:
         if self._lease_root_fd is not None:
             os.close(self._lease_root_fd)
             self._lease_root_fd = None
+            self._lease_root_identity = None
 
     def _nonce(self) -> str:
         value = self._random_bytes(16)
@@ -3438,6 +5614,7 @@ class SandboxRuntimeManager:
         workspace_fd: int,
         workspace_identity: tuple[int, int],
         owner_token: str,
+        record_scratch_identity: Callable[[tuple[int, int]], None] | None = None,
     ) -> RuntimeLaunchContext:
         measured = dict(self.materialization_store.storage_backend.measure(workspace))
         authority = measured.get("authority_id")
@@ -3486,11 +5663,25 @@ class SandboxRuntimeManager:
             result_relative_path=None if role == "primary" else "result",
             publish_prepared_identity=lambda identity, lease_id=lease_id:
                 self._publish_runtime_identity(lease_id, identity),
+            native_scratch_path=(
+                _native_scratch_path(self, lease_id)
+                if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and plan.containment is RuntimeContainment.ATTESTED
+                else None
+            ),
             record_process_identity=lambda resource_id, identity, lease_id=lease_id:
                 self._record_process_identity(lease_id, resource_id, identity),
             workspace_fd=workspace_fd,
             workspace_identity=workspace_identity,
             owner_token=owner_token,
+            record_scratch_identity=record_scratch_identity,
+            containment_authenticator=self._containment_authenticator,
+            lease_root_identity=(
+                self._lease_root_identity
+                if plan.runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS
+                and plan.containment is RuntimeContainment.ATTESTED
+                else None
+            ),
         )
 
     def _claim_lease_owner_lock(self, lease_id: str) -> bool:
@@ -3623,6 +5814,7 @@ class SandboxRuntimeManager:
     def _unlink_lease_record(self, lease_id: str) -> None:
         if self._lease_root_fd is None:
             raise RuntimeError("sandbox manager is closed")
+        self._admitted_leases.pop(lease_id, None)
         try:
             shutil.rmtree(self._lease_baseline_path(lease_id))
         except FileNotFoundError:
@@ -3698,6 +5890,16 @@ class SandboxRuntimeManager:
                 or payload.get("lease_id") != path.stem
             ):
                 raise ValueError
+            if "native_scratch_identity" in payload:
+                scratch_id = payload["native_scratch_identity"]
+                if scratch_id is not None:
+                    if (
+                        (type(scratch_id) is not list and type(scratch_id) is not tuple)
+                        or len(scratch_id) != 2
+                        or any(type(item) is not int or item < 0 for item in scratch_id)
+                    ):
+                        raise ValueError("malformed native_scratch_identity")
+                    payload["native_scratch_identity"] = (scratch_id[0], scratch_id[1])
             return MappingProxyType(payload)
         except Exception as exc:
             raise WorkspaceStateError("workspace lease record is corrupt", code="stale_identity_uncertain") from exc
@@ -3777,6 +5979,41 @@ class SandboxRuntimeManager:
             "process_start_identity", "process_cgroup_identity",
         ):
             record.pop(key, None)
+        self._write_lease_record(lease_id, record)
+
+    def _record_scratch_identity(
+        self, lease_id: str, identity: tuple[int, int]
+    ) -> None:
+        if (
+            (type(identity) is not tuple and type(identity) is not list)
+            or len(identity) != 2
+            or any(type(item) is not int or item < 0 for item in identity)
+        ):
+            raise WorkspaceStateError(
+                "scratch identity is incomplete",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        path = self._lease_record_path(lease_id)
+        record = dict(self._read_lease_record(path))
+        if (
+            record.get("lease_id") != lease_id
+            or record.get("role") not in {"primary", "verifier"}
+        ):
+            raise WorkspaceStateError(
+                "scratch lease identity changed",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        recorded = record.get("native_scratch_identity")
+        identity_pair = (identity[0], identity[1])
+        if recorded is not None and tuple(recorded) != identity_pair:
+            raise WorkspaceStateError(
+                "scratch lease identity changed",
+                code="stale_identity_uncertain",
+                lease_id=lease_id,
+            )
+        record["native_scratch_identity"] = list(identity_pair)
         self._write_lease_record(lease_id, record)
 
     async def _release_snapshot(self, snapshot_id: str) -> CleanupStepReceipt:
@@ -3870,6 +6107,7 @@ class SandboxRuntimeManager:
             runtime: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
             record_written = False
+            created_scratch_identities: list[tuple[int, int]] = []
             if not self._claim_lease_owner_lock(lease_id):
                 raise WorkspaceStateError(
                     "lease owner identity is already active",
@@ -3924,10 +6162,15 @@ class SandboxRuntimeManager:
                     workspace_fd=materialized.duplicate_workspace_fd(),
                     workspace_identity=materialized.workspace_identity,
                     owner_token=owner_token,
+                    record_scratch_identity=lambda identity, lease_id=lease_id: (
+                        created_scratch_identities.append(identity),
+                        self._record_scratch_identity(lease_id, identity),
+                    ),
                 )
                 runtime, measurement = await backend.launch(
                     plan, materialized.workspace_path, context=context
                 )
+                admitted_receipt = self._verify_runtime_containment(plan, lease_id, runtime)
                 if measurement.mismatch:
                     raise SandboxAttestationError("runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -3968,10 +6211,18 @@ class SandboxRuntimeManager:
                     "action_timeout_ms": plan.limits.action_timeout_ms,
                     "observation_bytes": plan.limits.observation_bytes,
                     "state": "active"})
+                if created_scratch_identities:
+                    active_record["native_scratch_identity"] = list(created_scratch_identities[0])
                 self._write_lease_record(lease_id, active_record)
                 self._leases[lease_id] = lease
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, plan.runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary:
+                self._admitted_leases.pop(lease_id, None)
                 cleanup_steps: list[CleanupStepReceipt] = []
                 cleanup_errors: list[str] = []
                 if runtime is not None:
@@ -4024,6 +6275,15 @@ class SandboxRuntimeManager:
                     cleanup_steps.append(CleanupStepReceipt(
                         "cache_holder", CleanupState.QUARANTINED, "dependent runtime cleanup incomplete"
                     ))
+                scratch_step = _cleanup_native_scratch_step(
+                    self,
+                    lease_id,
+                    created_scratch_identities=created_scratch_identities,
+                    runtime=runtime,
+                    runtime_released=runtime_released,
+                )
+                if scratch_step is not None:
+                    cleanup_steps.append(scratch_step)
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -4130,6 +6390,7 @@ class SandboxRuntimeManager:
                 raise VerifierExecutionError("verifier runtime authority mismatch", code="verifier_authority_mismatch")
             verifier_plan = replace(primary.plan, runtime=runtime, image=image, security_policy=security,
                                     network_policy=network,
+                                    installed_tool_adapters=(),
                                     isolation_disposition=(IsolationDisposition.TRUSTED_PROCESS
                                         if runtime.runtime_class is RuntimeClass.TRUSTED_PROCESS else IsolationDisposition.ISOLATED))
             workspace_id = "verifier-workspace-" + self._nonce()
@@ -4172,6 +6433,7 @@ class SandboxRuntimeManager:
                 raise
             launched: RuntimeHandle | None = None
             backend: RuntimeBackend | None = None
+            created_scratch_identities: list[tuple[int, int]] = []
             try:
                 workspace = self.materialization_store.storage_backend.allocate(
                     workspace_id=workspace_id, root=self.materialization_store.workspace_root,
@@ -4284,11 +6546,16 @@ class SandboxRuntimeManager:
                     workspace_fd=workspace_fd,
                     workspace_identity=(workspace_metadata.st_dev, workspace_metadata.st_ino),
                     owner_token=owner_token,
+                    record_scratch_identity=lambda identity, lease_id=lease_id: (
+                        created_scratch_identities.append(identity),
+                        self._record_scratch_identity(lease_id, identity),
+                    ),
                 )
                 workspace_fd = -1
                 launched, measurement = await backend.launch(
                     verifier_plan, workspace, context=context
                 )
+                admitted_receipt = self._verify_runtime_containment(verifier_plan, lease_id, launched)
                 if measurement.mismatch:
                     raise SandboxAttestationError("verifier runtime measurement mismatch", code="runtime_measurement_mismatch",
                                                   lease_id=lease_id)
@@ -4327,10 +6594,18 @@ class SandboxRuntimeManager:
                     "observation_bytes": verifier_plan.limits.observation_bytes,
                     "state": "active",
                 })
+                if created_scratch_identities:
+                    active_record["native_scratch_identity"] = list(created_scratch_identities[0])
                 self._write_lease_record(lease_id, active_record)
                 primary._verifier_children.append(lease)
+                if admitted_receipt is not None:
+                    self._admitted_leases[lease_id] = AdmittedLeaseRecord(
+                        lease_id, runtime.runtime_id,
+                        admitted_receipt.canonical_bytes(), admitted_receipt.signature,
+                    )
                 return lease
             except BaseException as primary_error:
+                self._admitted_leases.pop(lease_id, None)
                 if "workspace_fd" in locals() and workspace_fd >= 0:
                     os.close(workspace_fd)
                     workspace_fd = -1
@@ -4392,6 +6667,15 @@ class SandboxRuntimeManager:
                         "workspace", CleanupState.QUARANTINED,
                         "dependent runtime cleanup incomplete",
                     ))
+                scratch_step = _cleanup_native_scratch_step(
+                    self,
+                    lease_id,
+                    created_scratch_identities=created_scratch_identities,
+                    runtime=launched,
+                    runtime_released=runtime_released,
+                )
+                if scratch_step is not None:
+                    cleanup_steps.append(scratch_step)
                 dependencies_released = all(
                     step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                     for step in cleanup_steps
@@ -4417,6 +6701,7 @@ class SandboxRuntimeManager:
     async def _close_lease(self, lease: SandboxWorkspaceLease) -> SandboxCleanupReceipt:
         async with lease._lock:
             if lease._cleanup is not None: return lease._cleanup
+            self._admitted_leases.pop(lease.lease_id, None)
             await lease._fence_and_drain(WorkspaceLeaseState.RELEASING)
             steps: list[CleanupStepReceipt] = []
             child_states: list[CleanupState] = []
@@ -4429,26 +6714,12 @@ class SandboxRuntimeManager:
                     CleanupState.ALREADY_RELEASED,
                 }:
                     incomplete_child_ids.append(child.lease_id)
-            if CleanupState.QUARANTINED in child_states:
-                child_state = CleanupState.QUARANTINED
-            elif CleanupState.FAILED in child_states:
-                child_state = CleanupState.FAILED
-            elif CleanupState.RELEASED in child_states:
-                child_state = CleanupState.RELEASED
-            else:
-                child_state = CleanupState.ALREADY_RELEASED
-            steps.append(
-                CleanupStepReceipt(
-                    "child_verifier",
-                    child_state,
-                    ",".join(sorted(incomplete_child_ids)),
-                )
-            )
             lease._verifier_children[:] = [
                 child
                 for child in lease._verifier_children
                 if not child._closed
             ]
+            snapshot_steps: list[CleanupStepReceipt] = []
             if not incomplete_child_ids:
                 snapshot_ids = tuple(
                     snapshot_id
@@ -4456,8 +6727,52 @@ class SandboxRuntimeManager:
                     if snapshot.source_lease_id == lease.lease_id
                 )
                 for snapshot_id in snapshot_ids:
-                    steps.append(await self._release_snapshot(snapshot_id))
-            steps.extend(await lease._runtime.terminate())
+                    snapshot_steps.append(await self._release_snapshot(snapshot_id))
+            child_component_steps = tuple(
+                CleanupStepReceipt("child_verifier", state)
+                for state in child_states
+            ) + tuple(snapshot_steps)
+            if child_component_steps:
+                child_state = SandboxCleanupReceipt.from_steps(
+                    "child_verifier", child_component_steps
+                ).state
+            else:
+                child_state = CleanupState.ALREADY_RELEASED
+            child_detail = ",".join(sorted(incomplete_child_ids))
+            if snapshot_steps:
+                child_detail = json.dumps(
+                    {
+                        "incomplete_child_lease_ids": sorted(incomplete_child_ids),
+                        "snapshot_steps": _cleanup_steps_projection(snapshot_steps),
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            steps.append(
+                CleanupStepReceipt("child_verifier", child_state, child_detail)
+            )
+            runtime_step = self._verified_runtime_cleanup_step(
+                lease.plan, lease.lease_id, lease._runtime,
+                await lease._runtime.terminate(),
+            )
+            steps.append(runtime_step)
+            if _native_scratch_present(self, lease.lease_id):
+                scratch_identity = getattr(lease._runtime, "native_scratch_identity", None)
+                steps.append(
+                    _remove_native_scratch(
+                        self,
+                        lease.lease_id,
+                        expected_identity=scratch_identity,
+                    )
+                    if runtime_step.state
+                    in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                    else CleanupStepReceipt(
+                        "native_scratch",
+                        CleanupState.QUARANTINED,
+                        "dependent runtime cleanup incomplete",
+                    )
+                )
             dependencies_released = all(
                 step.state in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
                 for step in steps
@@ -4686,34 +7001,42 @@ class SandboxRuntimeManager:
             if self._lease_record_exists(lease_id):
                 self._release_lease_owner_lock(lease_id, unlink=False)
                 continue
+            scratch_step = (
+                _remove_native_scratch(self, lease_id)
+                if _native_scratch_present(self, lease_id)
+                else None
+            )
+            if scratch_step is not None and scratch_step.state not in {
+                CleanupState.RELEASED,
+                CleanupState.ALREADY_RELEASED,
+            }:
+                receipts.append(
+                    SandboxCleanupReceipt.from_steps(
+                        lease_id,
+                        (
+                            scratch_step,
+                            CleanupStepReceipt(
+                                "owner_lock",
+                                CleanupState.QUARANTINED,
+                                "native_scratch_cleanup_failed",
+                            ),
+                        ),
+                    )
+                )
+                continue
             try:
                 self._release_lease_owner_lock(lease_id, unlink=True)
                 os.fsync(self._lease_root_fd)
             except Exception:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.QUARANTINED,
-                                "owner_lock_cleanup_failed",
-                            ),
-                        ),
-                    )
+                lock_step = CleanupStepReceipt(
+                    "owner_lock",
+                    CleanupState.QUARANTINED,
+                    "owner_lock_cleanup_failed",
                 )
             else:
-                receipts.append(
-                    SandboxCleanupReceipt.from_steps(
-                        lease_id,
-                        (
-                            CleanupStepReceipt(
-                                "owner_lock",
-                                CleanupState.RELEASED,
-                            ),
-                        ),
-                    )
-                )
+                lock_step = CleanupStepReceipt("owner_lock", CleanupState.RELEASED)
+            orphan_steps = ((scratch_step,) if scratch_step is not None else ()) + (lock_step,)
+            receipts.append(SandboxCleanupReceipt.from_steps(lease_id, orphan_steps))
         names = tuple(sorted(record_names))
         paths = [
             self.lease_root / name
@@ -4869,12 +7192,24 @@ class SandboxRuntimeManager:
             }
             backend = self.process_backend if runtime_authority_id in trusted_runtime_ids else self.docker_backend
             reconcile = getattr(backend, "reconcile", None) if backend is not None else None
+            scratch_present = _native_scratch_present(self, path.stem)
             if not callable(reconcile):
                 unavailable_steps = (
                     CleanupStepReceipt(
                         "runtime",
                         CleanupState.QUARANTINED,
                         "stale_identity_uncertain",
+                    ),
+                    *(
+                        (
+                            CleanupStepReceipt(
+                                "native_scratch",
+                                CleanupState.QUARANTINED,
+                                "stale_identity_uncertain",
+                            ),
+                        )
+                        if scratch_present
+                        else ()
                     ),
                     CleanupStepReceipt(
                         "workspace",
@@ -4900,12 +7235,46 @@ class SandboxRuntimeManager:
                 )
                 continue
             raw_steps = reconciliation_prefix + tuple(await reconcile(record))
+            runtime_steps = tuple(
+                step for step in raw_steps if step.resource == "runtime"
+            )
+            runtime_released = bool(runtime_steps) and all(
+                step.state
+                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+                for step in runtime_steps
+            )
+            if scratch_present:
+                persisted_identity = record.get("native_scratch_identity")
+                if not runtime_released:
+                    raw_steps += (
+                        CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "dependent runtime cleanup incomplete",
+                        ),
+                    )
+                elif persisted_identity is None:
+                    raw_steps += (
+                        CleanupStepReceipt(
+                            "native_scratch",
+                            CleanupState.QUARANTINED,
+                            "scratch_identity_unrecorded",
+                        ),
+                    )
+                else:
+                    raw_steps += (
+                        _remove_native_scratch(
+                            self,
+                            path.stem,
+                            expected_identity=tuple(persisted_identity),
+                        ),
+                    )
             if (
                 {step.resource for step in raw_steps}
                 == (
                     {
                         "child_verifier",
-                        *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -4914,6 +7283,7 @@ class SandboxRuntimeManager:
                     if role == "primary"
                     else {
                         *(("snapshot",) if snapshot_step is not None else ()),
+                        *({"native_scratch"} if scratch_present else set()),
                         "runtime",
                         "workspace",
                         "cache_holder",
@@ -4930,14 +7300,6 @@ class SandboxRuntimeManager:
                     str(record["lease_id"]), raw_steps
                 ))
                 continue
-            runtime_steps = tuple(
-                step for step in raw_steps if step.resource == "runtime"
-            )
-            runtime_released = bool(runtime_steps) and all(
-                step.state
-                in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
-                for step in runtime_steps
-            )
             steps = list(raw_steps)
             if (
                 runtime_released
@@ -5113,6 +7475,7 @@ class SandboxRuntimeManager:
                 if self._lease_root_fd is not None:
                     os.close(self._lease_root_fd)
                     self._lease_root_fd = None
+                    self._lease_root_identity = None
         return result
 
 
@@ -5130,4 +7493,19 @@ __all__ = [
     "VerifierExecutionError", "VerifierSnapshotError", "VerifierWorkspaceLease",
     "WorkspaceStateError", "WorkspaceStorageIdentity", "build_sandbox_execution_plan",
     "load_sandbox_capability_matrix",
+    "MINI_SWE_AGENT_LOCAL_ADAPTER_ID",
+    "MINI_SWE_AGENT_TOOL_ID",
+    "OPENHANDS_SDK_LOCAL_ADAPTER_ID",
+    "OPENHANDS_NATIVE_TOOL_IDS",
+    "PI_CODING_AGENT_LOCAL_ADAPTER_ID",
+    "PI_NATIVE_TOOL_IDS",
+    "PI_0_57_1_LOCAL_ADAPTER_ID",
+    "PI_0_57_1_NATIVE_TOOL_IDS",
+    "OPENCLAW_LOCAL_ADAPTER_ID",
+    "OPENCLAW_NATIVE_TOOL_IDS",
+    "HERMES_AGENT_LOCAL_ADAPTER_ID",
+    "HERMES_NATIVE_TOOL_IDS",
+    "OMP_NATIVE_LOCAL_ADAPTER_ID",
+    "OMP_NATIVE_TOOL_IDS",
+    "NATIVE_PHASE_TOOL_IDS",
 ]

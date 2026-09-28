@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import stat
+import resource
 import threading
 from dataclasses import replace
 from datetime import timedelta
@@ -14,6 +16,7 @@ import pytest
 
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness import sandbox as sandbox_module
+from breadboard.rl.harness.composition import HmacSha256ReceiptAuthenticator
 from breadboard.rl.harness.materialization import (
     CleanupState,
     CleanupStepReceipt,
@@ -52,6 +55,8 @@ from tests.rl.harness.wp7_fixtures import (
     replace_plan_capabilities,
 )
 
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from breadboard.rl.harness.lease_envelope import add_teardown_outcome
 
 class RecordingHandle:
     def __init__(self) -> None:
@@ -70,6 +75,11 @@ class RecordingHandle:
         self.release_run: asyncio.Event | None = None
         self.terminate_entered: asyncio.Event | None = None
         self.release_terminate: asyncio.Event | None = None
+        self.containment_receipt = None
+        self.teardown_receipt = None
+        self.containment_authenticator = None
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
 
     async def run_shell(
         self, command: str, *, timeout_ms: int, output_limit: int
@@ -88,6 +98,13 @@ class RecordingHandle:
         return self.result
 
     async def terminate(self) -> tuple[Any, ...]:
+        if self.containment_receipt is not None and not self.omit_teardown_receipt:
+            self.teardown_receipt = add_teardown_outcome(
+                self.containment_receipt,
+                pid1_reaped=True,
+                all_dead=self.teardown_all_dead,
+                authenticator=self.containment_authenticator,
+            )
         self.terminate_calls += 1
         if self.terminate_entered is not None:
             self.terminate_entered.set()
@@ -109,6 +126,10 @@ class RecordingBackend:
         self.launch_entered: asyncio.Event | None = None
         self.release_launch: asyncio.Event | None = None
 
+        self.containment_authenticator = None
+        self.omit_receipt_roles: set[str] = set()
+        self.omit_teardown_receipt = False
+        self.teardown_all_dead = True
     async def launch(
         self,
         plan: Any,
@@ -128,6 +149,16 @@ class RecordingBackend:
         handle = RecordingHandle()
         handle.termination_receipts = self.handle_termination_receipts
         self.handles.append(handle)
+        handle.containment_authenticator = self.containment_authenticator
+        handle.omit_teardown_receipt = self.omit_teardown_receipt
+        handle.teardown_all_dead = self.teardown_all_dead
+        if (
+            plan.runtime.runtime_class is c.RuntimeClass.TRUSTED_PROCESS
+            and context.role not in self.omit_receipt_roles
+        ):
+            handle.containment_receipt = signed_containment_receipt(
+                lease_id, plan.runtime.runtime_id, self.containment_authenticator
+            )
         requested = {
             "runtime": plan.runtime.runtime_id,
             "image": plan.image.image_digest,
@@ -162,6 +193,7 @@ class RuntimeHarness:
         *,
         backend: RecordingBackend | None = None,
     ) -> None:
+        tmp_path.mkdir(parents=True, exist_ok=True)
         self.fixture = fixture
         self.clock = FrozenClock()
         self.source_digest = digest("workspace-source")
@@ -192,8 +224,53 @@ class RuntimeHarness:
             lease_root=self.lease_root,
             process_backend=self.backend,
             docker_backend=self.backend,
+            containment_authenticator=HmacSha256ReceiptAuthenticator(
+                key_id="test-containment-key",
+                key=b"test-containment-key-material-32-bytes!!",
+            ),
             random_bytes=DeterministicRandom(2_000),
         )
+        self.backend.containment_authenticator = self.manager._containment_authenticator
+
+async def test_public_manager_rejects_missing_primary_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("primary")
+    with pytest.raises(SandboxAttestationError) as caught:
+        await harness.manager.open(fixture.request)
+    assert caught.value.code == "containment_receipt_invalid"
+    assert harness.backend.handles[0].terminate_calls == 1
+    await harness.manager.close()
+
+async def test_public_manager_rejects_missing_verifier_containment_receipt(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_receipt_roles.add("verifier")
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        with pytest.raises(SandboxAttestationError) as caught:
+            await harness.manager.open_verifier(primary, snapshot)
+        assert caught.value.code == "containment_receipt_invalid"
+        assert harness.backend.handles[-1].terminate_calls == 1
+    finally:
+        await primary.close()
+        await harness.manager.close()
+
+
+@pytest.mark.parametrize("omit_receipt", [True, False], ids=["missing", "failed-outcome"])
+async def test_public_manager_fails_closed_without_signed_teardown(
+    tmp_path: Path, omit_receipt: bool
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    harness.backend.omit_teardown_receipt = omit_receipt
+    harness.backend.teardown_all_dead = False
+    primary = await harness.manager.open(fixture.request)
+    receipt = await primary.close()
+    assert receipt.state not in {CleanupState.RELEASED, CleanupState.ALREADY_RELEASED}
+    assert (primary.teardown_receipt is None) is omit_receipt
+    await harness.manager.close()
 
 
 def _primary_runtime_index(fixture: RuntimeFixture) -> int:
@@ -251,6 +328,76 @@ def test_exact_plan_projection_derives_runtime_materialization_and_runner_author
     assert plan.tool_bindings == plan_tool_bindings(fixture.plan)
     assert plan.isolation_disposition is IsolationDisposition.TRUSTED_PROCESS
 
+
+
+
+def test_seeded_root_mount_is_admitted_as_workspace_seed() -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    source_digest = digest("workspace-source")
+    seeded_sandbox = c.SandboxGrant.model_validate(
+        {
+            **fixture.plan.sandbox.model_dump(),
+            "mounts": (
+                c.MountGrant(
+                    source_artifact_digest=source_digest,
+                    target_logical_path=".",
+                    access=c.MountAccess.READ_WRITE,
+                    max_bytes=4_096,
+                ),
+            ),
+        }
+    )
+    seeded_plan = replace_plan_capabilities(
+        fixture.plan,
+        sandbox=seeded_sandbox,
+    )
+    seeded_request = WorkspaceOpenRequest(fixture.request.episode_id, seeded_plan)
+
+    plan = build_sandbox_execution_plan(
+        seeded_request, fixture.registries, fixture.authorities
+    )
+
+    assert plan.materialization_plan.entries[0].projection() == {
+        "source_digest": source_digest,
+        "target_logical_path": ".",
+        "access": "rw",
+        "max_bytes": 4_096,
+        "role": "workspace_seed",
+    }
+
+def test_native_worker_argv_preserves_existing_profiles_and_measures_imports(tmp_path: Path) -> None:
+    root = tmp_path.stat()
+    adapter = InstalledToolAdapter(
+        adapter_id="openhands-sdk.local.v1.47.0",
+        tool_ids=("terminal",),
+        runtime_root_path=str(tmp_path),
+        runtime_root_device=root.st_dev,
+        runtime_root_inode=root.st_ino,
+        runtime_root_owner_uid=root.st_uid,
+        runtime_root_mode=f"{stat.S_IMODE(root.st_mode):04o}",
+        manifest_digest=digest("manifest"),
+        executable_relative_path="bin/node",
+        entrypoint_relative_path="worker.mjs",
+        executable_digest=digest("node"),
+        entrypoint_digest=digest("worker"),
+    )
+    for adapter_id in ("openhands-sdk.local.v1.47.0", "pi-coding-agent.local.v0.73.1", "omp.local"):
+        assert sandbox_module._native_worker_argv(
+            replace(adapter, adapter_id=adapter_id), "/pinned/node"
+        ) == ("/pinned/node", str(tmp_path / "worker.mjs"))
+    loader = tmp_path / "loader.mjs"
+    loader.write_text("export {};\n")
+    declared = replace(
+        adapter,
+        argv=("node", "--import", "./loader.mjs", "worker.mjs"),
+        argv_file_digests=(("loader.mjs", digest(loader.read_text())),),
+    )
+    assert sandbox_module._native_worker_argv(declared, "/pinned/node") == (
+        "/pinned/node", "--import", str(loader), str(tmp_path / "worker.mjs"),
+    )
+    loader.write_text("export { unexpected };\n")
+    with pytest.raises(SandboxLaunchError):
+        sandbox_module._native_worker_argv(declared, "/pinned/node")
 
 def test_selected_plan_does_not_receive_unrelated_native_tool_authority(
     tmp_path: Path,
@@ -1194,6 +1341,179 @@ async def test_post_launch_record_failure_retains_workspace_and_record_when_deta
     assert len(list(harness.lease_root.glob("*.json"))) == 1
 
 
+async def test_detailed_runtime_cleanup_projects_primary_and_verifier_lease_contracts(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    runtime_steps = (
+        CleanupStepReceipt("runtime_stop", CleanupState.RELEASED, "stopped"),
+        CleanupStepReceipt("runtime_remove", CleanupState.RELEASED, "removed"),
+        CleanupStepReceipt("runtime_absence", CleanupState.RELEASED, "absent"),
+        CleanupStepReceipt("descriptor_staging", CleanupState.RELEASED, "unstaged"),
+    )
+    backend = RecordingBackend()
+    backend.handle_termination_receipts = runtime_steps
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+
+    expected_runtime_detail = [
+        {
+            "resource": step.resource,
+            "state": step.state.value,
+            "detail": step.detail,
+        }
+        for step in runtime_steps
+    ]
+
+    verifier_receipt = await verifier.close()
+    assert tuple(step.resource for step in verifier_receipt.steps) == (
+        "runtime",
+        "workspace",
+        "snapshot",
+        "lease_record",
+    )
+    assert verifier_receipt.state is CleanupState.RELEASED
+    assert json.loads(verifier_receipt.steps[0].detail) == expected_runtime_detail
+    assert not verifier.workspace.exists()
+    assert not (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    ).exists()
+
+    primary_receipt = await primary.close()
+    assert tuple(step.resource for step in primary_receipt.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert primary_receipt.state is CleanupState.RELEASED
+    assert json.loads(primary_receipt.steps[1].detail) == expected_runtime_detail
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "runtime_steps",
+    [
+        (),
+        (
+            CleanupStepReceipt("runtime_stop", CleanupState.RELEASED),
+            CleanupStepReceipt("runtime_remove", CleanupState.FAILED, "remove failed"),
+            CleanupStepReceipt(
+                "runtime_absence",
+                CleanupState.QUARANTINED,
+                "absence unproven",
+            ),
+        ),
+    ],
+    ids=("empty", "incomplete"),
+)
+async def test_empty_or_incomplete_primary_runtime_cleanup_retains_owned_storage(
+    tmp_path: Path,
+    runtime_steps: tuple[CleanupStepReceipt, ...],
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    backend = RecordingBackend()
+    backend.handle_termination_receipts = runtime_steps
+    harness = RuntimeHarness(tmp_path, fixture, backend=backend)
+
+    lease = await harness.manager.open(fixture.request)
+    receipt = await lease.close()
+
+    assert tuple(step.resource for step in receipt.steps) == (
+        "child_verifier",
+        "runtime",
+        "workspace",
+        "cache_holder",
+        "lease_record",
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.steps[1].state in {
+        CleanupState.FAILED,
+        CleanupState.QUARANTINED,
+    }
+    if runtime_steps:
+        detail = json.loads(receipt.steps[1].detail)
+        assert detail == [
+            {
+                "resource": step.resource,
+                "state": step.state.value,
+                "detail": step.detail,
+            }
+            for step in runtime_steps
+        ]
+    assert lease._materialized.workspace_path.exists()
+    assert (harness.lease_root / f"{lease.lease_id}.json").exists()
+
+    backend.handles[0].termination_receipts = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+    )
+    assert (await lease.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "runtime_steps",
+    [
+        (),
+        (
+            CleanupStepReceipt("runtime_stop", CleanupState.RELEASED),
+            CleanupStepReceipt("runtime_remove", CleanupState.FAILED, "remove failed"),
+        ),
+    ],
+    ids=("empty", "incomplete"),
+)
+async def test_empty_or_incomplete_verifier_runtime_cleanup_retains_owned_storage(
+    tmp_path: Path,
+    runtime_steps: tuple[CleanupStepReceipt, ...],
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    snapshot = await primary.seal_for_verifier()
+    verifier = await harness.manager.open_verifier(primary, snapshot)
+    handle = harness.backend.handles[1]
+    handle.termination_receipts = runtime_steps
+    snapshot_object = (
+        harness.cache_root
+        / "snapshot-objects"
+        / snapshot.root_digest.removeprefix("sha256:")
+    )
+    record_path = harness.lease_root / f"{verifier.lease_id}.json"
+
+    receipt = await verifier.close()
+
+    assert tuple(step.resource for step in receipt.steps) == (
+        "runtime",
+        "workspace",
+        "snapshot",
+        "lease_record",
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.steps[0].state in {
+        CleanupState.FAILED,
+        CleanupState.QUARANTINED,
+    }
+    assert verifier.workspace.exists()
+    assert snapshot_object.exists()
+    assert record_path.exists()
+
+    handle.termination_receipts = (
+        CleanupStepReceipt("runtime", CleanupState.RELEASED),
+    )
+    assert (await verifier.close()).state is CleanupState.RELEASED
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert list(harness.workspace_root.iterdir()) == []
+    assert list(harness.lease_root.iterdir()) == []
+
+
 async def test_lease_directory_is_fsynced_after_record_replace_and_before_backend_start(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1348,6 +1668,537 @@ async def test_execute_rejects_malformed_argv_without_fencing_active_lease(
 
     assert lease.state is WorkspaceLeaseState.ACTIVE
     assert handle.argv_actions == []
+
+@pytest.mark.asyncio
+async def test_close_removes_native_scratch_and_reports_cleanup(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    (scratch / "home").mkdir()
+    (scratch / "home" / "marker").write_text("scratch")
+
+    receipt = await lease.close()
+
+    assert not scratch.exists()
+    assert CleanupStepReceipt("native_scratch", CleanupState.RELEASED) in receipt.steps
+
+
+def test_native_scratch_refuses_cross_device_and_preserves_host_symlink(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    scratch = sandbox_module._create_native_scratch(harness.manager, "cross-device")
+    outside = tmp_path / "outside-host-file"
+    outside.write_text("outside", encoding="utf-8")
+    (scratch / "outside-link").symlink_to(outside)
+    child = scratch / "foreign-mount"
+    child.mkdir()
+    (child / "evidence").write_text("retain", encoding="utf-8")
+    child_inode = child.stat().st_ino
+    real_fstat = os.fstat
+
+    def foreign_device(fd: int) -> Any:
+        observed = real_fstat(fd)
+        if observed.st_ino == child_inode:
+            return type("ForeignStat", (), {
+                "st_dev": observed.st_dev + 1,
+                "st_mode": observed.st_mode,
+            })()
+        return observed
+
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(os, "fstat", foreign_device)
+            refusal = sandbox_module._remove_native_scratch(harness.manager, "cross-device")
+        assert refusal.state is CleanupState.FAILED
+        assert (child / "evidence").read_text(encoding="utf-8") == "retain"
+        assert outside.read_text(encoding="utf-8") == "outside"
+    finally:
+        assert sandbox_module._remove_native_scratch(
+            harness.manager, "cross-device"
+        ).state in (CleanupState.RELEASED, CleanupState.ALREADY_RELEASED)
+        assert outside.read_text(encoding="utf-8") == "outside"
+
+def test_unconfined_create_native_scratch_rejects_preexisting_directory(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-unconfined-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(harness.manager, lease_id)
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_dir.rmdir()
+
+
+def test_create_native_scratch_adopts_matching_identity(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-adopt-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    scratch_stat = scratch_dir.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+    adopted = sandbox_module._create_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+    assert adopted == scratch_dir
+    assert adopted.is_dir()
+    receipt = sandbox_module._remove_native_scratch(harness.manager, lease_id)
+    assert receipt.state is CleanupState.RELEASED
+
+
+def test_create_native_scratch_rejects_swapped_directory_identity(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-swapped-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    original_identity = (scratch_dir.stat().st_dev, scratch_dir.stat().st_ino)
+    # Swap scratch: move the original aside (keeping its inode allocated, so
+    # the filesystem cannot reuse its number) and recreate the directory.
+    os.rename(scratch_dir, tmp_path / "original-scratch")
+    os.mkdir(scratch_dir, mode=0o700)
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=original_identity
+        )
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_dir.rmdir()
+
+
+def test_create_native_scratch_rejects_existing_invalid_directory(tmp_path: Path) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-invalid-adopt"
+    scratch_file = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    scratch_file.write_text("not-a-dir")
+    file_stat = scratch_file.stat()
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=(file_stat.st_dev, file_stat.st_ino)
+        )
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_file.unlink()
+
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o777)
+    dir_stat = scratch_dir.stat()
+    with pytest.raises(sandbox_module.WorkspaceStateError) as exc_info:
+        sandbox_module._create_native_scratch(
+            harness.manager, lease_id, expected_identity=(dir_stat.st_dev, dir_stat.st_ino)
+        )
+    assert exc_info.value.code == "workspace_authority_mismatch"
+    scratch_dir.rmdir()
+
+def test_remove_native_scratch_rejects_identity_mismatch_and_preserves_directory(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-mismatch-lease"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    sentinel = scratch_dir / "sentinel.txt"
+    sentinel.write_text("must-survive", encoding="utf-8")
+    stat_before = scratch_dir.stat()
+    mismatched_identity = (stat_before.st_dev, stat_before.st_ino + 1)
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=mismatched_identity
+        )
+        assert receipt.state is CleanupState.QUARANTINED
+        assert receipt.detail == "scratch_identity_mismatch"
+        assert scratch_dir.is_dir()
+        assert sentinel.is_file()
+        assert sentinel.read_text(encoding="utf-8") == "must-survive"
+    finally:
+        if sentinel.exists():
+            sentinel.unlink()
+        if scratch_dir.is_dir():
+            scratch_dir.rmdir()
+
+
+@pytest.mark.asyncio
+async def test_primary_close_rejects_replaced_scratch_and_preserves_replacement(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    lease = await harness.manager.open(fixture.request)
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease.lease_id)
+    original_stat = scratch.stat()
+    original_identity = (original_stat.st_dev, original_stat.st_ino)
+    lease._runtime.native_scratch_identity = original_identity
+
+    # Keep the original inode allocated so the replacement's number differs.
+    scratch.rename(tmp_path / "original-scratch")
+    scratch.mkdir(mode=0o700)
+    sentinel = scratch / "replacement_sentinel.txt"
+    sentinel.write_text("must-survive", encoding="utf-8")
+    replacement_stat = scratch.stat()
+    assert (replacement_stat.st_dev, replacement_stat.st_ino) != original_identity
+
+    receipt = await lease.close()
+
+    scratch_receipt = next(
+        step for step in receipt.steps if step.resource == "native_scratch"
+    )
+    assert scratch_receipt.state is CleanupState.QUARANTINED
+    assert scratch_receipt.detail == "scratch_identity_mismatch"
+    assert scratch.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "must-survive"
+    assert any(step.state is CleanupState.QUARANTINED for step in receipt.steps)
+
+
+def test_remove_native_scratch_descriptor_relative_preserves_swapped_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-swap-traversal"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    child_dir = scratch / "child"
+    child_dir.mkdir()
+    child_file = child_dir / "child_file.txt"
+    child_file.write_text("child_data", encoding="utf-8")
+
+    swapped = False
+    replacement_sentinel = scratch / "replacement_sentinel.txt"
+    renamed_scratch = harness.manager.lease_root / f"{lease_id}-renamed"
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        nonlocal swapped
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == "child" and not swapped:
+            swapped = True
+            os.rename(scratch, renamed_scratch)
+            os.mkdir(scratch, mode=0o700)
+            replacement_sentinel.write_text("replacement_survives", encoding="utf-8")
+        return fd
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert swapped is True
+        assert receipt.state is not CleanupState.RELEASED
+        assert receipt.state is CleanupState.QUARANTINED
+        assert receipt.detail == "scratch_identity_mismatch"
+        assert scratch.is_dir()
+        assert replacement_sentinel.is_file()
+        assert replacement_sentinel.read_text(encoding="utf-8") == "replacement_survives"
+        assert not child_file.exists()
+    finally:
+        if replacement_sentinel.exists():
+            replacement_sentinel.unlink()
+        if scratch.is_dir():
+            scratch.rmdir()
+        if renamed_scratch.is_dir():
+            import shutil
+            shutil.rmtree(renamed_scratch, ignore_errors=True)
+
+
+def test_remove_native_scratch_nested_structure_and_symlink_preserved(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-nested-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    outside = tmp_path / "outside_target.txt"
+    outside.write_text("outside_content", encoding="utf-8")
+
+    nested_dir = scratch / "a" / "b" / "c"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "deep_file.txt").write_text("deep_content", encoding="utf-8")
+    (scratch / "a" / "mid_file.txt").write_text("mid_content", encoding="utf-8")
+    (scratch / "top_file.txt").write_text("top_content", encoding="utf-8")
+    (scratch / "a" / "outside_symlink").symlink_to(outside)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+
+    assert receipt.state is CleanupState.RELEASED
+    assert not scratch.exists()
+    assert outside.is_file()
+    assert outside.read_text(encoding="utf-8") == "outside_content"
+
+def test_remove_native_scratch_1500_deep_nested_released(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-1500-deep-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    scratch_fd = os.open(scratch, os.O_RDONLY | os.O_DIRECTORY)
+    curr_fd = scratch_fd
+    try:
+        for i in range(1500):
+            name = f"d{i}"
+            os.mkdir(name, dir_fd=curr_fd)
+            next_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=curr_fd)
+            if curr_fd != scratch_fd:
+                os.close(curr_fd)
+            curr_fd = next_fd
+        leaf_fd = os.open("deep_file.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, dir_fd=curr_fd)
+        os.write(leaf_fd, b"deep_content")
+        os.close(leaf_fd)
+    finally:
+        if curr_fd != scratch_fd:
+            os.close(curr_fd)
+        os.close(scratch_fd)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+
+    assert receipt.state is CleanupState.RELEASED
+    assert not scratch.exists()
+
+
+def test_remove_native_scratch_lowered_rlimit_200_deep_released(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-rlimit-200-deep-lease"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    scratch_fd = os.open(scratch, os.O_RDONLY | os.O_DIRECTORY)
+    curr_fd = scratch_fd
+    try:
+        for i in range(200):
+            name = f"d{i}"
+            os.mkdir(name, dir_fd=curr_fd)
+            next_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY, dir_fd=curr_fd)
+            if curr_fd != scratch_fd:
+                os.close(curr_fd)
+            curr_fd = next_fd
+        leaf_fd = os.open("deep_file.txt", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, dir_fd=curr_fd)
+        os.write(leaf_fd, b"deep_content")
+        os.close(leaf_fd)
+    finally:
+        if curr_fd != scratch_fd:
+            os.close(curr_fd)
+        os.close(scratch_fd)
+
+    def count_open_fds() -> int:
+        try:
+            return len(os.listdir("/dev/fd"))
+        except Exception:
+            count = 0
+            for fd in range(1024):
+                try:
+                    os.fstat(fd)
+                    count += 1
+                except OSError:
+                    pass
+            return count
+
+    orig_soft, orig_hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    current_open = count_open_fds()
+    resource.setrlimit(resource.RLIMIT_NOFILE, (current_open + 16, orig_hard))
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert receipt.state is CleanupState.RELEASED
+        assert not scratch.exists()
+    finally:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (orig_soft, orig_hard))
+
+
+def test_remove_native_scratch_ancestor_swapped_during_traversal_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-ancestor-swap-traversal"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    ancestor_dir = scratch / "ancestor"
+    child_dir = ancestor_dir / "child"
+    child_dir.mkdir(parents=True)
+    child_file = child_dir / "child_file.txt"
+    child_file.write_text("child_data", encoding="utf-8")
+
+    swapped = False
+    replacement_sentinel = ancestor_dir / "replacement_sentinel.txt"
+    renamed_ancestor = scratch / "ancestor-renamed"
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        nonlocal swapped
+        fd = real_open(path, flags, *args, **kwargs)
+        if path == "child" and not swapped:
+            swapped = True
+            os.rename(ancestor_dir, renamed_ancestor)
+            os.mkdir(ancestor_dir, mode=0o700)
+            replacement_sentinel.write_text("replacement_survives", encoding="utf-8")
+        return fd
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    try:
+        receipt = sandbox_module._remove_native_scratch(
+            harness.manager, lease_id, expected_identity=expected_identity
+        )
+        assert swapped is True
+        assert receipt.state is not CleanupState.RELEASED
+        assert receipt.state is CleanupState.QUARANTINED
+        assert receipt.detail == "scratch_identity_mismatch"
+        assert ancestor_dir.is_dir()
+        assert replacement_sentinel.is_file()
+        assert replacement_sentinel.read_text(encoding="utf-8") == "replacement_survives"
+    finally:
+        if replacement_sentinel.exists():
+            replacement_sentinel.unlink()
+        if ancestor_dir.is_dir():
+            ancestor_dir.rmdir()
+        if renamed_ancestor.is_dir():
+            import shutil
+            shutil.rmtree(renamed_ancestor, ignore_errors=True)
+        if scratch.is_dir():
+            scratch.rmdir()
+
+def test_remove_native_scratch_ascent_parent_mismatch_quarantined(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    lease_id = "test-ascent-parent-mismatch"
+    scratch = sandbox_module._create_native_scratch(harness.manager, lease_id)
+    scratch_stat = scratch.stat()
+    expected_identity = (scratch_stat.st_dev, scratch_stat.st_ino)
+
+    child_dir = scratch / "child"
+    child_dir.mkdir()
+    (child_dir / "file.txt").write_text("data", encoding="utf-8")
+
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+
+    real_open = os.open
+
+    def open_hook(path, flags, *args, **kwargs):
+        if path == "..":
+            return real_open(str(other_dir), flags)
+        return real_open(path, flags, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", open_hook)
+
+    receipt = sandbox_module._remove_native_scratch(
+        harness.manager, lease_id, expected_identity=expected_identity
+    )
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "scratch_identity_mismatch"
+
+@pytest.mark.asyncio
+async def test_open_preserves_preexisting_native_scratch_on_preflight_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    nonce = "preexist-scratch-sentinel"
+    lease_id = f"lease-{nonce}"
+    scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+    os.mkdir(scratch_dir, mode=0o700)
+    sentinel = scratch_dir / "sentinel.txt"
+    sentinel.write_text("sentinel-content", encoding="utf-8")
+    monkeypatch.setattr(harness.manager, "_nonce", lambda: nonce)
+    harness.backend.failure = SandboxLaunchError(
+        "attested trusted process native scratch already exists",
+        code="runtime_preflight_failed",
+        lease_id=lease_id,
+    )
+    try:
+        with pytest.raises(SandboxFault) as exc_info:
+            await harness.manager.open(fixture.request)
+        assert isinstance(exc_info.value.primary, SandboxLaunchError)
+        assert exc_info.value.primary.code == "runtime_preflight_failed"
+        assert scratch_dir.is_dir()
+        assert sentinel.is_file()
+        assert sentinel.read_text(encoding="utf-8") == "sentinel-content"
+        scratch_receipt = next(
+            step for step in exc_info.value.cleanup_receipt.steps
+            if step.resource == "native_scratch"
+        )
+        assert scratch_receipt.state is CleanupState.QUARANTINED
+        assert scratch_receipt.detail == "preexisting_scratch_preserved"
+    finally:
+        if sentinel.exists():
+            sentinel.unlink()
+        if scratch_dir.is_dir():
+            scratch_dir.rmdir()
+
+@pytest.mark.asyncio
+async def test_open_verifier_preserves_preexisting_native_scratch_on_preflight_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    primary = await harness.manager.open(fixture.request)
+    try:
+        snapshot = await primary.seal_for_verifier()
+        nonce = "preexist-verifier-scratch-sentinel"
+        lease_id = f"verifier-lease-{nonce}"
+        scratch_dir = harness.manager.lease_root / f"{lease_id}.native-scratch"
+        os.mkdir(scratch_dir, mode=0o700)
+        sentinel = scratch_dir / "sentinel.txt"
+        sentinel.write_text("sentinel-verifier-content", encoding="utf-8")
+        monkeypatch.setattr(harness.manager, "_nonce", lambda: nonce)
+        harness.backend.failure = SandboxLaunchError(
+            "attested trusted process native scratch already exists",
+            code="runtime_preflight_failed",
+            lease_id=lease_id,
+        )
+        try:
+            with pytest.raises(SandboxFault) as exc_info:
+                await harness.manager.open_verifier(primary, snapshot)
+            assert isinstance(exc_info.value.primary, SandboxLaunchError)
+            assert exc_info.value.primary.code == "runtime_preflight_failed"
+            assert scratch_dir.is_dir()
+            assert sentinel.is_file()
+            assert sentinel.read_text(encoding="utf-8") == "sentinel-verifier-content"
+            scratch_receipt = next(
+                step for step in exc_info.value.cleanup_receipt.steps
+                if step.resource == "native_scratch"
+            )
+            assert scratch_receipt.state is CleanupState.QUARANTINED
+            assert scratch_receipt.detail == "preexisting_scratch_preserved"
+        finally:
+            if sentinel.exists():
+                sentinel.unlink()
+            if scratch_dir.is_dir():
+                scratch_dir.rmdir()
+    finally:
+        await primary.close()
+        await harness.manager.close()
 
 @pytest.mark.parametrize("completion", ["finish", "cancel"])
 async def test_close_fences_new_operations_and_drains_an_active_operation(
@@ -1747,6 +2598,14 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
     lease = await original.manager.open(fixture.request)
     record_path = original.lease_root / f"{lease.lease_id}.json"
     workspace_path = lease._materialized.workspace_path
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    (scratch_path / "home").mkdir()
+    scratch_stat = scratch_path.stat()
+    original.manager._record_scratch_identity(
+        lease.lease_id, (scratch_stat.st_dev, scratch_stat.st_ino)
+    )
     record = dict(original.manager._read_lease_record(record_path))
     recovery_backend = ReconcileBackend()
     recovery = SandboxRuntimeManager(
@@ -1790,17 +2649,146 @@ async def test_restart_reconciliation_leaves_live_foreign_lease_then_reclaims_ex
             CleanupState.ALREADY_RELEASED,
         ),
         CleanupStepReceipt("runtime", CleanupState.RELEASED),
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("workspace", CleanupState.RELEASED),
         CleanupStepReceipt("cache_holder", CleanupState.RELEASED),
         CleanupStepReceipt("lease_record", CleanupState.RELEASED),
     )
     assert len(recovery_backend.reconciled) == 1
+    assert not scratch_path.exists()
     assert not workspace_path.exists()
     assert not record_path.exists()
     assert original.store.recover_stale_cache_holder(record) == CleanupStepReceipt(
         "cache_holder", CleanupState.ALREADY_RELEASED
     )
 
+
+async def test_stale_reconciliation_quarantines_and_preserves_replaced_scratch(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    scratch_stat = scratch_path.stat()
+    original.manager._record_scratch_identity(
+        lease.lease_id, (scratch_stat.st_dev, scratch_stat.st_ino)
+    )
+    # Keep the original inode allocated so the replacement's number differs.
+    scratch_path.rename(tmp_path / "original-scratch")
+    scratch_path.mkdir(mode=0o700)
+    sentinel = scratch_path / "replacement.txt"
+    sentinel.write_text("must-survive", encoding="utf-8")
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_001),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    scratch_step = next(step for step in receipts[0].steps if step.resource == "native_scratch")
+    assert scratch_step.state is CleanupState.QUARANTINED
+    assert scratch_step.detail == "scratch_identity_mismatch"
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert scratch_path.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "must-survive"
+
+
+async def test_stale_reconciliation_quarantines_unrecorded_scratch_identity(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    scratch_path = sandbox_module._create_native_scratch(
+        original.manager, lease.lease_id
+    )
+    sentinel = scratch_path / "unrecorded.txt"
+    sentinel.write_text("unrecorded-survives", encoding="utf-8")
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    assert "native_scratch_identity" not in record
+
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_002),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    scratch_step = next(step for step in receipts[0].steps if step.resource == "native_scratch")
+    assert scratch_step.state is CleanupState.QUARANTINED
+    assert scratch_step.detail == "scratch_identity_unrecorded"
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert scratch_path.is_dir()
+    assert sentinel.is_file()
+    assert sentinel.read_text(encoding="utf-8") == "unrecorded-survives"
+
+
+@pytest.mark.parametrize(
+    "malformed_identity",
+    [
+        "not-a-sequence",
+        [1],
+        [1, 2, 3],
+        [-1, 100],
+        [100, -1],
+        [1.5, 2],
+        True,
+        [True, False],
+    ],
+)
+async def test_stale_reconciliation_rejects_malformed_scratch_identity_in_record(
+    tmp_path: Path, malformed_identity: Any
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    original = RuntimeHarness(tmp_path, fixture)
+    lease = await original.manager.open(fixture.request)
+    record_path = original.lease_root / f"{lease.lease_id}.json"
+    record = dict(original.manager._read_lease_record(record_path))
+    record["native_scratch_identity"] = malformed_identity
+    original.manager._write_lease_record(lease.lease_id, record)
+
+    original.clock.advance(minutes=5)
+    original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
+
+    recovery = SandboxRuntimeManager(
+        registries=fixture.registries,
+        installed_authorities=fixture.authorities,
+        materialization_store=original.store,
+        lease_root=original.lease_root,
+        process_backend=ReconcileBackend(),
+        docker_backend=None,
+        random_bytes=DeterministicRandom(9_003),
+    )
+    receipts = await recovery.reconcile_stale()
+    assert len(receipts) == 1
+    assert receipts[0].lease_id == lease.lease_id
+    assert receipts[0].state is CleanupState.QUARANTINED
+    assert receipts[0].steps == (
+        CleanupStepReceipt(
+            "lease_record",
+            CleanupState.QUARANTINED,
+            "stale_identity_uncertain",
+        ),
+    )
 
 @pytest.mark.parametrize(
     "mutation",
@@ -2003,6 +2991,11 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
     orphan_lease_id = "verifier-lease-" + ("a" * 32)
     orphan_lock = original.lease_root / f"{orphan_lease_id}.owner.lock"
     orphan_lock.touch(mode=0o600)
+    orphan_scratch = sandbox_module._create_native_scratch(
+        original.manager, orphan_lease_id
+    )
+    (orphan_scratch / "home").mkdir()
+    (orphan_scratch / "home" / "marker").write_text("scratch")
     original.clock.advance(minutes=5)
     original.manager._release_lease_owner_lock(lease.lease_id, unlink=False)
     recovery = SandboxRuntimeManager(
@@ -2027,10 +3020,12 @@ async def test_restart_reclaims_orphan_verifier_owner_lock_without_blocking_prim
         receipt for receipt in receipts if receipt.lease_id == lease.lease_id
     )
     assert orphan.steps == (
+        CleanupStepReceipt("native_scratch", CleanupState.RELEASED),
         CleanupStepReceipt("owner_lock", CleanupState.RELEASED),
     )
     assert primary.state is CleanupState.RELEASED
     assert not orphan_lock.exists()
+    assert not orphan_scratch.exists()
     assert not workspace.exists()
     assert not (original.lease_root / f"{lease.lease_id}.json").exists()
     assert active_lock.exists()
@@ -2606,3 +3601,202 @@ async def test_process_group_drain_waits_for_killed_members_to_finish_exiting(
 
     assert await handle._drain_group(4242, {}) is True
     assert signals == [15, 9]
+def test_containment_receipt_requires_network_namespace_inode() -> None:
+    from breadboard.rl.harness.lease_envelope import (
+        ContainmentReceipt,
+        ContainmentReceiptError,
+    )
+
+    base = {
+        "schema": "bb.containment-receipt.v2",
+        "lease_id": "lease-net-test",
+        "runtime_id": "runtime-net-test",
+        "mode": "privileged",
+        "namespaces": {
+            "pid": 1001,
+            "mnt": 1002,
+            "user": 1003,
+            "net": 1004,
+        },
+        "mountinfo_sha256": "sha256:" + "0" * 64,
+        "writable_mounts": [
+            {"path": "/scratch", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/tmp", "fstype": "tmpfs", "size_bytes": 500_000, "source": "lease_tmpfs"},
+            {"path": "/workspace", "fstype": "bind", "size_bytes": None, "source": "workspace_bind"},
+        ],
+        "created_at": "2026-09-24T00:00:00Z",
+        "key_id": "test-key",
+        "algorithm": "hmac-sha256-v1",
+        "signature": ("00" * 32),
+    }
+
+    receipt = ContainmentReceipt.from_mapping(base)
+    assert receipt.network_namespace_inode == 1004
+    mapping = receipt.to_mapping()
+    assert mapping["namespaces"]["net"] == 1004
+
+    missing_net = dict(base)
+    missing_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003}
+    with pytest.raises(ContainmentReceiptError):
+        ContainmentReceipt.from_mapping(missing_net)
+
+    zero_net = dict(base)
+    zero_net["namespaces"] = {"pid": 1001, "mnt": 1002, "user": 1003, "net": 0}
+    with pytest.raises(ContainmentReceiptError):
+        ContainmentReceipt.from_mapping(zero_net)
+
+
+
+@pytest.mark.asyncio
+async def test_attested_launch_rejects_lease_root_identity_mismatch_without_scratch_creation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    def mock_snapshot(path, digest):
+        return sandbox_module._PinnedExecutable(
+            fd=os.open(os.devnull, os.O_RDONLY),
+            source_path=path,
+            digest=digest or "sha256:dummy",
+            size=1,
+            source_device=1,
+            source_inode=1,
+            snapshot_device=1,
+            snapshot_inode=1,
+            proc_fd_path="/dev/null",
+            execution_format="elf",
+            interpreter_path=None,
+        )
+    monkeypatch.setattr(sandbox_module, "_snapshot_installed_executable", mock_snapshot)
+    monkeypatch.setattr(sandbox_module, "preflight_host_containment", lambda: None)
+
+    nonce = "mismatch-lease-root"
+    harness.manager._nonce = lambda: nonce
+    real_id = harness.manager._lease_root_identity
+    assert real_id is not None
+    harness.manager._lease_root_identity = (real_id[0], real_id[1] + 9999)
+    scratch_dir = harness.manager.lease_root / f"lease-{nonce}.native-scratch"
+
+    with pytest.raises(SandboxLaunchError) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.code == "runtime_preflight_failed"
+    assert "lease root authority is invalid" in str(exc_info.value)
+    assert not scratch_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_attested_launch_rejects_non_empty_scratch_preserves_directory_in_quarantine(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    def mock_snapshot(path, digest):
+        return sandbox_module._PinnedExecutable(
+            fd=os.open(os.devnull, os.O_RDONLY),
+            source_path=path,
+            digest=digest or "sha256:dummy",
+            size=1,
+            source_device=1,
+            source_inode=1,
+            snapshot_device=1,
+            snapshot_inode=1,
+            proc_fd_path="/dev/null",
+            execution_format="elf",
+            interpreter_path=None,
+        )
+    monkeypatch.setattr(sandbox_module, "_snapshot_installed_executable", mock_snapshot)
+    monkeypatch.setattr(sandbox_module, "preflight_host_containment", lambda: None)
+
+    nonce = "nonempty-scratch"
+    harness.manager._nonce = lambda: nonce
+    scratch_dir = harness.manager.lease_root / f"lease-{nonce}.native-scratch"
+
+    real_mkdir = os.mkdir
+    def rogue_mkdir(name, mode=0o700, *, dir_fd=None):
+        real_mkdir(name, mode=mode, dir_fd=dir_fd)
+        if str(name).endswith(".native-scratch"):
+            (scratch_dir / "rogue.txt").write_text("rogue-payload", encoding="utf-8")
+    monkeypatch.setattr(os, "mkdir", rogue_mkdir)
+
+    with pytest.raises(SandboxFault) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.primary.code == "runtime_preflight_failed"
+    assert "native scratch is not empty" in str(exc_info.value.primary)
+    assert scratch_dir.is_dir()
+    assert (scratch_dir / "rogue.txt").is_file()
+    receipt = next(s for s in exc_info.value.cleanup_receipt.steps if s.resource == "native_scratch")
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "preexisting_scratch_preserved"
+
+
+@pytest.mark.asyncio
+async def test_attested_launch_envelope_failure_cleans_up_or_quarantines_replaced_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True, runtime_install_root=tmp_path)
+    harness = RuntimeHarness(tmp_path / "harness", fixture)
+    harness.manager.process_backend = TrustedProcessBackend()
+
+    def mock_snapshot(path, digest):
+        return sandbox_module._PinnedExecutable(
+            fd=os.open(os.devnull, os.O_RDONLY),
+            source_path=path,
+            digest=digest or "sha256:dummy",
+            size=1,
+            source_device=1,
+            source_inode=1,
+            snapshot_device=1,
+            snapshot_inode=1,
+            proc_fd_path="/dev/null",
+            execution_format="elf",
+            interpreter_path=None,
+        )
+    monkeypatch.setattr(sandbox_module, "_snapshot_installed_executable", mock_snapshot)
+    monkeypatch.setattr(sandbox_module, "preflight_host_containment", lambda: None)
+
+    # 1. Envelope failure after identity recorded -> manager removes scratch (RELEASED)
+    nonce_a = "envelope-fail-clean"
+    harness.manager._nonce = lambda: nonce_a
+    scratch_a = harness.manager.lease_root / f"lease-{nonce_a}.native-scratch"
+
+    def fail_envelope(**kwargs):
+        raise sandbox_module.EnvelopeLaunchError("envelope boom", code="envelope_launch_failed", phase="launch")
+    monkeypatch.setattr(sandbox_module, "launch_envelope", fail_envelope)
+
+    cleanup_steps = []
+    real_cleanup = sandbox_module._cleanup_native_scratch_step
+    def recording_cleanup(*args, **kwargs):
+        step = real_cleanup(*args, **kwargs)
+        cleanup_steps.append(step)
+        return step
+    monkeypatch.setattr(sandbox_module, "_cleanup_native_scratch_step", recording_cleanup)
+
+    with pytest.raises(SandboxLaunchError) as exc_info:
+        await harness.manager.open(fixture.request)
+    assert exc_info.value.code == "envelope_launch_failed"
+    assert not scratch_a.exists()
+    assert cleanup_steps[0].state is CleanupState.RELEASED
+    assert cleanup_steps[0].resource == "native_scratch"
+
+    # 2. Envelope failure after identity recorded, replaced before cleanup -> QUARANTINED scratch_identity_mismatch
+    monkeypatch.setattr(sandbox_module, "_cleanup_native_scratch_step", real_cleanup)
+    nonce_b = "envelope-fail-replaced"
+    harness.manager._nonce = lambda: nonce_b
+    scratch_b = harness.manager.lease_root / f"lease-{nonce_b}.native-scratch"
+
+    def swap_and_fail_envelope(**kwargs):
+        scratch_b.rmdir()
+        scratch_b.mkdir(mode=0o700)
+        raise sandbox_module.EnvelopeLaunchError("envelope boom", code="envelope_launch_failed", phase="launch")
+    monkeypatch.setattr(sandbox_module, "launch_envelope", swap_and_fail_envelope)
+
+    with pytest.raises(SandboxFault) as exc_info:
+        await harness.manager.open(fixture.request)
+    receipt = next(s for s in exc_info.value.cleanup_receipt.steps if s.resource == "native_scratch")
+    assert receipt.state is CleanupState.QUARANTINED
+    assert receipt.detail == "scratch_identity_mismatch"
+    assert scratch_b.is_dir()

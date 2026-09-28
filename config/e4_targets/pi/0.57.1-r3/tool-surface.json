@@ -1,0 +1,188 @@
+{
+  "schema_version": "bb.e4.tool_surface.v1",
+  "target_id": "pi-r3@0.57.1",
+  "ordered_tools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "grep",
+    "find",
+    "ls"
+  ],
+  "images": {
+    "delivery": "disabled"
+  },
+  "tools": {
+    "read": {
+      "description": "Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to 2000 lines or 50KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "description": "Path to the file to read (relative or absolute)",
+            "type": "string"
+          },
+          "offset": {
+            "description": "Line number to start reading from (1-indexed)",
+            "type": "number"
+          },
+          "limit": {
+            "description": "Maximum number of lines to read",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "bash": {
+      "description": "Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last 2000 lines or 50KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "command"
+        ],
+        "properties": {
+          "command": {
+            "description": "Bash command to execute",
+            "type": "string"
+          },
+          "timeout": {
+            "description": "Timeout in seconds (optional, no default timeout)",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "edit": {
+      "description": "Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "oldText",
+          "newText"
+        ],
+        "properties": {
+          "path": {
+            "description": "Path to the file to edit (relative or absolute)",
+            "type": "string"
+          },
+          "oldText": {
+            "description": "Exact text to find and replace (must match exactly)",
+            "type": "string"
+          },
+          "newText": {
+            "description": "New text to replace the old text with",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "write": {
+      "description": "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "path",
+          "content"
+        ],
+        "properties": {
+          "path": {
+            "description": "Path to the file to write (relative or absolute)",
+            "type": "string"
+          },
+          "content": {
+            "description": "Content to write to the file",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "grep": {
+      "description": "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to 100 matches or 50KB (whichever is hit first). Long lines are truncated to 500 chars.",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "pattern"
+        ],
+        "properties": {
+          "pattern": {
+            "description": "Search pattern (regex or literal string)",
+            "type": "string"
+          },
+          "path": {
+            "description": "Directory or file to search (default: current directory)",
+            "type": "string"
+          },
+          "glob": {
+            "description": "Filter files by glob pattern, e.g. '*.ts' or '**/*.spec.ts'",
+            "type": "string"
+          },
+          "ignoreCase": {
+            "description": "Case-insensitive search (default: false)",
+            "type": "boolean"
+          },
+          "literal": {
+            "description": "Treat pattern as literal string instead of regex (default: false)",
+            "type": "boolean"
+          },
+          "context": {
+            "description": "Number of lines to show before and after each match (default: 0)",
+            "type": "number"
+          },
+          "limit": {
+            "description": "Maximum number of matches to return (default: 100)",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "find": {
+      "description": "Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to 1000 results or 50KB (whichever is hit first).",
+      "parameters": {
+        "type": "object",
+        "required": [
+          "pattern"
+        ],
+        "properties": {
+          "pattern": {
+            "description": "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
+            "type": "string"
+          },
+          "path": {
+            "description": "Directory to search in (default: current directory)",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of results (default: 1000)",
+            "type": "number"
+          }
+        }
+      }
+    },
+    "ls": {
+      "description": "List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to 500 entries or 50KB (whichever is hit first).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "description": "Directory to list (default: current directory)",
+            "type": "string"
+          },
+          "limit": {
+            "description": "Maximum number of entries to return (default: 500)",
+            "type": "number"
+          }
+        }
+      }
+    }
+  },
+  "dispatch": {
+    "kind": "target_adapter",
+    "adapter_id": "pi-coding-agent.local.v0.57.1",
+    "binding_requirement": "RL-E4-2"
+  }
+}

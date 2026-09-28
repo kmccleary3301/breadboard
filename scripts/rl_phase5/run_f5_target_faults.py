@@ -21,7 +21,10 @@ from breadboard_engine.compilation.contracts import (
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from breadboard.rl.harness import contracts as c
-from breadboard.rl.harness.evidence import canonical_digest
+from breadboard.rl.harness.evidence import (
+    _PRIMARY_OPTIONAL_CLEANUP_RESOURCES,
+    canonical_digest,
+)
 from breadboard.rl.harness.service import (
     BreadBoardV2EpisodeService,
     V2FaultInjectionAuthority,
@@ -1165,7 +1168,12 @@ class _ProductionObservationProjector:
                 for step in raw_steps
                 if isinstance(step, Mapping)
             }
-            if set(states) != set(required) or len(raw_steps) != len(states):
+            if (
+                not set(required)
+                <= set(states)
+                <= set(required) | set(_PRIMARY_OPTIONAL_CLEANUP_RESOURCES)
+                or len(raw_steps) != len(states)
+            ):
                 raise F5TargetFaultsError(
                     f"case {case_id} cleanup resource set diverged"
                 )

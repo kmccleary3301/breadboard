@@ -1,0 +1,178 @@
+schema_version: bb.e4.target_config.v2
+target_id: mini-swe-agent@2.4.6
+semantic_revision: bb.e4.target-semantics.v2
+renderer:
+  selector: breadboard.mini-swe-agent.v2.4.6
+  revision: breadboard.mini-swe-agent.v2.4.6
+prompt:
+  asset: prompts/system.j2
+  dynamic_fields: []
+tools:
+  ordered:
+  - bash
+  surface_asset: tool-surface.json
+  normalization:
+    aliases: {}
+policy:
+  revision: bb.e4.target-policy.v2
+  provider:
+    api: openai_chat_completions
+    stream: false
+    samples: 1
+    provider_attempts: 1
+    fallback: false
+    compaction: false
+    request_timeout_seconds: 45
+  action:
+    protocol: native_tools
+    decoder: breadboard.mini-swe-agent.v2.4.6
+    repair: null
+    argument_processors: []
+    aliases: {}
+    decode_entire_batch_before_dispatch: true
+    require_nonempty_calls: true
+    malformed: append_format_error_user_message
+    empty_reply: same_as_format_error
+    max_consecutive_format_errors: 3
+  execution:
+    scheduler: serial_in_assistant_call_order
+    history_commit: assistant_then_observation_batch_only_after_all_execute_return
+    terminal_policy: submitted_exit_message_or_explicit_budget_or_error
+    bounded_controls:
+      max_model_calls: 8
+      episode_wall_seconds: 120
+      single_tool_wall_seconds: 30
+      raw_evidence_bytes_per_outcome: 1048576
+      max_active_episodes: 1
+      samples_per_call: 1
+  observations:
+    renderer: breadboard.mini-swe-agent.v2.4.6
+    preserve_raw_outcome: true
+    preserve_model_render: true
+    commit_at_source_boundary: true
+  authority:
+    workspace_root: workspace
+    containment: task_provided_isolated_substrate
+    interaction: noninteractive
+    network_tools: false
+    subagents: false
+  claim_exclusions:
+  - interactive_agent
+  - streaming
+  - multimodal
+  - prompt_caching
+  - provider_retries
+  - model_fallback
+  - compaction
+  - network_tools
+  - subagents
+inputs:
+  revision: bb.e4.target-inputs.v2
+  fields:
+  - name: task
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: bb.rl.headless-run-request/prompt
+    omission: required
+    value_schema:
+      type: string
+  - name: platform
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: selected_execution_environment/platform.uname
+    omission: required
+    value_schema:
+      type: object
+      properties:
+        system:
+          type: string
+        release:
+          type: string
+        version:
+          type: string
+        machine:
+          type: string
+      required:
+      - system
+      - release
+      - version
+      - machine
+      additionalProperties: false
+  - name: environment_digest
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: installed_runtime/fixed_environment
+    omission: required
+    value_schema:
+      type: string
+      minLength: 71
+      maxLength: 71
+  - name: model
+    required: true
+    producer: runtime
+    lifetime: episode
+    source_ref: headless_provider_route/model
+    omission: required
+    value_schema:
+      type: string
+  order:
+  - task
+  - platform
+  - environment_digest
+  - model
+materialization:
+  revision: bb.e4.target-materialization.v2
+  assets:
+  - path: harness.yaml
+    role: config
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: prompts/system.j2
+    role: prompt
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: prompts/instance.j2
+    role: prompt
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: prompts/observation.j2
+    role: prompt
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: prompts/format-error.j2
+    role: prompt
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: native-config.json
+    role: config
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: tool-surface.json
+    role: tool_surface
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  - path: LICENSE.txt
+    role: license
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/LICENSE.md
+  - path: source.json
+    role: source
+    required: true
+    source_ref: mini-swe-agent@a83fcae8/src/minisweagent/config/mini.yaml
+  order:
+  - harness.yaml
+  - prompts/system.j2
+  - prompts/instance.j2
+  - prompts/observation.j2
+  - prompts/format-error.j2
+  - native-config.json
+  - tool-surface.json
+  - LICENSE.txt
+  - source.json
+required_capabilities:
+- native_action_processors.v1
+- mini_swe_agent.local.v1
+- provider_native_response.v1

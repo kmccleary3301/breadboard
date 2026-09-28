@@ -1,0 +1,27 @@
++----------------------------------------------------------------------+
+|  OpenHands SDK v1.47.0                                               |
+|                                                                      |
+|  Report a bug: github.com/OpenHands/software-agent-sdk/issues        |
+|  Get help: openhands.dev/joinslack                                   |
+|  Scale up: openhands.dev/product/sdk                                 |
+|                                                                      |
+|  Set OPENHANDS_SUPPRESS_BANNER=1 to hide this message                |
++----------------------------------------------------------------------+
+
+[09/23/26 05:45:58] WARNING  No persistence_dir provided; falling   state.py:515
+                             back to InMemoryFileStore. EventLog                
+                             data will not persist across requests.             
+[09/23/26 05:45:58] INFO     Created new conversation               state.py:592
+                             f77abdcc-8ac9-460c-8d9b-e35e5b884c1a               
+[09/23/26 05:45:58] INFO     Using forced SubprocessTerminal      factory.py:149
+[09/23/26 05:45:58] INFO     TaskTrackerExecutor initialized   definition.py:161
+                             with save_dir: None                                
+[09/23/26 05:45:58] INFO     FileEditor initialized with cwd:      editor.py:105
+                             /opt/openhands/case/workspace                      
+[09/23/26 05:45:58] INFO     Using shell: /bin/bash   subprocess_terminal.py:142
+[09/23/26 05:45:59] INFO     TerminalExecutor initialized with       impl.py:124
+                             working_dir:                                       
+                             /opt/openhands/case/workspace,                     
+                             username: None, terminal_type:                     
+                             subprocess                                         
+[09/23/26 05:45:59] INFO     Loaded 3 tools from spec                base.py:564

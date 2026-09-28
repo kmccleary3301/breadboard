@@ -1,0 +1,37 @@
+{
+  "case_id": "p3_context_compaction",
+  "covered_bullets": [
+    "prompt and message construction",
+    "context limits, compaction, and history retention",
+    "provider payload construction and usage accounting",
+    "no-session behavior"
+  ],
+  "oracle": "Observed from source: models.json defines contextWindow=200000; DEFAULT_COMPACTION_SETTINGS specifies reserveTokens=16384 (threshold = 183616); receiver reports usage.prompt_tokens=190000 which strictly exceeds 183616; on agent_end _checkCompaction detects threshold condition and starts auto-compaction (emitting auto_compaction_start event in JSONL). In single-shot print mode, the CLI flushes and exits 0 cleanly after the prompt turn.",
+  "steps": [
+    {
+      "assistant_content": "Calling bash before threshold compaction.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'p3-step1\\\\n'\"}",
+          "id": "pi057-call-p3-00-bash",
+          "name": "bash"
+        }
+      ],
+      "usage": {
+        "completion_tokens": 25,
+        "prompt_tokens": 190000,
+        "total_tokens": 190025
+      }
+    },
+    {
+      "assistant_content": "Finishing prompt turn.",
+      "finish_reason": "stop",
+      "usage": {
+        "completion_tokens": 15,
+        "prompt_tokens": 190500,
+        "total_tokens": 190515
+      }
+    }
+  ],
+  "task": "Exercise deterministic context compaction triggered by token threshold without modifying models.json."
+}

@@ -1,0 +1,31 @@
+{
+  "case_id": "p0_text_stop",
+  "config_extra_files": [
+    "auth.json"
+  ],
+  "config_mode": "declared_writable",
+  "covered_bullets": [
+    "prompt and message construction",
+    "tool ordering, names, descriptions, and JSON schemas",
+    "JSON event output and terminal result behavior",
+    "no-session behavior",
+    "thinking-option handling",
+    "provider payload construction and usage accounting"
+  ],
+  "elapsed_seconds": 1.467,
+  "exit_code": 0,
+  "files": {
+    "events_jsonl": "sha256:85e47263cbe901542903c75d24c5f822ab94274699042ba4541227ae58e1d52f",
+    "git_status": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "http_transcript": "sha256:945d629804aa707a9da24a609c6cb5b718a7b6b0b2f067d0b355137e276a66de",
+    "model_patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderr_log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "workspace_manifest_post": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1",
+    "workspace_manifest_pre": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_files_scanned": [],
+  "no_session_verified": true,
+  "oracle": "Observed from source: single-turn text stop causes Pi to emit message_start, message_delta/content, message_end (stopReason='stop'), and agent_end in JSONL mode; exits 0 without writing any session files under HOME or config dir. Request 0 body carries provider payload for Qwen/Qwen3.5-35B-A3B with max_tokens=32000, no temperature field, no thinking parameters (thinking-off effect), system prompt, user prompt prefixed with prompt_prefix.txt, and 7 tools in exact order read, bash, edit, write, grep, find, ls with TypeBox JSON schemas.",
+  "requests_served": 1,
+  "schema_version": "bb.e4.pi057-capture-trace.v1"
+}

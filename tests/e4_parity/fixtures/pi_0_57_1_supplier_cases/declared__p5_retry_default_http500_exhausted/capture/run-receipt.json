@@ -1,0 +1,9 @@
+{
+  "case_id": "p5_retry_default_http500_exhausted",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 4,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:cc5919d0c14af9b35535d548b27b30bfe6a26e647760fac36262a2fc2699b918"
+}

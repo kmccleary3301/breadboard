@@ -1,0 +1,50 @@
+schema_version: bb.e4.lane_def.v2
+lane_id: mini_swe_agent_2_4_6_replay
+config_id: mini_swe_agent_2_4_6_replay_v1
+target_family: mini_swe_agent
+target_version: mini-swe-agent@2.4.6
+package_ref: mini-swe-agent@2.4.6
+kind: target_support
+status: compared
+points: 0
+capture:
+  strategy: replay_dump
+  argv: null
+  inputs:
+    - docs/conformance/e4_target_support/mini_swe_agent_2_4_6_replay/raw_capture_manifest.json
+    - docs/conformance/e4_target_support/mini_swe_agent_2_4_6_replay/bb_replay_result.json
+  workspace_template: null
+normalize:
+  translator: identity
+  mode: identity
+  config: {}
+replay:
+  mode: stored
+  artifacts:
+    - docs/conformance/e4_target_support/mini_swe_agent_2_4_6_replay/bb_replay_result.json
+  session: null
+  comparator_class: semantic
+compare:
+  comparator: mini_swe_agent_trace_v1
+  config:
+    assertions:
+      - id: ok_true
+        path: ok
+        op: equals
+        value: true
+        description: Mini trace comparator report is ok
+      - id: no_errors
+        path: errors
+        op: length_equals
+        value: 0
+        description: Mini trace comparator report has no errors
+claim:
+  scope:
+    behaviors:
+      - bb.mini_swe_agent_trace.v1
+    surfaces:
+      - MiniComplete 2.4.6 deterministic trace replay
+  exclusions:
+    - provider identity or model quality
+    - acceptance or points award
+artifacts_root: docs/conformance/e4_target_support/mini_swe_agent_2_4_6_replay

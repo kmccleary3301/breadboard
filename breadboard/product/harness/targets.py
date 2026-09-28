@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import Any
 
 import yaml
+from jinja2 import StrictUndefined, Template
 
 from breadboard_engine.compilation.contracts import (
     DependencyEdge,
@@ -17,6 +18,7 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.e4_targets import E4TargetPackage, read_e4_target
+from breadboard_engine.provider_broker.catalog import get_provider_catalog_entry
 
 from .compile import HarnessCompilation, HarnessCompileError, compile_harness_definition
 from .lock import copy_harness_json
@@ -25,6 +27,34 @@ from .validate import (
     validate_e4_target_document,
     validate_e4_target_input_values,
 )
+
+
+_NATIVE_WORKER_RECIPES = MappingProxyType({
+    "openhands-sdk@1.47.0": (
+        "breadboard.openhands-sdk.v1.47.0",
+        "8df535e010d344658393836920e031c43762e43af34d28b9c3cb3012e4c19910",
+    ),
+    "pi@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
+    ),
+    "pi-r3@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "95a2ca6d6451a94fefd3d52732ad7342281410994d0c8bf4f4ceda741bd56d57",
+    ),
+    "hermes-agent@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "36dbabb294042943df6c6f5415eebbe4097f660bc99af1d91f052d76da7eca88",
+    ),
+    "oh-my-pi@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "fe47b49bc0d5ff05e981559d2f3f87070b816e3f3ba263b70f6ad4e7554b8a4f",
+    ),
+    "openclaw@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a",
+    ),
+})
 
 
 class E4TargetCapabilityError(HarnessCompileError):
@@ -125,7 +155,10 @@ def _encode_e4_target_input_frame(
         if any(type(value) is not str or not value for value in dynamic_fields.values()):
             raise ValueError("v1 target inputs require non-empty text")
         return canonical_json_bytes(frame)
-    if request_schema_version != "bb.rl.headless-run-request.v2":
+    if request_schema_version not in {
+        "bb.rl.headless-run-request.v2",
+        "bb.rl.headless-run-request.v3",
+    }:
         raise ValueError("unsupported E4 request input revision")
     # Constructor-visible object order and 1 versus 1.0 survive this encoding.
     # The resulting bytes, rather than a JCS-normalized object, are the identity.
@@ -157,13 +190,21 @@ def bind_e4_target_inputs(
 ) -> bytes:
     """Validate bootstrap values against their verified declaration and encode them."""
     target_version = package.descriptor.get("schema_version")
-    expected_request = {
-        "bb.e4.target.v1": "bb.rl.headless-run-request.v1",
-        "bb.e4.target.v2": "bb.rl.headless-run-request.v2",
-    }.get(target_version)
-    if expected_request is None or request_schema_version != expected_request:
+    supported_requests = {
+        "bb.e4.target.v1": {
+            "bb.rl.headless-run-request.v1",
+            "bb.rl.headless-run-request.v3",
+        },
+        "bb.e4.target.v2": {
+            "bb.rl.headless-run-request.v2",
+            "bb.rl.headless-run-request.v3",
+        },
+    }.get(target_version, set())
+    if request_schema_version not in supported_requests:
         raise ValueError("headless request and target versions do not match")
     if target_version == "bb.e4.target.v1":
+        if any(type(value) is not str or not value for value in dynamic_fields.values()):
+            raise ValueError("legacy target inputs require non-empty text")
         return serialize_e4_target_inputs(request_schema_version, dynamic_fields)
 
     execution = package.descriptor.get("execution")
@@ -197,10 +238,146 @@ class E4TargetRendering:
     descriptor_digest: str
     execution_config_digest: str
     overlay_digest: str
-    rendered_prompt_digest: str
-    system_prompt: str
+    rendered_prompt_digest: str | None
+    system_prompt: str | None
     ordered_tool_names: tuple[str, ...]
     tools: tuple[Mapping[str, Any], ...]
+    renderer_id: str = "breadboard.e4.legacy-string-template.v1"
+    runtime_profile: Mapping[str, Any] | None = None
+
+
+def _lower_mini_target(
+    package: E4TargetPackage,
+    harness: Mapping[str, Any],
+    dynamic_fields: Mapping[str, Any],
+) -> E4TargetRendering:
+    """Lower the pinned Mini recipe; runtime facts are supplied inside its lease."""
+    # This renderer implements one source composition, not arbitrary Mini configs.
+    # The descriptor transitively binds every serializer-produced source asset.
+    if (
+        package.target_id != "mini-swe-agent@2.4.6"
+        or sha256(package.descriptor_bytes).hexdigest()
+        != "191999cd6da077ad29d8413356a7e5e2c1ae98c8448759f8c8f29e81ebfca85e"
+        or dynamic_fields
+    ):
+        raise HarnessCompileError("Mini requires its pinned recipe and no caller template inputs")
+    native = json.loads(package.read_asset_text("native-config.json"))
+    system_prompt = Template(
+        native["agent"]["system_template"], undefined=StrictUndefined
+    ).render()
+    surface = json.loads(package.read_asset_text("tool-surface.json"))
+    tool = surface["tools"]["bash"]
+    descriptor = package.descriptor
+    overlay = descriptor["overlay"]
+    return E4TargetRendering(
+        target_id=package.target_id,
+        overlay_id=overlay["overlay_id"],
+        descriptor_digest=canonical_sha256(descriptor),
+        execution_config_digest=canonical_sha256(harness),
+        overlay_digest=canonical_sha256(overlay),
+        rendered_prompt_digest=canonical_sha256({"text": system_prompt}),
+        system_prompt=system_prompt,
+        ordered_tool_names=("bash",),
+        tools=(copy_harness_json({"name": "bash", **tool}, freeze=True),),
+        renderer_id="breadboard.mini-swe-agent.v2.4.6",
+        runtime_profile=copy_harness_json(native, freeze=True),
+    )
+
+
+def _lower_worker_target(
+    package: E4TargetPackage,
+    harness: Mapping[str, Any],
+    dynamic_fields: Mapping[str, Any],
+) -> E4TargetRendering:
+    """Bind source assets; the owned source worker renders runtime-dependent fields."""
+    recipe = _NATIVE_WORKER_RECIPES.get(package.target_id)
+    if (
+        recipe is None
+        or sha256(package.descriptor_bytes).hexdigest() != recipe[1]
+        or harness["renderer"]["selector"] != recipe[0]
+        or dynamic_fields
+    ):
+        raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
+    native = json.loads(package.read_asset_text("native-config.json"))
+    surface = json.loads(package.read_asset_text("tool-surface.json"))
+    if package.target_id == "oh-my-pi@18.1.17":
+        required_native_fields = (
+            "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
+            "model_registry",
+        )
+        if any(key not in native for key in required_native_fields):
+            raise HarnessCompileError("OMP native config is missing admitted advertisement fields")
+        registry = native["model_registry"]
+        provider_id = registry.get("provider_id") if isinstance(registry, Mapping) else None
+        # The route label becomes the pinned registry provider id, which pinned
+        # compat resolution matches against known hosts; a catalogued provider
+        # id would assert that host. The worker also checks pinned hosts.ts.
+        if (
+            not isinstance(registry, Mapping)
+            or set(registry) != {"provider_id"}
+            or not isinstance(provider_id, str)
+            or re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)*", provider_id) is None
+            or get_provider_catalog_entry(provider_id) is not None
+        ):
+            raise HarnessCompileError("OMP model_registry.provider_id must be a non-provider route label")
+        provenance = surface["native_description_provenance"]
+        if provenance["artifact_sha256"] != native["native_descriptions_artifact_sha256"]:
+            raise HarnessCompileError("OMP native description policy differs from its pinned artifact")
+        native["advertisement"] = {
+            "bounded_description_policy": {
+                name: {
+                    "original_sha256": "sha256:" + provenance["original_sha256"][name],
+                    "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
+                    "removed_spans": provenance["removed_spans"][name],
+                }
+                for name in surface["ordered_tools"]
+            },
+            "capability_denials": native["capability_denials"],
+            "model_registry": {"provider_id": provider_id},
+            "settings": {
+                "request_cap": native["request_cap"],
+                "model_max_tokens": native["model_max_tokens"],
+                "provider_attempts": native["provider_attempts"],
+            },
+        }
+    order = tuple(surface["ordered_tools"])
+    surface_tools = surface.get("tools")
+    if (
+        not isinstance(surface_tools, Mapping)
+        or set(surface_tools) != set(order)
+    ):
+        raise HarnessCompileError("native worker requires declared tool schemas")
+    compiler_tools = []
+    for name in order:
+        tool = {"name": name, **surface_tools[name]}
+        # The compiler encodes required order through parameter order; the
+        # native HTTP path retains the untouched schemas in runtime_profile.
+        parameters = tool["parameters"]
+        required = parameters.get("required", [])
+        properties = parameters["properties"]
+        if [key for key in properties if key in required] != required:
+            ordered_properties = {key: properties[key] for key in required}
+            ordered_properties.update(properties)
+            properties = ordered_properties
+        tool["parameters"] = {
+            **parameters, "properties": properties, "required": required,
+        }
+        compiler_tools.append(copy_harness_json(tool, freeze=True))
+    descriptor = package.descriptor
+    overlay = descriptor["overlay"]
+    return E4TargetRendering(
+        target_id=package.target_id,
+        overlay_id=overlay["overlay_id"],
+        descriptor_digest=canonical_sha256(descriptor),
+        execution_config_digest=canonical_sha256(harness),
+        overlay_digest=canonical_sha256(overlay),
+        rendered_prompt_digest=None,
+        system_prompt=None,
+        ordered_tool_names=order,
+        tools=tuple(compiler_tools),
+        renderer_id=recipe[0],
+        runtime_profile=copy_harness_json(native, freeze=True),
+    )
 
 
 def lower_e4_target(
@@ -219,12 +396,16 @@ def lower_e4_target(
         raise ValueError("E4 target execution and overlay descriptors are required")
     config_asset = execution.get("config_asset")
     prompt_asset = execution.get("system_prompt_asset")
+    prompt_source = execution.get("system_prompt_source")
     tool_asset = execution.get("tool_surface_asset")
-    if not all(
-        type(value) is str and value
-        for value in (config_asset, prompt_asset, tool_asset)
+    if (
+        any(type(value) is not str or not value for value in (config_asset, tool_asset))
+        or (
+            (type(prompt_asset) is not str or not prompt_asset)
+            and (type(prompt_source) is not str or not prompt_source)
+        )
     ):
-        raise ValueError("E4 target execution assets are invalid")
+        raise ValueError("E4 target execution assets or prompt source are invalid")
     from breadboard_engine.compilation.server_compiler import strict_parse_payload
 
     harness = strict_parse_payload(
@@ -239,6 +420,19 @@ def lower_e4_target(
             raise HarnessDefinitionValidationError(findings)
         if harness["schema_version"] != "bb.e4.target_config.v2":
             raise HarnessCompileError("E4 target configuration revision does not match")
+        if prompt_asset is None and harness["renderer"]["selector"] != "breadboard.openclaw.native-chat.v1":
+            raise HarnessCompileError("only the pinned OpenClaw worker may render a source prompt")
+        if harness["renderer"]["selector"] == "breadboard.mini-swe-agent.v2.4.6":
+            return _lower_mini_target(package, harness, dynamic_fields)
+        if harness["renderer"]["selector"] in {
+            "breadboard.openhands-sdk.v1.47.0",
+            "breadboard.pi-coding-agent.v0.73.1",
+            "breadboard.pi-coding-agent.v0.57.1",
+            "breadboard.oh-my-pi.v18.1.17",
+            "breadboard.hermes-agent.v2026.9.11",
+            "breadboard.openclaw.native-chat.v1",
+        }:
+            return _lower_worker_target(package, harness, dynamic_fields)
         raise E4TargetCapabilityError(
             harness["renderer"]["selector"], tuple(harness["required_capabilities"])
         )
@@ -345,6 +539,7 @@ def lower_e4_target(
         system_prompt=rendered_prompt,
         ordered_tool_names=tuple(ordered_names),
         tools=tuple(tools),
+        renderer_id="breadboard.e4.legacy-string-template.v1",
     )
 
 
@@ -407,14 +602,15 @@ def lower_e4_harness(
     for ordinal, tool in enumerate(rendered.tools):
         schema = tool["parameters"]
         if (
-            set(schema) - {"type", "properties", "required", "additionalProperties"}
+            set(schema) - {"type", "properties", "patternProperties", "required", "additionalProperties"}
             or schema.get("type") != "object"
             or not isinstance(schema.get("properties"), Mapping)
-            or not isinstance(schema.get("required"), tuple)
         ):
             raise HarnessCompileError("target tool schema cannot be represented by the compiler")
         properties = schema["properties"]
-        required = schema["required"]
+        required = schema.get("required", ())
+        if not isinstance(required, tuple):
+            raise HarnessCompileError("target required-parameter order cannot be preserved")
         if (
             any(type(name) is not str or name not in properties for name in required)
             or tuple(name for name in properties if name in required) != required
@@ -455,7 +651,7 @@ def lower_e4_harness(
         },
         "modes": [{
             "id": "build",
-            "prompt": rendered.system_prompt,
+            **({"prompt": rendered.system_prompt} if rendered.system_prompt is not None else {}),
             "tools_enabled": list(rendered.ordered_tool_names),
         }],
         "loop": {"sequence": ["build"]},

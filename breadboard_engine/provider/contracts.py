@@ -47,9 +47,11 @@ from .profiles import (
     OpenAICompletionsCapabilities,
     OpenAICompletionsCompatibility,
     OpenAICompletionsProviderProfile,
+    OpenAICompletionsRequestPolicy,
     OpenAICompletionsSampling,
 )
 from .contract_runtime import (
+    NativeProviderRequestFailure,
     ProviderErrorKind,
     ProviderRuntime,
     ProviderRuntimeContext,
@@ -82,9 +84,11 @@ __all__ = [
     "OpenAICompletionsCapabilities",
     "OpenAICompletionsCompatibility",
     "OpenAICompletionsProviderProfile",
+    "OpenAICompletionsRequestPolicy",
     "OpenAICompletionsSampling",
     "ProviderRuntimeContext",
     "ProviderRuntimeError",
+    "NativeProviderRequestFailure",
     "ProviderRuntime",
     "sanitize_provider_result",
     "normalize_request_messages",

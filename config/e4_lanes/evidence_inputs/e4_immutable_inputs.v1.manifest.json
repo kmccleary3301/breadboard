@@ -1,8 +1,8 @@
 {
   "archive": {
-    "bytes": 25369025,
+    "bytes": 25533265,
     "file": "e4_immutable_inputs.v1.zip",
-    "sha256": "655970280a3dcd09b0920ff22c7b0729f8c43bceea5f26c58b15903f839358a7"
+    "sha256": "074f6afff0a962accda7b8d332b536ca673debf7f62ba6edae3889d749c4e7c4"
   },
   "format_version": 1,
   "members": [
@@ -1879,6 +1879,22 @@
       "sha256": "218f225eba10c08faa18d31a07e984e12b057cae233e3894a56a1de69ee9f87f"
     },
     {
+      "bytes": 174677,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/e4_immutable_inputs/hermes/hermes-supplier-capture-packet-rerun3.tar.gz",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/e4_immutable_inputs/hermes/hermes-supplier-capture-packet-rerun3.tar.gz",
+      "sha256": "870fc991ddf72271766b90f113921d1c0bfff3fb58090550691bac1fd9a780d6"
+    },
+    {
+      "bytes": 6221,
+      "classification": "accepted_immutable_packet",
+      "destination": "docs_tmp/e4_immutable_inputs/hermes/hermes_capture_cases.json",
+      "namespace": "workspace",
+      "path": "workspace/docs_tmp/e4_immutable_inputs/hermes/hermes_capture_cases.json",
+      "sha256": "77c8ee29682d92d18c3b5081015fa57a7109b7b5e7bd19f4814940b6d86cd362"
+    },
+    {
       "bytes": 48027,
       "classification": "phase15_static_validator_input",
       "destination": "docs_tmp/phase_15/BB_E4_CURRENT_BASELINE.json",
@@ -2643,6 +2659,6 @@
       "slack_token"
     ],
     "result": "passed",
-    "scanned_member_count": 328
+    "scanned_member_count": 330
   }
 }

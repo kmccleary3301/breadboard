@@ -1,23 +1,56 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import inspect
 from collections.abc import Mapping
 from contextvars import ContextVar
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from decimal import Decimal
 import json
 import math
 import re
-from typing import Any
+import time
+from collections.abc import Mapping
+from typing import Any, Awaitable, Callable, Literal
 
 from breadboard_engine.compilation.contracts import (
     bytes_sha256,
+    canonical_json_bytes,
     canonical_sha256,
 )
+from breadboard_engine.compilation.provider_response import (
+    NATIVE_CHAT_RESPONSE_TARGETS,
+    MINI_RESPONSE_CONSUMER_ID,
+    OPENHANDS_RESPONSE_CONSUMER_ID,
+    NativeResponsePolicy,
+)
+from breadboard_engine.provider.contracts import NativeProviderRequestFailure
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
+from breadboard.rl.harness.contracts import RuntimeClass
+from breadboard.rl.harness.lease_envelope import (
+    AdmittedLeaseLedger,
+    AdmittedLeaseRecord,
+    ContainmentReceiptError,
+    ReceiptAuthenticator,
+    RuntimeContainment,
+    _receipt_guard,
+    verify_containment_receipt,
+)
 from breadboard.rl.harness.runner_identity import measure_module_artifact
+from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
+from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
+from breadboard.rl.harness.runners import mini_semantics
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
+    CompiledPolicyRuntimeClientPort,
+    NativeStreamPolicyRuntimeClientPort,
+    MiniTemplateFramePort,
+    NativeHTTPPolicyRuntimeClientPort,
+    NativeSourceSessionPort,
+    NativeFinalizationPhasePort,
+    NativeRuntimeInputPort,
+    NativeWorkspaceEffectsPort,
     FrozenJsonObject,
     JsonSnapshotError,
     PolicyRequestEvent,
@@ -34,6 +67,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerCancellationProbe,
     RunnerCancellationRequestedEvent,
     RunnerCancelled,
+    MiniProviderFailure,
     RunnerCloseResult,
     RunnerDependencyError,
     RunnerError,
@@ -56,6 +90,8 @@ from breadboard.rl.harness.runners.base import (
     ToolActionTimeout,
     ToolCallEvent,
     ToolObservationEvent,
+    SourceHistoryCommitEvent,
+    SourceEventCommitEvent,
     freeze_json_object,
     freeze_json_object_with_size,
     thaw_json,
@@ -70,13 +106,52 @@ _EVENT_SINK_SESSION: ContextVar[object | None] = ContextVar(
 
 
 _CONDUCTOR_MODULE_IDENTITY = measure_module_artifact(__file__)
-CONDUCTOR_IMPLEMENTATION_DIGEST = _CONDUCTOR_MODULE_IDENTITY.digest
+_MINI_MODULE_IDENTITY = measure_module_artifact(mini_semantics.__file__)
+_STREAM_MODULE_IDENTITY = measure_module_artifact(native_stream_consumers.__file__)
+_PROFILE_MODULE_IDENTITIES = (
+    measure_module_artifact(native_stream_profiles.__file__),
+    *(
+        measure_module_artifact(profile.state_module.__file__)
+        for profile in NATIVE_STREAM_PROFILES.values()
+    ),
+)
+CONDUCTOR_IMPLEMENTATION_DIGEST = canonical_sha256({
+    "conductor": _CONDUCTOR_MODULE_IDENTITY.digest,
+    "mini_semantics": _MINI_MODULE_IDENTITY.digest,
+    "native_stream_consumers": _STREAM_MODULE_IDENTITY.digest,
+    "native_stream_profiles": [identity.digest for identity in _PROFILE_MODULE_IDENTITIES],
+})
 
 
 CONDUCTOR_ADAPTER_ID = "breadboard.conductor.v1"
 CONDUCTOR_RUNTIME_ABI = "breadboard.conductor.v1"
 POLICY_RUNTIME_BINDING_SCHEMA_VERSION = "bb.rl.policy-runtime-binding.v1"
 
+_CANONICAL_UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+
+
+@dataclass(frozen=True, slots=True)
+class NativeCleanupOutcome:
+    attempted: bool
+    all_dead: bool | None
+    error_code: str | None
+    binding_close_error_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class _NativePhaseSteps:
+    step: Callable[[int], Awaitable[RunnerTermination | None]]
+    before_close: Callable[[], Awaitable[None]] | None
+    build_response: Callable[
+        [Mapping[str, Mapping[str, Any]], Mapping[str, Any]], Mapping[str, Any]
+    ]
+    max_steps: int
+    # Runs after close and effect measurement. A profile with this hook owns
+    # the close failure: it is passed in instead of raised.
+    after_close: Callable[
+        [Mapping[str, Any], Exception | None, Mapping[str, Mapping[str, Any]]],
+        Awaitable[None],
+    ] | None = None
 
 @dataclass(frozen=True, slots=True)
 class ConductorRunRequest:
@@ -121,6 +196,8 @@ class PolicyRuntimeBinding:
         "_close_task",
         "_active_task",
         "_generated_turn",
+        "_source_model_config",
+        "_source_consumer_id",
     )
 
     def __init__(
@@ -244,6 +321,90 @@ class PolicyRuntimeBinding:
         self._close_task: asyncio.Task[None] | None = None
         self._active_task: asyncio.Task[PolicyRuntimeInvokeResult] | None = None
         self._generated_turn = 0
+        self._source_model_config: FrozenJsonObject | None = None
+        self._source_consumer_id: str | None = None
+        metadata = plan.effective_semantics.get("metadata")
+        target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+        if isinstance(target, Mapping) and (
+            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
+            or target.get("renderer_id") in NATIVE_STREAM_PROFILES
+        ):
+            if not isinstance(client, CompiledPolicyRuntimeClientPort):
+                raise RunnerPolicyBindingError(
+                    "source-native target requires a compiled native provider client",
+                    code="native_response_consumer_mismatch",
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                )
+            self._source_model_config = freeze_json_object(
+                client.bind_compiled_plan(plan), field_name="source model configuration"
+            )
+            self._source_consumer_id = target["renderer_id"]
+
+    @property
+    def source_model_config(self) -> FrozenJsonObject | None:
+        return self._source_model_config
+
+    def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
+        if (
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or self._state != "claimed"
+            or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
+        ):
+            raise RunnerPolicyBindingError(
+                "native tools require an active compiled Chat binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        self._client.bind_native_tools(tools)
+
+    def bind_native_stream(
+        self, system_prompt: str, tools: tuple[Mapping[str, Any], ...],
+        *, accept_truncated_stream: bool,
+    ) -> None:
+        if (
+            self._source_consumer_id not in NATIVE_STREAM_PROFILES
+            or self._state != "claimed"
+            or not isinstance(self._client, NativeStreamPolicyRuntimeClientPort)
+        ):
+            raise RunnerPolicyBindingError(
+                "native stream bootstrap requires an active compiled stream binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        self._client.bind_native_stream(
+            system_prompt, tools, accept_truncated_stream=accept_truncated_stream,
+        )
+
+    def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        if (
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or self._state != "claimed"
+            or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP request requires an active compiled Chat binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return self._client.stage_native_http_request(request)
+
+    def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
+        if (
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or self._state != "claimed"
+            or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
+        ):
+            raise RunnerPolicyBindingError(
+                "native HTTP response requires an active compiled Chat binding",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return self._client.take_native_http_response(response_digest)
 
     @property
     def episode_id(self) -> str:
@@ -522,7 +683,9 @@ class _RuntimeProjection:
     tools: tuple[_ToolProjection, ...]
     responses_use_developer_role: bool
     tool_prompt_mode: str
-    tool_errors_as_observations: bool
+    tool_errors_as_observations: bool = False
+    source_profile: FrozenJsonObject | None = None
+    source_consumer_id: str | None = None
 
 
 
@@ -533,6 +696,13 @@ def _plan_error(request: RunnerOpenRequest, message: str, code: str) -> RunnerPl
         code=code,
         episode_id=request.episode_id,
         effective_plan_digest=request.effective_plan_digest,
+    )
+
+def _note_cleanup_failure(primary: BaseException, cleanup: BaseException) -> None:
+    """Keep a cleanup failure visible without replacing the primary error."""
+    primary.add_note(
+        "runner cleanup failed: "
+        f"{type(cleanup).__name__}: {str(cleanup)[:256]}"
     )
 
 
@@ -574,6 +744,40 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     ):
         raise _plan_error(request, "compiled semantic family is unsupported", "compiled_ir_mismatch")
 
+    metadata = semantic.get("metadata")
+    target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
+    source_profile = None
+    source_consumer_id = None
+    expected_api_variant = "responses"
+    if isinstance(target, Mapping) and (
+        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
+        or target.get("renderer_id") in NATIVE_STREAM_PROFILES
+    ):
+        source_consumer_id = target["renderer_id"]
+        stream_profile = NATIVE_STREAM_PROFILES.get(source_consumer_id)
+        expected_target, expected_version = (
+            (stream_profile.target_id, stream_profile.target_version)
+            if stream_profile is not None
+            else {
+                MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
+                **{
+                    consumer_id: (target_id, 3)
+                    for consumer_id, target_id in NATIVE_CHAT_RESPONSE_TARGETS.items()
+                },
+            }[source_consumer_id]
+        )
+        expected_api_variant = (
+            stream_profile.api_variant
+            if stream_profile is not None
+            else "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
+        )
+        if (
+            target.get("target_id") != expected_target
+            or target.get("version") != expected_version
+            or not isinstance(target.get("runtime_profile"), Mapping)
+        ):
+            raise _plan_error(request, "source-native profile is invalid", "compiled_ir_mismatch")
+        source_profile = target["runtime_profile"]
     providers = semantic.get("providers")
     if not isinstance(providers, Mapping):
         raise _plan_error(request, "compiled provider IR is invalid", "compiled_ir_mismatch")
@@ -590,7 +794,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             and value not in (False, None, "", (), {})
             for key, value in provider_tools.items()
         )
-        or provider_tools.get("api_variant") != "responses"
+        or provider_tools.get("api_variant") != expected_api_variant
         or provider_tools.get("use_native") is not True
         or provider_tools.get("suppress_prompts", False) is not False
         or provider_tools.get("responses_stateful", False) is not False
@@ -635,6 +839,19 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         raise _plan_error(request, "compiled default model is missing", "compiled_ir_mismatch")
     projected_models: list[_ModelProjection] = []
     for model in models:
+        if source_profile is not None:
+            try:
+                native_policy = NativeResponsePolicy.from_dict(model.get("response_policy"))
+            except ValueError as exc:
+                raise _plan_error(request, "source-native response policy is invalid", "native_response_consumer_mismatch") from exc
+            if native_policy.consumer_id != source_consumer_id:
+                raise _plan_error(request, "source-native response consumer differs", "native_response_consumer_mismatch")
+        elif "response_policy" in model:
+            raise _plan_error(
+                request,
+                "compiled native response policy requires its recording consumer",
+                "native_response_consumer_mismatch",
+            )
         model_id = model["model_id"]
         slot_id = model.get("policy_slot_id")
         slot = slots_by_id.get(slot_id)
@@ -899,6 +1116,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         tuple(projected_models), tuple(projected_modes), tuple(sequence),
         tuple(projected_tools), responses_use_developer_role,
         prompts["tool_prompt_mode"], tool_errors_as_observations,
+        source_profile, source_consumer_id,
     )
 
 
@@ -918,15 +1136,28 @@ def _resolve_pointer(value: Mapping[str, Any], pointer: str, request: RunnerOpen
 
 
 _SCHEMA_KEYWORDS = frozenset({
-    "type", "properties", "required", "additionalProperties", "items", "enum",
+    "type", "properties", "patternProperties", "required", "additionalProperties", "items", "enum",
     "const", "minLength", "maxLength", "pattern", "minimum", "maximum",
     "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minItems",
     "maxItems", "uniqueItems", "description", "default", "examples", "title",
 })
 _SCHEMA_TYPES = frozenset({"object", "array", "string", "number", "integer", "boolean", "null"})
+_MAX_SCHEMA_DEPTH = 32
+_MAX_SCHEMA_NODES = 512
 
 
-def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None:
+def _admit_schema(
+    schema: Mapping[str, Any],
+    request: RunnerOpenRequest,
+    *,
+    _depth: int = 0,
+    _budget: list[int] | None = None,
+) -> None:
+    if _budget is None:
+        _budget = [0]
+    _budget[0] += 1
+    if _depth > _MAX_SCHEMA_DEPTH or _budget[0] > _MAX_SCHEMA_NODES:
+        raise _plan_error(request, "compiled tool schema is too deep or large", "compiled_ir_mismatch")
     if any(type(key) is not str or key not in _SCHEMA_KEYWORDS for key in schema):
         raise _plan_error(request, "compiled tool schema keyword is unsupported", "compiled_ir_mismatch")
     schema_type = schema.get("type")
@@ -945,7 +1176,7 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
         ):
             raise _plan_error(request, "compiled tool schema enum is invalid", "compiled_ir_mismatch")
 
-    object_keywords = {"properties", "required", "additionalProperties"} & set(schema)
+    object_keywords = {"properties", "patternProperties", "required", "additionalProperties"} & set(schema)
     array_keywords = {"items", "minItems", "maxItems", "uniqueItems"} & set(schema)
     string_keywords = {"minLength", "maxLength", "pattern"} & set(schema)
     numeric_keywords = {
@@ -961,24 +1192,39 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
     if object_keywords or schema_type == "object":
         properties = schema.get("properties", {})
+        pattern_properties = schema.get("patternProperties", {})
         required = schema.get("required", ())
         additional = schema.get("additionalProperties", False)
         if (
             not isinstance(properties, Mapping)
+            or not isinstance(pattern_properties, Mapping)
             or not isinstance(required, (list, tuple))
             or any(type(name) is not str or name not in properties for name in required)
             or len(set(required)) != len(required)
-            or type(additional) is not bool
+            or (type(additional) is not bool and not isinstance(additional, Mapping))
+            or any(type(pattern) is not str for pattern in pattern_properties)
         ):
             raise _plan_error(request, "compiled object schema is invalid", "compiled_ir_mismatch")
         for child in properties.values():
             if not isinstance(child, Mapping):
                 raise _plan_error(request, "compiled object property schema is invalid", "compiled_ir_mismatch")
-            _admit_schema(child, request)
+            _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
+        for pattern, child in pattern_properties.items():
+            if not isinstance(child, Mapping):
+                raise _plan_error(request, "compiled pattern property schema is invalid", "compiled_ir_mismatch")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                error = _plan_error(request, "compiled pattern property is invalid", "compiled_ir_mismatch")
+                error.__cause__ = exc
+                raise error
+            _admit_schema(child, request, _depth=_depth + 1, _budget=_budget)
+        if isinstance(additional, Mapping):
+            _admit_schema(additional, request, _depth=_depth + 1, _budget=_budget)
     if "items" in schema:
         if not isinstance(schema["items"], Mapping):
             raise _plan_error(request, "compiled array item schema is invalid", "compiled_ir_mismatch")
-        _admit_schema(schema["items"], request)
+        _admit_schema(schema["items"], request, _depth=_depth + 1, _budget=_budget)
     if "pattern" in schema:
         if type(schema["pattern"]) is not str:
             raise _plan_error(request, "compiled schema pattern is invalid", "compiled_ir_mismatch")
@@ -1035,19 +1281,40 @@ def _admit_schema(schema: Mapping[str, Any], request: RunnerOpenRequest) -> None
 
 
 class ConductorAdapter:
-    __slots__ = ("_descriptor",)
+    __slots__ = ("_descriptor", "_containment_authenticator", "_admitted_lease_ledger", "_allow_unconfined_test_only")
 
-    def __init__(self, runtime_abi: str) -> None:
+    def __init__(
+        self,
+        runtime_abi: str,
+        *,
+        containment_authenticator: ReceiptAuthenticator | None = None,
+        admitted_lease_ledger: AdmittedLeaseLedger | None = None,
+        allow_unconfined_test_only: bool = False,
+    ) -> None:
         if runtime_abi != CONDUCTOR_RUNTIME_ABI:
             raise ValueError("conductor adapter accepts only its exact runtime ABI")
         measured = measure_module_artifact(__file__)
-        if measured != _CONDUCTOR_MODULE_IDENTITY:
+        if (
+            measured != _CONDUCTOR_MODULE_IDENTITY
+            or measure_module_artifact(mini_semantics.__file__) != _MINI_MODULE_IDENTITY
+            or measure_module_artifact(native_stream_consumers.__file__) != _STREAM_MODULE_IDENTITY
+            or (
+                measure_module_artifact(native_stream_profiles.__file__),
+                *(
+                    measure_module_artifact(profile.state_module.__file__)
+                    for profile in NATIVE_STREAM_PROFILES.values()
+                ),
+            ) != _PROFILE_MODULE_IDENTITIES
+        ):
             raise RuntimeError("conductor module artifact changed after bootstrap")
         self._descriptor = RunnerAdapterDescriptor(
             adapter_id=CONDUCTOR_ADAPTER_ID,
             runtime_abi=runtime_abi,
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
+        self._containment_authenticator = containment_authenticator
+        self._admitted_lease_ledger = admitted_lease_ledger
+        self._allow_unconfined_test_only = allow_unconfined_test_only
 
     @property
     def descriptor(self) -> RunnerAdapterDescriptor:
@@ -1123,6 +1390,44 @@ class ConductorAdapter:
             installed = None
         if installed != expected:
             raise _plan_error(request, "tool port bindings do not exactly match plan grants", "tool_grant_mismatch")
+        if request.effective_plan.sandbox.runtime_class is RuntimeClass.TRUSTED_PROCESS:
+            receipt = getattr(workspace, "containment_receipt", None)
+            lease_id = getattr(workspace, "containment_lease_id", None)
+            try:
+                if (
+                    getattr(workspace, "containment", None)
+                    is RuntimeContainment.UNCONFINED_TEST_ONLY
+                    and not self._allow_unconfined_test_only
+                ):
+                    raise ContainmentReceiptError("unconfined trusted-process workspace is not admitted")
+                if (
+                    receipt is None or self._containment_authenticator is None
+                    or self._admitted_lease_ledger is None or not isinstance(lease_id, str)
+                ):
+                    raise ContainmentReceiptError("containment receipt or admitted lease is missing")
+                with _receipt_guard():
+                    verified = verify_containment_receipt(
+                        receipt,
+                        lease_id=lease_id,
+                        runtime_id=request.effective_plan.sandbox.runtime_id,
+                        authenticator=self._containment_authenticator,
+                    )
+                    presented_bytes = verified.canonical_bytes()
+                    admitted = self._admitted_lease_ledger.lookup(lease_id)
+                    if (
+                        type(admitted) is not AdmittedLeaseRecord
+                        or admitted.lease_id != lease_id
+                        or admitted.runtime_id != request.effective_plan.sandbox.runtime_id
+                        or admitted.receipt_bytes != presented_bytes
+                        or admitted.receipt_signature != verified.signature
+                    ):
+                        raise ContainmentReceiptError("containment lease is not live and exact")
+            except ContainmentReceiptError as exc:
+                raise _plan_error(
+                    request,
+                    "trusted-process workspace containment receipt was rejected",
+                    "containment_receipt_invalid",
+                ) from exc
         await policy.claim()
         return _ConductorSession(
             open_request=request,
@@ -1137,9 +1442,11 @@ class ConductorAdapter:
 class _ConductorSession:
     __slots__ = (
         "_open_request", "_binding", "_tools", "_cancellation_probe", "_event_sink",
-        "_projection", "_events", "_sequence", "_lock", "_emit_lock", "_phase",
+        "_projection", "_events", "_sequence", "_native_event_bytes", "_lock", "_emit_lock", "_phase",
         "_cancellation", "_turns", "_cancellation_published", "_binding_cancel_task",
         "_close_task", "_poison", "_terminal_committing",
+        "_native_stream_close_callback", "_native_stream_close_started",
+        "_native_cleanup_outcome",
     )
 
     def __init__(
@@ -1160,6 +1467,7 @@ class _ConductorSession:
         self._projection = projection
         self._events: list[RunnerEvent] = []
         self._sequence = 0
+        self._native_event_bytes = 0
         self._lock = asyncio.Lock()
         self._emit_lock = asyncio.Lock()
         self._phase = "idle"
@@ -1170,6 +1478,53 @@ class _ConductorSession:
         self._close_task: asyncio.Task[None] | None = None
         self._poison: RunnerEventSinkError | None = None
         self._terminal_committing = False
+        self._native_stream_close_callback: Any = None
+        self._native_stream_close_started = False
+        self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None, None)
+
+    @property
+    def native_cleanup_outcome(self) -> NativeCleanupOutcome | None:
+        if self._projection.source_consumer_id not in NATIVE_STREAM_PROFILES:
+            return None
+        return self._native_cleanup_outcome
+
+    def _set_native_cleanup_outcome(
+        self, *, attempted: bool, all_dead: bool | None, error_code: str | None,
+        binding_close_error_code: str | None = None,
+    ) -> None:
+        prior = self._native_cleanup_outcome
+        self._native_cleanup_outcome = NativeCleanupOutcome(
+            attempted, all_dead, error_code,
+            prior.binding_close_error_code
+            if binding_close_error_code is None
+            else binding_close_error_code,
+        )
+
+    def _record_native_cleanup_failure(
+        self, primary: BaseException | None, cleanup: BaseException,
+    ) -> None:
+        error_code = getattr(cleanup, "code", None)
+        if not isinstance(error_code, str) or not error_code:
+            error_code = type(cleanup).__name__.lower()
+        self._set_native_cleanup_outcome(
+            attempted=True, all_dead=False, error_code=error_code,
+        )
+        if primary is not None:
+            _note_cleanup_failure(primary, cleanup)
+
+    def _record_binding_close_failure(self, cleanup: BaseException) -> None:
+        if self._projection.source_consumer_id not in NATIVE_STREAM_PROFILES:
+            return
+        error_code = getattr(cleanup, "code", None)
+        if not isinstance(error_code, str) or not error_code:
+            error_code = type(cleanup).__name__.lower()
+        outcome = self._native_cleanup_outcome
+        self._set_native_cleanup_outcome(
+            attempted=outcome.attempted,
+            all_dead=outcome.all_dead,
+            error_code=outcome.error_code,
+            binding_close_error_code=error_code,
+        )
 
     async def run(self, request: ConductorRunRequest) -> RunnerResult:
         async with self._lock:
@@ -1238,6 +1593,7 @@ class _ConductorSession:
     async def _close_once(self) -> None:
         async with self._lock:
             running = self._phase == "running" and not self._terminal_committing
+
         primary: BaseException | None = None
         if running:
             try:
@@ -1249,10 +1605,19 @@ class _ConductorSession:
         except BaseException as exc:
             if primary is None:
                 primary = exc
+            else:
+                self._record_binding_close_failure(exc)
+                _note_cleanup_failure(primary, exc)
         if primary is not None:
             raise primary
-
     async def _loop(self, request: ConductorRunRequest) -> RunnerResult:
+        if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
+            async with asyncio.timeout(180):
+                return await self._loop_openhands(request)
+        stream_profile = NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id)
+        if stream_profile is not None:
+            async with asyncio.timeout(stream_profile.episode_timeout_seconds):
+                return await self._loop_native_stream(request, stream_profile)
         transcript: list[Any] = []
         limits = self._open_request.effective_plan.effective_capabilities.limits
         transcript_size = _encoded_json_size(request.task_input) + _encoded_json_size(request.context)
@@ -1269,7 +1634,49 @@ class _ConductorSession:
         models = {model.model_id: model for model in self._projection.models}
         modes = {mode.mode_id: mode for mode in self._projection.modes}
         tools_by_id = {tool.tool_id: tool for tool in self._projection.tools}
-        for turn in range(1, limits.max_turns + 1):
+        mini = None
+        if self._projection.source_profile is not None:
+            if (
+                not isinstance(self._tools, MiniTemplateFramePort)
+                or self._binding.source_model_config is None
+                or limits.max_turns != 8
+                or limits.action_timeout_ms != 35_000
+                or len(models) != 1
+                or any(model.params for model in models.values())
+                or set(tools_by_id) != {"bash"}
+            ):
+                raise _plan_error(self._open_request, "Mini source runtime controls differ", "compiled_ir_mismatch")
+            task = request.task_input.get("prompt")
+            if set(request.task_input) != {"prompt"} or type(task) is not str:
+                raise RunnerRequestError("Mini requires the owned headless prompt", code="request_authority_invalid")
+            frame = self._tools.mini_template_frame()
+            profile = self._projection.source_profile
+            agent = profile["agent"]
+            model_config = self._binding.source_model_config
+            mini = mini_semantics.MiniSemanticsState(
+                task=task,
+                system_template=agent["system_template"],
+                instance_template=agent["instance_template"],
+                observation_template=model_config["observation_template"],
+                format_error_template=model_config["format_error_template"],
+                runtime_template_vars=mini_semantics.recursive_merge(frame, model_config),
+                step_limit=agent["step_limit"],
+                cost_limit=agent["cost_limit"],
+                wall_time_limit_seconds=agent["wall_time_limit_seconds"],
+                max_consecutive_format_errors=agent["max_consecutive_format_errors"],
+            )
+            await self._source_history_commit(
+                mini, 0, "initial", turn=None, runtime_frame={"environment": frame, "model": model_config}
+            )
+        for turn in range(1, limits.max_turns + (2 if mini is not None else 1)):
+            if mini is not None:
+                before = len(mini.messages)
+                try:
+                    mini.begin_query()
+                except mini_semantics.LimitsExceeded:
+                    await self._source_history_commit(mini, before, "exit", turn=len(self._turns))
+                    termination = RunnerTermination.LIMITS_EXCEEDED
+                    break
             mode_id = self._projection.mode_sequence[(turn - 1) % len(self._projection.mode_sequence)]
             mode = modes[mode_id]
             model = models[mode.model_id]
@@ -1309,6 +1716,19 @@ class _ConductorSession:
             )
             if request.context:
                 final_request["metadata"] = {"task_context": thaw_json(request.context)}
+            if mini is not None:
+                chat_tools = []
+                for tool in mode_tools:
+                    function = thaw_json(tool.schema)
+                    function.pop("type")
+                    function.pop("strict")
+                    function["parameters"].pop("additionalProperties")
+                    chat_tools.append({"type": "function", "function": function})
+                final_request = {
+                    "model": model.model_id,
+                    "messages": mini.prepare_request_history(),
+                    "tools": chat_tools,
+                }
             frozen_request = freeze_json_object(final_request, field_name="final policy request")
             request_digest = canonical_sha256(frozen_request)
             await self._checkpoint("before_policy", turn=turn)
@@ -1354,6 +1774,20 @@ class _ConductorSession:
                     **self._context(),
                 )
                 await self._raise_error(error, turn=turn)
+            except Exception as exc:
+                failure = None if mini is None else _find_mini_provider_failure(exc)
+                if failure is not None:
+                    # Native DefaultAgent.handle_uncaught_exception, then the
+                    # typed outer failure propagates unchanged.
+                    committed = len(mini.messages)
+                    mapped = failure.exception
+                    mini.commit_native_exit(
+                        type(mapped).__name__,
+                        exception_str=str(mapped),
+                        traceback_text=failure.traceback_text,
+                    )
+                    await self._source_history_commit(mini, committed, "exit", turn=turn)
+                raise
             await self._checkpoint("after_policy", turn=turn)
             try:
                 response, _ = freeze_json_object_with_size(
@@ -1380,7 +1814,7 @@ class _ConductorSession:
                     ),
                     turn=turn,
                 )
-            output = response.get("output", ())
+            output = response.get("output", ()) if mini is None else ()
             if not isinstance(output, tuple):
                 await self._raise_error(
                     RunnerProtocolError(
@@ -1424,6 +1858,42 @@ class _ConductorSession:
             )
             observations: list[FrozenJsonObject] = []
             calls = tuple(item for item in normalized if item.get("type") == "function_call")
+            parsed = None
+            if mini is not None:
+                native = response.get("native_response")
+                converted = response.get("mini_response")
+                if (
+                    not isinstance(native, Mapping)
+                    or not isinstance(native.get("raw_response"), Mapping)
+                    or not isinstance(converted, Mapping)
+                    or not isinstance(converted.get("response"), Mapping)
+                    or not isinstance(converted.get("message"), Mapping)
+                ):
+                    await self._raise_error(
+                        RunnerProtocolError("Mini native sample is missing", code="native_response_invalid", **self._context()),
+                        turn=turn,
+                    )
+                before = len(mini.messages)
+                parsed = mini.parse_and_commit_response(
+                    converted["response"],
+                    response_json=converted.get("response_json"),
+                    cost=response["cost"], timestamp=time.time()
+                )
+                await self._source_history_commit(
+                    mini, before, "format_error" if parsed.is_format_error else "assistant", turn=turn
+                )
+                if parsed.is_format_error:
+                    self._turns.append(RunnerTurn(turn, (), ()))
+                    if mini.is_exited:
+                        termination = RunnerTermination.REPEATED_FORMAT_ERROR
+                        break
+                    continue
+                raw_calls = converted["message"].get("tool_calls") or ()
+                calls = tuple({
+                    "name": call["function"]["name"],
+                    "call_id": call["id"],
+                    "arguments": call["function"]["arguments"],
+                } for call in raw_calls)
             await self._checkpoint(
                 "before_action" if calls else "after_policy", turn=turn
             )
@@ -1532,7 +2002,10 @@ class _ConductorSession:
                         call_id=call_id,
                     )
                 try:
-                    arguments = json.loads(raw_arguments)
+                    arguments = (
+                        {"command": parsed.actions[ordinal].command}
+                        if mini is not None else json.loads(raw_arguments)
+                    )
                     if type(arguments) is not dict:
                         raise ValueError
                 except Exception as exc:
@@ -1546,7 +2019,7 @@ class _ConductorSession:
                         )
                         error.__cause__ = exc
                         await self._raise_error(error, turn=turn, call_id=call_id)
-                if not self._projection.tool_errors_as_observations:
+                if not self._projection.tool_errors_as_observations and mini is None:
                     try:
                         _validate_arguments(arguments, tool.schema["parameters"])
                     except RunnerProtocolError as error:
@@ -1607,11 +2080,42 @@ class _ConductorSession:
                 except Exception as exc:
                     error = RunnerDependencyError(
                         "conductor tool invocation failed",
-                        code="tool_invoke_failed",
+                        code=(
+                            "native_output_limit_exceeded"
+                            if getattr(exc, "code", None) == "native_output_limit_exceeded"
+                            else "tool_invoke_failed"
+                        ),
                         **self._context(),
                     )
                     error.__cause__ = exc
                     await self._raise_error(error, turn=turn, call_id=call_id)
+                if mini is not None:
+                    observations.append(observation)
+                    native_exit = observation.get("exit")
+                    await self._emit(
+                        ToolObservationEvent(
+                            0, self._open_request.episode_id,
+                            self._open_request.effective_plan_digest, turn,
+                            ordinal, call_id, name, observation, native_exit is not None,
+                        )
+                    )
+                    await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                    if native_exit is not None:
+                        if (
+                            not isinstance(native_exit, Mapping)
+                            or native_exit.get("role") != "exit"
+                            or native_exit.get("extra", {}).get("exit_status") != "Submitted"
+                        ):
+                            await self._raise_error(
+                                RunnerProtocolError("Mini native exit is invalid", code="tool_result_invalid", **self._context()),
+                                turn=turn, call_id=call_id,
+                            )
+                        before = len(mini.messages)
+                        mini.commit_native_exit("Submitted", native_exit["content"])
+                        await self._source_history_commit(mini, before, "exit", turn=turn)
+                        termination = RunnerTermination.SUBMITTED
+                        break
+                    continue
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
                 output_item = {
                     "type": "function_call_output",
@@ -1653,6 +2157,10 @@ class _ConductorSession:
                 transcript_size += added_size
             if calls:
                 transcript.extend((*thaw_json(normalized), *call_outputs))
+            if mini is not None and not mini.is_exited:
+                before = len(mini.messages)
+                mini.commit_whole_batch_observations(observations, timestamp=time.time())
+                await self._source_history_commit(mini, before, "observation_batch", turn=turn)
             self._turns.append(
                 RunnerTurn(
                     turn=turn,
@@ -1661,9 +2169,24 @@ class _ConductorSession:
                 )
             )
             last_response = response
+            if mini is not None:
+                if mini.is_exited:
+                    break
+                continue
             if not calls:
                 termination = RunnerTermination.ASSISTANT_COMPLETE
                 break
+        if mini is not None:
+            last_response = freeze_json_object({
+                "trajectory_format": "mini-swe-agent-1.1",
+                "messages": mini.messages,
+                "info": {
+                    "mini_version": "2.4.6",
+                    "exit_status": mini.exit_status,
+                    "submission": mini.submission,
+                    "model_stats": {"instance_cost": mini.cost, "api_calls": mini.n_calls},
+                },
+            }, field_name="Mini source trajectory")
         await self._checkpoint("after_loop", turn=len(self._turns))
         await self._checkpoint("before_commit", turn=len(self._turns))
         await self._commit_termination(termination)
@@ -1680,6 +2203,1816 @@ class _ConductorSession:
             turns=tuple(self._turns),
             events=tuple(self._events),
         )
+
+    async def _native_commit_source(
+        self, turn: int | None, consumer_id: str, phase_name: str,
+        events: tuple[Mapping[str, Any], ...], digest: str,
+        state: Mapping[str, Any],
+    ) -> None:
+        await self._emit(SourceEventCommitEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, consumer_id, phase_name, events, digest, state,
+        ))
+
+    async def _native_effects(self) -> Mapping[str, Mapping[str, Any]]:
+        effects = await self._tools.measure_workspace_effects()
+        if not isinstance(effects, Mapping):
+            raise RunnerProtocolError(
+                "native workspace effects are malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return effects
+
+    async def _native_tool_call(
+        self, turn: int, ordinal: int, call_id: str, name: str, arguments: str,
+    ) -> None:
+        await self._emit(ToolCallEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, ordinal, call_id, name, arguments,
+        ))
+
+    async def _native_tool_observation(
+        self, turn: int, ordinal: int, call_id: str, name: str,
+        observation: Mapping[str, Any],
+    ) -> None:
+        await self._emit(ToolObservationEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, ordinal, call_id, name, observation, False,
+        ))
+
+    @staticmethod
+    def _native_stop_termination(
+        reason: str | None, incomplete_reasons: frozenset[str],
+        limit_reasons: frozenset[str] = frozenset(),
+    ) -> RunnerTermination:
+        if reason in limit_reasons:
+            return RunnerTermination.MAX_TURNS
+        if reason in incomplete_reasons:
+            return RunnerTermination.POLICY_INCOMPLETE
+        return RunnerTermination.ASSISTANT_COMPLETE
+
+    async def _loop_native_stream(
+        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
+    ) -> RunnerResult:
+        self._native_stream_close_callback = None
+        self._native_stream_close_started = False
+        primary: BaseException | None = None
+        try:
+            return await self._loop_native_stream_body(request, profile)
+        except BaseException as exc:
+            primary = exc
+            raise
+        finally:
+            callback = self._native_stream_close_callback
+            try:
+                if callback is not None and not self._native_stream_close_started:
+                    try:
+                        await callback()
+                    except BaseException as cleanup:
+                        if primary is None:
+                            raise
+                        if not isinstance(cleanup, asyncio.CancelledError):
+                            self._record_native_cleanup_failure(primary, cleanup)
+            finally:
+                self._native_stream_close_callback = None
+                self._native_stream_close_started = False
+
+    async def _loop_native_stream_body(
+        self, request: ConductorRunRequest, profile: native_stream_profiles.NativeStreamProfile,
+    ) -> RunnerResult:
+        """Drive one native loop using the profile's typed phase-step mode."""
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        consumer_id = self._projection.source_consumer_id
+        tools = self._tools
+        source_profile = self._projection.source_profile
+        advertisement = (
+            source_profile.get("advertisement") if isinstance(source_profile, Mapping) else None
+        )
+        if (
+            not isinstance(tools, NativeSourceSessionPort)
+            or not isinstance(tools, NativeWorkspaceEffectsPort)
+            or self._binding.source_model_config is None
+            or limits.max_turns != profile.max_turns
+            or limits.action_timeout_ms != profile.action_timeout_ms
+            or len(self._projection.models) != 1
+            or len(self._projection.modes) != 1
+            or self._projection.models[0].params
+            or tuple(self._projection.modes[0].tool_ids) != profile.tool_order
+            or consumer_id != profile.consumer_id
+            or profile.phase_mode not in {"streaming", "checkpointed"}
+            or not isinstance(source_profile, Mapping)
+            or any(not isinstance(source_profile.get(name), Mapping)
+                   for name in profile.sealed_initialize_fields)
+            or profile.phase_mode == "streaming" and (
+                profile.state_factory is None
+                or not isinstance(tools, NativeRuntimeInputPort)
+                or not isinstance(advertisement, Mapping)
+                or profile.finalize_result_phase is not None
+                and not isinstance(tools, NativeFinalizationPhasePort)
+            )
+        ):
+            raise _plan_error(self._open_request, "native source runtime controls differ", "compiled_ir_mismatch")
+        task = request.task_input.get("prompt")
+        if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
+            raise RunnerRequestError(
+                "native source requires the owned headless prompt without caller context",
+                code="request_authority_invalid",
+            )
+        await tools.begin_native_workspace_effects()
+        model = self._projection.models[0]
+        if profile.phase_mode == "streaming":
+            steps = await self._streaming_native_steps(
+                profile, tools, limits, model, task, consumer_id, advertisement,
+            )
+        else:
+            steps = await self._checkpointed_native_steps(
+                profile, tools, limits, model, task,
+            )
+        termination = RunnerTermination.MAX_TURNS
+        for turn in range(1, steps.max_steps + 1):
+            await self._checkpoint("before_policy", turn=turn)
+            outcome = await steps.step(turn)
+            if outcome is not None:
+                termination = outcome
+                break
+        if steps.before_close is not None:
+            await steps.before_close()
+        if profile.phase_mode == "streaming":
+            await self._checkpoint("after_loop", turn=len(self._turns))
+        callback = self._native_stream_close_callback
+        if callback is None:
+            raise RunnerProtocolError(
+                "native runtime close was not registered",
+                code="native_response_invalid", **self._context(),
+            )
+        close_error: Exception | None = None
+        if steps.after_close is None:
+            closed = await callback()
+        else:
+            try:
+                closed = await callback()
+            except Exception as exc:
+                closed, close_error = {}, exc
+        effects = await self._native_effects()
+        if steps.after_close is not None:
+            await steps.after_close(closed, close_error, effects)
+        if profile.phase_mode == "checkpointed":
+            await self._checkpoint("after_loop", turn=len(self._turns))
+        await self._checkpoint("before_commit", turn=len(self._turns))
+        await self._commit_termination(termination)
+        return RunnerResult(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            original_request={"task_input": request.task_input, "context": request.context},
+            response=steps.build_response(effects, closed),
+            termination=termination, turn_count=len(self._turns),
+            turns=tuple(self._turns), events=tuple(self._events),
+        )
+
+    async def _streaming_native_steps(
+        self, profile: native_stream_profiles.NativeStreamProfile,
+        tools: NativeSourceSessionPort, limits: Any, model: _ModelProjection,
+        task: str, consumer_id: str, advertisement: Mapping[str, Any],
+    ) -> _NativePhaseSteps:
+        async def phase(operation: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+            raw = await tools.invoke_native_phase(
+                operation,
+                payload,
+                timeout_ms=limits.action_timeout_ms,
+                package_subpath=(
+                    profile.package_subpath if operation == "initialize" else None
+                ),
+            )
+            frozen, _ = freeze_json_object_with_size(
+                raw, field_name="native stream phase",
+                max_encoded_bytes=16 * 1024 * 1024,
+                max_nodes=16 * 1024 * 1024 + 1,
+            )
+            if frozen.get("schema_version") != profile.phase_schema_version:
+                raise RunnerProtocolError(
+                    "native stream phase revision is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            return thaw_json(frozen)
+
+        close_task: asyncio.Task[dict[str, Any]] | None = None
+
+        async def close_once() -> dict[str, Any]:
+            nonlocal close_task
+            self._native_stream_close_started = True
+            if close_task is None:
+                async def close_phase() -> dict[str, Any]:
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=None, error_code=None,
+                    )
+                    try:
+                        async with asyncio.timeout(limits.action_timeout_ms / 1000):
+                            closed = await phase("close", {})
+                        # The worker only knows its own process groups. Retire the
+                        # native runtime through the lease authority, as OpenHands
+                        # does, before any effect measurement.
+                        retired = await tools.close_native_runtime()
+                    except RunnerError as exc:
+                        self._record_native_cleanup_failure(None, exc)
+                        raise
+                    except asyncio.CancelledError as exc:
+                        self._record_native_cleanup_failure(None, exc)
+                        raise
+                    except BaseException as exc:
+                        error = RunnerDependencyError(
+                            "native stream close failed",
+                            code="native_close_failed",
+                            **self._context(),
+                        )
+                        error.__cause__ = exc
+                        self._record_native_cleanup_failure(None, error)
+                        raise error
+                    cleanup = closed.get("cleanup")
+                    retired_cleanup = (
+                        retired.get("cleanup") if isinstance(retired, Mapping) else None
+                    )
+                    if (
+                        closed.get("kind") != "closed"
+                        or type(cleanup) is not dict
+                        or cleanup.get("all_dead") is not True
+                        or not isinstance(retired, Mapping)
+                        or retired.get("kind") != "closed"
+                        or not isinstance(retired_cleanup, Mapping)
+                        or retired_cleanup.get("all_dead") is not True
+                    ):
+                        error = RunnerProtocolError(
+                            "native worker cleanup is not verified",
+                            code="native_response_invalid", **self._context(),
+                        )
+                        self._record_native_cleanup_failure(None, error)
+                        raise error
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=True, error_code=None,
+                    )
+                    return closed
+                close_task = asyncio.create_task(close_phase())
+            try:
+                return await asyncio.shield(close_task)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await close_task
+                except BaseException as close_error:
+                    if not isinstance(close_error, asyncio.CancelledError):
+                        self._record_native_cleanup_failure(None, close_error)
+                raise cancellation
+
+
+        declared_runtime_inputs = tools.native_runtime_inputs(
+            input_names=profile.runtime_input_names,
+            package_subpath=profile.package_subpath,
+        )
+        if (
+            type(declared_runtime_inputs) is not dict
+            or set(declared_runtime_inputs) != set(profile.runtime_input_names)
+            or any(
+                type(declared_runtime_inputs[name]) is not str
+                or not declared_runtime_inputs[name]
+                for name in profile.runtime_input_names
+            )
+        ):
+            raise RunnerProtocolError(
+                "native stream runtime inputs are malformed",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        runtime_inputs = {
+            name: declared_runtime_inputs[name] for name in profile.runtime_input_names
+        }
+        initialized = await phase("initialize", {
+            **{
+                name: thaw_json(self._projection.source_profile[name])
+                for name in profile.sealed_initialize_fields
+            },
+            "task": task,
+            "model_config": thaw_json(self._binding.source_model_config),
+            "advertisement": thaw_json(advertisement),
+            "runtime_inputs": runtime_inputs,
+        })
+        self._native_stream_close_callback = close_once
+        bootstrap = initialized.get("bootstrap")
+        system_prompt = initialized.get("system_prompt")
+        tool_schemas = initialized.get("tool_schemas")
+        if (
+            initialized.get("kind") != "initialized"
+            or type(system_prompt) is not str
+            or type(tool_schemas) is not list
+            or type(bootstrap) is not dict
+        ):
+            raise RunnerProtocolError(
+                "native stream bootstrap is malformed",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        if runtime_inputs and any(
+            bootstrap.get(name) != value for name, value in runtime_inputs.items()
+        ):
+            raise RunnerProtocolError(
+                "native stream bootstrap runtime inputs differ from declared inputs",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        self._binding.bind_native_stream(
+            system_prompt, tuple(tool_schemas),
+            accept_truncated_stream=profile.accepts_truncated_stream,
+        )
+        state = profile.state_factory(task, system_prompt, bootstrap)
+        trace_requests: list[dict[str, Any]] = []
+
+        async def commit(
+            start: int, phase_name: str, turn: int | None,
+            events: list[Mapping[str, Any]] | None = None,
+        ) -> None:
+            if _encoded_json_size(state.messages) > limits.transcript_bytes:
+                raise RunnerProtocolError(
+                    "source transcript limit exceeded",
+                    code="transcript_limit_exceeded", **self._context(),
+                )
+            await self._native_commit_source(
+                turn, consumer_id, phase_name,
+                tuple(state.messages[start:] if events is None else events),
+                canonical_sha256(state.messages), {
+                    "request_count": state.request_count,
+                    "stream_fn_issued": state.stream_fn_issued,
+                    "native_stop_reason": state.native_stop_reason,
+                    "public_stop": state.exit_status,
+                },
+            )
+
+        await commit(0, "initial", None)
+        async def step(turn: int) -> RunnerTermination | None:
+            before = len(state.messages)
+            if state.begin_query() is not None:
+                # Pi's streamFn seam refuses the ninth query before any HTTP.
+                await commit(before, "exit", len(self._turns) or None)
+                return RunnerTermination.LIMITS_EXCEEDED
+            projected = await phase("project_request", {"messages": state.messages})
+            if projected.get("kind") != "request":
+                raise RunnerProtocolError(
+                    "native request projection failed",
+                    code="policy_request_invalid", **self._context(),
+                )
+            frozen_request = freeze_json_object({
+                "model": model.model_id,
+                "messages": projected.get("messages"),
+                "tools": projected.get("tools"),
+            }, field_name="native policy request")
+            failure: NativeProviderRequestFailure | None = None
+            try:
+                response, request_body = await self._native_policy_exchange(
+                    frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                )
+            except RunnerDependencyError as exc:
+                failure = (
+                    _find_native_provider_failure(exc)
+                    if profile.provider_failure_terminates else None
+                )
+                if failure is None:
+                    raise
+                request_body = thaw_json(failure.request_body)
+            expected_members = projected.get("request_members")
+            if expected_members is not None and (
+                not isinstance(expected_members, (list, tuple))
+                or any(type(member) is not str for member in expected_members)
+                or len(set(expected_members)) != len(expected_members)
+                or set(expected_members) != set(request_body)
+            ):
+                # The native worker reports the member set its pinned source
+                # request builder produces; the sent body must carry exactly it.
+                raise RunnerProtocolError(
+                    "native provider request members differ from the pinned source request",
+                    code="native_request_members_mismatch", **self._context(),
+                )
+            if "request_body" in projected and projected["request_body"] != request_body:
+                # The worker computes the exact body with its pinned request
+                # builder; any caller profile/capability drift is typed.
+                raise RunnerProtocolError(
+                    "native provider request body differs from the pinned source request",
+                    code="native_request_body_mismatch", **self._context(),
+                )
+            trace_requests.append(dict(request_body))
+            if failure is not None:
+                before = len(state.messages)
+                if profile.provider_failure_phase is None:
+                    state.commit_provider_failure(str(failure))
+                else:
+                    state.commit_provider_failure(
+                        await self._project_native_provider_failure(
+                            phase, profile.provider_failure_phase, failure, state.messages,
+                        )
+                    )
+                await commit(before, "exit", turn)
+                self._turns.append(RunnerTurn(turn, (), ()))
+                return RunnerTermination.POLICY_INCOMPLETE
+            native = native_stream_consumers.native_response_from_dict(
+                thaw_json(response["native_response"])
+            )
+            before = len(state.messages)
+            if profile.parse_arguments_phase is None:
+                parsed = state.prepare_response(native)
+            else:
+                parsed = state.prepare_response(native, await self._parse_native_arguments(
+                    phase, profile.parse_arguments_phase, native,
+                ))
+            if inspect.isawaitable(parsed):
+                # Profiles whose response preparation runs a pinned worker
+                # are awaited so the episode deadline can cancel them.
+                parsed = await parsed
+            await commit(before, "assistant", turn)
+            observations: list[FrozenJsonObject] = []
+            dispatch_calls = getattr(parsed, "dispatch_calls", None)
+            if dispatch_calls is None:
+                dispatch_calls = parsed.calls
+            if parsed.calls:
+                # parsed.calls is the ordered 1:1 projection of native.tool_calls;
+                # join by ordinal so duplicate provider IDs keep their own arguments.
+                raw_calls = native.tool_calls
+                if [raw.id for raw in raw_calls] != [call.id for call in parsed.calls]:
+                    raise RunnerProtocolError(
+                        "native tool-call projection changed call identity",
+                        code="native_response_invalid", **self._context(),
+                    )
+                for ordinal, (call, raw) in enumerate(zip(parsed.calls, raw_calls, strict=True)):
+                    await self._checkpoint("before_action", turn=turn, call_id=call.id)
+                    await self._native_tool_call(
+                        turn, ordinal, call.id, call.name, raw.arguments,
+                    )
+                dispatch_positions: list[int] = []
+                for dispatch_call in dispatch_calls:
+                    position = next(
+                        (
+                            index
+                            for index, parsed_call in enumerate(parsed.calls)
+                            if index not in dispatch_positions and parsed_call == dispatch_call
+                        ),
+                        None,
+                    )
+                    if position is None:
+                        raise RunnerProtocolError(
+                            "native dispatch decision changed call identity",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    dispatch_positions.append(position)
+                synthetic_results = getattr(parsed, "synthetic_results", ())
+                if (
+                    not isinstance(synthetic_results, tuple)
+                    or any(type(item) is not dict for item in synthetic_results)
+                ):
+                    raise RunnerProtocolError(
+                        "native source dispatch decision lacks synthetic results",
+                        code="native_response_invalid", **self._context(),
+                    )
+                synthetic_by_position: dict[int, dict[str, Any]] = {}
+                for item in synthetic_results:
+                    position = item.get("completion_index")
+                    if (
+                        type(position) is not int
+                        or position < 0
+                        or position >= len(parsed.calls)
+                        or position in synthetic_by_position
+                        or item.get("id") != parsed.calls[position].id
+                    ):
+                        raise RunnerProtocolError(
+                            "native synthetic tool result identity changed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    synthetic_by_position[position] = dict(item)
+                if set(dispatch_positions) | set(synthetic_by_position) != set(range(len(parsed.calls))):
+                    raise RunnerProtocolError(
+                        "native dispatch decision does not cover tool calls",
+                        code="native_response_invalid", **self._context(),
+                    )
+                completed: Mapping[str, Any] = {"kind": "tool_results", "results": []}
+                if dispatch_calls:
+                    prepared = await phase("prepare_tools", {"calls": [
+                        {"id": call.id, "name": call.name, "arguments": call.arguments}
+                        for call in dispatch_calls
+                    ]})
+                    if prepared.get("kind") != "prepared":
+                        raise RunnerProtocolError(
+                            "native batch preparation failed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    history_calls = prepared.get("history_calls")
+                    if history_calls is not None:
+                        if (
+                            type(history_calls) is not list
+                            or any(type(item) is not dict for item in history_calls)
+                            or [(item.get("id"), item.get("name")) for item in history_calls]
+                            != [(call.id, call.name) for call in dispatch_calls]
+                        ):
+                            raise RunnerProtocolError(
+                                "native prepared history identity changed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                        blocks = [block for block in parsed.assistant["content"] if block["type"] == "toolCall"]
+                        for position, prepared_call in zip(dispatch_positions, history_calls, strict=True):
+                            blocks[position]["arguments"] = prepared_call["arguments"]
+                        await commit(len(state.messages), "assistant", turn, events=[
+                            {"kind": "assistant_prepared", "message": parsed.assistant},
+                        ])
+                    await self._checkpoint("before_action", turn=turn)
+                    completed = await phase("execute_batch", {})
+                    worker_results = completed.get("results")
+                    if (
+                        completed.get("kind") != "tool_results"
+                        or type(worker_results) is not list
+                        or len(worker_results) != len(dispatch_calls)
+                        or any(type(item) is not dict for item in worker_results)
+                        or [item.get("id") for item in worker_results]
+                        != [call.id for call in dispatch_calls]
+                    ):
+                        raise RunnerProtocolError(
+                            "native tool batch result is malformed",
+                            code="native_response_invalid", **self._context(),
+                        )
+                    if synthetic_by_position:
+                        raw_results = []
+                        worker_index = 0
+                        for position in range(len(parsed.calls)):
+                            if position in synthetic_by_position:
+                                raw_results.append(synthetic_by_position[position])
+                            else:
+                                item = dict(worker_results[worker_index])
+                                item["completion_index"] = position
+                                raw_results.append(item)
+                                worker_index += 1
+                        if worker_index != len(worker_results):
+                            raise RunnerProtocolError(
+                                "native tool batch result is malformed",
+                                code="native_response_invalid", **self._context(),
+                            )
+                    else:
+                        raw_results = worker_results
+                else:
+                    raw_results = [dict(item) for item in synthetic_results]
+                if (
+                    type(raw_results) is not list
+                    or len(raw_results) != len(parsed.calls)
+                    or any(type(item) is not dict for item in raw_results)
+                    or [item.get("id") for item in raw_results] != [call.id for call in parsed.calls]
+                    or sorted(
+                        item.get("completion_index")
+                        if type(item.get("completion_index")) is int else -1
+                        for item in raw_results
+                    ) != list(range(len(raw_results)))
+                ):
+                    raise RunnerProtocolError(
+                        "native tool batch result is malformed",
+                        code="native_response_invalid", **self._context(),
+                    )
+                # Results arrive in source order; observations follow the
+                # worker's measured completion order.
+                for ordinal in sorted(
+                    range(len(raw_results)), key=lambda index: raw_results[index]["completion_index"],
+                ):
+                    call, raw = parsed.calls[ordinal], raw_results[ordinal]
+                    observation, _ = freeze_json_object_with_size(
+                        raw, field_name="native tool observation",
+                        max_encoded_bytes=limits.observation_bytes,
+                        max_nodes=limits.observation_bytes + 1,
+                    )
+                    observations.append(observation)
+                    await self._native_tool_observation(
+                        turn, ordinal, call.id, call.name, observation,
+                    )
+                    await self._checkpoint("after_action", turn=turn, call_id=call.id)
+                before = len(state.messages)
+                state.commit_tool_results(parsed.calls, raw_results)
+                await commit(before, "observation_batch", turn)
+                if profile.ack_policy == "after_history_commit":
+                    history_digest = canonical_sha256(state.messages)
+                    for raw in raw_results:
+                        if "delivery_id" not in raw:
+                            continue
+                        acked = await phase("ack", {
+                            "delivery_id": raw["delivery_id"], "history_digest": history_digest,
+                        })
+                        if acked.get("kind") != "acked" or acked.get("delivery_id") != raw["delivery_id"]:
+                            raise RunnerProtocolError(
+                                "native delivery acknowledgement failed",
+                                code="native_response_invalid", **self._context(),
+                            )
+            self._turns.append(RunnerTurn(turn, (), tuple(observations)))
+            if state.is_exited:
+                if native.stream_termination is not None:
+                    return RunnerTermination.POLICY_INCOMPLETE
+                return self._native_stop_termination(
+                    state.native_stop_reason, profile.incomplete_stop_reasons,
+                )
+            return None
+
+        result: dict[str, Any] = {}
+        # Mirrors the loop's termination: MAX_TURNS unless a step returned one.
+        final_termination = [RunnerTermination.MAX_TURNS]
+
+        async def recorded_step(turn: int) -> RunnerTermination | None:
+            outcome = await step(turn)
+            if outcome is not None:
+                final_termination[0] = outcome
+            return outcome
+
+        async def classify() -> None:
+            payload = state.to_classification_payload(
+                termination=final_termination[0],
+                model_config=thaw_json(self._binding.source_model_config),
+                session_id=self._open_request.episode_id,
+            )
+            raw_classified = await phase(profile.classify_result_phase, payload)
+            if (
+                raw_classified.get("kind") != "classified_result"
+                or not isinstance(raw_classified.get("envelope"), Mapping)
+            ):
+                raise RunnerProtocolError(
+                    "native stream classification is malformed",
+                    code="native_response_invalid", **self._context(),
+                )
+            result["classification"] = raw_classified
+
+        async def finalize(
+            closed: Mapping[str, Any], close_error: Exception | None,
+            effects: Mapping[str, Mapping[str, Any]],
+        ) -> None:
+            del effects
+            cleanup = closed.get("cleanup")
+            cleanup_ok = (
+                close_error is None
+                and isinstance(cleanup, Mapping)
+                and cleanup.get("all_dead") is True
+                and self._native_cleanup_outcome.all_dead is True
+                and self._native_cleanup_outcome.error_code is None
+            )
+            cleanup_msg = (
+                None if cleanup_ok else (
+                    str(close_error)
+                    if close_error is not None
+                    else "native process scope did not reach independently observed death"
+                )
+            )
+            try:
+                raw_finalized = await tools.invoke_native_finalization_phase(
+                    profile.finalize_result_phase,
+                    {
+                        "envelope": result["classification"]["envelope"],
+                        "sessionId": self._open_request.episode_id,
+                        "toolCalls": state.tool_admissions,
+                        "cleanup_error_message": cleanup_msg,
+                    },
+                    timeout_ms=limits.action_timeout_ms,
+                )
+            except Exception as exc:
+                raise RunnerDependencyError(
+                    "native command finalization failed",
+                    code="native_finalization_failed",
+                    **self._context(),
+                ) from exc
+            if (
+                not isinstance(raw_finalized, Mapping)
+                or raw_finalized.get("schema_version") != profile.phase_schema_version
+                or raw_finalized.get("kind") != "finalized_command_result"
+                or not isinstance(raw_finalized.get("command_result"), Mapping)
+                or not isinstance(raw_finalized["command_result"].get("envelope"), Mapping)
+                or type(raw_finalized["command_result"].get("exitCode")) is not int
+                or type(raw_finalized["command_result"].get("toolCalls")) is not int
+                or raw_finalized["command_result"]["toolCalls"] != state.tool_admissions
+                or "runtime_error" not in raw_finalized
+                or raw_finalized.get("runtime_error") is not None
+                and type(raw_finalized.get("runtime_error")) is not str
+            ):
+                raise RunnerProtocolError(
+                    "native command finalization is malformed",
+                    code="native_response_invalid", **self._context(),
+                )
+            command_result = thaw_json(raw_finalized["command_result"])
+            result["final_envelope"] = command_result["envelope"]
+            result["command_result"] = command_result
+            result["runtime_error"] = raw_finalized.get("runtime_error")
+
+        def build_response(effects: Mapping[str, Mapping[str, Any]], closed: Mapping[str, Any]) -> Mapping[str, Any]:
+            replay_trace = state.to_trace(
+                requests=trace_requests,
+                runtime_inputs=runtime_inputs,
+                effects=effects,
+                **result,
+            )
+            response: dict[str, Any] = {
+                "source_id": consumer_id,
+                "replay_trace": replay_trace,
+                "bootstrap": bootstrap,
+                "cleanup": closed["cleanup"] if closed else None,
+            }
+            if "classification" in result:
+                response["classification"] = result["classification"]
+            if "final_envelope" in result:
+                response["final_envelope"] = result["final_envelope"]
+                response["envelope"] = result["final_envelope"]
+                response["command_result"] = result["command_result"]
+            if result.get("runtime_error") is not None:
+                response["runtime_error"] = result["runtime_error"]
+            return response
+
+        finalizes = (
+            profile.classify_result_phase is not None
+            and profile.finalize_result_phase is not None
+        )
+        return _NativePhaseSteps(
+            recorded_step,
+            classify if profile.classify_result_phase is not None else None,
+            build_response,
+            profile.max_turns + 1,
+            finalize if finalizes else None,
+        )
+    async def _checkpointed_native_steps(
+        self, profile: native_stream_profiles.NativeStreamProfile,
+        tools: NativeSourceSessionPort, limits: Any, model: _ModelProjection,
+        task: str,
+    ) -> _NativePhaseSteps:
+        model_config = self._binding.source_model_config
+        tool_order = profile.tool_order
+        deadline = time.monotonic() + profile.episode_timeout_seconds
+        history: list[FrozenJsonObject] = []
+        history_digest = canonical_sha256(history)
+        state: FrozenJsonObject = freeze_json_object({}, field_name="native source state")
+        trace_requests: list[dict[str, Any]] = []
+        trace_tool_calls: list[dict[str, Any]] = []
+
+        def parse_json_or_text(value: Any) -> Any:
+            if not isinstance(value, str):
+                return value
+            try:
+                return json.loads(value)
+            except json.JSONDecodeError:
+                return value
+
+        def project_message(message: Any) -> Any:
+            if not isinstance(message, Mapping):
+                return message
+            return {
+                str(key): value for key, value in message.items()
+                if key != "timestamp"
+            }
+
+        def project_request_body(body: Mapping[str, Any]) -> dict[str, Any]:
+            # body_b64 comes from the source SDK's HTTP request.read(); retain
+            # precisely its decoded JSON fields, including absent keys.
+            return dict(body)
+
+        def project_response(response: Mapping[str, Any]) -> dict[str, Any]:
+            choices = response.get("choices", [])
+            return {
+                "choices": [
+                    {
+                        "index": choice.get("index"),
+                        "finish_reason": choice.get("finish_reason"),
+                        "message": project_message(choice.get("message")),
+                    }
+                    for choice in choices
+                    if isinstance(choice, Mapping)
+                ],
+            }
+
+        def history_tool_results(history_rows: tuple[FrozenJsonObject, ...]) -> list[dict[str, Any]]:
+            results: list[dict[str, Any]] = []
+            for item in history_rows:
+                if item.get("role") != "tool":
+                    continue
+                name = item.get("name") or item.get("tool_name")
+                content = item.get("content")
+                parsed = parse_json_or_text(content)
+                is_error = name == "NOT_A_TOOL" or (
+                    isinstance(content, str)
+                    and content.startswith("Tool '")
+                    and " does not exist." in content
+                )
+                results.append({
+                    "tool_name": name,
+                    "call_id": item.get("tool_call_id"),
+                    "is_error": is_error,
+                    "result": parsed,
+                })
+            return results
+
+        def visible_corrections(history_rows: tuple[FrozenJsonObject, ...]) -> list[Any]:
+            seen_initial_user = False
+            corrections: list[Any] = []
+            for item in history_rows:
+                if item.get("role") != "user":
+                    continue
+                if not seen_initial_user:
+                    seen_initial_user = True
+                    continue
+                corrections.append(parse_json_or_text(item.get("content")))
+            return corrections
+
+        def decode_json_body(body_b64: Any) -> Any:
+            if type(body_b64) is not str:
+                return None
+            try:
+                return json.loads(base64.b64decode(body_b64, validate=True).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                return None
+
+        def raw_tool_calls(sample: Any) -> list[Mapping[str, Any]]:
+            if not isinstance(sample, Mapping):
+                return []
+            choices = sample.get("choices")
+            if not isinstance(choices, list) or not choices:
+                return []
+            message = choices[0].get("message") if isinstance(choices[0], Mapping) else None
+            calls = message.get("tool_calls") if isinstance(message, Mapping) else None
+            return [call for call in calls if isinstance(call, Mapping)] if isinstance(calls, list) else []
+
+        def invalid(message: str) -> RunnerProtocolError:
+            return RunnerProtocolError(message, code="native_response_invalid", **self._context())
+        declared_workspace = tools.declared_workspace
+        if (
+            type(declared_workspace) is not str
+            or not declared_workspace
+            or not declared_workspace.startswith("/")
+        ):
+            raise invalid("native declared workspace is invalid")
+
+        def remaining() -> float:
+            seconds = deadline - time.monotonic()
+            if seconds <= 0:
+                raise TimeoutError("native episode deadline elapsed")
+            return seconds
+
+        async def commit_history(
+            value: FrozenJsonObject, phase_name: str, turn: int | None,
+            *, checkpoint_call_id: str | None = None,
+        ) -> None:
+            nonlocal history, history_digest, state
+            delta = value.get("event_delta")
+            if not isinstance(delta, tuple):
+                raise invalid("native history delta is not an array")
+            candidate_history, candidate_digest = history, history_digest
+            for revision in delta:
+                if (
+                    not isinstance(revision, Mapping)
+                    or set(revision) != {
+                        "kind", "start", "delete_count", "insert",
+                        "before_digest", "after_digest",
+                    }
+                    or revision.get("kind") != "history_revision"
+                    or type(revision.get("start")) is not int
+                    or not 0 <= revision["start"] <= len(candidate_history)
+                    or type(revision.get("delete_count")) is not int
+                    or revision["delete_count"] != len(candidate_history) - revision["start"]
+                    or not isinstance(revision.get("insert"), tuple)
+                    or any(not isinstance(row, Mapping) for row in revision["insert"])
+                    or revision.get("before_digest") != candidate_digest
+                ):
+                    raise invalid("native history revision does not match its committed prefix")
+                candidate_history = [
+                    *candidate_history[:revision["start"]], *revision["insert"],
+                ]
+                encoded_history = canonical_json_bytes(candidate_history)
+                if len(encoded_history) > limits.transcript_bytes:
+                    raise RunnerProtocolError(
+                        "native source history exceeds the transcript limit",
+                        code="transcript_limit_exceeded", **self._context(),
+                    )
+                candidate_digest = bytes_sha256(encoded_history)
+                if candidate_digest != revision["after_digest"]:
+                    raise invalid("native history revision digest differs")
+            if checkpoint_call_id is not None and (
+                len(candidate_history) <= len(history)
+                or candidate_history[-1].get("role") != "tool"
+                or candidate_history[-1].get("tool_call_id") != checkpoint_call_id
+            ):
+                raise invalid("native checkpoint did not append the next source result")
+            status, iteration = value.get("status"), value.get("iteration")
+            if (
+                status not in {"RUNNING", "FINISHED", "ERROR", "STOPPED"}
+                or type(iteration) is not int
+                or not 0 <= iteration <= profile.max_turns
+                or value.get("history_digest") != candidate_digest
+            ):
+                raise invalid("native source state or history digest is invalid")
+            candidate_state = freeze_json_object({
+                "status": status, "iteration": iteration, "source_kind": value["kind"],
+                **{
+                    name: value[name]
+                    for name in profile.checkpoint_state_fields
+                    if name in value
+                },
+            }, field_name="native source state")
+            # Neither the local committed prefix nor the worker's acknowledgement
+            # advances if canonical publication fails.
+            await self._native_commit_source(
+                turn, profile.consumer_id, phase_name, delta,
+                candidate_digest, candidate_state,
+            )
+            history, history_digest, state = candidate_history, candidate_digest, candidate_state
+
+        async def phase(
+            operation: str, payload: Mapping[str, Any], phase_name: str,
+            turn: int | None, *, segment: Mapping[str, Any] | None = None,
+            actions: tuple[FrozenJsonObject, ...] = (),
+        ) -> FrozenJsonObject:
+            command = operation
+            command_payload = {**payload, "remaining_seconds": remaining()}
+            watchdog = time.monotonic() + min(profile.phase_watchdog_seconds, remaining())
+            progress = 0
+            while True:
+                seconds = min(watchdog - time.monotonic(), remaining())
+                if seconds <= 0:
+                    raise TimeoutError("native action watchdog elapsed")
+                raw = await tools.invoke_native_phase(
+                    command, command_payload, timeout_ms=max(1, int(seconds * 1000)),
+                )
+                value, _ = freeze_json_object_with_size(
+                    raw, field_name="native phase result",
+                    max_encoded_bytes=16 * 1024 * 1024,
+                    max_nodes=16 * 1024 * 1024 + 1,
+                )
+                if (
+                    value.get("schema_version") != profile.phase_schema_version
+                    or type(value.get("kind")) is not str
+                ):
+                    raise invalid("native phase result revision is invalid")
+                checkpoint_call_id = None
+                if value["kind"] == "history_checkpoint":
+                    if segment is not None:
+                        indices = segment["action_indices"]
+                        if (
+                            progress >= len(indices)
+                            or type(value.get("segment_index")) is not int
+                            or value["segment_index"] != segment["index"]
+                            or type(value.get("action_index")) is not int
+                            or value["action_index"] != indices[progress]
+                        ):
+                            raise invalid("native checkpoint result order differs")
+                        checkpoint_call_id = actions[indices[progress]]["call_id"]
+                    elif "segment_index" in value or "action_index" in value:
+                        raise invalid("native non-execution checkpoint carries action authority")
+                elif (
+                    segment is not None and value.get("status") == "RUNNING"
+                    and progress != len(segment["action_indices"])
+                ):
+                    raise invalid("native segment omitted a canonical result checkpoint")
+                await commit_history(
+                    value, phase_name, turn, checkpoint_call_id=checkpoint_call_id,
+                )
+                if value["kind"] != "history_checkpoint":
+                    return value
+                command = "history_ack"
+                command_payload = {
+                    "history_digest": history_digest,
+                    "remaining_seconds": remaining(),
+                }
+                if segment is not None:
+                    progress += 1
+                    if segment["kind"] == "sequential":
+                        watchdog = time.monotonic() + min(profile.phase_watchdog_seconds, remaining())
+
+        close_task: asyncio.Task[Mapping[str, Any]] | None = None
+
+        async def close_once() -> Mapping[str, Any]:
+            nonlocal close_task
+            self._native_stream_close_started = True
+            if close_task is None:
+                async def close_phase() -> Mapping[str, Any]:
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=None, error_code=None,
+                    )
+                    try:
+                        retired = await tools.close_native_runtime()
+                        if (
+                            not isinstance(retired, Mapping)
+                            or retired.get("kind") != "closed"
+                            or not isinstance(retired.get("cleanup"), Mapping)
+                            or retired["cleanup"].get("all_dead") is not True
+                        ):
+                            raise invalid("native runtime cleanup is not verified")
+                    except BaseException as exc:
+                        self._record_native_cleanup_failure(None, exc)
+                        raise
+                    self._set_native_cleanup_outcome(
+                        attempted=True, all_dead=True, error_code=None,
+                    )
+                    return retired
+
+                close_task = asyncio.create_task(close_phase())
+            try:
+                return await asyncio.shield(close_task)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await close_task
+                except BaseException as close_error:
+                    if not isinstance(close_error, asyncio.CancelledError):
+                        self._record_native_cleanup_failure(None, close_error)
+                raise cancellation
+
+        self._native_stream_close_callback = close_once
+        initialized = await phase(
+            "initialize", {
+                "task": task, "model_config": model_config,
+                **{
+                    name: self._projection.source_profile[name]
+                    for name in profile.sealed_initialize_fields
+                },
+            }, "initial", None,
+        )
+        source_runtime = initialized.get("source_runtime")
+        worker_workspace = (
+            source_runtime.get("workspace")
+            if isinstance(source_runtime, Mapping)
+            else None
+        )
+        if worker_workspace != declared_workspace:
+            raise RunnerProtocolError(
+                "native worker workspace differs from declared workspace",
+                code="workspace_authority_mismatch",
+                **self._context(),
+            )
+        if (
+            initialized.get("kind") != "initialized"
+            or state["status"] != "RUNNING" or state["iteration"] != 0
+            or not isinstance(initialized.get("tool_schemas"), tuple)
+        ):
+            raise invalid("native worker did not initialize its complete tool surface")
+        self._binding.bind_native_tools(initialized["tool_schemas"])
+        async def step(turn: int) -> RunnerTermination | None:
+            sampled = await phase("sample", {}, "before_policy", turn)
+            if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
+                if state["status"] == "ERROR":
+                    await self._raise_error(RunnerDependencyError(
+                        "native source phase failed before a provider request",
+                        code="native_source_failed", **self._context(),
+                    ), turn=turn)
+                return self._native_stop_termination(
+                    state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
+                    else "stopped" if state["status"] == "STOPPED" else None,
+                    profile.incomplete_stop_reasons | {"stopped"},
+                    profile.limit_stop_reasons,
+                )
+            if sampled.get("kind") != "provider_request":
+                raise invalid("native sample did not produce its single provider request")
+            http_request = sampled.get("http_request")
+            if not isinstance(http_request, Mapping):
+                raise invalid("native serialized provider request is missing")
+            request_body = decode_json_body(http_request.get("body_b64"))
+            if not isinstance(request_body, Mapping):
+                raise invalid("native provider request body is not JSON")
+            trace_requests.append({
+                "index": len(trace_requests),
+                "body": project_request_body(request_body),
+            })
+            async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
+                receipt = await self._invoke_native_policy(
+                    http_request, model=model, turn=turn,
+                    verify_staged_body=profile.phase_mode == "checkpointed",
+                )
+            public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
+            decoded_response = (
+                decode_json_body(public_response.get("body_b64"))
+                if isinstance(public_response, Mapping) else None
+            )
+            if isinstance(decoded_response, Mapping):
+                trace_requests[-1]["response"] = project_response(decoded_response)
+            sampled = await phase("provider_response", receipt, "before_policy", turn)
+            if sampled.get("kind") != "sample_ready":
+                raise invalid("native sample did not complete its SDK request")
+            raw_sample = decode_json_body(sampled.get("raw_response_b64"))
+            prepared = await phase("prepare", {}, "assistant", turn)
+            if prepared.get("kind") != "prepared":
+                raise invalid("native response preparation failed")
+            actions, segments = prepared.get("actions"), prepared.get("segments")
+            if not isinstance(actions, tuple) or not isinstance(segments, tuple):
+                raise invalid("native prepared actions or segments are invalid")
+            raw_calls = raw_tool_calls(raw_sample)
+            for index, action in enumerate(actions):
+                if (
+                    not isinstance(action, Mapping)
+                    or type(action.get("index")) is not int or action["index"] != index
+                    or action.get("tool_id") not in tool_order
+                    or type(action.get("call_id")) is not str or not action["call_id"]
+                    or type(action.get("arguments_json")) is not str
+                ):
+                    raise invalid("native prepared action identity is invalid")
+            for raw_call in raw_calls:
+                raw_function = raw_call.get("function")
+                if not isinstance(raw_function, Mapping):
+                    raw_function = {}
+                raw_name = raw_function.get("name")
+                raw_arguments = raw_function.get("arguments")
+                arguments = parse_json_or_text(raw_arguments)
+                raw_id = raw_call.get("id")
+                matching = next((
+                    action for action in actions
+                    if parse_json_or_text(action["arguments_json"]) == arguments
+                    and (action["call_id"] == raw_id or action["tool_id"] == raw_name)
+                ), None)
+                tool_name = matching["tool_id"] if matching is not None else raw_name
+                trace_tool_calls.append({
+                    "raw_sample": {
+                        "name": raw_name,
+                        "arguments": raw_arguments,
+                        "id": raw_id,
+                    },
+                    "raw_tool_name": raw_name,
+                    "repaired_name": tool_name,
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "raw_arguments": raw_arguments,
+                    "call_id": raw_id,
+                })
+            scheduled: list[int] = []
+            for index, segment in enumerate(segments):
+                if (
+                    not isinstance(segment, Mapping)
+                    or type(segment.get("index")) is not int or segment["index"] != index
+                    or segment.get("kind") not in {"parallel", "sequential"}
+                    or not isinstance(segment.get("action_indices"), tuple)
+                    or not segment["action_indices"]
+                    or any(type(item) is not int for item in segment["action_indices"])
+                ):
+                    raise invalid("native source segment plan is invalid")
+                scheduled.extend(segment["action_indices"])
+            if scheduled != list(range(len(actions))):
+                raise invalid("native source plan does not cover each surviving action once")
+            observations: list[FrozenJsonObject] = []
+            if state["status"] == "RUNNING":
+                for segment in segments:
+                    indices = segment["action_indices"]
+                    for index in indices:
+                        action = actions[index]
+                        await self._checkpoint("before_action", turn=turn, call_id=action["call_id"])
+                        await self._native_tool_call(
+                            turn, index, action["call_id"], action["tool_id"],
+                            action["arguments_json"],
+                        )
+                    executed = await phase(
+                        "execute_segment", {"index": segment["index"]}, "observation", turn,
+                        segment=segment, actions=actions,
+                    )
+                    observed = executed.get("observations")
+                    if (
+                        executed.get("kind") != "segment_executed"
+                        or type(executed.get("index")) is not int
+                        or executed["index"] != segment["index"]
+                        or not isinstance(observed, tuple) or len(observed) > len(indices)
+                        or state["status"] == "RUNNING" and len(observed) != len(indices)
+                    ):
+                        raise invalid("native source segment result is invalid")
+                    for position, observation in enumerate(observed):
+                        index = indices[position]
+                        action = actions[index]
+                        if (
+                            not isinstance(observation, Mapping)
+                            or type(observation.get("action_index")) is not int
+                            or observation["action_index"] != index
+                            or observation.get("tool_id") != action["tool_id"]
+                            or observation.get("call_id") != action["call_id"]
+                        ):
+                            raise invalid("native observation is not in source order")
+                        observations.append(observation)
+                        await self._native_tool_observation(
+                            turn, index, action["call_id"], action["tool_id"], observation,
+                        )
+                        await self._checkpoint("after_action", turn=turn, call_id=action["call_id"])
+                    if state["status"] != "RUNNING":
+                        break
+            if state["status"] == "RUNNING" and segments:
+                committed = await phase("commit", {}, "observation_batch", turn)
+                if committed.get("kind") != "committed":
+                    raise invalid("native post-tool/recovery commit failed")
+            self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
+            if state["status"] in {"FINISHED", "STOPPED"}:
+                return self._native_stop_termination(
+                    state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
+                    else "stopped" if state["status"] == "STOPPED" else None,
+                    profile.incomplete_stop_reasons | {"stopped"},
+                    profile.limit_stop_reasons,
+                )
+            if state["status"] == "ERROR":
+                await self._raise_error(RunnerDependencyError(
+                    "native source phase failed",
+                    code="native_source_failed", **self._context(),
+                ), turn=turn)
+            return None
+
+        async def before_close() -> None:
+            await self._native_commit_source(
+                len(self._turns), profile.consumer_id, "exit", (),
+                history_digest, state,
+            )
+
+        def build_response(effects: Mapping[str, Mapping[str, Any]], closed: Mapping[str, Any]) -> Mapping[str, Any]:
+            trace_file_effects: dict[str, str | None] = {}
+            for path, value in effects.items():
+                if (
+                    type(path) is not str or not isinstance(value, Mapping)
+                    or type(value.get("exists")) is not bool
+                    or value["exists"] and type(value.get("sha256")) is not str
+                ):
+                    raise invalid("native workspace effect is malformed")
+                trace_file_effects[path] = value["sha256"] if value["exists"] else None
+            system_messages: list[str] = []
+            for request_row in trace_requests:
+                body = request_row["body"]
+                for message in body.get("messages", ()):
+                    if (
+                        isinstance(message, Mapping)
+                        and message.get("role") == "system"
+                        and isinstance(message.get("content"), str)
+                        and message["content"] not in system_messages
+                    ):
+                        system_messages.append(message["content"])
+            last_response = trace_requests[-1].get("response") if trace_requests else None
+            choices = last_response.get("choices", ()) if isinstance(last_response, Mapping) else ()
+            native_stop_reason = (
+                choices[-1].get("finish_reason")
+                if choices and isinstance(choices[-1], Mapping)
+                else state.get("public_stop") or state.get("status")
+            )
+            replay_trace = {
+                "schema_version": profile.trace_schema_version,
+                "case_id": self._open_request.episode_id,
+                "profile": profile.trace_profile_name,
+                "context": {
+                    "system_messages": system_messages,
+                    "agents_md": [
+                        content for content in system_messages if "AGENTS.md" in content
+                    ],
+                },
+                "controls": {
+                    **profile.trace_controls,
+                    "http_attempts": len(trace_requests),
+                    "advertised_tools": list(tool_order),
+                },
+                "requests": trace_requests,
+                "tool_calls": trace_tool_calls,
+                "tool_results": history_tool_results(tuple(history)),
+                "visible_corrections": visible_corrections(tuple(history)),
+                "file_effects": trace_file_effects,
+                "runtime": {"cwd": declared_workspace},
+                "termination": {
+                    "kind": "completed" if state["status"] == "FINISHED" else "stopped",
+                    "native_stop_reason": native_stop_reason,
+                },
+                "request_count": len(trace_requests),
+                "normalizations": [],
+            }
+            return {
+                "source_id": profile.consumer_id,
+                "messages": history,
+                "state": state,
+                "replay_trace": replay_trace,
+            }
+
+        return _NativePhaseSteps(step, before_close, build_response, profile.max_turns)
+    async def _project_native_provider_failure(
+        self, phase: Callable[[str, Mapping[str, Any]], Awaitable[dict[str, Any]]],
+        operation: str, failure: NativeProviderRequestFailure,
+        messages: list[dict[str, Any]],
+    ) -> Mapping[str, Any]:
+        """Have the worker project the source's message for an HTTP status failure."""
+        details = failure.details
+        if (
+            details.get("code") != "provider_http_status"
+            or type(details.get("http_status")) is not int
+        ):
+            # Connection and mid-stream transport failures have no pinned
+            # HTTP projection (divergence non_http_transport_failure).
+            raise RunnerProtocolError(
+                "native provider failure lacks an HTTP status",
+                code="native_non_http_transport_failure", **self._context(),
+            )
+        if type(details.get("response_body_text")) is not str:
+            # The body was omitted (bound or secret scope); the pinned
+            # message depends on it, so the phase cannot run.
+            raise RunnerProtocolError(
+                "native provider failure body was withheld",
+                code="native_provider_failure_body_withheld", **self._context(),
+            )
+        projected = await phase(operation, {
+            "http_status": details["http_status"],
+            "response_body_text": details["response_body_text"],
+            "messages": messages,
+        })
+        message = projected.get("message")
+        if projected.get("kind") != "provider_failure" or type(message) is not dict:
+            raise RunnerProtocolError(
+                "native provider failure projection is malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return message
+
+    async def _parse_native_arguments(
+        self, phase: Callable[[str, Mapping[str, Any]], Awaitable[dict[str, Any]]],
+        operation: str, native: NativeProviderResponse,
+    ) -> list[Any]:
+        """Parse tool-call argument strings with the worker's pinned parser."""
+        if not native.tool_calls:
+            return []
+        parsed = await phase(operation, {"inputs": [call.arguments for call in native.tool_calls]})
+        results = parsed.get("results")
+        if (
+            parsed.get("kind") != "parsed_streaming_json_batch"
+            or type(results) is not list
+            or len(results) != len(native.tool_calls)
+        ):
+            raise RunnerProtocolError(
+                "native argument parsing result is malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        return results
+
+    async def _native_policy_exchange(
+        self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
+        turn: int, phase_mode: Literal["streaming", "checkpointed"],
+    ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
+        request_digest = canonical_sha256(frozen_request)
+        await self._emit(PolicyRequestEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, frozen_request,
+        ))
+        await self._emit(PolicyRuntimeRequestEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, 1,
+            self._binding.binding_digest,
+            self._binding.policy_capability_observation_digest,
+            model.policy_slot_id, request_digest,
+            self._binding.first_request_digest or request_digest,
+            model.trainable_values,
+        ))
+        await self._checkpoint("before_policy", turn=turn)
+        result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            binding_digest=self._binding.binding_digest,
+            policy_slot_id=model.policy_slot_id,
+            request_digest=request_digest, request_payload=frozen_request,
+            turn=turn, attempt=1,
+        ))
+        await self._checkpoint("after_policy", turn=turn)
+        response, _ = freeze_json_object_with_size(
+            result.response_payload, field_name="native policy response",
+            max_encoded_bytes=16 * 1024 * 1024,
+            max_nodes=16 * 1024 * 1024 + 1,
+        )
+        response_digest = canonical_sha256(response)
+        if response_digest != result.response_digest:
+            raise RunnerProtocolError(
+                "policy response digest does not match the response payload",
+                code="policy_response_digest_mismatch", **self._context(),
+            )
+        receipt_body: Mapping[str, Any] | str = response_digest
+        if phase_mode == "streaming":
+            native_receipt = thaw_json(response.get("native_response"))
+            request_body = (
+                native_receipt.get("request_body")
+                if isinstance(native_receipt, Mapping) else None
+            )
+            native_request_digest = (
+                native_receipt.get("request_digest")
+                if isinstance(native_receipt, Mapping) else None
+            )
+            if (
+                not isinstance(request_body, Mapping)
+                or type(native_request_digest) is not str
+                or canonical_sha256(request_body).removeprefix("sha256:") != native_request_digest
+            ):
+                raise RunnerProtocolError(
+                    "native provider receipt lacks the exact sent request body",
+                    code="native_response_invalid", **self._context(),
+                )
+            receipt_body = request_body
+        await self._emit(PolicyRuntimeResponseEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, 1,
+            self._binding.binding_digest, model.policy_slot_id,
+            request_digest, response_digest,
+        ))
+        await self._emit(PolicyResponseEvent(
+            0, self._open_request.episode_id,
+            self._open_request.effective_plan_digest, turn, response, (),
+        ))
+        return response, receipt_body
+
+    async def _invoke_native_policy(
+        self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
+        verify_staged_body: bool = False,
+    ) -> Mapping[str, Any]:
+        """Persist the serialized SDK exchange before releasing its response."""
+        staged = self._binding.stage_native_http_request(http_request)
+        # The checkpointed worker's _handle_http reads the SDK request bytes
+        # and publishes body_b64. The provider's _invoke_native_http sends the
+        # staged bytes unchanged; unlike streaming, there is no response-body
+        # receipt. Verify this source-to-transport handoff before invocation.
+        if verify_staged_body:
+            staged_http = staged.get("native_http_request")
+            if (
+                not isinstance(staged_http, Mapping)
+                or staged_http.get("body_b64") != http_request.get("body_b64")
+            ):
+                raise RunnerProtocolError(
+                    "native provider staged body differs from the source HTTP body",
+                    code="native_response_invalid", **self._context(),
+                )
+        frozen_request = freeze_json_object(staged, field_name="native policy request")
+        _, digest = await self._native_policy_exchange(
+            frozen_request, model=model, turn=turn, phase_mode="checkpointed",
+        )
+        return self._binding.take_native_http_response(digest)
+    async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        profile = self._projection.source_profile
+        model_config = self._binding.source_model_config
+        tools = self._tools
+        tool_order = ("terminal", "file_editor", "task_tracker", "finish", "think")
+        if (
+            not isinstance(tools, NativeSourceSessionPort)
+            or not isinstance(tools, NativeWorkspaceEffectsPort)
+            or profile is None
+            or model_config is None
+            or limits.max_turns < 1
+            or limits.action_timeout_ms != 90_000
+            or len(self._projection.models) != 1
+            or len(self._projection.modes) != 1
+            or tuple(self._projection.modes[0].tool_ids) != tool_order
+            or self._projection.models[0].params
+        ):
+            raise _plan_error(
+                self._open_request, "OpenHands source runtime controls differ",
+                "compiled_ir_mismatch",
+            )
+        task = request.task_input.get("prompt")
+        if set(request.task_input) != {"prompt"} or type(task) is not str or request.context:
+            raise RunnerRequestError(
+                "OpenHands requires the owned headless prompt without caller context",
+                code="request_authority_invalid",
+            )
+        await tools.begin_native_workspace_effects()
+        model = self._projection.models[0]
+        history: list[FrozenJsonObject] = []
+        history_bytes = 2
+        state: FrozenJsonObject = freeze_json_object({}, field_name="source state")
+        trace_requests: list[dict[str, Any]] = []
+        trace_tool_calls: list[dict[str, Any]] = []
+        trace_observations: list[dict[str, Any]] = []
+        def decode_json_body(body_b64: Any) -> Any:
+            if type(body_b64) is not str:
+                return None
+            try:
+                return json.loads(base64.b64decode(body_b64, validate=True).decode("utf-8"))
+            except (ValueError, UnicodeDecodeError, json.JSONDecodeError):
+                return None
+
+        async def phase(
+            operation: str, payload: Mapping[str, Any], *, timeout_ms: int,
+        ) -> FrozenJsonObject:
+            raw = await tools.invoke_native_phase(operation, payload, timeout_ms=timeout_ms)
+            value, _ = freeze_json_object_with_size(
+                raw, field_name="OpenHands phase result",
+                max_encoded_bytes=16 * 1024 * 1024,
+                max_nodes=16 * 1024 * 1024 + 1,
+            )
+            if value.get("schema_version") != "bb.openhands-native.v1":
+                raise RunnerProtocolError(
+                    "native phase result revision is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            return value
+
+        native_runtime_close_task: asyncio.Task[Mapping[str, Any]] | None = None
+
+        async def close_once() -> Mapping[str, Any]:
+            nonlocal native_runtime_close_task
+            if native_runtime_close_task is None:
+                native_runtime_close_task = asyncio.create_task(tools.close_native_runtime())
+            try:
+                return await asyncio.shield(native_runtime_close_task)
+            except asyncio.CancelledError as cancellation:
+                try:
+                    await native_runtime_close_task
+                except BaseException:
+                    pass
+                raise cancellation
+
+        async def commit_events(
+            value: Mapping[str, Any], phase_name: str, turn: int | None,
+        ) -> None:
+            nonlocal history_bytes, state
+            delta = value.get("event_delta")
+            if not isinstance(delta, tuple) or any(not isinstance(event, Mapping) for event in delta):
+                raise RunnerProtocolError(
+                    "native event delta is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            for event in delta:
+                kind = event.get("kind")
+                if kind == "ActionEvent":
+                    call = event.get("tool_call")
+                    arguments = call.get("arguments") if isinstance(call, Mapping) else None
+                    if isinstance(arguments, str):
+                        try:
+                            arguments = json.loads(arguments)
+                        except json.JSONDecodeError:
+                            pass
+                    elif arguments is None and event.get("action") is not None:
+                        arguments = event["action"]
+                    trace_tool_calls.append({
+                        "tool_name": event.get("tool_name"),
+                        "arguments": arguments,
+                        "security_risk": event.get("security_risk"),
+                    })
+                elif kind == "ObservationEvent":
+                    observation_value = event.get("observation")
+                    if not isinstance(observation_value, Mapping):
+                        observation_value = {"value": observation_value}
+                    trace_observations.append({
+                        "event_kind": kind,
+                        "tool_name": event.get("tool_name"),
+                        "is_error": bool(observation_value.get("is_error", False)),
+                        "result": observation_value,
+                    })
+                elif kind in {"AgentErrorEvent", "ConversationErrorEvent"}:
+                    trace_observations.append({
+                        "event_kind": kind,
+                        "tool_name": event.get("tool_name"),
+                        "is_error": True,
+                        "error_text": event.get("error") or event.get("detail") or event.get("code"),
+                        "classification": event.get("classification"),
+                    })
+            for event in delta:
+                history_bytes += _encoded_json_size(event) + (1 if history else 0)
+                if history_bytes > limits.transcript_bytes:
+                    raise RunnerProtocolError(
+                        "source transcript limit exceeded",
+                        code="transcript_limit_exceeded", **self._context(),
+                    )
+                history.append(event)
+            status, iteration = value.get("status"), value.get("iteration")
+            if status is not None or iteration is not None:
+                if (
+                    status not in {"IDLE", "RUNNING", "PAUSED", "FINISHED", "STUCK", "ERROR"}
+                    or type(iteration) is not int or not 0 <= iteration <= limits.max_turns
+                ):
+                    raise RunnerProtocolError(
+                        "native execution state is invalid",
+                        code="native_response_invalid", **self._context(),
+                    )
+                state = freeze_json_object({
+                    "status": status, "iteration": iteration,
+                    **({"source_runtime": value["source_runtime"]} if "source_runtime" in value else {}),
+                    **({"source_error": value["source_error"]} if "source_error" in value else {}),
+                }, field_name="source state")
+            await self._emit(SourceEventCommitEvent(
+                0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+                turn, OPENHANDS_RESPONSE_CONSUMER_ID, phase_name, delta,
+                canonical_sha256(history), state,
+            ))
+
+        initialized = await phase(
+            "initialize",
+            {
+                "task": task,
+                "model_config": thaw_json(model_config),
+                "max_iteration_per_run": limits.max_turns,
+                "native_config": thaw_json(self._projection.source_profile),
+            },
+            timeout_ms=60_000,
+        )
+        if (
+            initialized.get("kind") != "initialized"
+            or not isinstance(initialized.get("tool_schemas"), tuple)
+        ):
+            raise RunnerProtocolError(
+                "native tools differ from the compiled source recipe",
+                code="native_response_binding_invalid", **self._context(),
+            )
+        conversation_id = initialized.get("conversation_id")
+        if (
+            type(conversation_id) is not str
+            or _CANONICAL_UUID_RE.fullmatch(conversation_id) is None
+        ):
+            raise RunnerProtocolError(
+                "native conversation id is not a canonical UUID",
+                code="native_response_invalid", **self._context(),
+            )
+        self._binding.bind_native_tools(initialized["tool_schemas"])
+        await commit_events(initialized, "initial", None)
+        termination = RunnerTermination.MAX_TURNS
+        for turn in range(1, limits.max_turns + 1):
+            await self._checkpoint("before_policy", turn=turn)
+            sampled = await phase("sample", {}, timeout_ms=60_000)
+            await commit_events(sampled, "before_policy", turn)
+            if sampled.get("kind") == "provider_request":
+                http_request = sampled.get("http_request")
+                if not isinstance(http_request, Mapping):
+                    raise RunnerProtocolError(
+                        "native provider request is missing",
+                        code="native_response_invalid", **self._context(),
+                    )
+                request_body = decode_json_body(http_request.get("body_b64"))
+                if not isinstance(request_body, Mapping):
+                    raise RunnerProtocolError(
+                        "native provider request body is not JSON",
+                        code="native_response_invalid", **self._context(),
+                    )
+                trace_requests.append({
+                    "index": len(trace_requests),
+                    "body": request_body,
+                })
+                receipt = await self._invoke_native_policy(http_request, model=model, turn=turn)
+                public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
+                if isinstance(public_response, Mapping):
+                    decoded_response = decode_json_body(public_response.get("body_b64"))
+                    if isinstance(decoded_response, Mapping) and trace_requests:
+                        trace_requests[-1]["response"] = decoded_response
+                sampled = await phase(
+                    "provider_response", receipt,
+                    timeout_ms=60_000,
+                )
+                await commit_events(sampled, "before_policy", turn)
+                if sampled.get("kind") == "provider_request":
+                    second_request = sampled.get("http_request")
+                    method = second_request.get("method") if isinstance(second_request, Mapping) else None
+                    url = second_request.get("url") if isinstance(second_request, Mapping) else None
+                    raise RunnerProtocolError(
+                        f"native retry refused: second provider request {method} {url} in turn {turn}",
+                        code="native_retry_refused", **self._context(),
+                    )
+            if sampled.get("kind") != "sample_ready":
+                raise RunnerProtocolError(
+                    "native sample did not complete one provider exchange",
+                    code="native_response_invalid", **self._context(),
+                )
+            prepared = await phase("prepare", {}, timeout_ms=60_000)
+            if prepared.get("kind") != "prepared":
+                raise RunnerProtocolError(
+                    "native response preparation failed",
+                    code="native_response_invalid", **self._context(),
+                )
+            await commit_events(prepared, "assistant", turn)
+            actions = prepared.get("actions")
+            if not isinstance(actions, tuple):
+                raise RunnerProtocolError(
+                    "native prepared action list is invalid",
+                    code="native_response_invalid", **self._context(),
+                )
+            observations: list[FrozenJsonObject] = []
+            finished = False
+            for ordinal, action in enumerate(actions):
+                if (
+                    not isinstance(action, Mapping)
+                    or action.get("index") != ordinal
+                    or type(action.get("index")) is not int
+                    or action.get("tool_id") not in tool_order
+                    or type(action.get("call_id")) is not str
+                    or not action["call_id"]
+                    or not isinstance(action.get("arguments"), Mapping)
+                    or finished
+                ):
+                    raise RunnerProtocolError(
+                        "native action does not match the admitted executable prefix",
+                        code="native_response_invalid", **self._context(),
+                    )
+                tool_id, call_id = action["tool_id"], action["call_id"]
+                await self._checkpoint("before_action", turn=turn, call_id=call_id)
+                await self._emit(ToolCallEvent(
+                    0, self._open_request.episode_id,
+                    self._open_request.effective_plan_digest, turn,
+                    ordinal, call_id, tool_id,
+                    json.dumps(thaw_json(action["arguments"]), separators=(",", ":")),
+                ))
+                await self._checkpoint("before_action", turn=turn, call_id=call_id)
+                executed = await phase(
+                    "execute", {"index": ordinal, "tool_id": tool_id},
+                    timeout_ms=limits.action_timeout_ms,
+                )
+                if (
+                    executed.get("kind") != "executed"
+                    or executed.get("index") != ordinal
+                    or executed.get("tool_id") != tool_id
+                    or not isinstance(executed.get("observations"), tuple)
+                ):
+                    raise RunnerProtocolError(
+                        "native tool result identity is invalid",
+                        code="native_response_invalid", **self._context(),
+                    )
+                observation, _ = freeze_json_object_with_size(
+                    {"native_observations": executed["observations"]},
+                    field_name="native tool observation",
+                    max_encoded_bytes=limits.observation_bytes,
+                    max_nodes=limits.observation_bytes + 1,
+                )
+                observations.append(observation)
+                finished = tool_id == "finish"
+                await self._emit(ToolObservationEvent(
+                    0, self._open_request.episode_id,
+                    self._open_request.effective_plan_digest, turn,
+                    ordinal, call_id, tool_id, observation, finished,
+                ))
+                await self._checkpoint("after_action", turn=turn, call_id=call_id)
+            committed = await phase("commit", {}, timeout_ms=60_000)
+            if committed.get("kind") != "committed":
+                raise RunnerProtocolError(
+                    "native observation commit failed",
+                    code="native_response_invalid", **self._context(),
+                )
+            await commit_events(committed, "observation_batch", turn)
+            self._turns.append(RunnerTurn(turn, actions, tuple(observations)))
+            if state["status"] == "FINISHED":
+                termination = RunnerTermination.SUBMITTED if finished else RunnerTermination.ASSISTANT_COMPLETE
+                break
+            if state["status"] in {"ERROR", "STUCK"}:
+                await commit_events({
+                    "event_delta": (), "status": state["status"], "iteration": state["iteration"],
+                }, "exit", turn)
+                # A native source failure is a terminal incomplete policy, not
+                # a malformed BB protocol response. Keep the source status in
+                # the replay trace while committing the existing incomplete
+                # runner termination.
+                termination = RunnerTermination.POLICY_INCOMPLETE
+                break
+        await self._checkpoint("after_loop", turn=len(self._turns))
+        closed = await close_once()
+        cleanup = closed.get("cleanup") if isinstance(closed, Mapping) else None
+        if (
+            not isinstance(closed, Mapping)
+            or closed.get("kind") != "closed"
+            or not isinstance(cleanup, Mapping)
+            or cleanup.get("all_dead") is not True
+        ):
+            raise RunnerProtocolError(
+                "native worker cleanup is not verified",
+                code="native_response_invalid", **self._context(),
+            )
+        effects = await tools.measure_workspace_effects()
+        if not isinstance(effects, Mapping):
+            raise RunnerProtocolError(
+                "native workspace effects are malformed",
+                code="native_response_invalid", **self._context(),
+            )
+        await self._checkpoint("before_commit", turn=len(self._turns))
+        await self._commit_termination(termination)
+        trace_kind = (
+            "finished"
+            if termination in {RunnerTermination.SUBMITTED, RunnerTermination.ASSISTANT_COMPLETE}
+            else str(state.get("status", "")).lower()
+            if state.get("status") in {"ERROR", "STUCK"}
+            else termination.value
+        )
+        native_stop_reason = None
+        if trace_requests:
+            choices = trace_requests[-1].get("response", {}).get("choices", ())
+            if choices:
+                native_stop_reason = choices[-1].get("finish_reason")
+        replay_trace = {
+            "schema_version": "bb.e4.openhands-sdk-trace.v1",
+            "case_id": self._open_request.episode_id,
+            "conversation_id": conversation_id,
+            "requests": trace_requests,
+            "tool_calls": trace_tool_calls,
+            "observations": trace_observations,
+            "file_effects": effects,
+            "request_count": len(trace_requests),
+            "termination": {
+                "kind": trace_kind,
+                "native_stop_reason": native_stop_reason,
+            },
+        }
+        return RunnerResult(
+            episode_id=self._open_request.episode_id,
+            effective_plan_digest=self._open_request.effective_plan_digest,
+            original_request={"task_input": request.task_input, "context": request.context},
+            response={
+                "source_id": OPENHANDS_RESPONSE_CONSUMER_ID,
+                "events": history,
+                "state": state,
+                "cleanup": cleanup,
+                "replay_trace": replay_trace,
+            },
+            termination=termination, turn_count=len(self._turns),
+            turns=tuple(self._turns), events=tuple(self._events),
+        )
+
+    async def _source_history_commit(
+        self,
+        state: mini_semantics.MiniSemanticsState,
+        start: int,
+        phase: str,
+        *,
+        turn: int | None,
+        runtime_frame: Mapping[str, Any] | None = None,
+    ) -> None:
+        limits = self._open_request.effective_plan.effective_capabilities.limits
+        if _encoded_json_size(state.messages) > limits.transcript_bytes:
+            await self._raise_error(
+                RunnerProtocolError("source transcript limit exceeded", code="transcript_limit_exceeded", **self._context()),
+                turn=turn,
+            )
+        await self._emit(SourceHistoryCommitEvent(
+            0, self._open_request.episode_id, self._open_request.effective_plan_digest,
+            turn, phase, tuple(state.messages[start:]), canonical_sha256(state.messages),
+            state.n_calls, state.cost, runtime_frame,
+        ))
 
     async def _checkpoint(
         self,
@@ -1737,6 +4070,8 @@ class _ConductorSession:
                     0, self._open_request.episode_id,
                     self._open_request.effective_plan_digest,
                     len(self._turns), termination,
+
+
                 )
             )
             async with self._lock:
@@ -1783,6 +4118,22 @@ class _ConductorSession:
 
     async def _publish_locked(self, event: RunnerEvent) -> None:
         sequenced = replace(event, sequence=self._sequence)
+        native_event_size = 0
+        if (
+            (profile := NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id))
+            is not None and profile.journal_byte_limit
+        ):
+            native_event_size = _encoded_json_size({
+                field.name: getattr(sequenced, field.name) for field in fields(sequenced)
+            })
+            if (
+                self._native_event_bytes + native_event_size
+                > self._open_request.effective_plan.effective_capabilities.limits.transcript_bytes
+            ):
+                raise RunnerProtocolError(
+                    "native canonical journal exceeds the transcript limit",
+                    code="transcript_limit_exceeded", **self._context(),
+                )
         token = _EVENT_SINK_SESSION.set(self)
         try:
             try:
@@ -1802,6 +4153,7 @@ class _ConductorSession:
             _EVENT_SINK_SESSION.reset(token)
         self._events.append(sequenced)
         self._sequence += 1
+        self._native_event_bytes += native_event_size
 
     async def _raise_error(
         self,
@@ -1826,9 +4178,33 @@ class _ConductorSession:
             "effective_plan_digest": self._open_request.effective_plan_digest,
             "events_so_far": tuple(self._events),
         }
-
     def _state_error(self, code: str, message: str) -> RunnerStateError:
         return RunnerStateError(message, code=code, **self._context())
+
+
+
+def _find_native_provider_failure(error: BaseException) -> NativeProviderRequestFailure | None:
+    """Return the explicitly chained native request failure, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, NativeProviderRequestFailure):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return None
+
+
+def _find_mini_provider_failure(error: BaseException) -> MiniProviderFailure | None:
+    """Return the explicitly chained Mini provider failure, if any."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        if isinstance(current, MiniProviderFailure):
+            return current
+        seen.add(id(current))
+        current = current.__cause__
+    return None
 
 
 def _join_prompt_parts(*parts: str) -> str:

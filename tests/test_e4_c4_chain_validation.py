@@ -932,4 +932,93 @@ def test_c4_chain_validator_reports_malformed_comparator_ref_json(tmp_path: Path
     assert report["ok"] is False
     assert any("comparator_ref: unable to load JSON" in error for error in report["errors"])
 
+@pytest.mark.parametrize("invalid_kind", ["unknown_class", "missing_registry_id"])
+def test_c4_chain_rejects_invalid_comparator_registry_before_dispatch(
+    tmp_path: Path,
+    invalid_kind: str,
+) -> None:
+    module = _load_module(
+        f"validate_e4_c4_chain_invalid_registry_{invalid_kind}",
+        "scripts/validate_e4_c4_chain.py",
+    )
+    chain = _build_chain(tmp_path)
+    registry_path = Path(chain["repo"]) / "conformance" / "comparators" / "registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    if invalid_kind == "unknown_class":
+        registry["comparators"][0]["comparator_class"] = "not_a_published_class"
+    else:
+        registry.pop("registry_id")
+    _write_json(registry_path, registry)
 
+    report = module.validate_c4_chain(
+        repo_root=chain["repo"],
+        freeze_manifest_path=chain["repo"] / "config" / "e4_target_freeze_manifest.yaml",
+        config_id=chain["config_id"],
+        support_claim_path=chain["support_claim"],
+        evidence_manifest_path=chain["evidence_manifest"],
+        comparator_registry_path=registry_path,
+    )
+
+    assert report["ok"] is False
+    assert any(
+        "comparator_registry: unable to load" in error
+        and "schema validation failed" in error
+        for error in report["errors"]
+    )
+
+
+
+def test_c4_chain_rejects_deterministic_value_change_during_rerun(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import ModuleType
+
+    module = _load_module(
+        "validate_e4_c4_chain_deterministic_value_change",
+        "scripts/validate_e4_c4_chain.py",
+    )
+    chain = _build_chain(tmp_path)
+    registry_path = Path(chain["repo"]) / "conformance" / "comparators" / "registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    comparator_module_name = "c4_value_change_comparator"
+    registry["comparators"][0]["entrypoint"]["module"] = comparator_module_name
+    _write_json(registry_path, registry)
+
+    comparator_module = ModuleType(comparator_module_name)
+
+    def compare(_input: object) -> dict[str, object]:
+        return {
+            "schema_version": "bb.e4.comparator_report.v1",
+            "assertions": [
+                {
+                    "assertion_id": "command_and_answer_match",
+                    "name": "command_and_answer_match",
+                    "status": "passed",
+                    "observed": {"assistant_answer": "changed"},
+                    "expected": {"assistant_answer": "changed"},
+                }
+            ],
+            "passed": 1,
+            "failed": 0,
+            "warned": 0,
+        }
+
+    comparator_module.compare = compare
+    monkeypatch.setitem(sys.modules, comparator_module_name, comparator_module)
+
+    report = module.validate_c4_chain(
+        repo_root=chain["repo"],
+        freeze_manifest_path=chain["repo"] / "config" / "e4_target_freeze_manifest.yaml",
+        config_id=chain["config_id"],
+        support_claim_path=chain["support_claim"],
+        evidence_manifest_path=chain["evidence_manifest"],
+        comparator_registry_path=registry_path,
+    )
+
+    assert report["ok"] is False
+    assert any(
+        "comparator_rerun deterministic value mismatch assertion ids: command_and_answer_match"
+        in error
+        for error in report["errors"]
+    )

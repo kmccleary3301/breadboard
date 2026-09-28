@@ -1,0 +1,65 @@
+{
+  "profile": "pi",
+  "target_id": "pi-r3@0.57.1",
+  "package": "@mariozechner/pi-coding-agent@0.57.1",
+  "source_commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+  "agent": {
+    "request_cap": 8,
+    "thinking_level": "off",
+    "compaction_enabled": false,
+    "retry_enabled": false,
+    "max_retries": 0,
+    "tool_execution": "sequential",
+    "quiescence": "stop_when_no_tool_calls"
+  },
+  "model": {
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "timeout_seconds": 45,
+    "images_enabled": false
+  },
+  "tools": {
+    "ordered": [
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "grep",
+      "find",
+      "ls"
+    ],
+    "image_delivery": false,
+    "fd_rg_provisioned": false
+  },
+  "workspace": {
+    "extensions": false,
+    "skills": false,
+    "prompt_templates": false,
+    "sessions": false
+  },
+  "model_registry": {
+    "provider_id": "vllm-local",
+    "api": "openai-completions",
+    "reasoning": true,
+    "input": [
+      "text"
+    ],
+    "cost": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0
+    },
+    "compat": {
+      "supportsStore": false,
+      "supportsDeveloperRole": false,
+      "supportsReasoningEffort": false,
+      "supportsUsageInStreaming": true,
+      "maxTokensField": "max_tokens",
+      "supportsStrictMode": true
+    }
+  },
+  "advertisement": {}
+}

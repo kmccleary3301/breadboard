@@ -3,26 +3,34 @@ from __future__ import annotations
 import json
 import hashlib
 import sys
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
+from breadboard.rl.harness import headless as headless_module
 from breadboard.rl.harness import contracts as c
+from breadboard.artifacts import InMemoryCAS
+from breadboard.rl.harness.service import EpisodePrimaryDisposition, V2RunResult
 from breadboard.rl.harness.composition import load_production_composition
 from breadboard.rl.harness.evidence import SafeFailureFactV2
 from breadboard.rl.harness.headless import (
+    HeadlessEpisodeFailed,
     HeadlessRunFailed,
     HeadlessProviderInput,
     HeadlessProviderRouteAuthority,
     HeadlessRunRequest,
     HeadlessWorkspaceInput,
+    ObsoleteOuterIsolationError,
     _atomic_write,
     _project_headless_run,
     _safe_failure_projection,
     _validate_repository_base_commit_binding,
+    _validate_seed_workspace_directory_mode,
     run_headless_request,
+    load_headless_request,
 )
 from breadboard.rl.harness.runners.base import freeze_json_object, thaw_json
 
@@ -30,6 +38,200 @@ from breadboard.rl.harness.qualification import (
     materialize_production_composition_fixture,
 )
 from tests.rl.harness.e4_compiler_test_helper import compile_pi_target
+def test_headless_workspace_mode_preserves_repository_identity_and_rejects_mixed_states() -> None:
+    task_image = "sha256:" + "0" * 64
+    legacy = HeadlessWorkspaceInput(
+        repository_snapshot_digest=None,
+        base_commit="1" * 40,
+        task_image_digest=task_image,
+    )
+    assert legacy.identity_dict() == {
+        "repository_snapshot_digest": None,
+        "base_commit": "1" * 40,
+        "task_image_digest": task_image,
+        "containment": "attested",
+    }
+    omp_seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_directory_mode=0o755,
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    assert omp_seeded.workspace_directory_mode == 0o755
+    seeded = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_seed_digest="sha256:" + "1" * 64,
+        task_image_digest=task_image,
+    )
+    _validate_repository_base_commit_binding(
+        HeadlessRunRequest.model_construct(workspace=seeded),
+        {},
+    )
+    with pytest.raises(ValueError):
+        HeadlessWorkspaceInput(
+            workspace_mode="seeded",
+            base_commit="1" * 40,
+            task_image_digest=task_image,
+        )
+
+
+def _strict_json_request_payload(tmp_path: Path) -> dict[str, Any]:
+    digest = "sha256:" + "1" * 64
+    return {
+        "schema_version": "bb.rl.headless-run-request.v1",
+        "target_id": "pi@0.57.1",
+        "target_overlay_id": "r3-json-no-session.v1",
+        "target_dynamic_fields": {"cwd": "/workspace"},
+        "resolve_request": {
+            "schema_version": "bb.rl.config-resolution-request.v1",
+            "episode_id": "strict-json-episode",
+            "subject": {
+                "tenant_id": "tenant-a",
+                "principal_id": "principal-a",
+                "authority_scope_digest": digest,
+            },
+            "selector": {
+                "selector_kind": "direct",
+                "digest": digest,
+                "ref": {
+                    "schema_version": "bb.rl.artifact-ref.v1",
+                    "artifact_id": digest,
+                    "sha256": digest,
+                    "size_bytes": 723,
+                    "media_type": "application/vnd.breadboard.direct-selector+json;version=1",
+                },
+            },
+            "selection_nonce": None,
+            "task": {
+                "schema_version": "bb.rl.task-eligibility.v1",
+                "task_type": "training",
+                "labels": [{"key": "suite", "value": "swe"}],
+                "artifacts": [
+                    {
+                        "role": "task",
+                        "digest": digest,
+                        "media_type": "application/json",
+                        "size_bytes": 12,
+                    }
+                ],
+                "parameters_digest": digest,
+            },
+            "policy_binding": {
+                "route_id": "policy-route",
+                "registry_revision_digest": digest,
+                "attestation_digest": digest,
+            },
+            "episode_overlays": [
+                {"overlay_digest": digest, "result_receipt_digest": "sha256:" + "2" * 64}
+            ],
+        },
+        "prompt": "Repair the task and verify the result.",
+        "tool_allowlist": ["read", "shell"],
+        "context": {"campaign": "e4"},
+        "workspace": {
+            "base_commit": "0" * 40,
+            "task_image_digest": digest,
+        },
+        "expected_resources": {
+            "cpu_millis": 1_000,
+            "memory_bytes": 1_000_000,
+            "pids": 32,
+            "storage_bytes": 1_000_000,
+            "open_files": 128,
+            "wall_time_ms": 60_000,
+        },
+        "expected_limits": {
+            "max_turns": 4,
+            "action_timeout_ms": 9_000,
+            "observation_bytes": 20_000,
+            "response_bytes": 100_000,
+            "artifact_bytes_each": 10_000,
+            "artifact_bytes_total": 20_000,
+            "transcript_bytes": 100_000,
+            "setup_timeout_ms": 5_000,
+            "verifier_timeout_ms": 17_000,
+        },
+        "expected_sandbox": {
+            "runtime_id": "fixture-trusted-process",
+            "runtime_class": c.RuntimeClass.TRUSTED_PROCESS.value,
+            "driver_implementation_digest": digest,
+            "runtime_binary_digest": digest,
+            "security_policy_digest": digest,
+            "image_digest": digest,
+            "network_policy_digest": digest,
+            "egress_route_ids": ["policy-route"],
+            "mounts": [
+                {
+                    "source_artifact_digest": digest,
+                    "target_logical_path": "inputs",
+                    "access": "ro",
+                    "max_bytes": 4096,
+                }
+            ],
+        },
+        "provider": {
+            "model": "Qwen/Qwen3.5-35B-A3B",
+            "authority_model_id": "qwen3.5-35b-a3b",
+            "credential_handle": "policy-callback",
+            "context_window": 131_072,
+            "max_output_tokens": 32_000,
+            "timeout_seconds": 30,
+        },
+        "result_path": str(tmp_path / "result.json"),
+        "event_log_path": str(tmp_path / "events.json"),
+        "patch_path": str(tmp_path / "workspace.patch"),
+    }
+
+
+def test_load_headless_request_accepts_json_arrays_for_tuple_fields(
+    tmp_path: Path,
+) -> None:
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(_strict_json_request_payload(tmp_path)))
+
+    request = load_headless_request(str(request_path))
+
+    assert request.tool_allowlist == ("read", "shell")
+    assert [label.key for label in request.resolve_request.task.labels] == ["suite"]
+    assert [item.role for item in request.resolve_request.task.artifacts] == ["task"]
+    assert len(request.resolve_request.episode_overlays) == 1
+    assert request.expected_sandbox.egress_route_ids == ("policy-route",)
+    assert [mount.target_logical_path for mount in request.expected_sandbox.mounts] == [
+        "inputs"
+    ]
+
+
+@pytest.mark.parametrize("location", ("request", "workspace"))
+def test_headless_request_loading_rejects_obsolete_outer_isolation(
+    tmp_path: Path, location: str
+) -> None:
+    payload = _strict_json_request_payload(tmp_path)
+    (payload if location == "request" else payload["workspace"])[
+        "outer_isolation"
+    ] = "apptainer"
+    request_path = tmp_path / "request.json"
+    request_path.write_text(json.dumps(payload))
+
+    with pytest.raises(ObsoleteOuterIsolationError):
+        load_headless_request(str(request_path))
+    with pytest.raises(ObsoleteOuterIsolationError):
+        HeadlessRunRequest.model_validate(payload)
+
+
+
+
+@pytest.mark.parametrize(
+    ("declared", "root", "matches"),
+    [(0o755, 0o755, True), (0o755, 0o700, False), (0o700, 0o755, False)],
+)
+def test_seeded_workspace_directory_mode_binds_to_manifest_root(
+    declared: int, root: int, matches: bool
+) -> None:
+    if matches:
+        _validate_seed_workspace_directory_mode(declared, root)
+    else:
+        with pytest.raises(ValueError, match="does not match"):
+            _validate_seed_workspace_directory_mode(declared, root)
 
 def test_atomic_result_publication_refuses_existing_destination(
     tmp_path: Path,
@@ -44,64 +246,36 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
-class _EvidenceCAS:
-    def __init__(self, events: bytes) -> None:
-        artifact_manifest = json.dumps(
-            {"objects": [{"role": "patch", "payload": "runner-result-json"}]},
-            sort_keys=True,
-        ).encode()
-        self.payloads = {
-            "manifest": json.dumps(
-                {
-                    "runner_ledger_ref": self.ref("events", events),
-                    "artifact_manifest_ref": self.ref(
-                        "artifacts",
-                        artifact_manifest,
-                    ),
-                },
-                sort_keys=True,
-            ).encode(),
-            "events": events,
-            "artifacts": artifact_manifest,
-        }
-
-    @staticmethod
-    def ref(artifact_id: str, payload: bytes) -> dict[str, str]:
-        return {
-            "artifact_id": artifact_id,
-            "sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
-        }
-
-    def get_ref(self, artifact_id: str) -> SimpleNamespace:
-        payload = self.payloads[artifact_id]
-        projection = self.ref(artifact_id, payload)
-        return SimpleNamespace(**projection, to_dict=lambda: projection)
-
-    def get_bytes(self, ref: SimpleNamespace, *, max_bytes: int) -> bytes:
-        payload = self.payloads[ref.artifact_id]
-        assert len(payload) <= max_bytes
-        return payload
-
-
-# The service publishes failure evidence for some failed episodes (a verifier
-# failure after the runner finished) and none for others; either way the
-# headless result must carry the service's failure code.
+# A failed service run may publish evidence or fail before the manifest exists.
+# Both paths must report its bounded failure code rather than a missing-patch error.
 @pytest.mark.parametrize("failure_evidence_published", (False, True))
 def test_headless_projection_reports_the_service_failure_code(
     failure_evidence_published: bool,
 ) -> None:
-    cas = _EvidenceCAS(b'{"event":"failed"}\n')
+    cas = InMemoryCAS()
+    events_ref = cas.put_bytes(b'{"event":"failed"}\n', media_type="application/json")
+    artifacts_ref = cas.put_bytes(
+        json.dumps({"objects": [{"role": "patch", "payload": "runner-result-json"}]}).encode(),
+        media_type="application/json",
+    )
+    manifest_ref = cas.put_bytes(
+        json.dumps({
+            "runner_ledger_ref": events_ref.to_dict(),
+            "artifact_manifest_ref": artifacts_ref.to_dict(),
+        }).encode(),
+        media_type="application/json",
+    )
+    failure = SafeFailureFactV2("runtime", "workspace_diff_too_large", "none", "verifier")
     run = SimpleNamespace(
-        primary_disposition=SimpleNamespace(value="failed"),
+        primary_disposition=EpisodePrimaryDisposition.FAILED,
+        primary_failure=failure,
         termination=None,
         turn_count=12,
         response=None,
         completed_envelope_ref=None,
         closed_envelope_ref=None,
         result_ref=None,
-        evidence_manifest_ref=(
-            cas.get_ref("manifest") if failure_evidence_published else None
-        ),
+        evidence_manifest_ref=manifest_ref if failure_evidence_published else None,
         evidence_root=None,
         artifact_manifest_ref=None,
         primary_measurement_digest=None,
@@ -110,35 +284,44 @@ def test_headless_projection_reports_the_service_failure_code(
         reward=None,
         reward_components={},
         workspace_diff=None,
-        failure=SafeFailureFactV2(
-            "runtime", "workspace_diff_too_large", "none", "verifier"
-        ),
     )
 
-    with pytest.raises(Exception) as captured:
+    with pytest.raises(HeadlessEpisodeFailed) as captured:
         _project_headless_run(
-            {},
-            run,
-            SimpleNamespace(authority_graph=SimpleNamespace(cas=cas)),
+            {}, run, SimpleNamespace(authority_graph=SimpleNamespace(cas=cas)),
             expected_base_commit="0" * 40,
         )
-
     assert _safe_failure_projection(captured.value) == {
         "code": "workspace_diff_too_large",
         "category": "runtime",
     }
 
 
-def test_headless_projection_exports_the_exact_workspace_patch() -> None:
+def test_headless_projection_preserves_evidence_without_fabricating_patches() -> None:
     patch = b"diff --git a/a.py b/a.py\n"
     events = b'{"event":"done"}\n'
 
-    cas = _EvidenceCAS(events)
+    cas = InMemoryCAS()
+    events_ref = cas.put_bytes(events, media_type="application/json")
+    artifacts_ref = cas.put_bytes(
+        json.dumps({"objects": [{"role": "patch", "payload": "runner-result-json"}]}).encode(),
+        media_type="application/json",
+    )
+    manifest_ref = cas.put_bytes(
+        json.dumps({
+            "runner_ledger_ref": events_ref.to_dict(),
+            "artifact_manifest_ref": artifacts_ref.to_dict(),
+        }).encode(),
+        media_type="application/json",
+    )
     composition = SimpleNamespace(
         authority_graph=SimpleNamespace(cas=cas),
     )
-    run = SimpleNamespace(
-        primary_disposition=SimpleNamespace(value="succeeded"),
+    run = V2RunResult(
+        episode_id="projection-test",
+        create_fingerprint="sha256:" + "0" * 64,
+        run_fingerprint="sha256:" + "1" * 64,
+        primary_disposition=EpisodePrimaryDisposition.SUCCEEDED,
         termination="completed",
         turn_count=1,
         response=freeze_json_object(
@@ -148,7 +331,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
         completed_envelope_ref=None,
         closed_envelope_ref=None,
         result_ref=None,
-        evidence_manifest_ref=cas.get_ref("manifest"),
+        evidence_manifest_ref=manifest_ref,
         evidence_root="sha256:" + "0" * 64,
         artifact_manifest_ref=None,
         primary_measurement_digest="sha256:" + "1" * 64,
@@ -169,7 +352,7 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     )
     result: dict[str, Any] = {}
 
-    with pytest.raises(ValueError, match="base commit mismatch"):
+    with pytest.raises(ValueError):
         _project_headless_run(
             {}, run, composition, expected_base_commit="1" * 40
         )
@@ -185,6 +368,59 @@ def test_headless_projection_exports_the_exact_workspace_patch() -> None:
     assert json.loads(json.dumps(result))["terminal"]["response"] == {
         "output": [{"type": "message", "content": [{"type": "output_text", "text": "done"}]}]
     }
+    seed_digest = "sha256:" + "6" * 64
+    seeded_workspace = HeadlessWorkspaceInput(
+        workspace_mode="seeded",
+        workspace_seed_digest=seed_digest,
+        task_image_digest="sha256:" + "7" * 64,
+    )
+    assert seeded_workspace.workspace_mode == "seeded"
+    seeded_run = replace(
+        run,
+        workspace_diff={**run.workspace_diff, "base_commit": seed_digest},
+    )
+    seeded_result: dict[str, Any] = {}
+    _project_headless_run(
+        seeded_result,
+        seeded_run,
+        composition,
+        expected_base_commit=seed_digest,
+    )
+    assert seeded_result["workspace_evidence"]["patch_base_commit"] == seed_digest
+
+    with pytest.raises(ValueError):
+        _project_headless_run(
+            {}, replace(run, workspace_diff=None), composition,
+            expected_base_commit="0" * 40,
+        )
+    cancelled_run = replace(
+        run, primary_disposition=EpisodePrimaryDisposition.CANCELLED,
+        response=None, termination=None, turn_count=0, workspace_diff=None,
+    )
+    cancelled: dict[str, Any] = {}
+    event_bytes, patch_bytes = _project_headless_run(
+        cancelled, cancelled_run, composition, expected_base_commit="0" * 40,
+    )
+    assert event_bytes == events
+    assert patch_bytes is None
+    assert cancelled["terminal"]["status"] == "cancelled"
+    assert cancelled["workspace_evidence"]["runner_event_ledger_digest"] == (
+        "sha256:" + hashlib.sha256(events).hexdigest()
+    )
+    failed_run = replace(
+        run, primary_disposition=EpisodePrimaryDisposition.FAILED,
+        response=None, termination=None, turn_count=2, workspace_diff=None,
+    )
+    failed: dict[str, Any] = {}
+    event_bytes, patch_bytes = _project_headless_run(
+        failed, failed_run, composition, expected_base_commit="0" * 40,
+    )
+    assert event_bytes == events
+    assert patch_bytes is None
+    assert failed["terminal"]["status"] == "failed"
+    assert failed["workspace_evidence"]["runner_event_ledger_digest"] == (
+        "sha256:" + hashlib.sha256(events).hexdigest()
+    )
 
 
 @pytest.mark.parametrize(
@@ -245,11 +481,12 @@ def test_target_semantics_reject_changed_tool_parameter_schema(
     reason="composition fixtures require POSIX file authorities",
 )
 @pytest.mark.parametrize(
-    ("request_schema", "runtime_class"),
+    ("request_schema", "runtime_class", "containment"),
     (
-        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS),
-        ("bb.rl.headless-run-request.v1", c.RuntimeClass.HARDENED_DOCKER),
-        ("bb.rl.headless-run-request.v2", c.RuntimeClass.HARDENED_DOCKER),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS, "attested"),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.HARDENED_DOCKER, "attested"),
+        ("bb.rl.headless-run-request.v2", c.RuntimeClass.HARDENED_DOCKER, "attested"),
+        ("bb.rl.headless-run-request.v1", c.RuntimeClass.TRUSTED_PROCESS, "unconfined_test_only"),
     ),
 )
 @pytest.mark.asyncio
@@ -257,6 +494,8 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     tmp_path: Path,
     request_schema: str,
     runtime_class: c.RuntimeClass,
+    containment: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fixture = materialize_production_composition_fixture(tmp_path)
     resolution = c.ResolveEpisodeRequest.model_validate(
@@ -284,6 +523,7 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
             repository_snapshot_digest=None,
             base_commit="0" * 40,
             task_image_digest=task_image_digest,
+            containment=containment,
         ),
         expected_resources=c.ResourceLimits(
             cpu_millis=1_000,
@@ -333,6 +573,15 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     )
     assert str(fixture.composition_ref_path) not in request.model_dump_json()
 
+    if containment == "unconfined_test_only":
+        secret_reads: list[str] = []
+        original_secret_bindings = headless_module._secret_file_bindings
+
+        def observe_secret_bindings(*args: Any, **kwargs: Any) -> Any:
+            secret_reads.append("secret")
+            return original_secret_bindings(*args, **kwargs)
+
+        monkeypatch.setattr(headless_module, "_secret_file_bindings", observe_secret_bindings)
     with pytest.raises(HeadlessRunFailed) as rejected:
         await run_headless_request(
             request,
@@ -373,5 +622,7 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
     }
     assert json.loads(result_path.read_bytes()) == rejected.value.result
     assert not event_path.exists()
+    if containment == "unconfined_test_only":
+        assert secret_reads == []
 
 

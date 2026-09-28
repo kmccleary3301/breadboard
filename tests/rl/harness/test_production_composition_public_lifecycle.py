@@ -551,7 +551,7 @@ def test_cli_inspect_is_cwd_env_independent_canonical_and_secret_free(
         first.stdout
         == json.dumps(document, sort_keys=True, separators=(",", ":")).encode() + b"\n"
     )
-    assert document["schema_version"] == "bb.rl.harness-composed.v1"
+    assert document["schema_version"] == "bb.rl.harness-composed.v2"
     _assert_no_authority_leak(fixture, document)
 
 

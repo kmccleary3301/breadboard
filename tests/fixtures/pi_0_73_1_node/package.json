@@ -1,0 +1,8 @@
+{
+  "name": "breadboard-pi-node-0731",
+  "version": "0.0.0",
+  "private": true,
+  "dependencies": {
+    "@mariozechner/pi-coding-agent": "0.73.1"
+  }
+}

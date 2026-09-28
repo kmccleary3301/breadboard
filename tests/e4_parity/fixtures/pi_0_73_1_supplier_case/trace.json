@@ -1,0 +1,3123 @@
+{
+  "schema_version": "bb.e4.pi-capture-trace.v1",
+  "role": "supplier",
+  "profile": "pi",
+  "package": "@mariozechner/pi-coding-agent",
+  "version": "0.73.1",
+  "source_commit": "781152fc24841dc54b22284514604048ebe5e2c9",
+  "case_id": "normal_workspace_episode",
+  "settings": {
+    "model_requests": 8,
+    "provider_timeout_ms": 45000,
+    "provider_max_retries": 0,
+    "retry_enabled": false,
+    "compaction_enabled": false,
+    "images_blocked": true,
+    "tools": [
+      "read",
+      "bash",
+      "edit",
+      "write"
+    ],
+    "thinking_level": "off",
+    "sse": true
+  },
+  "receiver": {
+    "base_url": "http://127.0.0.1:39629/v1",
+    "case_id": "normal_workspace_episode",
+    "credential_required": true,
+    "pid": 27,
+    "scenario_sha256": "sha256:f3c2c27a0ecf078ae45a29e6e85a3916754d93c400b53ffe1db24eb3760436bf",
+    "schema_version": "bb.e4.pi-capture-receiver.v1",
+    "sse": true,
+    "wire_model": "gpt-4o-mini"
+  },
+  "request_count": 4,
+  "stream_fn_issued": 4,
+  "error": null,
+  "effects": {
+    "pi-marker.txt": {
+      "exists": true,
+      "bytes": 17,
+      "sha256": "sha256:7041be4b55eca31d669a1e4abb651063b854caa892c49e381acd7174d72ee2aa",
+      "content_utf8": "pi-native-marker\n"
+    }
+  },
+  "events": [
+    {
+      "type": "agent_start"
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Create pi-marker.txt, read it back, then print the completion marker."
+          }
+        ],
+        "timestamp": 1790140705528
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Create pi-marker.txt, read it back, then print the completion marker."
+          }
+        ],
+        "timestamp": 1790140705528
+      }
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705585
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {},
+              "partialArgs": "",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {},
+            "partialArgs": "",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Writing marker.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\",\"content\":\"pi-native-marker\\n\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Writing marker.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-00-00",
+          "name": "write",
+          "arguments": {
+            "path": "pi-marker.txt",
+            "content": "pi-native-marker\n"
+          }
+        },
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+      "toolName": "write",
+      "args": {
+        "path": "pi-marker.txt",
+        "content": "pi-native-marker\n"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+      "toolName": "write",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Successfully wrote 17 bytes to pi-marker.txt"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+        "toolName": "write",
+        "content": [
+          {
+            "type": "text",
+            "text": "Successfully wrote 17 bytes to pi-marker.txt"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705609
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+        "toolName": "write",
+        "content": [
+          {
+            "type": "text",
+            "text": "Successfully wrote 17 bytes to pi-marker.txt"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705609
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Writing marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-00-00",
+            "name": "write",
+            "arguments": {
+              "path": "pi-marker.txt",
+              "content": "pi-native-marker\n"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705585,
+        "responseId": "pi-capture-normal_workspace_episode-00"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+          "toolName": "write",
+          "content": [
+            {
+              "type": "text",
+              "text": "Successfully wrote 17 bytes to pi-marker.txt"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705609
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705609
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {},
+              "partialArgs": "",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {},
+            "partialArgs": "",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Reading marker.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"path\":\"pi-marker.txt\"}",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              },
+              "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            },
+            "partialArgs": "{\"path\":\"pi-marker.txt\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Reading marker.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-01-00",
+          "name": "read",
+          "arguments": {
+            "path": "pi-marker.txt"
+          }
+        },
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+      "toolName": "read",
+      "args": {
+        "path": "pi-marker.txt"
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+      "toolName": "read",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "pi-native-marker\n"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+        "toolName": "read",
+        "content": [
+          {
+            "type": "text",
+            "text": "pi-native-marker\n"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705615
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+        "toolName": "read",
+        "content": [
+          {
+            "type": "text",
+            "text": "pi-native-marker\n"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705615
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reading marker."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-01-00",
+            "name": "read",
+            "arguments": {
+              "path": "pi-marker.txt"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705609,
+        "responseId": "pi-capture-normal_workspace_episode-01"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "pi-native-marker\n"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705615
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705616
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {},
+              "partialArgs": "",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {},
+            "partialArgs": "",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Complete.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              },
+              "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            },
+            "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_start",
+        "contentIndex": 1,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              },
+              "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            },
+            "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              },
+              "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            },
+            "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_delta",
+        "contentIndex": 1,
+        "delta": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              },
+              "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+              "streamIndex": 0
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            },
+            "partialArgs": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\npi normal complete\\n'\"}",
+            "streamIndex": 0
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Complete.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "toolcall_end",
+        "contentIndex": 1,
+        "toolCall": {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-02-00",
+          "name": "bash",
+          "arguments": {
+            "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+          }
+        },
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      }
+    },
+    {
+      "type": "tool_execution_start",
+      "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+      "toolName": "bash",
+      "args": {
+        "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+      "toolName": "bash",
+      "args": {
+        "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+      },
+      "partialResult": {
+        "content": []
+      }
+    },
+    {
+      "type": "tool_execution_update",
+      "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+      "toolName": "bash",
+      "args": {
+        "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+      },
+      "partialResult": {
+        "content": [
+          {
+            "type": "text",
+            "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+          }
+        ],
+        "details": {}
+      }
+    },
+    {
+      "type": "tool_execution_end",
+      "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+      "toolName": "bash",
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+          }
+        ]
+      },
+      "isError": false
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+        "toolName": "bash",
+        "content": [
+          {
+            "type": "text",
+            "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705633
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "toolResult",
+        "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+        "toolName": "bash",
+        "content": [
+          {
+            "type": "text",
+            "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+          }
+        ],
+        "isError": false,
+        "timestamp": 1790140705633
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Complete."
+          },
+          {
+            "type": "toolCall",
+            "id": "pi-tool-normal_workspace_episode-02-00",
+            "name": "bash",
+            "arguments": {
+              "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+            }
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "toolUse",
+        "timestamp": 1790140705616,
+        "responseId": "pi-capture-normal_workspace_episode-02"
+      },
+      "toolResults": [
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+          "toolName": "bash",
+          "content": [
+            {
+              "type": "text",
+              "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705633
+        }
+      ]
+    },
+    {
+      "type": "turn_start"
+    },
+    {
+      "type": "message_start",
+      "message": {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_start",
+        "contentIndex": 0,
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Final answer: pi normal complete."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705634,
+          "responseId": "pi-capture-normal_workspace_episode-03"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final answer: pi normal complete."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634,
+        "responseId": "pi-capture-normal_workspace_episode-03"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_delta",
+        "contentIndex": 0,
+        "delta": "Final answer: pi normal complete.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Final answer: pi normal complete."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705634,
+          "responseId": "pi-capture-normal_workspace_episode-03"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final answer: pi normal complete."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634,
+        "responseId": "pi-capture-normal_workspace_episode-03"
+      }
+    },
+    {
+      "type": "message_update",
+      "assistantMessageEvent": {
+        "type": "text_end",
+        "contentIndex": 0,
+        "content": "Final answer: pi normal complete.",
+        "partial": {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Final answer: pi normal complete."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705634,
+          "responseId": "pi-capture-normal_workspace_episode-03"
+        }
+      },
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final answer: pi normal complete."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634,
+        "responseId": "pi-capture-normal_workspace_episode-03"
+      }
+    },
+    {
+      "type": "message_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final answer: pi normal complete."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634,
+        "responseId": "pi-capture-normal_workspace_episode-03"
+      }
+    },
+    {
+      "type": "turn_end",
+      "message": {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Final answer: pi normal complete."
+          }
+        ],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "gpt-4o-mini",
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0,
+          "cost": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "total": 0
+          }
+        },
+        "stopReason": "stop",
+        "timestamp": 1790140705634,
+        "responseId": "pi-capture-normal_workspace_episode-03"
+      },
+      "toolResults": []
+    },
+    {
+      "type": "agent_end",
+      "messages": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "text",
+              "text": "Create pi-marker.txt, read it back, then print the completion marker."
+            }
+          ],
+          "timestamp": 1790140705528
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Writing marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-00-00",
+              "name": "write",
+              "arguments": {
+                "path": "pi-marker.txt",
+                "content": "pi-native-marker\n"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705585,
+          "responseId": "pi-capture-normal_workspace_episode-00"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+          "toolName": "write",
+          "content": [
+            {
+              "type": "text",
+              "text": "Successfully wrote 17 bytes to pi-marker.txt"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705609
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Reading marker."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-01-00",
+              "name": "read",
+              "arguments": {
+                "path": "pi-marker.txt"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705609,
+          "responseId": "pi-capture-normal_workspace_episode-01"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+          "toolName": "read",
+          "content": [
+            {
+              "type": "text",
+              "text": "pi-native-marker\n"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705615
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Complete."
+            },
+            {
+              "type": "toolCall",
+              "id": "pi-tool-normal_workspace_episode-02-00",
+              "name": "bash",
+              "arguments": {
+                "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+              }
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "toolUse",
+          "timestamp": 1790140705616,
+          "responseId": "pi-capture-normal_workspace_episode-02"
+        },
+        {
+          "role": "toolResult",
+          "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+          "toolName": "bash",
+          "content": [
+            {
+              "type": "text",
+              "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+            }
+          ],
+          "isError": false,
+          "timestamp": 1790140705633
+        },
+        {
+          "role": "assistant",
+          "content": [
+            {
+              "type": "text",
+              "text": "Final answer: pi normal complete."
+            }
+          ],
+          "api": "openai-completions",
+          "provider": "openai",
+          "model": "gpt-4o-mini",
+          "usage": {
+            "input": 0,
+            "output": 0,
+            "cacheRead": 0,
+            "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {
+              "input": 0,
+              "output": 0,
+              "cacheRead": 0,
+              "cacheWrite": 0,
+              "total": 0
+            }
+          },
+          "stopReason": "stop",
+          "timestamp": 1790140705634,
+          "responseId": "pi-capture-normal_workspace_episode-03"
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Create pi-marker.txt, read it back, then print the completion marker."
+        }
+      ],
+      "timestamp": 1790140705528
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Writing marker."
+        },
+        {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-00-00",
+          "name": "write",
+          "arguments": {
+            "path": "pi-marker.txt",
+            "content": "pi-native-marker\n"
+          }
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "toolUse",
+      "timestamp": 1790140705585,
+      "responseId": "pi-capture-normal_workspace_episode-00"
+    },
+    {
+      "role": "toolResult",
+      "toolCallId": "pi-tool-normal_workspace_episode-00-00",
+      "toolName": "write",
+      "content": [
+        {
+          "type": "text",
+          "text": "Successfully wrote 17 bytes to pi-marker.txt"
+        }
+      ],
+      "isError": false,
+      "timestamp": 1790140705609
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Reading marker."
+        },
+        {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-01-00",
+          "name": "read",
+          "arguments": {
+            "path": "pi-marker.txt"
+          }
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "toolUse",
+      "timestamp": 1790140705609,
+      "responseId": "pi-capture-normal_workspace_episode-01"
+    },
+    {
+      "role": "toolResult",
+      "toolCallId": "pi-tool-normal_workspace_episode-01-00",
+      "toolName": "read",
+      "content": [
+        {
+          "type": "text",
+          "text": "pi-native-marker\n"
+        }
+      ],
+      "isError": false,
+      "timestamp": 1790140705615
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Complete."
+        },
+        {
+          "type": "toolCall",
+          "id": "pi-tool-normal_workspace_episode-02-00",
+          "name": "bash",
+          "arguments": {
+            "command": "printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n'"
+          }
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "toolUse",
+      "timestamp": 1790140705616,
+      "responseId": "pi-capture-normal_workspace_episode-02"
+    },
+    {
+      "role": "toolResult",
+      "toolCallId": "pi-tool-normal_workspace_episode-02-00",
+      "toolName": "bash",
+      "content": [
+        {
+          "type": "text",
+          "text": "COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\npi normal complete\n"
+        }
+      ],
+      "isError": false,
+      "timestamp": 1790140705633
+    },
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "text",
+          "text": "Final answer: pi normal complete."
+        }
+      ],
+      "api": "openai-completions",
+      "provider": "openai",
+      "model": "gpt-4o-mini",
+      "usage": {
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "totalTokens": 0,
+        "cost": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "total": 0
+        }
+      },
+      "stopReason": "stop",
+      "timestamp": 1790140705634,
+      "responseId": "pi-capture-normal_workspace_episode-03"
+    }
+  ],
+  "controls": {
+    "workspace": "<WORKSPACE>",
+    "home": "<HOME>",
+    "credentials": "fake-only"
+  }
+}

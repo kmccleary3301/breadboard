@@ -1,0 +1,9 @@
+{
+  "case_id": "p3_context_compaction",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 2,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:2a3dc816c4f0b3212adc619cbfc7fd79e57c73ef205cba2c7207948476fe4f09"
+}

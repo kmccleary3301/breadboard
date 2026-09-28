@@ -23,8 +23,14 @@ def measure_module_artifact(path_value: str) -> ModuleArtifactIdentity:
     fd = os.open(path, flags)
     try:
         before = os.fstat(fd)
-        if not stat.S_ISREG(before.st_mode) or before.st_nlink != 1:
+        if not stat.S_ISREG(before.st_mode):
             raise RuntimeError("runner module artifact is not a private regular file")
+        if before.st_nlink != 1:
+            raise RuntimeError(
+                "hardlinked installed module rejected: "
+                f"path={path}; nlink={before.st_nlink}; "
+                "reinstall with `uv pip install --link-mode=copy` or pip"
+            )
         digest = hashlib.sha256()
         remaining = before.st_size
         while remaining:

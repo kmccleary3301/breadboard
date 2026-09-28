@@ -1,0 +1,53 @@
+{
+  "case_id": "p4_bash_timeout_nonzero_cancel",
+  "covered_bullets": [
+    "read, bash, edit, write, grep, find, and ls behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "oracle": "Observed from source: bash tool execute supports timeout parameter; execution exceeding timeout rejects with 'Command timed out after <N> seconds' and kills child process tree; nonzero command exit rejects with 'Command exited with code <exitCode>'; nonexistent command returns exit code 127; mid-tool SIGTERM delivered to pi process terminates agent cleanly, returning signal status (-15 or 143) the same way the R3 timeout invocation delivers it.",
+  "signal_cancel_on_tool_start": "pi057-call-p4-03-cancel",
+  "steps": [
+    {
+      "assistant_content": "Testing bash timeout parameter.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"sleep 10\",\"timeout\":1}",
+          "id": "pi057-call-p4-00-timeout",
+          "name": "bash"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Testing bash nonzero exit.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"exit 42\"}",
+          "id": "pi057-call-p4-01-nonzero",
+          "name": "bash"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Testing missing command.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"missing_binary_abc_123\"}",
+          "id": "pi057-call-p4-02-missing",
+          "name": "bash"
+        }
+      ]
+    },
+    {
+      "assistant_content": "Starting sleep for cancellation test.",
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"sleep 30\"}",
+          "id": "pi057-call-p4-03-cancel",
+          "name": "bash"
+        }
+      ]
+    }
+  ],
+  "task": "Exercise bash timeout, nonzero exit, missing command, and termination mid-tool."
+}

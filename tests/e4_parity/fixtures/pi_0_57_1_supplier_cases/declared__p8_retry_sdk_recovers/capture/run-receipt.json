@@ -1,0 +1,9 @@
+{
+  "case_id": "p8_retry_sdk_recovers",
+  "config_mode": "declared_writable",
+  "exit_code": 0,
+  "no_session_verified": true,
+  "requests_served": 2,
+  "schema_version": "bb.e4.pi057-capture-receipt.v1",
+  "trace_sha256": "sha256:0a8ef81e233031579ba84303be2bdaaa481dd399b61d244934e5218efa6b622c"
+}

@@ -144,11 +144,11 @@ def test_composition_evidence_omits_live_paths_and_preserves_hash_identity(
     )
     reference = entry.canon(
         {
-            "schema_version": "bb.rl.harness-composition-ref.v1",
+            "schema_version": "bb.rl.harness-composition-ref.v3",
             "manifest_path": str(private / "composition-manifest.json"),
             "manifest_sha256": "sha256:" + entry.digest(manifest),
             "manifest_size_bytes": len(manifest),
-            "manifest_media_type": "application/vnd.breadboard.harness-composition+json;version=1",
+            "manifest_media_type": "application/vnd.breadboard.harness-composition+json;version=2",
         }
     )
     ref_observation, manifest_observation, inspect_observation = (
@@ -207,7 +207,7 @@ def test_composition_inspect_binds_real_summary_to_manifest() -> None:
         },
     }
     summary = {
-        "schema_version": "bb.rl.harness-composed.v1",
+        "schema_version": "bb.rl.harness-composed.v2",
         "composition_id": manifest["composition_id"],
         "input_manifest_digest": digest("6"),
         "compiler_identity": compiler,

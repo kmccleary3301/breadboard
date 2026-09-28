@@ -62,6 +62,7 @@ SUPPORT_CLAIM_SCHEMA_PATHS = {
 }
 COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.kernel.common.v1.schema.json"
 E4_COMMON_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.e4.common.v1.schema.json"
+COMPARATOR_REGISTRY_SCHEMA_PATH = Path(__file__).resolve().parents[2] / "contracts" / "kernel" / "schemas" / "bb.e4.comparator_registry.v1.schema.json"
 
 
 
@@ -579,11 +580,41 @@ def _catalog_blame_entries(repo_root: Path, catalog_path: str = CATALOG_PATH) ->
             )
     return tuple(blame)
 
-def _load_comparator_registry(path: Path) -> Mapping[str, Any]:
+def validate_comparator_registry(path: Path) -> Mapping[str, Any]:
     payload = _load_json(path)
     if not isinstance(payload, Mapping):
         raise C4ChainValidationError("comparator registry root must be an object")
+    schema = _load_json(COMPARATOR_REGISTRY_SCHEMA_PATH)
+    common = _load_json(COMMON_SCHEMA_PATH)
+    Draft202012Validator.check_schema(schema)
+    store = {
+        schema.get("$id", COMPARATOR_REGISTRY_SCHEMA_PATH.as_uri()): schema,
+        COMPARATOR_REGISTRY_SCHEMA_PATH.name: schema,
+        common.get("$id", COMMON_SCHEMA_PATH.as_uri()): common,
+        COMMON_SCHEMA_PATH.name: common,
+    }
+    validator = Draft202012Validator(
+        schema,
+        resolver=RefResolver(
+            base_uri=COMPARATOR_REGISTRY_SCHEMA_PATH.as_uri(),
+            referrer=schema,
+            store=store,
+        ),
+    )
+    errors = sorted(
+        validator.iter_errors(payload),
+        key=lambda error: (tuple(str(part) for part in error.absolute_path), error.message),
+    )
+    if errors:
+        details = "; ".join(_format_schema_error(error) for error in errors)
+        raise C4ChainValidationError(
+            f"comparator registry schema validation failed for {path}: {details}"
+        )
     return payload
+
+
+def _load_comparator_registry(path: Path) -> Mapping[str, Any]:
+    return validate_comparator_registry(path)
 
 
 def _find_comparator_entry(registry: Mapping[str, Any], lane_id: str) -> Mapping[str, Any] | None:
