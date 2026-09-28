@@ -281,6 +281,57 @@ def test_profile_stream_keeps_a_length_limited_completion_as_a_truncated_turn():
     ]
 
 
+def test_profile_client_close_aborts_a_request_blocked_on_its_response():
+    # Closing an httpx client does not wake a thread blocked reading a response;
+    # the episode's close would wait out the whole provider read timeout.
+    received = threading.Event()
+    release = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            return
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            received.set()
+            release.wait(30)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    outcome: list[BaseException] = []
+    try:
+        profile = _profile(base_url=f"http://127.0.0.1:{server.server_port}/v1")
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=60)
+
+        def invoke():
+            try:
+                runtime.invoke(
+                    client=client,
+                    model=MODEL,
+                    messages=[{"role": "user", "content": "hi"}],
+                    tools=None,
+                    stream=True,
+                    context=ProviderRuntimeContext(None, {}, stream=True, provider_profile=profile),
+                )
+            except BaseException as exc:
+                outcome.append(exc)
+
+        worker = threading.Thread(target=invoke, daemon=True)
+        worker.start()
+        assert received.wait(10)
+        client.close()
+        worker.join(5)
+        assert not worker.is_alive()
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert len(outcome) == 1 and isinstance(outcome[0], ProviderRuntimeError)
+
+
 def test_profile_identity_is_deterministic_and_secret_free():
     first = _profile(
         base_url="https://episode-secret.provider.example/v1",

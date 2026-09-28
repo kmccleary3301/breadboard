@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import errno
 import os
+import socket
+import threading
 from builtins import ExceptionGroup
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import httpx
 
@@ -24,14 +27,54 @@ from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
 
 
+class _ConnectionSockets:
+    """Sockets of one profile client's connections, so close can abort a blocked read.
+
+    Closing an httpx client does not wake a thread blocked reading a response: it
+    waits for the peer or the read timeout. Shutting the socket down does. The
+    client keeps no idle connections, so every request connects and is traced here.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._sockets: list[socket.socket] = []
+
+    def _trace(self, event: str, info: Mapping[str, Any]) -> None:
+        if event != "connection.connect_tcp.complete":
+            return
+        opened = info["return_value"].get_extra_info("socket")
+        with self._lock:
+            self._sockets = [sock for sock in self._sockets if sock.fileno() != -1]
+            self._sockets.append(opened)
+
+    def attach(self, request: httpx.Request) -> None:
+        request.extensions["trace"] = self._trace
+
+    def abort(self) -> None:
+        with self._lock:
+            sockets, self._sockets = self._sockets, []
+        for sock in sockets:
+            try:
+                sock.shutdown(socket.SHUT_RDWR)
+            except OSError as exc:
+                # Already disconnected, or closed by its connection meanwhile.
+                if exc.errno not in (errno.ENOTCONN, errno.EBADF):
+                    raise
+
+
 @dataclass(frozen=True, slots=True)
 class _ProfileClient:
     transport: Any
     profile: OpenAICompletionsProviderProfile
     http_client: httpx.Client
+    connections: _ConnectionSockets
 
     def close(self) -> None:
         failures: list[Exception] = []
+        try:
+            self.connections.abort()
+        except OSError as exc:
+            failures.append(exc)
         close = getattr(self.transport, "close", None)
         if callable(close):
             try:
@@ -96,6 +139,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             )
         self._require_openai()
         http_client: httpx.Client | None = None
+        connections = _ConnectionSockets()
         with redaction.secret_value_scope(
             profile.scoped_credential,
             *profile.caller_headers.values(),
@@ -109,6 +153,8 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     timeout=effective_timeout,
                     trust_env=False,
                     follow_redirects=False,
+                    limits=httpx.Limits(max_keepalive_connections=0),
+                    event_hooks={"request": [connections.attach]},
                 )
                 kwargs: Dict[str, Any] = {
                     "api_key": profile.scoped_credential,
@@ -129,7 +175,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 ) from None
         if http_client is None:
             raise AssertionError("profile HTTP client was not created")
-        return _ProfileClient(transport, profile, http_client)
+        return _ProfileClient(transport, profile, http_client, connections)
 
     def _stream_chat_completion(
         self,
