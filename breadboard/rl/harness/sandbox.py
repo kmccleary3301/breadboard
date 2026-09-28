@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import errno
 import fcntl
 import hashlib
 import json
@@ -594,7 +595,17 @@ def _snapshot_installed_executable(
         os.fchmod(snapshot_fd, 0o500)
         os.lseek(snapshot_fd, 0, os.SEEK_SET)
         seals = _LINUX_EXECUTABLE_SEALS
-        fcntl.fcntl(snapshot_fd, _LINUX_F_ADD_SEALS, seals)
+        # A fresh private memfd has no mappings, so F_SEAL_WRITE can only fail
+        # with EBUSY while just-written pages still carry transient kernel
+        # references (memfd_wait_for_pins). The seal set is never weakened.
+        for attempt in range(5):
+            try:
+                fcntl.fcntl(snapshot_fd, _LINUX_F_ADD_SEALS, seals)
+                break
+            except OSError as err:
+                if err.errno != errno.EBUSY or attempt == 4:
+                    raise
+                time.sleep(0.05)
         if fcntl.fcntl(snapshot_fd, _LINUX_F_GET_SEALS) & seals != seals:
             raise OSError("executable snapshot sealing was incomplete")
         snapshot = os.fstat(snapshot_fd)
@@ -1074,6 +1085,9 @@ class SandboxMeasurement:
             object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
 
 
+_STORE_FAILURE_CODE = re.compile(r"[a-z][a-z_]{0,127}")
+
+
 class SandboxRuntimeError(RuntimeError):
     def __init__(self, message: str, *, code: str, episode_id: str | None = None,
                  effective_plan_digest: str | None = None, lease_id: str | None = None,
@@ -1433,7 +1447,13 @@ def _sealed_repository_diff(
                 kill_process_group()
 
     try:
-        identity = repository.stat(follow_symlinks=False)
+        try:
+            identity = repository.stat(follow_symlinks=False)
+        except FileNotFoundError as exc:
+            raise VerifierSnapshotError(
+                "sealed workspace repository is missing",
+                code="workspace_repository_missing",
+            ) from exc
         source_git_directory = repository / ".git"
         source_objects = source_git_directory / "objects"
         if (
@@ -1443,7 +1463,7 @@ def _sealed_repository_diff(
         ):
             raise VerifierSnapshotError(
                 "sealed workspace repository layout is unsupported",
-                code="snapshot_tampered",
+                code="workspace_repository_unsupported",
             )
         forbidden_object_authorities = (
             source_objects / "info" / "alternates",
@@ -1628,6 +1648,7 @@ class TrustedProcessHandle:
         self._launch_lock = asyncio.Lock()
         self._closing = False
         self._closed = False
+        self._native_executables: dict[str, _PinnedExecutable] = {}
         self.repository_base_commit: str | None = None
         self.repository_relative_path: str | None = None
 
@@ -1852,24 +1873,25 @@ class TrustedProcessHandle:
         node_path = _native_member_path(binding, binding.executable_relative_path)
         entrypoint_path = _native_member_path(binding, binding.entrypoint_relative_path)
         _measure_native_file(entrypoint_path, binding.entrypoint_digest)
-        node = _snapshot_installed_executable(node_path, binding.executable_digest)
-        try:
-            result = await self._run_pinned_argv(
-                (
-                    self._executable.proc_fd_path,
-                    "-lc",
-                    'exec "$@"',
-                    "breadboard-native-tool",
-                    node.proc_fd_path,
-                    entrypoint_path,
-                ),
-                timeout_ms=timeout_ms,
-                output_limit=output_limit,
-                input_bytes=request_bytes,
-                extra_fds=(node.fd,),
+        if node_path not in self._native_executables or self._native_executables[node_path].closed:
+            self._native_executables[node_path] = _snapshot_installed_executable(
+                node_path, binding.executable_digest
             )
-        finally:
-            node.close()
+        node = self._native_executables[node_path]
+        result = await self._run_pinned_argv(
+            (
+                self._executable.proc_fd_path,
+                "-lc",
+                'exec "$@"',
+                "breadboard-native-tool",
+                node.proc_fd_path,
+                entrypoint_path,
+            ),
+            timeout_ms=timeout_ms,
+            output_limit=output_limit,
+            input_bytes=request_bytes,
+            extra_fds=(node.fd,),
+        )
         if result.get("returncode") != 0:
             raise SandboxLaunchError(
                 "native tool process exited unsuccessfully",
@@ -2237,6 +2259,9 @@ class TrustedProcessHandle:
                 self._executable.close()
                 if self._command_executable is not None:
                     self._command_executable.close()
+                for native_exec in tuple(self._native_executables.values()):
+                    native_exec.close()
+                self._native_executables.clear()
                 if self._workspace_fd >= 0:
                     os.close(self._workspace_fd)
                     self._workspace_fd = -1
@@ -2966,8 +2991,25 @@ class SandboxWorkspaceLease:
                 return receipt
             except Exception as exc:
                 self._state = WorkspaceLeaseState.QUARANTINED
+                if isinstance(exc, VerifierSnapshotError):
+                    raise VerifierSnapshotError(
+                        str(exc),
+                        code=exc.code,
+                        lease_id=self.lease_id,
+                        details=exc.details,
+                    ) from exc
+                if isinstance(exc, RuntimeError) and _STORE_FAILURE_CODE.fullmatch(
+                    str(exc)
+                ):
+                    raise VerifierSnapshotError(
+                        "verifier snapshot failed",
+                        code=str(exc),
+                        lease_id=self.lease_id,
+                    ) from exc
                 raise VerifierSnapshotError(
-                    "verifier snapshot failed", code=str(exc), lease_id=self.lease_id
+                    "verifier snapshot failed",
+                    code="snapshot_failed",
+                    lease_id=self.lease_id,
                 ) from exc
 
     async def close(self) -> SandboxCleanupReceipt:

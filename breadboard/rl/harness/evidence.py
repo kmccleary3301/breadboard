@@ -2004,6 +2004,10 @@ class EpisodeEvidenceRepository:
         self._locks: dict[str, threading.RLock] = {}
         self._locks_guard = threading.Lock()
 
+    @property
+    def max_object_bytes(self) -> int:
+        return self._max_object_bytes
+
     def _lock_for(self, episode_id: str) -> threading.RLock:
         with self._locks_guard:
             return self._locks.setdefault(episode_id, threading.RLock())

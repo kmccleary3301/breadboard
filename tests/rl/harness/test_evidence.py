@@ -3271,6 +3271,7 @@ def _snapshot_receipt(plan_digest: str) -> VerifierSnapshotReceipt:
         inode_count=3,
         byte_count=41,
         immutable_storage_object_id="cas/snapshot-authoritative",
+        skipped_symlink_count=0,
     )
 
 

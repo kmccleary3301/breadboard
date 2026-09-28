@@ -10,6 +10,7 @@ from typing import Any
 from breadboard_engine.compilation.contracts import canonical_json_bytes
 from breadboard.rl.harness import contracts as c
 from breadboard.rl.harness.evidence import (
+    MAX_OBJECT_BYTES,
     EvidenceCorruptError,
     EvidenceValidationError,
     V2EvidenceAuthority,
@@ -477,6 +478,7 @@ class DeterministicLease:
             inode_count=0,
             byte_count=0,
             immutable_storage_object_id="cas/snapshot-deterministic",
+            skipped_symlink_count=0,
         )
         patch = "diff --git a/a.py b/a.py\n"
         self._sealed_workspace_diff = {
@@ -747,6 +749,10 @@ class DeterministicEvidenceRepository:
             verifier_measurement_digest=None,
             verifier_result_digest=None,
         )
+
+    @property
+    def max_object_bytes(self) -> int:
+        return MAX_OBJECT_BYTES
 
     def publish_closed(self, inputs: Any) -> Any:
         self.calls.append("repo.publish_closed")
