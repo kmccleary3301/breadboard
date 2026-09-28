@@ -87,10 +87,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM31",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
-        "packet": "E4-CompilerCutover",
-        "sha256": "4837d71e92dbe587cea5cff69a13bbadb18f52e773862c7f4a9f453c3b7a673a",
+        "packet": "ACR-20260928-rl-lease-start-seal-and-close",
+        "sha256": "13db722eb115daf39f8753efcc8bff2fe45aa9f66041645f8f260a6c828a83b5",
         "class": "plan_mandated_evolution",
-        "ref": "AM32",
+        "ref": "AM34",
     },
     "bb.e4.lane_manifest.v1": {
         "packet": "F4",
