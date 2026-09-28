@@ -28,6 +28,7 @@ from breadboard_engine.compilation.provider_response import (
     PI_0_57_1_RESPONSE_CONSUMER_ID,
     NATIVE_CHAT_RESPONSE_TARGETS,
     OMP_RESPONSE_CONSUMER_ID,
+    OMP_16_2_13_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
     OPENCLAW_RESPONSE_CONSUMER_ID,
     admit_native_response_binding,
@@ -300,6 +301,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
         PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
         OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
+        OMP_16_2_13_RESPONSE_CONSUMER_ID: "oh-my-pi-r2@16.2.13",
         OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
         HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
     }
@@ -396,6 +398,59 @@ def _pi_0_57_1_public_config(
     }
 
 
+_OMP_16_2_13_MODEL_REGISTRY_FIELDS = frozenset(
+    {"provider_id", "api", "auth", "contextWindow", "maxTokens", "reasoning", "input", "compat"}
+)
+
+
+def _omp_16_2_13_public_config(
+    profile: OpenAICompletionsProviderProfile, runtime_profile: Any,
+) -> dict[str, Any]:
+    """Build the pinned 16.2.13 model object from the compiled model registry.
+
+    The registry carries the non-episode fields of the custody models.json;
+    identity, endpoint, and token limits come from the episode profile.
+    """
+    native = thaw_json(runtime_profile)
+    if not isinstance(native, Mapping) or "model_registry" not in native:
+        raise ValueError("Oh My Pi 16.2.13 target runtime profile lacks its model registry")
+    registry = native["model_registry"]
+    if (
+        not isinstance(registry, Mapping)
+        or set(registry) not in {_OMP_16_2_13_MODEL_REGISTRY_FIELDS, _OMP_16_2_13_MODEL_REGISTRY_FIELDS | {"request_policy"}}
+    ):
+        raise ValueError("Oh My Pi 16.2.13 model registry fields are malformed")
+    compat = registry["compat"]
+    if (
+        registry["api"] != "openai-completions"
+        or type(registry["provider_id"]) is not str
+        or not registry["provider_id"]
+        or registry["provider_id"] == "openai"
+        or registry["reasoning"] is not False
+        or not isinstance(registry["input"], list)
+        or not isinstance(compat, Mapping)
+        or "supportsDeveloperRole" not in compat
+        or compat["supportsDeveloperRole"] is not False
+        or "supportsStore" not in compat
+        or compat["supportsStore"] is not False
+        or "maxTokensField" not in compat
+        or compat["maxTokensField"] != "max_completion_tokens"
+    ):
+        raise ValueError("Oh My Pi 16.2.13 model registry values are not admitted")
+    return {
+        "id": profile.model,
+        "name": profile.model,
+        "api": registry["api"],
+        "provider": registry["provider_id"],
+        "baseUrl": profile.base_url,
+        "reasoning": registry["reasoning"],
+        "input": list(registry["input"]),
+        "contextWindow": profile.context_window,
+        "maxTokens": profile.max_output_tokens,
+        "compat": dict(compat),
+    }
+
+
 
 def _validate_request_features(
     profile: OpenAICompletionsProviderProfile,
@@ -415,6 +470,7 @@ def _validate_request_features(
             # Pinned 0.57.1 buildParams emits no n and, under custody compat
             # supportsStore=false, no store (openai-completions.js:295-356).
             PI_0_57_1_RESPONSE_CONSUMER_ID,
+            OMP_16_2_13_RESPONSE_CONSUMER_ID,
         }
     ):
         # Native source clients emit their own wire and omit profile-inserted n.
@@ -730,6 +786,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 PI_0_57_1_RESPONSE_CONSUMER_ID,
                 *NATIVE_CHAT_RESPONSE_TARGETS,
                 OMP_RESPONSE_CONSUMER_ID,
+                OMP_16_2_13_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
             }
             or target.source_manifest is None
@@ -831,6 +888,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                     "supportsStrictMode": False,
                 },
             }
+        elif target.renderer_id == OMP_16_2_13_RESPONSE_CONSUMER_ID:
+            public_config = _omp_16_2_13_public_config(profile, target.runtime_profile)
         else:
             self._native_cost = None
             runtime_profile = thaw_json(target.runtime_profile)
@@ -900,6 +959,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 PI_0_57_1_RESPONSE_CONSUMER_ID,
                 OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
+                OMP_16_2_13_RESPONSE_CONSUMER_ID,
             }
             or self._native_binding is None
             or self._native_stream_prompt is not None
@@ -1455,6 +1515,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 PI_0_57_1_RESPONSE_CONSUMER_ID,
                 OMP_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
+                OMP_16_2_13_RESPONSE_CONSUMER_ID,
             }:
                 payload = {"native_response": result.as_dict()}
                 return PolicyRuntimeInvokeResult(

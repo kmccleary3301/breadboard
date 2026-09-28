@@ -105,6 +105,9 @@ _YAML_EXOTIC_RE = re.compile(
     re.IGNORECASE,
 )
 _IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:/-]*$")
+# Tool parameter names are JSON Schema property names; source tool surfaces
+# (Oh My Pi 16.2.13 edit `_input`) declare leading-underscore members verbatim.
+_PARAMETER_NAME_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.:/-]*$")
 _PLUGIN_ID_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 # Fixed compiler-policy bounds are part of the semantic ABI, not caller knobs.
@@ -1361,6 +1364,17 @@ def _require_typed_identifier(value: Any, pointer: str) -> str:
     return _require_identifier(value, pointer)
 
 
+def _require_parameter_name(value: Any, pointer: str) -> str:
+    if type(value) is not str or not value or value != value.strip() or not _PARAMETER_NAME_RE.fullmatch(value):
+        raise _error(
+            CompileStage.SCHEMA,
+            CompileErrorCode.SCHEMA_INVALID_VALUE,
+            instance_pointer=pointer,
+            details={"expected": "identifier"},
+        )
+    return value
+
+
 def _closed_fields(mapping: Mapping[str, Any], allowed: set[str], pointer: str) -> None:
     for key in mapping:
         if key not in allowed:
@@ -1998,7 +2012,7 @@ def _parse_tool(path: str, payload: bytes, dep: SourceDependency) -> dict[str, A
         param = _require_object(param_raw, param_pointer)
         allowed_param = {"name", "schema", "type", "description", "required", "default", "validation", "examples", "items", "properties", "enum", "additionalProperties", "oneOf", "anyOf", "allOf", "$ref"}
         _closed_fields(param, allowed_param, param_pointer)
-        param_name = _require_identifier(param.get("name"), param_pointer + "/name")
+        param_name = _require_parameter_name(param.get("name"), param_pointer + "/name")
         if param_name in parameter_names:
             raise _error(CompileStage.SEMANTIC_VALIDATION, CompileErrorCode.TOOL_INVALID, logical_path=path, instance_pointer=param_pointer + "/name", details={"reason": "duplicate_parameter"})
         parameter_names.add(param_name)

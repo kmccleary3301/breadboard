@@ -1,0 +1,10 @@
+{
+  "case_id": "o12_process_lifecycle",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 3,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:62cdd809d90f6caf02ef3fee1a427512668c620ead92ec83f9732e29ea238e12"
+}

@@ -1,0 +1,99 @@
+{
+  "assets": [
+    {
+      "bytes": 4599,
+      "path": "harness.yaml",
+      "sha256": "sha256:38bbf3de732cc6ff5696b8fdb924bc717f70027793370b44fa527897b6d55e7f"
+    },
+    {
+      "bytes": 14487,
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:0d96613a7492b5c30a5c83eedde8c5747c6a9d35d7d0c9b8dd0a5c44f7a77123"
+    },
+    {
+      "bytes": 2995,
+      "path": "native-config.json",
+      "sha256": "sha256:42c25bcd7ff58cddd01fbc9e7b43892d30d416f508e145b66d040a42771d55c2"
+    },
+    {
+      "bytes": 768,
+      "path": "native-worker.json",
+      "sha256": "sha256:2b5faa330951a6fae434e80730e8565f2cfb10829f31bc5c601a499626e31117"
+    },
+    {
+      "bytes": 20912,
+      "path": "tool-surface.json",
+      "sha256": "sha256:6a92627aae2288eb5ddadc547a9531db43c0afa8a6928b5b5e5c802f483f7202"
+    },
+    {
+      "bytes": 1106,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:545636e19386d3d4e0ae6d77354527499999c3ebfbca61b9fa5aa4ead7c0b308"
+    },
+    {
+      "bytes": 1713,
+      "path": "source.json",
+      "sha256": "sha256:4344350b195416e2b9a10aa043f715db69a8a0c910792a5f3eecd5527562e3fd"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "oh-my-pi",
+  "overlay": {
+    "argv": [
+      "-p",
+      "--mode",
+      "json",
+      "--model",
+      "vllm-local/Qwen/Qwen3.5-35B-A3B",
+      "--tools",
+      "read,bash,edit,write",
+      "--thinking",
+      "off",
+      "--no-extensions",
+      "--no-skills",
+      "--no-session"
+    ],
+    "overlay_id": "breadboard.oh-my-pi.r2-headless.v16.2.13",
+    "settings": [
+      {
+        "name": "retry.enabled",
+        "value": false
+      },
+      {
+        "name": "images.blockImages",
+        "value": true
+      },
+      {
+        "name": "providers.streamFirstEventTimeoutSeconds",
+        "value": 120
+      },
+      {
+        "name": "providers.streamIdleTimeoutSeconds",
+        "value": 120
+      },
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.max_tokens",
+        "value": 2048
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "oh-my-pi-r2@16.2.13",
+  "version": "16.2.13"
+}

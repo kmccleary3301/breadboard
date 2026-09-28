@@ -1,0 +1,14 @@
+diff --git a/frag_marker.txt b/frag_marker.txt
+new file mode 100644
+index 0000000..a87a5e2
+--- /dev/null
++++ b/frag_marker.txt
+@@ -0,0 +1 @@
++frag-omp
+diff --git a/malformed_recovered.txt b/malformed_recovered.txt
+new file mode 100644
+index 0000000..6899b89
+--- /dev/null
++++ b/malformed_recovered.txt
+@@ -0,0 +1 @@
++recovered-omp

@@ -1,0 +1,1873 @@
+{
+  "schema_version": "bb.e4.omp16213-capture-cases.v2",
+  "profile": "omp@16.2.13",
+  "supplier": {
+    "package": "@oh-my-pi/pi-coding-agent",
+    "version": "16.2.13",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA=="
+  },
+  "provider": "vllm-local",
+  "model": "Qwen/Qwen3.5-35B-A3B",
+  "request_cap": 8,
+  "headless_argv": [
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B"
+  ],
+  "profile_argv": [
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session"
+  ],
+  "dropped_overlay_argv": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "config_modes": {
+    "declared": {
+      "overlay": "config/omp16213-profile.yml"
+    },
+    "retry_default_control": {
+      "overlay": "config/omp16213-profile-retry-default.yml"
+    }
+  },
+  "h_bullet_coverage": {
+    "bullet_1": {
+      "text": "prompt and message construction",
+      "cases": [
+        "o0_text_stop",
+        "o1_four_tools_hashline",
+        "o6_disabled_resources_agents_md",
+        "o6b_disabled_resources_no_rules",
+        "o8_normal_multiturn"
+      ]
+    },
+    "bullet_2": {
+      "text": "tool ordering, names, descriptions, and JSON schemas",
+      "cases": [
+        "o0_text_stop"
+      ]
+    },
+    "bullet_3": {
+      "text": "read, bash, edit, write, grep, find, and ls behavior",
+      "cases": [
+        "o1_four_tools_hashline",
+        "o4_bash_timeout_nonzero_cancel",
+        "o7_hashline_stale_unseen_anchor"
+      ]
+    },
+    "bullet_4": {
+      "text": "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+      "cases": [
+        "o1_four_tools_hashline",
+        "o2_fragmented_malformed_unknown",
+        "o7_hashline_stale_unseen_anchor"
+      ]
+    },
+    "bullet_5": {
+      "text": "JSON event output and terminal result behavior",
+      "cases": [
+        "o0_text_stop",
+        "o1_four_tools_hashline",
+        "o5_http500_retry_disabled",
+        "o8_normal_multiturn",
+        "o9_budget_limit_stop",
+        "o11_length_cutoff",
+        "f2_json_mode_without_print"
+      ]
+    },
+    "bullet_6": {
+      "text": "parser repair and invalid tool-call behavior",
+      "cases": [
+        "o2_fragmented_malformed_unknown",
+        "o7_hashline_stale_unseen_anchor",
+        "o10_stream_broken",
+        "o11_length_cutoff"
+      ]
+    },
+    "bullet_7": {
+      "text": "context limits, compaction, and history retention",
+      "cases": [
+        "o3_threshold_compaction",
+        "o8_normal_multiturn"
+      ]
+    },
+    "bullet_8": {
+      "text": "timeout, cancellation, retry-disabled behavior, and process errors",
+      "cases": [
+        "o4_bash_timeout_nonzero_cancel",
+        "o5_http500_retry_disabled",
+        "o9_budget_limit_stop",
+        "o10_stream_broken",
+        "o12_process_lifecycle",
+        "f1_config_key_value_rejected"
+      ]
+    },
+    "bullet_9": {
+      "text": "no-session behavior",
+      "cases": [
+        "o0_text_stop",
+        "o1_four_tools_hashline",
+        "o2_fragmented_malformed_unknown",
+        "o3_threshold_compaction",
+        "o4_bash_timeout_nonzero_cancel",
+        "o5_http500_retry_disabled",
+        "o6_disabled_resources_agents_md",
+        "o6b_disabled_resources_no_rules",
+        "o7_hashline_stale_unseen_anchor",
+        "o8_normal_multiturn",
+        "o9_budget_limit_stop",
+        "o10_stream_broken",
+        "o11_length_cutoff",
+        "o12_process_lifecycle"
+      ]
+    },
+    "bullet_10": {
+      "text": "disabled skills, extensions, and prompt templates",
+      "cases": [
+        "o6_disabled_resources_agents_md",
+        "o6b_disabled_resources_no_rules",
+        "f0_no_prompt_templates_rejected"
+      ]
+    },
+    "bullet_11": {
+      "text": "thinking-option handling",
+      "cases": [
+        "o0_text_stop"
+      ]
+    },
+    "bullet_12": {
+      "text": "provider payload construction and usage accounting",
+      "cases": [
+        "o0_text_stop",
+        "o3_threshold_compaction"
+      ]
+    }
+  },
+  "cases": {
+    "o0_text_stop": {
+      "case_id": "o0_text_stop",
+      "kind": "capture",
+      "what_it_exercises": "Request body shape (system/user messages, tools, max_completion_tokens, stream, stream_options), --thinking off request fields, single text stop and usage accounting.",
+      "covered_bullets": [
+        "prompt and message construction",
+        "tool ordering, names, descriptions, and JSON schemas",
+        "JSON event output and terminal result behavior",
+        "no-session behavior",
+        "thinking-option handling",
+        "provider payload construction and usage accounting"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY and nothing else.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "READY",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 1200,
+            "completion_tokens": 1,
+            "total_tokens": 1201
+          },
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 1,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "events_required": [
+          "session",
+          "agent_start",
+          "message_end",
+          "agent_end"
+        ],
+        "effect_required": false
+      }
+    },
+    "o1_four_tools_hashline": {
+      "case_id": "o1_four_tools_hashline",
+      "kind": "capture",
+      "what_it_exercises": "All four tools in sequence: read (file and directory), bash, write, and hashline edit anchored on the content tag minted by the read (README.txt#DDE6).",
+      "covered_bullets": [
+        "prompt and message construction",
+        "read, bash, edit, write, grep, find, and ls behavior",
+        "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+        "JSON event output and terminal result behavior",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Read README.txt, run a bash marker command, write written.txt, edit line 2 of README.txt with a hashline edit, list nested/dir, then stop.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "Reading the file.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o1_four_tools_hashline-01-read",
+              "name": "read",
+              "arguments": "{\"path\":\"README.txt\",\"i\":\"Reading README\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Running bash.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o1_four_tools_hashline-02-bash",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'bash-omp\\\\n' > bash_marker.txt && cat bash_marker.txt\",\"i\":\"Writing bash marker\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Writing a file.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o1_four_tools_hashline-03-write",
+              "name": "write",
+              "arguments": "{\"path\":\"written.txt\",\"content\":\"written by omp write\\n\",\"i\":\"Writing file\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Editing with hashline.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o1_four_tools_hashline-04-edit",
+              "name": "edit",
+              "arguments": "{\"input\":\"[README.txt#DDE6]\\nSWAP 2.=2:\\n+Edited line 2 via hashline\\n\",\"i\":\"Editing README line 2\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Listing a directory.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o1_four_tools_hashline-05-readdir",
+              "name": "read",
+              "arguments": "{\"path\":\"nested/dir\",\"i\":\"Listing nested dir\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "All four tools completed.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 6,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {
+          "README.txt": "Initial text line 1\nEdited line 2 via hashline\n",
+          "bash_marker.txt": "bash-omp\n",
+          "written.txt": "written by omp write\n"
+        },
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "hashline_tag_note": "DDE6 = computeFileHash('Initial text line 1\\nInitial text line 2\\n') from @oh-my-pi/hashline@16.2.13"
+      }
+    },
+    "o2_fragmented_malformed_unknown": {
+      "case_id": "o2_fragmented_malformed_unknown",
+      "kind": "capture",
+      "what_it_exercises": "Fragmented SSE (text split over 3 chunks, tool-call arguments split over 4 chunks), malformed tool arguments (truncated JSON), unknown tool name, and native continuation to a recovered marker without an auxiliary repair model.",
+      "covered_bullets": [
+        "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+        "parser repair and invalid tool-call behavior",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Write frag_marker.txt, then attempt the remaining calls; if a call is invalid, recover and create malformed_recovered.txt with recovered-omp, then stop.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": null,
+          "text_fragments": [
+            "Frag",
+            "mented ",
+            "text."
+          ],
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o2_fragmented_malformed_unknown-01-frag",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'frag-omp\\\\n' > frag_marker.txt\",\"i\":\"Writing fragment marker\"}",
+              "split": [
+                "{\"comma",
+                "nd\":\"printf 'frag-omp\\\\",
+                "n' > frag_marke",
+                "r.txt\",\"i\":\"Writing fragment marker\"}"
+              ]
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "This call is intentionally malformed.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o2_fragmented_malformed_unknown-02-malformed",
+              "name": "bash",
+              "arguments": "{\"command\":",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "This tool does not exist.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o2_fragmented_malformed_unknown-03-unknown",
+              "name": "does_not_exist_tool",
+              "arguments": "{\"x\":1,\"i\":\"Unknown tool\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Recovering.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o2_fragmented_malformed_unknown-04-recover",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'recovered-omp\\\\n' > malformed_recovered.txt\",\"i\":\"Recovering marker\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Recovered after the malformed and unknown calls.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 5,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {
+          "frag_marker.txt": "frag-omp\n",
+          "malformed_recovered.txt": "recovered-omp\n"
+        },
+        "effect_absent": [
+          "must_not_exist.txt"
+        ],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "o3_threshold_compaction": {
+      "case_id": "o3_threshold_compaction",
+      "kind": "capture",
+      "what_it_exercises": "Threshold compaction: the first completion reports prompt_tokens 190000 (> contextWindow 200000 - reserveTokens 16384 = 183616) with a tool call; captures whether 16.2.13 (default strategy snapcompact, midTurnEnabled) compacts before the next request and whether any summarization request reaches the receiver.",
+      "covered_bullets": [
+        "context limits, compaction, and history retention",
+        "no-session behavior",
+        "provider payload construction and usage accounting"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Run one bash command and then stop.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "Running one command.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o3_threshold_compaction-01-bash",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'compaction-omp\\\\n'\",\"i\":\"Printing marker\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": {
+            "prompt_tokens": 190000,
+            "completion_tokens": 20,
+            "total_tokens": 190020
+          },
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Done after the threshold was crossed.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": {
+            "prompt_tokens": 1500,
+            "completion_tokens": 8,
+            "total_tokens": 1508
+          },
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response 1.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response 2.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response 3.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": null,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "events_of_interest": [
+          "auto_compaction_start",
+          "auto_compaction_end",
+          "compaction"
+        ]
+      }
+    },
+    "o4_bash_timeout_nonzero_cancel": {
+      "case_id": "o4_bash_timeout_nonzero_cancel",
+      "kind": "capture",
+      "what_it_exercises": "Bash timeout parameter (timeout 1 s on sleep 5), nonzero exit 42, missing binary exit 127, and SIGTERM to the omp process 0.5 s after upstream emits tool_execution_start for the cancel call.",
+      "covered_bullets": [
+        "read, bash, edit, write, grep, find, and ls behavior",
+        "timeout, cancellation, retry-disabled behavior, and process errors",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Run the four bash commands in order and report results.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": "omp16213-call-o4_bash_timeout_nonzero_cancel-04-cancel",
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "Timeout probe.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-01-timeout",
+              "name": "bash",
+              "arguments": "{\"command\":\"sleep 5; echo late > timeout_late.txt\",\"timeout\":1,\"i\":\"Timeout probe\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Exit 42 probe.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-02-exit42",
+              "name": "bash",
+              "arguments": "{\"command\":\"exit 42\",\"i\":\"Exit 42 probe\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Missing binary probe.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-03-missing",
+              "name": "bash",
+              "arguments": "{\"command\":\"definitely-not-a-command-omp16213\",\"i\":\"Missing binary probe\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Cancel probe.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-04-cancel",
+              "name": "bash",
+              "arguments": "{\"command\":\"sleep 30; echo never > cancel_marker.txt\",\"i\":\"Cancel probe\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 4,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [
+          "timeout_late.txt",
+          "cancel_marker.txt"
+        ],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "signal": "SIGTERM after tool_execution_start of the cancel call"
+      }
+    },
+    "o5_http500_retry_disabled": {
+      "case_id": "o5_http500_retry_disabled",
+      "kind": "capture",
+      "what_it_exercises": "Persistent HTTP 500 under retry.enabled=false. The receiver scripts 12 consecutive 500 responses and records every HTTP attempt, so session retries, transport retries (maxAttempts) and hidden SDK retries are all counted.",
+      "covered_bullets": [
+        "JSON event output and terminal result behavior",
+        "timeout, cancellation, retry-disabled behavior, and process errors",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared",
+        "retry_default_control"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        },
+        {
+          "kind": "http_error",
+          "status": 500,
+          "body": {
+            "error": {
+              "message": "Scripted HTTP 500",
+              "type": "server_error"
+            }
+          }
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 1,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {
+        "retry_default_control": {
+          "requests": null,
+          "requests_at_least": 2
+        }
+      },
+      "oracle_notes": {
+        "declared": "retry.enabled=false via --config overlay: exactly one HTTP request (one sampled attempt, no session retry, transport maxAttempts=1 while the first-event watchdog is armed).",
+        "retry_default_control": "Same overlay minus retry.enabled: upstream default session retry (retry.maxRetries 10, baseDelayMs 500) issues further attempts until the request cap stops it; shows the overlay file is what disables retry."
+      }
+    },
+    "o6_disabled_resources_agents_md": {
+      "case_id": "o6_disabled_resources_agents_md",
+      "kind": "capture",
+      "what_it_exercises": "Profile argv as-is (no --no-rules: not part of the 18.1.17 overlay): planted skills, extensions, rules and prompt templates in the workspace (.omp, .claude, .agents, .cursor) and the agent dir, plus AGENTS.md. Skills/extensions/prompt-template markers must be absent from every request; AGENTS.md and alwaysApply rule markers are present.",
+      "covered_bullets": [
+        "prompt and message construction",
+        "no-session behavior",
+        "disabled skills, extensions, and prompt templates"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {
+        ".omp/skills/planted-omp-skill/SKILL.md": "---\nname: planted-omp-skill\ndescription: PLANTED_OMP_SKILL_TOKEN\n---\nPLANTED_OMP_SKILL_TOKEN body\n",
+        ".omp/extensions/planted-omp-ext/index.ts": "// PLANTED_OMP_EXTENSION_TOKEN\nexport default function (pi: any) { throw new Error('PLANTED_OMP_EXTENSION_TOKEN loaded'); }\n",
+        ".omp/rules/planted-omp-rule.md": "---\ndescription: PLANTED_OMP_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_OMP_RULE_TOKEN: always say BANANA.\n",
+        ".omp/prompts/planted-omp-prompt.md": "PLANTED_OMP_PROMPT_TOKEN template\n",
+        ".claude/skills/planted-claude-skill/SKILL.md": "---\nname: planted-claude-skill\ndescription: PLANTED_CLAUDE_SKILL_TOKEN\n---\nPLANTED_CLAUDE_SKILL_TOKEN body\n",
+        ".agents/rules/planted-agents-rule.md": "---\ndescription: PLANTED_AGENTS_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_AGENTS_RULE_TOKEN\n",
+        ".cursor/rules/planted-cursor-rule.mdc": "---\ndescription: PLANTED_CURSOR_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_CURSOR_RULE_TOKEN\n",
+        "AGENTS.md": "AGENTS_MD_SECRET_TOKEN_42: project context file.\n"
+      },
+      "planted_config": {
+        "skills/planted-agentdir-skill/SKILL.md": "---\nname: planted-agentdir-skill\ndescription: PLANTED_AGENTDIR_SKILL_TOKEN\n---\nPLANTED_AGENTDIR_SKILL_TOKEN body\n",
+        "extensions/planted-agentdir-ext.ts": "// PLANTED_AGENTDIR_EXTENSION_TOKEN\nexport default function (pi: any) { throw new Error('PLANTED_AGENTDIR_EXTENSION_TOKEN loaded'); }\n",
+        "rules/planted-agentdir-rule.md": "---\ndescription: PLANTED_AGENTDIR_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_AGENTDIR_RULE_TOKEN\n",
+        "prompts/planted-agentdir-prompt.md": "PLANTED_AGENTDIR_PROMPT_TOKEN template\n"
+      },
+      "request_markers": [
+        "AGENTS_MD_SECRET_TOKEN_42",
+        "PLANTED_AGENTDIR_EXTENSION_TOKEN",
+        "PLANTED_AGENTDIR_PROMPT_TOKEN",
+        "PLANTED_AGENTDIR_RULE_TOKEN",
+        "PLANTED_AGENTDIR_SKILL_TOKEN",
+        "PLANTED_AGENTS_RULE_TOKEN",
+        "PLANTED_CLAUDE_SKILL_TOKEN",
+        "PLANTED_CURSOR_RULE_TOKEN",
+        "PLANTED_OMP_EXTENSION_TOKEN",
+        "PLANTED_OMP_PROMPT_TOKEN",
+        "PLANTED_OMP_RULE_TOKEN",
+        "PLANTED_OMP_SKILL_TOKEN"
+      ],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "READY",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 1,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [
+          "PLANTED_AGENTDIR_EXTENSION_TOKEN",
+          "PLANTED_AGENTDIR_PROMPT_TOKEN",
+          "PLANTED_AGENTDIR_SKILL_TOKEN",
+          "PLANTED_CLAUDE_SKILL_TOKEN",
+          "PLANTED_OMP_EXTENSION_TOKEN",
+          "PLANTED_OMP_PROMPT_TOKEN",
+          "PLANTED_OMP_SKILL_TOKEN"
+        ],
+        "request_markers_present": [
+          "AGENTS_MD_SECRET_TOKEN_42",
+          "PLANTED_AGENTDIR_RULE_TOKEN",
+          "PLANTED_AGENTS_RULE_TOKEN",
+          "PLANTED_CURSOR_RULE_TOKEN",
+          "PLANTED_OMP_RULE_TOKEN"
+        ],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "o6b_disabled_resources_no_rules": {
+      "case_id": "o6b_disabled_resources_no_rules",
+      "kind": "capture",
+      "what_it_exercises": "Same plant as o6 with the 16.2.13-native --no-rules flag appended, to show which planted rule markers --no-rules removes.",
+      "covered_bullets": [
+        "prompt and message construction",
+        "no-session behavior",
+        "disabled skills, extensions, and prompt templates"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [],
+      "extra_argv": [
+        "--no-rules"
+      ],
+      "planted_workspace": {
+        ".omp/skills/planted-omp-skill/SKILL.md": "---\nname: planted-omp-skill\ndescription: PLANTED_OMP_SKILL_TOKEN\n---\nPLANTED_OMP_SKILL_TOKEN body\n",
+        ".omp/extensions/planted-omp-ext/index.ts": "// PLANTED_OMP_EXTENSION_TOKEN\nexport default function (pi: any) { throw new Error('PLANTED_OMP_EXTENSION_TOKEN loaded'); }\n",
+        ".omp/rules/planted-omp-rule.md": "---\ndescription: PLANTED_OMP_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_OMP_RULE_TOKEN: always say BANANA.\n",
+        ".omp/prompts/planted-omp-prompt.md": "PLANTED_OMP_PROMPT_TOKEN template\n",
+        ".claude/skills/planted-claude-skill/SKILL.md": "---\nname: planted-claude-skill\ndescription: PLANTED_CLAUDE_SKILL_TOKEN\n---\nPLANTED_CLAUDE_SKILL_TOKEN body\n",
+        ".agents/rules/planted-agents-rule.md": "---\ndescription: PLANTED_AGENTS_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_AGENTS_RULE_TOKEN\n",
+        ".cursor/rules/planted-cursor-rule.mdc": "---\ndescription: PLANTED_CURSOR_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_CURSOR_RULE_TOKEN\n",
+        "AGENTS.md": "AGENTS_MD_SECRET_TOKEN_42: project context file.\n"
+      },
+      "planted_config": {
+        "skills/planted-agentdir-skill/SKILL.md": "---\nname: planted-agentdir-skill\ndescription: PLANTED_AGENTDIR_SKILL_TOKEN\n---\nPLANTED_AGENTDIR_SKILL_TOKEN body\n",
+        "extensions/planted-agentdir-ext.ts": "// PLANTED_AGENTDIR_EXTENSION_TOKEN\nexport default function (pi: any) { throw new Error('PLANTED_AGENTDIR_EXTENSION_TOKEN loaded'); }\n",
+        "rules/planted-agentdir-rule.md": "---\ndescription: PLANTED_AGENTDIR_RULE_TOKEN\nalwaysApply: true\n---\nPLANTED_AGENTDIR_RULE_TOKEN\n",
+        "prompts/planted-agentdir-prompt.md": "PLANTED_AGENTDIR_PROMPT_TOKEN template\n"
+      },
+      "request_markers": [
+        "AGENTS_MD_SECRET_TOKEN_42",
+        "PLANTED_AGENTDIR_EXTENSION_TOKEN",
+        "PLANTED_AGENTDIR_PROMPT_TOKEN",
+        "PLANTED_AGENTDIR_RULE_TOKEN",
+        "PLANTED_AGENTDIR_SKILL_TOKEN",
+        "PLANTED_AGENTS_RULE_TOKEN",
+        "PLANTED_CLAUDE_SKILL_TOKEN",
+        "PLANTED_CURSOR_RULE_TOKEN",
+        "PLANTED_OMP_EXTENSION_TOKEN",
+        "PLANTED_OMP_PROMPT_TOKEN",
+        "PLANTED_OMP_RULE_TOKEN",
+        "PLANTED_OMP_SKILL_TOKEN"
+      ],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "READY",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 1,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [
+          "PLANTED_AGENTDIR_EXTENSION_TOKEN",
+          "PLANTED_AGENTDIR_PROMPT_TOKEN",
+          "PLANTED_AGENTDIR_RULE_TOKEN",
+          "PLANTED_AGENTDIR_SKILL_TOKEN",
+          "PLANTED_AGENTS_RULE_TOKEN",
+          "PLANTED_CLAUDE_SKILL_TOKEN",
+          "PLANTED_CURSOR_RULE_TOKEN",
+          "PLANTED_OMP_EXTENSION_TOKEN",
+          "PLANTED_OMP_PROMPT_TOKEN",
+          "PLANTED_OMP_RULE_TOKEN",
+          "PLANTED_OMP_SKILL_TOKEN"
+        ],
+        "request_markers_present": [
+          "AGENTS_MD_SECRET_TOKEN_42"
+        ],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "o7_hashline_stale_unseen_anchor": {
+      "case_id": "o7_hashline_stale_unseen_anchor",
+      "kind": "capture",
+      "what_it_exercises": "Hashline anchor validation: (1) README edit with a fabricated tag #0000 before any read; (2) partial read long.txt:1-5; (3) edit of unseen line 350 under the valid tag B76A; (4) edit of seen line 2 under B76A.",
+      "covered_bullets": [
+        "read, bash, edit, write, grep, find, and ls behavior",
+        "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+        "parser repair and invalid tool-call behavior",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Exercise the hashline anchor checks in order, then stop.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {
+        "long.txt": "long line 1\nlong line 2\nlong line 3\nlong line 4\nlong line 5\nlong line 6\nlong line 7\nlong line 8\nlong line 9\nlong line 10\nlong line 11\nlong line 12\nlong line 13\nlong line 14\nlong line 15\nlong line 16\nlong line 17\nlong line 18\nlong line 19\nlong line 20\nlong line 21\nlong line 22\nlong line 23\nlong line 24\nlong line 25\nlong line 26\nlong line 27\nlong line 28\nlong line 29\nlong line 30\nlong line 31\nlong line 32\nlong line 33\nlong line 34\nlong line 35\nlong line 36\nlong line 37\nlong line 38\nlong line 39\nlong line 40\nlong line 41\nlong line 42\nlong line 43\nlong line 44\nlong line 45\nlong line 46\nlong line 47\nlong line 48\nlong line 49\nlong line 50\nlong line 51\nlong line 52\nlong line 53\nlong line 54\nlong line 55\nlong line 56\nlong line 57\nlong line 58\nlong line 59\nlong line 60\nlong line 61\nlong line 62\nlong line 63\nlong line 64\nlong line 65\nlong line 66\nlong line 67\nlong line 68\nlong line 69\nlong line 70\nlong line 71\nlong line 72\nlong line 73\nlong line 74\nlong line 75\nlong line 76\nlong line 77\nlong line 78\nlong line 79\nlong line 80\nlong line 81\nlong line 82\nlong line 83\nlong line 84\nlong line 85\nlong line 86\nlong line 87\nlong line 88\nlong line 89\nlong line 90\nlong line 91\nlong line 92\nlong line 93\nlong line 94\nlong line 95\nlong line 96\nlong line 97\nlong line 98\nlong line 99\nlong line 100\nlong line 101\nlong line 102\nlong line 103\nlong line 104\nlong line 105\nlong line 106\nlong line 107\nlong line 108\nlong line 109\nlong line 110\nlong line 111\nlong line 112\nlong line 113\nlong line 114\nlong line 115\nlong line 116\nlong line 117\nlong line 118\nlong line 119\nlong line 120\nlong line 121\nlong line 122\nlong line 123\nlong line 124\nlong line 125\nlong line 126\nlong line 127\nlong line 128\nlong line 129\nlong line 130\nlong line 131\nlong line 132\nlong line 133\nlong line 134\nlong line 135\nlong line 136\nlong line 137\nlong line 138\nlong line 139\nlong line 140\nlong line 141\nlong line 142\nlong line 143\nlong line 144\nlong line 145\nlong line 146\nlong line 147\nlong line 148\nlong line 149\nlong line 150\nlong line 151\nlong line 152\nlong line 153\nlong line 154\nlong line 155\nlong line 156\nlong line 157\nlong line 158\nlong line 159\nlong line 160\nlong line 161\nlong line 162\nlong line 163\nlong line 164\nlong line 165\nlong line 166\nlong line 167\nlong line 168\nlong line 169\nlong line 170\nlong line 171\nlong line 172\nlong line 173\nlong line 174\nlong line 175\nlong line 176\nlong line 177\nlong line 178\nlong line 179\nlong line 180\nlong line 181\nlong line 182\nlong line 183\nlong line 184\nlong line 185\nlong line 186\nlong line 187\nlong line 188\nlong line 189\nlong line 190\nlong line 191\nlong line 192\nlong line 193\nlong line 194\nlong line 195\nlong line 196\nlong line 197\nlong line 198\nlong line 199\nlong line 200\nlong line 201\nlong line 202\nlong line 203\nlong line 204\nlong line 205\nlong line 206\nlong line 207\nlong line 208\nlong line 209\nlong line 210\nlong line 211\nlong line 212\nlong line 213\nlong line 214\nlong line 215\nlong line 216\nlong line 217\nlong line 218\nlong line 219\nlong line 220\nlong line 221\nlong line 222\nlong line 223\nlong line 224\nlong line 225\nlong line 226\nlong line 227\nlong line 228\nlong line 229\nlong line 230\nlong line 231\nlong line 232\nlong line 233\nlong line 234\nlong line 235\nlong line 236\nlong line 237\nlong line 238\nlong line 239\nlong line 240\nlong line 241\nlong line 242\nlong line 243\nlong line 244\nlong line 245\nlong line 246\nlong line 247\nlong line 248\nlong line 249\nlong line 250\nlong line 251\nlong line 252\nlong line 253\nlong line 254\nlong line 255\nlong line 256\nlong line 257\nlong line 258\nlong line 259\nlong line 260\nlong line 261\nlong line 262\nlong line 263\nlong line 264\nlong line 265\nlong line 266\nlong line 267\nlong line 268\nlong line 269\nlong line 270\nlong line 271\nlong line 272\nlong line 273\nlong line 274\nlong line 275\nlong line 276\nlong line 277\nlong line 278\nlong line 279\nlong line 280\nlong line 281\nlong line 282\nlong line 283\nlong line 284\nlong line 285\nlong line 286\nlong line 287\nlong line 288\nlong line 289\nlong line 290\nlong line 291\nlong line 292\nlong line 293\nlong line 294\nlong line 295\nlong line 296\nlong line 297\nlong line 298\nlong line 299\nlong line 300\nlong line 301\nlong line 302\nlong line 303\nlong line 304\nlong line 305\nlong line 306\nlong line 307\nlong line 308\nlong line 309\nlong line 310\nlong line 311\nlong line 312\nlong line 313\nlong line 314\nlong line 315\nlong line 316\nlong line 317\nlong line 318\nlong line 319\nlong line 320\nlong line 321\nlong line 322\nlong line 323\nlong line 324\nlong line 325\nlong line 326\nlong line 327\nlong line 328\nlong line 329\nlong line 330\nlong line 331\nlong line 332\nlong line 333\nlong line 334\nlong line 335\nlong line 336\nlong line 337\nlong line 338\nlong line 339\nlong line 340\nlong line 341\nlong line 342\nlong line 343\nlong line 344\nlong line 345\nlong line 346\nlong line 347\nlong line 348\nlong line 349\nlong line 350\nlong line 351\nlong line 352\nlong line 353\nlong line 354\nlong line 355\nlong line 356\nlong line 357\nlong line 358\nlong line 359\nlong line 360\nlong line 361\nlong line 362\nlong line 363\nlong line 364\nlong line 365\nlong line 366\nlong line 367\nlong line 368\nlong line 369\nlong line 370\nlong line 371\nlong line 372\nlong line 373\nlong line 374\nlong line 375\nlong line 376\nlong line 377\nlong line 378\nlong line 379\nlong line 380\nlong line 381\nlong line 382\nlong line 383\nlong line 384\nlong line 385\nlong line 386\nlong line 387\nlong line 388\nlong line 389\nlong line 390\nlong line 391\nlong line 392\nlong line 393\nlong line 394\nlong line 395\nlong line 396\nlong line 397\nlong line 398\nlong line 399\nlong line 400\n"
+      },
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "Stale tag edit.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o7_hashline_stale_unseen_anchor-01-stale",
+              "name": "edit",
+              "arguments": "{\"input\": \"[README.txt#0000]\\nSWAP 1.=1:\\n+stale edit\\n\", \"i\": \"Stale tag edit\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Partial read.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o7_hashline_stale_unseen_anchor-02-read-partial",
+              "name": "read",
+              "arguments": "{\"path\": \"long.txt:1-5\", \"i\": \"Reading lines 1-5\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Unseen line edit.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o7_hashline_stale_unseen_anchor-03-unseen",
+              "name": "edit",
+              "arguments": "{\"input\": \"[long.txt#B76A]\\nSWAP 350.=350:\\n+unseen edit 350\\n\", \"i\": \"Unseen line edit\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Seen line edit.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o7_hashline_stale_unseen_anchor-04-seen",
+              "name": "edit",
+              "arguments": "{\"input\": \"[long.txt#B76A]\\nSWAP 2.=2:\\n+seen edit 2\\n\", \"i\": \"Seen line edit\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Anchor checks done.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 5,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {
+          "README.txt": "Initial text line 1\nInitial text line 2\n",
+          "long.txt": "long line 1\nseen edit 2\nlong line 3\nlong line 4\nlong line 5\nlong line 6\nlong line 7\nlong line 8\nlong line 9\nlong line 10\nlong line 11\nlong line 12\nlong line 13\nlong line 14\nlong line 15\nlong line 16\nlong line 17\nlong line 18\nlong line 19\nlong line 20\nlong line 21\nlong line 22\nlong line 23\nlong line 24\nlong line 25\nlong line 26\nlong line 27\nlong line 28\nlong line 29\nlong line 30\nlong line 31\nlong line 32\nlong line 33\nlong line 34\nlong line 35\nlong line 36\nlong line 37\nlong line 38\nlong line 39\nlong line 40\nlong line 41\nlong line 42\nlong line 43\nlong line 44\nlong line 45\nlong line 46\nlong line 47\nlong line 48\nlong line 49\nlong line 50\nlong line 51\nlong line 52\nlong line 53\nlong line 54\nlong line 55\nlong line 56\nlong line 57\nlong line 58\nlong line 59\nlong line 60\nlong line 61\nlong line 62\nlong line 63\nlong line 64\nlong line 65\nlong line 66\nlong line 67\nlong line 68\nlong line 69\nlong line 70\nlong line 71\nlong line 72\nlong line 73\nlong line 74\nlong line 75\nlong line 76\nlong line 77\nlong line 78\nlong line 79\nlong line 80\nlong line 81\nlong line 82\nlong line 83\nlong line 84\nlong line 85\nlong line 86\nlong line 87\nlong line 88\nlong line 89\nlong line 90\nlong line 91\nlong line 92\nlong line 93\nlong line 94\nlong line 95\nlong line 96\nlong line 97\nlong line 98\nlong line 99\nlong line 100\nlong line 101\nlong line 102\nlong line 103\nlong line 104\nlong line 105\nlong line 106\nlong line 107\nlong line 108\nlong line 109\nlong line 110\nlong line 111\nlong line 112\nlong line 113\nlong line 114\nlong line 115\nlong line 116\nlong line 117\nlong line 118\nlong line 119\nlong line 120\nlong line 121\nlong line 122\nlong line 123\nlong line 124\nlong line 125\nlong line 126\nlong line 127\nlong line 128\nlong line 129\nlong line 130\nlong line 131\nlong line 132\nlong line 133\nlong line 134\nlong line 135\nlong line 136\nlong line 137\nlong line 138\nlong line 139\nlong line 140\nlong line 141\nlong line 142\nlong line 143\nlong line 144\nlong line 145\nlong line 146\nlong line 147\nlong line 148\nlong line 149\nlong line 150\nlong line 151\nlong line 152\nlong line 153\nlong line 154\nlong line 155\nlong line 156\nlong line 157\nlong line 158\nlong line 159\nlong line 160\nlong line 161\nlong line 162\nlong line 163\nlong line 164\nlong line 165\nlong line 166\nlong line 167\nlong line 168\nlong line 169\nlong line 170\nlong line 171\nlong line 172\nlong line 173\nlong line 174\nlong line 175\nlong line 176\nlong line 177\nlong line 178\nlong line 179\nlong line 180\nlong line 181\nlong line 182\nlong line 183\nlong line 184\nlong line 185\nlong line 186\nlong line 187\nlong line 188\nlong line 189\nlong line 190\nlong line 191\nlong line 192\nlong line 193\nlong line 194\nlong line 195\nlong line 196\nlong line 197\nlong line 198\nlong line 199\nlong line 200\nlong line 201\nlong line 202\nlong line 203\nlong line 204\nlong line 205\nlong line 206\nlong line 207\nlong line 208\nlong line 209\nlong line 210\nlong line 211\nlong line 212\nlong line 213\nlong line 214\nlong line 215\nlong line 216\nlong line 217\nlong line 218\nlong line 219\nlong line 220\nlong line 221\nlong line 222\nlong line 223\nlong line 224\nlong line 225\nlong line 226\nlong line 227\nlong line 228\nlong line 229\nlong line 230\nlong line 231\nlong line 232\nlong line 233\nlong line 234\nlong line 235\nlong line 236\nlong line 237\nlong line 238\nlong line 239\nlong line 240\nlong line 241\nlong line 242\nlong line 243\nlong line 244\nlong line 245\nlong line 246\nlong line 247\nlong line 248\nlong line 249\nlong line 250\nlong line 251\nlong line 252\nlong line 253\nlong line 254\nlong line 255\nlong line 256\nlong line 257\nlong line 258\nlong line 259\nlong line 260\nlong line 261\nlong line 262\nlong line 263\nlong line 264\nlong line 265\nlong line 266\nlong line 267\nlong line 268\nlong line 269\nlong line 270\nlong line 271\nlong line 272\nlong line 273\nlong line 274\nlong line 275\nlong line 276\nlong line 277\nlong line 278\nlong line 279\nlong line 280\nlong line 281\nlong line 282\nlong line 283\nlong line 284\nlong line 285\nlong line 286\nlong line 287\nlong line 288\nlong line 289\nlong line 290\nlong line 291\nlong line 292\nlong line 293\nlong line 294\nlong line 295\nlong line 296\nlong line 297\nlong line 298\nlong line 299\nlong line 300\nlong line 301\nlong line 302\nlong line 303\nlong line 304\nlong line 305\nlong line 306\nlong line 307\nlong line 308\nlong line 309\nlong line 310\nlong line 311\nlong line 312\nlong line 313\nlong line 314\nlong line 315\nlong line 316\nlong line 317\nlong line 318\nlong line 319\nlong line 320\nlong line 321\nlong line 322\nlong line 323\nlong line 324\nlong line 325\nlong line 326\nlong line 327\nlong line 328\nlong line 329\nlong line 330\nlong line 331\nlong line 332\nlong line 333\nlong line 334\nlong line 335\nlong line 336\nlong line 337\nlong line 338\nlong line 339\nlong line 340\nlong line 341\nlong line 342\nlong line 343\nlong line 344\nlong line 345\nlong line 346\nlong line 347\nlong line 348\nlong line 349\nlong line 350\nlong line 351\nlong line 352\nlong line 353\nlong line 354\nlong line 355\nlong line 356\nlong line 357\nlong line 358\nlong line 359\nlong line 360\nlong line 361\nlong line 362\nlong line 363\nlong line 364\nlong line 365\nlong line 366\nlong line 367\nlong line 368\nlong line 369\nlong line 370\nlong line 371\nlong line 372\nlong line 373\nlong line 374\nlong line 375\nlong line 376\nlong line 377\nlong line 378\nlong line 379\nlong line 380\nlong line 381\nlong line 382\nlong line 383\nlong line 384\nlong line 385\nlong line 386\nlong line 387\nlong line 388\nlong line 389\nlong line 390\nlong line 391\nlong line 392\nlong line 393\nlong line 394\nlong line 395\nlong line 396\nlong line 397\nlong line 398\nlong line 399\nlong line 400\n"
+        },
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "observed_mac_smoke_trial_3": "01 rejected (tag not from this session), 02 displayed lines 1-8 of 401, 03 rejected (line 350 never displayed), 04 applied (long.txt#5875)",
+        "hashline_tags": "README.txt#DDE6 and long.txt#B76A = computeFileHash(content) from @oh-my-pi/hashline@16.2.13 src/format.ts"
+      }
+    },
+    "o8_normal_multiturn": {
+      "case_id": "o8_normal_multiturn",
+      "kind": "capture",
+      "what_it_exercises": "(18.1.17 normal_multiturn) ordinary multi-turn bash continuation with a real workspace effect.",
+      "covered_bullets": [
+        "prompt and message construction",
+        "JSON event output and terminal result behavior",
+        "context limits, compaction, and history retention",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Use bash to write normal_marker.txt with exactly normal-omp, read it back, then finish with COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "I will create the marker.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o8_normal_multiturn-01",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'normal-omp\\\\n' > normal_marker.txt\",\"i\":\"Creating marker\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "I verified the marker.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o8_normal_multiturn-02",
+              "name": "bash",
+              "arguments": "{\"command\":\"cat normal_marker.txt\",\"i\":\"Reading marker\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "I completed the requested normal task.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o8_normal_multiturn-03",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\\nnormal multi-turn complete\\\\n'\",\"i\":\"Submitting\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "The requested work is complete. No further tools are needed.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Final answer: normal marker created and verified.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Done.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 4,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {
+          "normal_marker.txt": "normal-omp\n"
+        },
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "o9_budget_limit_stop": {
+      "case_id": "o9_budget_limit_stop",
+      "kind": "capture",
+      "what_it_exercises": "(18.1.17 budget_limit_stop) profile request_cap 8: ten scripted tool steps; the receiver serves 8, holds request 9 without response bytes, and the supplier SIGTERMs omp.",
+      "covered_bullets": [
+        "JSON event output and terminal result behavior",
+        "timeout, cancellation, retry-disabled behavior, and process errors",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Execute the bounded budget steps in order. Do not invent extra work. The supplier request guard must stop before a ninth model request is served.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 1",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-01",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf one > budget_1.txt\",\"i\":\"Budget step 1\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 2",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-02",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf two > budget_2.txt\",\"i\":\"Budget step 2\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 3",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-03",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf three > budget_3.txt\",\"i\":\"Budget step 3\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 4",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-04",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf four > budget_4.txt\",\"i\":\"Budget step 4\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 5",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-05",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf five > budget_5.txt\",\"i\":\"Budget step 5\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 6",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-06",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf six > budget_6.txt\",\"i\":\"Budget step 6\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 7",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-07",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf seven > budget_7.txt\",\"i\":\"Budget step 7\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 8",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-08",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf eight > budget_8.txt\",\"i\":\"Budget step 8\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 9",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-09",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf nine > budget_9.txt\",\"i\":\"Budget step 9\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "budget step 10",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o9_budget_limit_stop-10",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf ten > budget_10.txt\",\"i\":\"Budget step 10\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": null,
+        "requests_at_least": null,
+        "requests_served": 8,
+        "workspace_after": {},
+        "effect_absent": [
+          "budget_9.txt",
+          "budget_10.txt"
+        ],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "request_cap": 8
+      }
+    },
+    "o10_stream_broken": {
+      "case_id": "o10_stream_broken",
+      "kind": "capture",
+      "what_it_exercises": "(18.1.17 stream_fragments_broken) SSE stream closed mid tool-call arguments without finish_reason or [DONE]; captures tolerant finalization vs error and any retry under retry.enabled=false.",
+      "covered_bullets": [
+        "parser repair and invalid tool-call behavior",
+        "timeout, cancellation, retry-disabled behavior, and process errors",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Write stream_marker.txt with stream-omp.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "broken_stream",
+          "assistant_content": "broken stream mid-argument",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o10_stream_broken-01",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'stream-omp\\\\n' > stream_marker.txt\",\"i\":\"Writing stream marker\"}",
+              "split": [
+                "{\"command\":\"printf '",
+                "stream-omp\\\\n' > stream_marker.txt\",\"i\":\"Writing stream marker\"}"
+              ]
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": 3
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response 1.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Spare response 2.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": null,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "effect_may_be_present": true
+      }
+    },
+    "o11_length_cutoff": {
+      "case_id": "o11_length_cutoff",
+      "kind": "capture",
+      "what_it_exercises": "(18.1.17 length_cutoff_skips_tool) finish_reason=length paired with a tool call; captures whether the call is skipped.",
+      "covered_bullets": [
+        "JSON event output and terminal result behavior",
+        "parser repair and invalid tool-call behavior",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Respect the model's length cutoff and then submit. Do not create cutoff_marker.txt from the cut-off call.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "cut off before tool execution",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o11_length_cutoff-01",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf forbidden > cutoff_marker.txt\",\"i\":\"Cut off call\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "length",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "The length cutoff was observed.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o11_length_cutoff-02",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\\nlength cutoff observed\\\\n'\",\"i\":\"Submitting\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "The length cutoff was observed; no tool should run.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Final answer: cutoff respected.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Done.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": null,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [
+          "cutoff_marker.txt"
+        ],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "o12_process_lifecycle": {
+      "case_id": "o12_process_lifecycle",
+      "kind": "capture",
+      "what_it_exercises": "(18.1.17 process_lifecycle) bash with a backgrounded descendant that writes after 0.2 s; captures descendant ownership (lifecycle_child.txt may appear after upstream exit).",
+      "covered_bullets": [
+        "timeout, cancellation, retry-disabled behavior, and process errors",
+        "no-session behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Create lifecycle_parent.txt immediately and launch the short owned descendant that writes lifecycle_child.txt; then submit.",
+      "drop_argv": [],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "starting lifecycle probe",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o12_process_lifecycle-01",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf parent > lifecycle_parent.txt; (sleep 0.2; printf child > lifecycle_child.txt) &\",\"i\":\"Lifecycle probe\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "The lifecycle probe is complete.",
+          "text_fragments": null,
+          "tool_calls": [
+            {
+              "id": "omp16213-call-o12_process_lifecycle-02",
+              "name": "bash",
+              "arguments": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\\nlifecycle launched\\\\n'\",\"i\":\"Submitting\"}",
+              "split": null
+            }
+          ],
+          "finish_reason": "tool_calls",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "The lifecycle probe is complete; stop now.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Final answer: lifecycle effects observed.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        },
+        {
+          "kind": "completion",
+          "assistant_content": "Done.",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": null,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {
+          "lifecycle_parent.txt": "parent"
+        },
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "f0_no_prompt_templates_rejected": {
+      "case_id": "f0_no_prompt_templates_rejected",
+      "kind": "flag_probe",
+      "what_it_exercises": "Overlay flag --no-prompt-templates appended to the base argv. Expected: 16.2.13 rejects it, which is the evidence for dropping it.",
+      "covered_bullets": [
+        "disabled skills, extensions, and prompt templates"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [],
+      "extra_argv": [
+        "--no-prompt-templates"
+      ],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [],
+      "expect": {
+        "exit_code": 2,
+        "requests": 0,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": "Error: unknown flag: --no-prompt-templates"
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "f1_config_key_value_rejected": {
+      "case_id": "f1_config_key_value_rejected",
+      "kind": "flag_probe",
+      "what_it_exercises": "--config retry.enabled=false. 16.2.13 resolves --config values as overlay FILE paths (settings.ts #loadOverlayYaml) and fails closed on a missing file; this is why the profile settings are supplied as --config <kit>/config/omp16213-profile.yml.",
+      "covered_bullets": [
+        "timeout, cancellation, retry-disabled behavior, and process errors"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [],
+      "extra_argv": [
+        "--config",
+        "retry.enabled=false"
+      ],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [],
+      "expect": {
+        "exit_code": 1,
+        "requests": 0,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": "Config overlay not found"
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {}
+    },
+    "f2_json_mode_without_print": {
+      "case_id": "f2_json_mode_without_print",
+      "kind": "flag_probe",
+      "what_it_exercises": "--mode json without -p (stdin /dev/null). Records whether -p is required; the prior lead said it is.",
+      "covered_bullets": [
+        "JSON event output and terminal result behavior"
+      ],
+      "config_modes": [
+        "declared"
+      ],
+      "task": "Reply with the single word READY.",
+      "drop_argv": [
+        "-p"
+      ],
+      "extra_argv": [],
+      "planted_workspace": {},
+      "planted_config": {},
+      "request_markers": [],
+      "signal_cancel_on_tool_start": null,
+      "request_cap": 8,
+      "steps": [
+        {
+          "kind": "completion",
+          "assistant_content": "READY",
+          "text_fragments": null,
+          "tool_calls": [],
+          "finish_reason": "stop",
+          "usage": null,
+          "keep_chunks": null
+        }
+      ],
+      "expect": {
+        "exit_code": 0,
+        "requests": 1,
+        "requests_at_least": null,
+        "requests_served": null,
+        "workspace_after": {},
+        "effect_absent": [],
+        "request_markers_absent": [],
+        "request_markers_present": [],
+        "stderr_contains": null
+      },
+      "expect_by_mode": {},
+      "oracle_notes": {
+        "record_only": true
+      }
+    }
+  }
+}

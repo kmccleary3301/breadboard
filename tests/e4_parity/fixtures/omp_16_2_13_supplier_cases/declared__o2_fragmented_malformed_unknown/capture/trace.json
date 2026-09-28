@@ -1,0 +1,238 @@
+{
+  "argv": [
+    "bun",
+    "<omp-cli>",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Write frag_marker.txt, then attempt the remaining calls; if a call is invalid, recover and create malformed_recovered.txt with recovered-omp, then stop."
+  ],
+  "argv_exact": [
+    "/opt/omp/bun/bun",
+    "/opt/omp/runtime/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Write frag_marker.txt, then attempt the remaining calls; if a call is invalid, recover and create malformed_recovered.txt with recovered-omp, then stop."
+  ],
+  "assistant_stops": [
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "toolUse"
+    },
+    {
+      "errorMessage": null,
+      "stopReason": "stop"
+    }
+  ],
+  "bun_version": "1.3.14",
+  "case_id": "o2_fragmented_malformed_unknown",
+  "config_dir_side_effects": {
+    "added": [
+      "agent.db",
+      "agent.db-shm",
+      "agent.db-wal",
+      "models.db",
+      "models.yml"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "config_mode": "declared",
+  "config_overlay": {
+    "path": "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "sha256": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191"
+  },
+  "covered_bullets": [
+    "tool-call IDs, argument handling, tool-result envelopes, and ordering",
+    "parser repair and invalid tool-call behavior",
+    "no-session behavior"
+  ],
+  "cwd": "/testbed",
+  "egress_probe": {
+    "blocked": true,
+    "errno": "ENETUNREACH",
+    "error": "[Errno 101] Network is unreachable",
+    "target": "1.1.1.1:443"
+  },
+  "elapsed_seconds": 1.308,
+  "env": {
+    "HOME": "/capture/home",
+    "LANG": "C.UTF-8",
+    "NO_COLOR": "1",
+    "PATH": "/opt/omp/bun:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PI_CODING_AGENT_DIR": "/omp-config",
+    "PI_NATIVE_VARIANT": "baseline",
+    "TMPDIR": "/capture/tmp"
+  },
+  "event_type_counts": {
+    "agent_end": 1,
+    "agent_start": 1,
+    "message_end": 10,
+    "message_start": 10,
+    "message_update": 36,
+    "session": 1,
+    "tool_execution_end": 4,
+    "tool_execution_start": 4,
+    "turn_end": 5,
+    "turn_start": 5
+  },
+  "events_total": 77,
+  "events_unparsed_lines": [],
+  "exit_code": 0,
+  "expect": {
+    "effect_absent": [
+      "must_not_exist.txt"
+    ],
+    "exit_code": 0,
+    "request_markers_absent": [],
+    "request_markers_present": [],
+    "requests": 5,
+    "requests_at_least": null,
+    "requests_served": null,
+    "stderr_contains": null,
+    "workspace_after": {
+      "frag_marker.txt": "frag-omp\n",
+      "malformed_recovered.txt": "recovered-omp\n"
+    }
+  },
+  "expected_exit_code": 0,
+  "failures": [],
+  "files": {
+    "config-manifest-post.json": "sha256:b5616c84f79105cc08a662fe1fcb033f6d094d64b4cfe45fb72854b3becb5626",
+    "config-manifest-pre.json": "sha256:81b3b7bc4441f1fa1cecb992b250c6a425fa6b0e4cce05a5171e78ee990c170c",
+    "config-overlay.yml": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191",
+    "git-status.txt": "sha256:931d60198ac6c8add59bc0535c3de0bbced203127eee9e5ac0b7ac2872a66010",
+    "home-manifest-post.json": "sha256:2e540c4c005f32fa2a72abd2f22b3feaf22136c63c02492e33ea0dd46090f9a5",
+    "home-manifest-pre.json": "sha256:c8a2e4c23e75e6872f535886e23abc5198b9774164d83a614a82ba0d0a5d24e5",
+    "http-transcript.jsonl": "sha256:f6f5bab741bcbf146da21d4f5ae9a4c925952d4a869160fce632807d19fd9691",
+    "model.patch": "sha256:f11bfee1b0692e1c8242f6775d88d38f9ec71503ccd184693f5367b36b4cdb32",
+    "omp-events.jsonl": "sha256:b717475329d73842ff387b3c3fe8908c5fb3f2e8ab26b3c50e398d8659d0d4de",
+    "omp-stderr.log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scenario.json": "sha256:7629a691954c61f013d6ac44321ee3b2d23cbad2c9ad3725ddbd16e0670703e3",
+    "workspace-manifest-post-immediate.json": "sha256:abb08a9483aa2dd8de7b7115b9185d9d21e7f444d0ab881fabc118902185ea12",
+    "workspace-manifest-post.json": "sha256:abb08a9483aa2dd8de7b7115b9185d9d21e7f444d0ab881fabc118902185ea12",
+    "workspace-manifest-pre.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_side_effects": {
+    "added": [
+      ".omp",
+      ".omp/gpu_cache.json",
+      ".omp/logs",
+      ".omp/logs/.9939c2487322ebfbfbe60eac85a2eff9e5900a27-audit.json",
+      ".omp/logs/omp.2026-09-26.log"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "kind": "capture",
+  "marker_hits": {},
+  "omp_version": "omp/16.2.13",
+  "oracle_notes": {},
+  "overlay_argv_dropped": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "receiver_closed": {
+    "cap_refused": 0,
+    "failed": null,
+    "requests": 5,
+    "steps_scripted": 5,
+    "steps_served": 5
+  },
+  "request_guard": {
+    "cap_reached": false,
+    "request_cap": 8,
+    "signal_sent": null
+  },
+  "requests_by_served": {
+    "completion": 5
+  },
+  "requests_total": 5,
+  "schema_version": "bb.e4.omp16213-capture-trace.v2",
+  "stderr_head": "",
+  "supplier": {
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+    "package": "@oh-my-pi/pi-coding-agent",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "version": "16.2.13"
+  },
+  "tool_results": [
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.08 seconds",
+      "toolCallId": "omp16213-call-o2_fragmented_malformed_unknown-01-frag",
+      "toolName": "bash"
+    },
+    {
+      "isError": true,
+      "text_head": "Validation failed for tool \"bash\":\n  - command: command must be a string (was missing)\n\nReceived arguments:\n{}",
+      "toolCallId": "omp16213-call-o2_fragmented_malformed_unknown-02-malformed",
+      "toolName": "bash"
+    },
+    {
+      "isError": true,
+      "text_head": "Tool does_not_exist_tool not found",
+      "toolCallId": "omp16213-call-o2_fragmented_malformed_unknown-03-unknown",
+      "toolName": "does_not_exist_tool"
+    },
+    {
+      "isError": false,
+      "text_head": "(no output)\n\nWall time: 0.00 seconds",
+      "toolCallId": "omp16213-call-o2_fragmented_malformed_unknown-04-recover",
+      "toolName": "bash"
+    }
+  ],
+  "transcript_unparsed_lines": [],
+  "what_it_exercises": "Fragmented SSE (text split over 3 chunks, tool-call arguments split over 4 chunks), malformed tool arguments (truncated JSON), unknown tool name, and native continuation to a recovered marker without an auxiliary repair model.",
+  "workspace_delta": {
+    "added": [
+      "frag_marker.txt",
+      "malformed_recovered.txt"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "workspace_delta_immediate": {
+    "added": [
+      "frag_marker.txt",
+      "malformed_recovered.txt"
+    ],
+    "changed": [],
+    "removed": []
+  }
+}

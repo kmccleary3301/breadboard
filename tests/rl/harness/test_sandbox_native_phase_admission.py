@@ -979,3 +979,34 @@ async def test_native_phase_launch_rejects_unknown_adapter_id(
 
     assert captured.value.code == "runtime_unsupported"
     assert "unsupported.local.adapter" in str(captured.value)
+
+
+@pytest.mark.parametrize("adapter_id", sorted(sandbox_module.NATIVE_PHASE_TOOL_IDS))
+def test_native_phase_tool_ids_are_admissible_installed_adapter_tools(adapter_id: str) -> None:
+    # Native phase admission requires an installed adapter's tool IDs to equal
+    # this table's entry, so every entry must itself pass installed-adapter
+    # admission (sorted, unique) or no installed run of that adapter can start.
+    digest = "sha256:" + "a" * 64
+    InstalledToolAdapter(
+        adapter_id=adapter_id,
+        tool_ids=sandbox_module.NATIVE_PHASE_TOOL_IDS[adapter_id],
+        runtime_root_path="/opt/native",
+        runtime_root_device=1,
+        runtime_root_inode=2,
+        runtime_root_owner_uid=0,
+        runtime_root_mode="0755",
+        manifest_digest=digest,
+        executable_relative_path="bin/runtime",
+        entrypoint_relative_path="worker.js",
+        executable_digest=digest,
+        entrypoint_digest=digest,
+    )
+
+
+def test_omp_16_2_13_native_tool_ids_are_the_target_wire_tools() -> None:
+    # The installed adapter must dispatch exactly the tools the target sends on
+    # the wire; the table holds them sorted, the surface in wire order.
+    surface = json.loads(load_e4_target("oh-my-pi-r2@16.2.13").read_asset_text("tool-surface.json"))
+    assert sandbox_module.NATIVE_PHASE_TOOL_IDS[sandbox_module.OMP_16_2_13_LOCAL_ADAPTER_ID] == tuple(
+        sorted(surface["ordered_tools"])
+    )

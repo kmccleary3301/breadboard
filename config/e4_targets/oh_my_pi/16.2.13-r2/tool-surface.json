@@ -1,0 +1,225 @@
+{
+  "schema_version": "bb.e4.tool_surface.v1",
+  "target_id": "oh-my-pi-r2@16.2.13",
+  "ordered_tools": [
+    "read",
+    "bash",
+    "edit",
+    "write",
+    "generate_image"
+  ],
+  "images": {
+    "delivery": "disabled"
+  },
+  "tools": {
+    "read": {
+      "description": "Read files, directories, archives, SQLite, images, documents, internal resources, and web URLs via one `path`.\n\n<instruction>\n- SHOULD parallelize independent reads.\n- SHOULD use `read` (not a browser tool) for web content; browser only when `read` can't deliver.\n</instruction>\n\n## Parameters\n\n- `path` — required. Local path, internal URI (`skill://`, `agent://`, `artifact://`, `memory://`, `rule://`, `local://`, `vault://`, `mcp://`, `omp://`, `issue://`, `pr://`, `ssh://`), or URL. Append `:<sel>` for ranges/modes (e.g. `src/foo.ts:50-200`, `src/foo.ts:raw`, `db.sqlite:users:42`).\n\n## Selectors\n\n- _(none)_ — parseable code → structural summary; other files → from start (up to 300 lines).\n- `:50` / `:50-` — from line 50 onward.\n- `:50-200` — lines 50–200 inclusive.\n- `:50+150` — 150 lines from 50.\n- `:20+1` — anchor line 20.\n- `:5-16,960-973` — multiple ranges in one call.\n- `:raw` — verbatim; no anchors/summary/line prefixes.\n- `:2-4:raw` / `:raw:2-4` — range AND verbatim; either order.\n- `:conflicts` — one line per unresolved git merge conflict block.\n\n# Files\n\n- Directory → depth-limited dirent listing.\n- File + selector → filename-only snapshot header + numbered lines: `[foo.ts#1A2B]` then `41:def alpha():`. Copy `[FILENAME#TAG]` for anchored edits; ops use bare line numbers. NEVER fabricate the tag.\n- Parseable code, no selector → **structural summary**: declarations kept, body elided with `…`. Footer names the recovery selector; re-issue ONLY the ranges you need.\n\n# Documents & Notebooks\n\nPDF, Word, PowerPoint, Excel, RTF, EPUB → extracted text. Notebooks (`.ipynb`) → editable `# %% [type] cell:N` text. `:raw` bypasses the converter.\n\n# Images\n\nImage → decoded inline (PNG, JPEG, GIF, WEBP) for direct visual analysis.\n\n# Archives\n\n`.tar`, `.tar.gz`, `.tgz`, `.zip`. `archive.ext:path/inside/archive` reads a member; inner paths take normal selectors: `archive.zip:dir/file.ts:50-60`.\n\n# SQLite\n\nFor `.sqlite`, `.sqlite3`, `.db`, `.db3`:\n- `file.db` — tables with row counts\n- `file.db:table` — schema + sample rows\n- `file.db:table:key` — row by primary key\n- `file.db:table?limit=50&offset=100` — pagination\n- `file.db:table?where=status='active'&order=created:desc` — filter/order\n- `file.db?q=SELECT …` — read-only SELECT\n\n# URLs\n\n- Reader-mode default: HTML, GitHub issues/PRs, Stack Overflow, Wikipedia, Reddit, NPM, arXiv, RSS/Atom, JSON endpoints, PDFs → clean text/markdown.\n- `:raw` → untouched HTML; line selectors (`:50`, `:50-100`, `:50+150`) paginate the fetch.\n- Bare `host:port` collides with selector grammar — add a trailing slash: `https://example.com/:80`.\n\n# Internal URIs\n\nAll URI schemes take the same line selectors. `artifact://<id>` recovers full output a bash/eval/tool result spilled or truncated.\n\n`ssh://host/<absolute-path>` reads a remote text file (UTF-8, ≤1 MiB) or lists a directory one level deep, on a pre-configured SSH host or `~/.ssh/config` alias; `ssh://host/` lists the remote root and bare `ssh://` lists the configured hosts. Files are also writable via `write` and searchable via `search`; a directory only lists (`search` refuses a directory, `write` refuses to overwrite one). A literal `:`, `?`, or `#` in the remote path must be percent-encoded (`%3A`/`%3F`/`%23`) — a trailing `:sel` is read as a line selector, and `?`/`#` start a URL query/fragment. Requires a POSIX login shell (`sh`/`bash`/`zsh`); a Windows host or a non-POSIX shell (fish, csh/tcsh) is rejected — use the `ssh` tool there.\n\n<critical>\n- Line ranges go in the selector: `path=\"src/foo.ts:50-200\"`.\n- Summary footer names elided ranges? Re-issue ONLY those ranges. NEVER guess `..`/`…` content.\n</critical>",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "i": {
+            "type": "string",
+            "description": "concise intent"
+          },
+          "path": {
+            "type": "string",
+            "description": "Local path, internal URI (e.g. \"omp://\", \"issue://123\", \"pr://123\"), or URL; append :<sel> for line ranges or raw mode (e.g. \"src/foo.ts:50-100\")"
+          }
+        },
+        "required": [
+          "path",
+          "i"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "bash": {
+      "description": "Runs bash in a shell session — terminal ops: git, bun, cargo, python.\n\n# When to use bash — and when not to\n\nBash invokes **real binaries** with simple args. It is NOT a scripting surface.\n\nUse bash ONLY for: a single binary call, or one short pipeline that COMPUTES a fact (`wc -l`, `sort | uniq -c`, `comm`, `diff`, a checksum, `git status`).\n\nAnything below → `eval` cell, not bash:\n- Inline interpreter scripts (`-e`/`-c`/`--eval`) when an eval runtime exists for that language\n- Heredocs (`<<EOF`), `while`/`for`/`if`/`case` shell control flow\n- `$(…)` command substitution nested inside another command\n- Pipelines with more than two stages, or stages that need control flow or quote/JSON escaping\n- Multiline commands, `&&`-chains mixing control flow\n- Quote/JSON escaping that fights the shell\n\n<instruction>\n- `cwd` sets the working dir, not `cd dir && …`\n- `env: { NAME: \"…\" }` for multiline / quote-heavy / untrusted values; reference `$NAME`\n- Quote expansions (`\"$NAME\"`) to preserve exact content\n- `pty: true` only when the command needs a real terminal (`sudo`, `ssh` needing input); default `false`\n- `;` only when later commands should run despite earlier failures\n- Multiple bash calls per message run concurrently. NEVER split order-dependent commands across parallel calls — chain with `&&` in one call.\n- Internal URIs (`skill://`, `agent://`, …) auto-resolve to FS paths\n- `async: true` for long-running commands when you don't need immediate output: returns a background job ID; result delivered as a follow-up.\n</instruction>\n\n<critical>\n- Bash invokes real binaries with simple args; it is NOT a scripting surface. Loops, conditionals, heredocs, inline interpreter scripts (`-e`/`-c`/`--eval`) when an eval runtime exists, several piped stages, or quote/JSON escaping mean you're writing a program → use `eval` cells: restartable, stateful, and free of shell-quoting traps.\n</critical>\n\n<output>\n- Returns output (stderr merged into stdout); exit code shown on non-zero exit.\n- Truncated output → `artifact://<id>` (linked in metadata).\n</output>\n\n# Timeout and async\n\n- `timeout` (seconds) caps wall-clock duration; the process is killed on elapse.\n- `async: true` defers only reporting — it does NOT extend the timeout; a daemon run with `async: true` is still killed when `timeout` elapses.\n- Long-running daemons (dev servers, watchers): pass a large explicit `timeout`. The shell session persists across calls, so `cmd &` keeps running between bash calls.\n\n# Output minimizer\n\n- Long output truncated; test/lint runner output filtered to failures. When visible text changed, a `[raw output: artifact://<id>]` footer links the full capture — read it if a run looks suspicious or you need exact bytes.\n- No footer = what you see is exactly what the command emitted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "i": {
+            "type": "string",
+            "description": "concise intent"
+          },
+          "command": {
+            "type": "string"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "timeout": {
+            "type": "number"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "pty": {
+            "type": "boolean"
+          },
+          "async": {
+            "type": "boolean",
+            "description": "run in background"
+          }
+        },
+        "required": [
+          "command",
+          "i"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "edit": {
+      "description": "Your patch language names lines to replace, delete, or insert at, then lists the new content. Rule of thumb: a header ending in `:` is followed by `+` body rows; `DEL` has no body.\n\n<headers>\nEvery file section starts with `[PATH#TAG]`. `TAG` = 4-hex snapshot tag from your latest `read`/`search`, REQUIRED on every section — no hashless form. Create new files with `write`; hashline only edits existing files.\n</headers>\n\n<ops>\n`SWAP N.=M:` — replace original lines N.=M with the body rows below. INCLUSIVE — line M is consumed too.\n`SWAP.BLK N:` — replace the whole syntactic block that BEGINS on line N; tree-sitter resolves the closing line. Body rows below.\n`DEL N.=M` — delete original lines N.=M. No body.\n`DEL.BLK N` — delete the whole syntactic block that BEGINS on line N.\n`INS.PRE N:` — insert the body rows immediately before line N.\n`INS.POST N:` — insert the body rows immediately after line N.\n`INS.BLK.POST N:` — insert the body rows after the END of the block that BEGINS on line N — outside it, at sibling depth. To append inside a block, use `INS.POST`.\n`INS.HEAD:` / `INS.TAIL:` — insert the body rows at the very start / end of the file.\n`REM` — delete the whole file named by the section header. No body, no line ops.\n`MV DEST` — move/rename the section file to `DEST` (a path, quoted when it contains spaces). Line edits above `MV` land on the source first, then the final content is written at `DEST`.\nSingle line: `SWAP N.=N:` / `DEL N`. The range is the ORIGINAL lines you touch; body length is irrelevant (replacing 1 line with 10 is still `SWAP N.=N:`).\n</ops>\n\n<body-rows>\nBody rows appear only under a `:` header. Every body row is `+TEXT` — add a literal line `TEXT`, verbatim (leading whitespace kept); `+` alone adds a blank line. No other row kind. NEVER write `-old` or a bare/context line. To keep a line, leave it out of every range. To insert a literal line starting with `-` or `+`, prefix it: `+-x`, `++x`.\n</body-rows>\n\n<rules>\n- Line numbers + `[PATH#TAG]` header come from your latest `read`/`search` (`LINE:TEXT` rows).\n- Numbers refer to the ORIGINAL file; never shift as hunks apply.\n- They die with the call: every applied edit mints a fresh `#TAG` and renumbers — anchor the next edit on the edit response or a fresh `read`.\n- Touch only lines your latest `read`/`search` literally displayed as `LINE:TEXT`; the tag certifies the snapshot, not your memory. A hunk anchored on a line you never displayed is REJECTED — re-`read` first. Seeing a line ≠ it holds the code you mean; confirm numbers map to the construct you intend, especially far from your read window.\n- Elided regions are UNSEEN: `…`/`..` markers and a collapsed `N-M:` summary row (only boundary lines N and M shown) hide their interior. NEVER place or span a hunk inside one — `read` the range first.\n- Never start or end a range mid-expression or mid-block.\n- Indent body rows exactly for the depth they should live at.\n- On a stale-tag rejection or any surprising result: STOP and re-`read` before further edits.\n- One hunk per range; body = final content, never an old/new pair.\n- Ranges cover ONLY lines whose content changes. Never widen over unchanged lines — a stale wide range shreds everything it spans.\n- Whole construct → `SWAP.BLK N` (tree-sitter resolves the end); lines inside it → `SWAP N.=M`.\n- `SWAP.BLK N` resolves EXACTLY the node at N. Leading decorators/attributes/doc-comments are separate nodes: point N at the FIRST decorator to sweep both; standalone line-comments are never swept — use `SWAP N.=M`.\n- Block ops (`SWAP.BLK`/`DEL.BLK`/`INS.BLK.POST`) anchor the OPENING line of a MULTI-LINE construct — never its closer, last line, or a bare inner statement. Anchoring one statement resolves to ONE line and is REJECTED: use the plain op (`SWAP N.=N` / `DEL N` / `INS.POST N`), or point N at the real opener. Saw the closer? Use plain `INS.POST M:`.\n- Markdown: a heading line IS a block opener — `SWAP.BLK`/`DEL.BLK`/`INS.BLK.POST` on a `##`/`###` heading resolves its WHOLE section (heading through every nested deeper heading, up to the next same-or-higher heading). So `DEL.BLK` drops the section, `SWAP.BLK` rewrites it, `INS.BLK.POST` lands after it (end the inserted body with a blank line to keep the next heading separated).\n- Non-adjacent changes = separate hunks; untouched lines stay out of every range.\n- Pure additions use `INS.PRE` / `INS.POST` / `INS.HEAD` / `INS.TAIL`, never a widened `SWAP` — retyped keepers are exactly what gets dropped. (A multi-line `SWAP` whose body restates the line just past the range is auto-dropped as an off-by-one keeper with a warning — issue the payload for the range only; never lean on the repair.)\n- NEVER format/restyle code with this tool; run the project formatter instead.\n</rules>\n\n<example>\nOriginal (the exact shape `read` returns):\n```\n[greet.py#A1B2]\n1:def greet(name):\n2:    msg = \"Hello, \" + name\n3:    print(msg)\n4:greet(\"world\")\n```\n\nInsert a guard after line 1:\n```\n[greet.py#A1B2]\nINS.POST 1:\n+    if not name: name = \"stranger\"\n```\n\nReplace line 2 with two lines:\n```\n[greet.py#A1B2]\nSWAP 2.=2:\n+    greeting = \"Hi\"\n+    msg = f\"{greeting}, {name}\"\n```\n\nDelete line 3:\n```\n[greet.py#A1B2]\nDEL 3\n```\n\nDelete the whole file:\n```\n[greet.py#A1B2]\nREM\n```\n\nRename or move the file:\n```\n[greet.py#A1B2]\nMV greet_v2.py\n```\n\nMove after editing:\n```\n[greet.py#A1B2]\nSWAP 1.=3:\n+def greet(name):\n+    print(f\"Hi, {name}\")\nMV lib/greet.py\n```\n\nAdd a header and trailer:\n```\n[greet.py#A1B2]\nINS.HEAD:\n+# generated header\nINS.TAIL:\n+greet(\"everyone\")\n```\n\nReplace the whole `greet` function block — `SWAP.BLK 1:` resolves lines 1–3 (the `def` header through `print(msg)`); line 4 is a separate statement and stays:\n```\n[greet.py#A1B2]\nSWAP.BLK 1:\n+def greet(name):\n+    print(f\"Hello, {name}\")\n```\n\nA decorator/doc-comment is a SEPARATE block — `SWAP.BLK` on the `def`/`fn` line keeps it. Point N at the decorator to take both; here line 1 is `@cache`, so anchoring on the `def` (line 2) would orphan `@cache`:\n```\n[svc.py#C3D4]\nSWAP.BLK 1:\n+@cache\n+def load(key):\n+    return store[key]\n```\n</example>\n\n<anti-patterns>\n# WRONG — empty `SWAP` to delete. RIGHT: DEL 4\nSWAP 4.=4:\n\n# WRONG — range describes post-edit size. RIGHT: SWAP 1.=1: (body length is irrelevant)\nSWAP 1.=2:\n+def greet(name):\n\n# WRONG — `-` rows / bare context lines do not exist. The range deletes; the body is only the new content.\nSWAP 3.=3:\n    msg = \"Hello, \" + name\n-   print(msg)\n+   return msg\n# RIGHT\nSWAP 3.=3:\n+   return msg\n\n# WRONG — a pure insertion done as a widened `SWAP`: you want to add one line after 2,\n# but you replace 2.=4, retype the keepers, and drop one (here line 4, `greet(\"world\")`).\nSWAP 2.=4:\n+    msg = \"Hello, \" + name\n+    extra = compute(name)\n+    print(msg)\n# RIGHT — touch nothing you keep; the new line is the whole body.\nINS.POST 2:\n+    extra = compute(name)\n\n# WRONG — `INS.BLK.POST N:` anchored on a closing delimiter / last visible line. RIGHT: plain `INS.POST M:`\nINS.BLK.POST 3:\n+after()\n# RIGHT\nINS.POST 3:\n+after()\n</anti-patterns>\n\n<critical>\nIf you remember nothing else:\n1. RE-GROUND AFTER EVERY EDIT. Every apply mints a fresh `#TAG` and renumbers — take the next edit's numbers from the edit response or a fresh `read`. Stale tag or surprise? STOP, re-`read`.\n2. RANGES ARE TIGHT. Cover only lines that change; a stale wide range shreds everything it spans. Whole construct → `SWAP.BLK N`.\n3. THE BODY IS THE FINAL CONTENT. Only `+TEXT` rows; never `-old`/context lines. The range does the deleting.\n</critical>",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "i": {
+            "type": "string",
+            "description": "concise intent"
+          },
+          "input": {
+            "type": "string"
+          },
+          "_input": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "i"
+        ]
+      }
+    },
+    "write": {
+      "description": "Creates or overwrites file at specified path.\n\n<conditions>\n- Creating new files explicitly required by task\n- Replacing entire file contents when editing would be more complex\n- Supports `.tar`, `.tar.gz`, `.tgz`, and `.zip` archive entries via `archive.ext:path/inside/archive`\n- Supports SQLite row operations via `db.sqlite:table` (insert), `db.sqlite:table:key` (update with JSON content, delete with empty content)\n</conditions>\n\n<critical>\n- You SHOULD use Edit tool for modifying existing files\n- You NEVER create documentation files (*.md, README) unless explicitly requested\n- You NEVER use emojis unless requested\n</critical>",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "i": {
+            "type": "string",
+            "description": "concise intent"
+          },
+          "path": {
+            "type": "string",
+            "description": "file path"
+          },
+          "content": {
+            "type": "string",
+            "description": "file content"
+          }
+        },
+        "required": [
+          "path",
+          "content",
+          "i"
+        ],
+        "additionalProperties": false
+      }
+    },
+    "generate_image": {
+      "description": "Generates or edits images.\n\n<instructions>\n- You MUST provide a single detailed `subject` prompt for image generation or editing.\n- When using multiple `input`, you SHOULD describe each image's role directly in `subject`, e.g. `Image 1` for composition reference, `Image 2` for lighting reference, `Image 3` for background.\n- For text: you SHOULD add \"sharp, legible, correctly spelled\" for important text; keep text short.\n</instructions>",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "i": {
+            "type": "string",
+            "description": "concise intent"
+          },
+          "subject": {
+            "type": "string",
+            "description": "main subject"
+          },
+          "action": {
+            "type": "string",
+            "description": "what subject is doing"
+          },
+          "scene": {
+            "type": "string",
+            "description": "location or environment"
+          },
+          "composition": {
+            "type": "string",
+            "description": "camera angle and framing"
+          },
+          "lighting": {
+            "type": "string",
+            "description": "lighting setup"
+          },
+          "style": {
+            "type": "string",
+            "description": "artistic style"
+          },
+          "text": {
+            "type": "string",
+            "description": "text to render"
+          },
+          "changes": {
+            "type": "array",
+            "description": "edits to make",
+            "items": {
+              "type": "string"
+            }
+          },
+          "aspect_ratio": {
+            "description": "aspect ratio",
+            "type": "string",
+            "enum": [
+              "16:9",
+              "1:1",
+              "2:3",
+              "3:2",
+              "3:4",
+              "4:3",
+              "9:16"
+            ]
+          },
+          "image_size": {
+            "description": "image size",
+            "type": "string",
+            "enum": [
+              "1024x1024",
+              "1024x1536",
+              "1536x1024"
+            ]
+          },
+          "input": {
+            "type": "array",
+            "description": "input images",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "description": "input image path"
+                },
+                "data": {
+                  "type": "string",
+                  "description": "base64 image data"
+                },
+                "mime_type": {
+                  "type": "string",
+                  "description": "mime type"
+                }
+              },
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "subject",
+          "i"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "dispatch": {
+    "kind": "target_adapter",
+    "adapter_id": "oh-my-pi.local.v16.2.13",
+    "binding_requirement": "RL-E4-2"
+  }
+}

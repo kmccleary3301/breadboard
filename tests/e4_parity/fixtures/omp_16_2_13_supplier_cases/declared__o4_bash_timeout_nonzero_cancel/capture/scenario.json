@@ -1,0 +1,79 @@
+{
+  "case_id": "o4_bash_timeout_nonzero_cancel",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "Timeout probe.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"sleep 5; echo late > timeout_late.txt\",\"timeout\":1,\"i\":\"Timeout probe\"}",
+          "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-01-timeout",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Exit 42 probe.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"exit 42\",\"i\":\"Exit 42 probe\"}",
+          "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-02-exit42",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Missing binary probe.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"definitely-not-a-command-omp16213\",\"i\":\"Missing binary probe\"}",
+          "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-03-missing",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Cancel probe.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"sleep 30; echo never > cancel_marker.txt\",\"i\":\"Cancel probe\"}",
+          "id": "omp16213-call-o4_bash_timeout_nonzero_cancel-04-cancel",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

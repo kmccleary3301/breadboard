@@ -1,0 +1,88 @@
+{
+  "case_id": "o7_hashline_stale_unseen_anchor",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "Stale tag edit.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"input\": \"[README.txt#0000]\\nSWAP 1.=1:\\n+stale edit\\n\", \"i\": \"Stale tag edit\"}",
+          "id": "omp16213-call-o7_hashline_stale_unseen_anchor-01-stale",
+          "name": "edit",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Partial read.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"path\": \"long.txt:1-5\", \"i\": \"Reading lines 1-5\"}",
+          "id": "omp16213-call-o7_hashline_stale_unseen_anchor-02-read-partial",
+          "name": "read",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Unseen line edit.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"input\": \"[long.txt#B76A]\\nSWAP 350.=350:\\n+unseen edit 350\\n\", \"i\": \"Unseen line edit\"}",
+          "id": "omp16213-call-o7_hashline_stale_unseen_anchor-03-unseen",
+          "name": "edit",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Seen line edit.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"input\": \"[long.txt#B76A]\\nSWAP 2.=2:\\n+seen edit 2\\n\", \"i\": \"Seen line edit\"}",
+          "id": "omp16213-call-o7_hashline_stale_unseen_anchor-04-seen",
+          "name": "edit",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "Anchor checks done.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

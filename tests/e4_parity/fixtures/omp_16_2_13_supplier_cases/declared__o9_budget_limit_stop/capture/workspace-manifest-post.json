@@ -1,0 +1,87 @@
+{
+  "README.txt": {
+    "bytes": 40,
+    "mode": "0o666",
+    "sha256": "sha256:1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba",
+    "type": "file"
+  },
+  "binary.bin": {
+    "bytes": 64,
+    "mode": "0o666",
+    "sha256": "sha256:fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108",
+    "type": "file"
+  },
+  "budget_1.txt": {
+    "bytes": 3,
+    "mode": "0o666",
+    "sha256": "sha256:7692c3ad3540bb803c020b3aee66cd8887123234ea0c6e7143c0add73ff431ed",
+    "type": "file"
+  },
+  "budget_2.txt": {
+    "bytes": 3,
+    "mode": "0o666",
+    "sha256": "sha256:3fc4ccfe745870e2c0d99f71f30ff0656c8dedd41cc1d7d3d376b0dbe685e2f3",
+    "type": "file"
+  },
+  "budget_3.txt": {
+    "bytes": 5,
+    "mode": "0o666",
+    "sha256": "sha256:8b5b9db0c13db24256c829aa364aa90c6d2eba318b9232a4ab9313b954d3555f",
+    "type": "file"
+  },
+  "budget_4.txt": {
+    "bytes": 4,
+    "mode": "0o666",
+    "sha256": "sha256:04efaf080f5a3e74e1c29d1ca6a48569382cbbcd324e8d59d2b83ef21c039f00",
+    "type": "file"
+  },
+  "budget_5.txt": {
+    "bytes": 4,
+    "mode": "0o666",
+    "sha256": "sha256:222b0bd51fcef7e65c2e62db2ed65457013bab56be6fafeb19ee11d453153c80",
+    "type": "file"
+  },
+  "budget_6.txt": {
+    "bytes": 3,
+    "mode": "0o666",
+    "sha256": "sha256:44778d82365e4af681c40d5f0eef5cf6f5899d3f0ac335050a7ed6779cf3f674",
+    "type": "file"
+  },
+  "budget_7.txt": {
+    "bytes": 5,
+    "mode": "0o666",
+    "sha256": "sha256:3ba8d02b16fd2a01c1a8ba1a1f036d7ce386ed953696fa57331c2ac48a80b255",
+    "type": "file"
+  },
+  "budget_8.txt": {
+    "bytes": 5,
+    "mode": "0o666",
+    "sha256": "sha256:c195d2d8756234367242ba7616c5c60369bc25ced2dcb5b92808d31b58ef217a",
+    "type": "file"
+  },
+  "nested": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir/inner.txt": {
+    "bytes": 15,
+    "mode": "0o666",
+    "sha256": "sha256:b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d",
+    "type": "file"
+  },
+  "script.sh": {
+    "bytes": 25,
+    "mode": "0o755",
+    "sha256": "sha256:fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd",
+    "type": "file"
+  },
+  "symlink_to_readme.txt": {
+    "mode": "0o777",
+    "target": "README.txt",
+    "type": "symlink"
+  }
+}

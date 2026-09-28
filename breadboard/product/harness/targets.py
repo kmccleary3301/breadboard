@@ -50,6 +50,10 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.oh-my-pi.v18.1.17",
         "fe47b49bc0d5ff05e981559d2f3f87070b816e3f3ba263b70f6ad4e7554b8a4f",
     ),
+    "oh-my-pi-r2@16.2.13": (
+        "breadboard.oh-my-pi.v16.2.13",
+        "aba6556807ff523fb01a17a65c1195e46e8ae7f089be21ed7ed626e6ef123918",
+    ),
     "openclaw@2026.9.4": (
         "breadboard.openclaw.native-chat.v1",
         "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a",
@@ -429,6 +433,7 @@ def lower_e4_target(
             "breadboard.pi-coding-agent.v0.73.1",
             "breadboard.pi-coding-agent.v0.57.1",
             "breadboard.oh-my-pi.v18.1.17",
+            "breadboard.oh-my-pi.v16.2.13",
             "breadboard.hermes-agent.v2026.9.11",
             "breadboard.openclaw.native-chat.v1",
         }:

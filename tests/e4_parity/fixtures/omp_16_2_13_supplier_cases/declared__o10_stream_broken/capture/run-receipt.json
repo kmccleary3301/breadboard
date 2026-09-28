@@ -1,0 +1,10 @@
+{
+  "case_id": "o10_stream_broken",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 2,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:2da886429d43ccfdf77863315685b3e67b0a72993049f49372c9855a396a7efe"
+}

@@ -26,6 +26,7 @@ MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
 PI_0_57_1_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.57.1"
 OMP_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v18.1.17"
+OMP_16_2_13_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v16.2.13"
 OPENHANDS_RESPONSE_CONSUMER_ID: Final = "breadboard.openhands-sdk.v1.47.0"
 HERMES_RESPONSE_CONSUMER_ID: Final = "breadboard.hermes-agent.v2026.9.11"
 NATIVE_CHAT_RESPONSE_TARGETS: Final = MappingProxyType({
@@ -44,6 +45,7 @@ _NATIVE_RESPONSE_CONSUMER_MODES: Final = {
     PI_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     PI_0_57_1_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OMP_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
+    OMP_16_2_13_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     HERMES_RESPONSE_CONSUMER_ID: frozenset({"non_streaming"}),
     OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({"streaming"}),
@@ -437,6 +439,42 @@ def admit_native_response_binding(
             or not profile.capabilities.supports_store
         ):
             raise NativeResponseBindingError("Oh My Pi native response requires its compiled source profile")
+    elif policy.consumer_id == OMP_16_2_13_RESPONSE_CONSUMER_ID:
+        # Pinned pi-ai 16.2.13 openai-shared.ts:883-886 sends preserve_thinking
+        # top-level and inside chat_template_kwargs for the qwen thinking format;
+        # the compiled policy must carry exactly the target's declared values.
+        if (
+            not isinstance(target, Mapping)
+            or target.get("version") != 3
+            or target.get("target_id") != "oh-my-pi-r2@16.2.13"
+            or target.get("renderer_id") != OMP_16_2_13_RESPONSE_CONSUMER_ID
+            or not isinstance(target.get("runtime_profile"), Mapping)
+            or not isinstance(target["runtime_profile"].get("request_policy"), Mapping)
+            or target.get("rendered_prompt_digest") is not None
+        ):
+            raise NativeResponseBindingError(
+                "Oh My Pi 16.2.13 native response requires its compiled source profile"
+            )
+        declared_policy = target["runtime_profile"]["request_policy"]
+        if (
+            type(declared_policy.get("preserve_thinking")) is not bool
+            or not isinstance(declared_policy.get("chat_template_kwargs"), Mapping)
+            or effective_mode != "streaming"
+            or profile.request_policy.max_token_field != "max_completion_tokens"
+            or profile.request_policy.strict_tools is not None
+            or profile.max_output_tokens != 2048
+            or profile.request_policy.enable_thinking is not None
+            or not profile.request_policy.include_usage
+            or profile.sampling.as_dict() != {"n": 1}
+            or profile.capabilities.supports_store
+            or profile.request_policy.preserve_thinking is not declared_policy["preserve_thinking"]
+            or profile.request_policy.chat_template_kwargs is None
+            or dict(profile.request_policy.chat_template_kwargs)
+            != dict(declared_policy["chat_template_kwargs"])
+        ):
+            raise NativeResponseBindingError(
+                "Oh My Pi 16.2.13 native response requires its compiled source profile"
+            )
     elif policy.consumer_id in NATIVE_CHAT_RESPONSE_TARGETS:
         # Sampling identity and source SDK wire-field presence remain distinct.
         if (
@@ -489,6 +527,7 @@ __all__ = [
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
     "OMP_RESPONSE_CONSUMER_ID",
+    "OMP_16_2_13_RESPONSE_CONSUMER_ID",
     "OPENHANDS_RESPONSE_CONSUMER_ID",
     "HERMES_RESPONSE_CONSUMER_ID",
     "NATIVE_CHAT_RESPONSE_TARGETS",

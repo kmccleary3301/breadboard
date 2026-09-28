@@ -1,0 +1,10 @@
+{
+  "case_id": "o2_fragmented_malformed_unknown",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 5,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:c410475b34818db9faf38fb40068c930b69ac23198756621ee2ab291b6f316c4"
+}

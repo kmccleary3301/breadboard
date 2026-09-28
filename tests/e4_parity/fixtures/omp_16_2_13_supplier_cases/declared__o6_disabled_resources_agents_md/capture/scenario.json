@@ -1,0 +1,24 @@
+{
+  "case_id": "o6_disabled_resources_agents_md",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "READY",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Spare response.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}

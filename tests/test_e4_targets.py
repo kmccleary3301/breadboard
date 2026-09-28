@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import dataclasses
 import hashlib
 import json
@@ -26,10 +27,12 @@ from breadboard_engine.e4_targets import (
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.product.harness.compile import HarnessCompileError
 from breadboard.product.harness.targets import (
+    _NATIVE_WORKER_RECIPES,
     bind_e4_target_inputs,
     lower_e4_target,
     serialize_e4_target_inputs,
 )
+from breadboard.rl.harness.runners.base import thaw_json
 from tests.compilation.test_server_compiler import _options
 from breadboard.product.harness.validate import (
     HarnessDefinitionValidationError,
@@ -80,6 +83,7 @@ def test_target_resources_load_outside_editable_checkout_cwd(
     assert list_e4_target_ids() == (
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
+        "oh-my-pi-r2@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
         "openclaw@2026.9.4",
@@ -152,6 +156,7 @@ def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> N
     assert list_e4_target_ids() == (
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
+        "oh-my-pi-r2@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
         "openclaw@2026.9.4",
@@ -961,3 +966,92 @@ def test_omp_18_1_17_server_compile_binds_headless_v2(
         ]
     finally:
         cas.close()
+
+
+def test_omp_16_2_13_r2_loads_and_lowers_native_worker_recipe() -> None:
+    target = load_e4_target("oh-my-pi-r2@16.2.13")
+    target_root = ROOT / "config" / "e4_targets"
+    disk_sha = hashlib.sha256((target_root / "oh_my_pi" / "16.2.13-r2" / "target.json").read_bytes()).hexdigest()
+    index = json.loads((target_root / "index.json").read_bytes())
+    idx_sha = index["targets"]["oh-my-pi-r2@16.2.13"]["sha256"]
+    recipe = _NATIVE_WORKER_RECIPES["oh-my-pi-r2@16.2.13"]
+    assert disk_sha == idx_sha == recipe[1] == target.descriptor_sha256
+    assert recipe[0] == "breadboard.oh-my-pi.v16.2.13"
+
+    # Assert v1 16.2.13 and pi 0.57.1 index entries remain byte-identical
+    assert index["targets"]["oh-my-pi@16.2.13"]["sha256"] == "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
+    assert index["targets"]["pi@0.57.1"]["sha256"] == "0131e41b0ffbbd0800fd332b769de2603caf4716382989a50c9e47a8f8d2441c"
+    v1_disk_sha = hashlib.sha256((target_root / "oh_my_pi" / "16.2.13" / "target.json").read_bytes()).hexdigest()
+    assert v1_disk_sha == "537fb2659e6f8f619e0fd832d48d57c5f8c0da4b2356022b0ebecd6ccbb7a105"
+
+    lowered = lower_e4_target(target, {})
+    assert lowered.target_id == "oh-my-pi-r2@16.2.13"
+    assert lowered.renderer_id == "breadboard.oh-my-pi.v16.2.13"
+    assert lowered.ordered_tool_names == ("read", "bash", "edit", "write", "generate_image")
+    assert lowered.overlay_id == "breadboard.oh-my-pi.r2-headless.v16.2.13"
+    profile = lowered.runtime_profile
+    assert profile["model_registry"]["provider_id"] == "vllm-local"
+    assert profile["model_registry"]["api"] == "openai-completions"
+    assert profile["model_registry"]["contextWindow"] == 200000
+    assert profile["model_registry"]["maxTokens"] == 2048
+    assert profile["model_registry"]["reasoning"] is False
+    assert list(profile["model_registry"]["input"]) == ["text"]
+    assert profile["request_policy"]["preserve_thinking"] is True
+    assert profile["request_policy"]["chat_template_kwargs"] == {"preserve_thinking": True}
+    assert profile["request_policy"]["max_token_field"] == "max_completion_tokens"
+    assert profile["request_policy"]["supports_store"] is False
+    assert profile["harness_controls"]["request_cap"] == 8
+
+
+def test_omp_16_2_13_r2_tool_surface_matches_captured_wire_tools() -> None:
+    target = load_e4_target("oh-my-pi-r2@16.2.13")
+    surface = json.loads(target.read_asset_text("tool-surface.json"))
+    assert surface["ordered_tools"] == ["read", "bash", "edit", "write", "generate_image"]
+
+    fixture_path = (
+        Path(__file__).resolve().parent
+        / "e4_parity"
+        / "fixtures"
+        / "omp_16_2_13_supplier_cases"
+        / "declared__o0_text_stop"
+        / "capture"
+        / "http-transcript.jsonl"
+    )
+    raw = base64.b64decode(json.loads(fixture_path.read_text().splitlines()[0])["raw_body_base64"]).decode("utf-8")
+    wire_tools = json.loads(raw)["tools"]
+
+    for t in wire_tools:
+        fn = t["function"]
+        name = fn["name"]
+        assert name in surface["tools"]
+        surface_tool = surface["tools"][name]
+        assert surface_tool["description"] == fn["description"]
+        assert surface_tool["parameters"] == fn["parameters"]
+        assert json.dumps(surface_tool["parameters"]) == json.dumps(fn["parameters"])
+        req = fn["parameters"]["required"]
+        assert isinstance(req, list) and len(req) > 0
+
+def test_omp_16_2_13_r2_compiled_tools_equal_wire_tools() -> None:
+    target = load_e4_target("oh-my-pi-r2@16.2.13")
+    lowered = lower_e4_target(target, {})
+    surface = json.loads(target.read_asset_text("tool-surface.json"))
+
+    # Compiled chat_tools from product loader (lower_e4_target)
+    compiled_tools = {tool["name"]: tool for tool in lowered.tools}
+    assert tuple(compiled_tools.keys()) == lowered.ordered_tool_names
+    assert lowered.ordered_tool_names == ("read", "bash", "edit", "write", "generate_image")
+
+    # Modulo the compiled required projection:
+    # _lower_worker_target orders properties with required keys first.
+    for name, tool in compiled_tools.items():
+        wire_spec = surface["tools"][name]
+        assert tool["description"] == wire_spec["description"]
+        wire_params = wire_spec["parameters"]
+        compiled_params = tool["parameters"]
+        assert list(compiled_params["required"]) == wire_params["required"]
+        # Required is non-empty for all 5 tools on wire
+        assert len(compiled_params["required"]) > 0
+        # All properties present
+        assert set(compiled_params["properties"]) == set(wire_params["properties"])
+        for prop_name, prop_spec in wire_params["properties"].items():
+            assert thaw_json(compiled_params["properties"][prop_name]) == prop_spec

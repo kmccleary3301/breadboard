@@ -1,0 +1,10 @@
+{
+  "case_id": "o7_hashline_stale_unseen_anchor",
+  "config_mode": "declared",
+  "exit_code": 0,
+  "expected_exit_code": 0,
+  "failures": [],
+  "requests_total": 5,
+  "schema_version": "bb.e4.omp16213-capture-receipt.v2",
+  "trace_sha256": "sha256:93f8a5a98a89521c59d608b3e29149c87113fa9ade4f8ccfb8caa952ca475dd1"
+}

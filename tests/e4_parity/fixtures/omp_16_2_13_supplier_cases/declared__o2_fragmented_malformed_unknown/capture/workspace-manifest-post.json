@@ -1,0 +1,51 @@
+{
+  "README.txt": {
+    "bytes": 40,
+    "mode": "0o666",
+    "sha256": "sha256:1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba",
+    "type": "file"
+  },
+  "binary.bin": {
+    "bytes": 64,
+    "mode": "0o666",
+    "sha256": "sha256:fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108",
+    "type": "file"
+  },
+  "frag_marker.txt": {
+    "bytes": 9,
+    "mode": "0o666",
+    "sha256": "sha256:64f0a988ccce1098234e070f1c07565ad0e8a51963c96bb30064bd790de8ff15",
+    "type": "file"
+  },
+  "malformed_recovered.txt": {
+    "bytes": 14,
+    "mode": "0o666",
+    "sha256": "sha256:7072f186429aabd403ce0eac668a22372b34c499b9d65ea9a835bb87402a8caf",
+    "type": "file"
+  },
+  "nested": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir/inner.txt": {
+    "bytes": 15,
+    "mode": "0o666",
+    "sha256": "sha256:b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d",
+    "type": "file"
+  },
+  "script.sh": {
+    "bytes": 25,
+    "mode": "0o755",
+    "sha256": "sha256:fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd",
+    "type": "file"
+  },
+  "symlink_to_readme.txt": {
+    "mode": "0o777",
+    "target": "README.txt",
+    "type": "symlink"
+  }
+}

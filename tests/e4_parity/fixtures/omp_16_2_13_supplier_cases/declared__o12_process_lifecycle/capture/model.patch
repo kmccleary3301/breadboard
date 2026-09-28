@@ -1,0 +1,16 @@
+diff --git a/lifecycle_child.txt b/lifecycle_child.txt
+new file mode 100644
+index 0000000..b0c6ee1
+--- /dev/null
++++ b/lifecycle_child.txt
+@@ -0,0 +1 @@
++child
+\ No newline at end of file
+diff --git a/lifecycle_parent.txt b/lifecycle_parent.txt
+new file mode 100644
+index 0000000..25dd2a9
+--- /dev/null
++++ b/lifecycle_parent.txt
+@@ -0,0 +1 @@
++parent
+\ No newline at end of file

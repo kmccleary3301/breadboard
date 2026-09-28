@@ -1,0 +1,143 @@
+{
+  ".agents": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".agents/rules": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".agents/rules/planted-agents-rule.md": {
+    "bytes": 91,
+    "mode": "0o666",
+    "sha256": "sha256:1881ef12bc9184dcbcd30693efe4038afca7fac1c706f25f8f609e198a354521",
+    "type": "file"
+  },
+  ".claude": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".claude/skills": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".claude/skills/planted-claude-skill": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".claude/skills/planted-claude-skill/SKILL.md": {
+    "bytes": 107,
+    "mode": "0o666",
+    "sha256": "sha256:a3fb40b38e379193f55a5a9347d51f7dab76abc50f25305c1d5cfe71bd18c645",
+    "type": "file"
+  },
+  ".cursor": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".cursor/rules": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".cursor/rules/planted-cursor-rule.mdc": {
+    "bytes": 91,
+    "mode": "0o666",
+    "sha256": "sha256:1b0b0c2747bb3752bf3a72c320e9552203710f4949a018f4ce29ef58fb2c0d3c",
+    "type": "file"
+  },
+  ".omp": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/extensions": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/extensions/planted-omp-ext": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/extensions/planted-omp-ext/index.ts": {
+    "bytes": 124,
+    "mode": "0o666",
+    "sha256": "sha256:76b94c6b0113644026b7090a51123aac452c07c7c066d9e7c4f73d48568e3119",
+    "type": "file"
+  },
+  ".omp/prompts": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/prompts/planted-omp-prompt.md": {
+    "bytes": 34,
+    "mode": "0o666",
+    "sha256": "sha256:00c8cbace3db964883d83ef21f67d90a55f58fd285462c8dceb6e2890221af22",
+    "type": "file"
+  },
+  ".omp/rules": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/rules/planted-omp-rule.md": {
+    "bytes": 105,
+    "mode": "0o666",
+    "sha256": "sha256:641251e9f58bec81e818063891d572795bc01b0f1d165e22b7a01fa0dc3c35a1",
+    "type": "file"
+  },
+  ".omp/skills": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/skills/planted-omp-skill": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  ".omp/skills/planted-omp-skill/SKILL.md": {
+    "bytes": 98,
+    "mode": "0o666",
+    "sha256": "sha256:dbcd9be03f84c92c9024818b6de514d5f3debe72b9a368e779a0e13a040182c0",
+    "type": "file"
+  },
+  "AGENTS.md": {
+    "bytes": 49,
+    "mode": "0o666",
+    "sha256": "sha256:ad5446ea9f62effeb284eeb92bf8c120266005e370b8816a905318dc7496b132",
+    "type": "file"
+  },
+  "README.txt": {
+    "bytes": 40,
+    "mode": "0o666",
+    "sha256": "sha256:1916712072363e697fb94ef94aed21fcda8f98f68a7beb33864bc08a7f4423ba",
+    "type": "file"
+  },
+  "binary.bin": {
+    "bytes": 64,
+    "mode": "0o666",
+    "sha256": "sha256:fdeab9acf3710362bd2658cdc9a29e8f9c757fcf9811603a8c447cd1d9151108",
+    "type": "file"
+  },
+  "nested": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir": {
+    "mode": "0o777",
+    "type": "directory"
+  },
+  "nested/dir/inner.txt": {
+    "bytes": 15,
+    "mode": "0o666",
+    "sha256": "sha256:b2fe8cabc84d91ba41fb36a0bfbe7470a215834700d03453101a4a8acaa4081d",
+    "type": "file"
+  },
+  "script.sh": {
+    "bytes": 25,
+    "mode": "0o755",
+    "sha256": "sha256:fda68295ca180853bd502d61e2c3b79faae84c3d3c6d307622c6a4650117d9bd",
+    "type": "file"
+  },
+  "symlink_to_readme.txt": {
+    "mode": "0o777",
+    "target": "README.txt",
+    "type": "symlink"
+  }
+}

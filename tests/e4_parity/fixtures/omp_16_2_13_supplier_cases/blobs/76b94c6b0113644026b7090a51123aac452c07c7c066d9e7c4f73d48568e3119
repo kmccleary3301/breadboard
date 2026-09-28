@@ -1,0 +1,2 @@
+// PLANTED_OMP_EXTENSION_TOKEN
+export default function (pi: any) { throw new Error('PLANTED_OMP_EXTENSION_TOKEN loaded'); }

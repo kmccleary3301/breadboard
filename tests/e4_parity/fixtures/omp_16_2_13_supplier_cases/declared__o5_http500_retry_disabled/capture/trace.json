@@ -1,0 +1,186 @@
+{
+  "argv": [
+    "bun",
+    "<omp-cli>",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Reply with the single word READY."
+  ],
+  "argv_exact": [
+    "/opt/omp/bun/bun",
+    "/opt/omp/runtime/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js",
+    "-p",
+    "--mode",
+    "json",
+    "--model",
+    "vllm-local/Qwen/Qwen3.5-35B-A3B",
+    "--tools",
+    "read,bash,edit,write",
+    "--thinking",
+    "off",
+    "--no-extensions",
+    "--no-skills",
+    "--no-session",
+    "--config",
+    "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "Reply with the single word READY."
+  ],
+  "assistant_stops": [
+    {
+      "errorMessage": "500 Scripted HTTP 500\nScripted HTTP 500 (type=server_error)",
+      "stopReason": "error"
+    }
+  ],
+  "bun_version": "1.3.14",
+  "case_id": "o5_http500_retry_disabled",
+  "config_dir_side_effects": {
+    "added": [
+      "agent.db",
+      "agent.db-shm",
+      "agent.db-wal",
+      "models.db",
+      "models.yml"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "config_mode": "declared",
+  "config_overlay": {
+    "path": "/opt/omp-capture/kit/config/omp16213-profile.yml",
+    "sha256": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191"
+  },
+  "covered_bullets": [
+    "JSON event output and terminal result behavior",
+    "timeout, cancellation, retry-disabled behavior, and process errors",
+    "no-session behavior"
+  ],
+  "cwd": "/testbed",
+  "egress_probe": {
+    "blocked": true,
+    "errno": "ENETUNREACH",
+    "error": "[Errno 101] Network is unreachable",
+    "target": "1.1.1.1:443"
+  },
+  "elapsed_seconds": 1.154,
+  "env": {
+    "HOME": "/capture/home",
+    "LANG": "C.UTF-8",
+    "NO_COLOR": "1",
+    "PATH": "/opt/omp/bun:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PI_CODING_AGENT_DIR": "/omp-config",
+    "PI_NATIVE_VARIANT": "baseline",
+    "TMPDIR": "/capture/tmp"
+  },
+  "event_type_counts": {
+    "agent_end": 1,
+    "agent_start": 1,
+    "message_end": 2,
+    "message_start": 2,
+    "session": 1,
+    "turn_end": 1,
+    "turn_start": 1
+  },
+  "events_total": 9,
+  "events_unparsed_lines": [],
+  "exit_code": 0,
+  "expect": {
+    "effect_absent": [],
+    "exit_code": 0,
+    "request_markers_absent": [],
+    "request_markers_present": [],
+    "requests": 1,
+    "requests_at_least": null,
+    "requests_served": null,
+    "stderr_contains": null,
+    "workspace_after": {}
+  },
+  "expected_exit_code": 0,
+  "failures": [],
+  "files": {
+    "config-manifest-post.json": "sha256:db820fdbd3cf95e2aebe02a00c841c173ebfb3aeb98d0423972d39e649233b6b",
+    "config-manifest-pre.json": "sha256:81b3b7bc4441f1fa1cecb992b250c6a425fa6b0e4cce05a5171e78ee990c170c",
+    "config-overlay.yml": "sha256:81d3aa0355210035b8ac6c8fa82410d1bda2fbe48bd687174e88975da5f82191",
+    "git-status.txt": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "home-manifest-post.json": "sha256:043739f63bfd0520ca18fdda0d3244aa1ba49d6a32e6b2bd2c652d866dc1e97b",
+    "home-manifest-pre.json": "sha256:c8a2e4c23e75e6872f535886e23abc5198b9774164d83a614a82ba0d0a5d24e5",
+    "http-transcript.jsonl": "sha256:02c3ce06a31c75d385a1197bd374c25711a76b5be12369ed2f298d5e2a4f5804",
+    "model.patch": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "omp-events.jsonl": "sha256:d6b792280a0517b73406214d749a3f90e79c81dc50dddbc1d450015488fcefbd",
+    "omp-stderr.log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "scenario.json": "sha256:f90a4e3db140fd96f5cf71b181167582a123317a2b4027d55e94feac0e8bc1fa",
+    "workspace-manifest-post-immediate.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1",
+    "workspace-manifest-post.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1",
+    "workspace-manifest-pre.json": "sha256:723e8c4e59ccf3c03c2f96d71ce6037d3405e9513e8a6bf52e43ce1c87db69e1"
+  },
+  "home_side_effects": {
+    "added": [
+      ".omp",
+      ".omp/gpu_cache.json",
+      ".omp/logs",
+      ".omp/logs/.9939c2487322ebfbfbe60eac85a2eff9e5900a27-audit.json",
+      ".omp/logs/omp.2026-09-26.log"
+    ],
+    "changed": [],
+    "removed": []
+  },
+  "kind": "capture",
+  "marker_hits": {},
+  "omp_version": "omp/16.2.13",
+  "oracle_notes": {
+    "declared": "retry.enabled=false via --config overlay: exactly one HTTP request (one sampled attempt, no session retry, transport maxAttempts=1 while the first-event watchdog is armed).",
+    "retry_default_control": "Same overlay minus retry.enabled: upstream default session retry (retry.maxRetries 10, baseDelayMs 500) issues further attempts until the request cap stops it; shows the overlay file is what disables retry."
+  },
+  "overlay_argv_dropped": {
+    "--no-prompt-templates": "f0_no_prompt_templates_rejected"
+  },
+  "receiver_closed": {
+    "cap_refused": 0,
+    "failed": null,
+    "requests": 1,
+    "steps_scripted": 12,
+    "steps_served": 1
+  },
+  "request_guard": {
+    "cap_reached": false,
+    "request_cap": 8,
+    "signal_sent": null
+  },
+  "requests_by_served": {
+    "http_error": 1
+  },
+  "requests_total": 1,
+  "schema_version": "bb.e4.omp16213-capture-trace.v2",
+  "stderr_head": "",
+  "supplier": {
+    "integrity": "sha512-ZKi9xul+Ef6wmq4VoETCmEFrAOOqx0Wq24MxHM6vL7al2NW/q7RCJc3StlLmHs8zN06C2tI/XQTMJbm5UDX0fA==",
+    "package": "@oh-my-pi/pi-coding-agent",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "tarball_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "version": "16.2.13"
+  },
+  "tool_results": [],
+  "transcript_unparsed_lines": [],
+  "what_it_exercises": "Persistent HTTP 500 under retry.enabled=false. The receiver scripts 12 consecutive 500 responses and records every HTTP attempt, so session retries, transport retries (maxAttempts) and hidden SDK retries are all counted.",
+  "workspace_delta": {
+    "added": [],
+    "changed": [],
+    "removed": []
+  },
+  "workspace_delta_immediate": {
+    "added": [],
+    "changed": [],
+    "removed": []
+  }
+}

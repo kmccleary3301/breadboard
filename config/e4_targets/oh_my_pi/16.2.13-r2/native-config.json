@@ -1,0 +1,107 @@
+{
+  "profile": "oh-my-pi",
+  "target_id": "oh-my-pi-r2@16.2.13",
+  "package": "@oh-my-pi/pi-coding-agent@16.2.13",
+  "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+  "agent": {
+    "request_cap": 8,
+    "thinking_level": "off",
+    "compaction_enabled": true,
+    "retry_enabled": false,
+    "max_retries": 0,
+    "tool_execution": "sequential",
+    "quiescence": "stop_when_no_tool_calls"
+  },
+  "model": {
+    "stream": true,
+    "stream_options": {
+      "include_usage": true
+    },
+    "timeout_seconds": 120,
+    "images_enabled": false,
+    "max_tokens": 2048,
+    "max_tokens_field": "max_completion_tokens"
+  },
+  "tools": {
+    "ordered": [
+      "read",
+      "bash",
+      "edit",
+      "write",
+      "generate_image"
+    ],
+    "cli_declared": [
+      "read",
+      "bash",
+      "edit",
+      "write"
+    ],
+    "injected_by_sdk": [
+      "generate_image"
+    ],
+    "image_delivery": false
+  },
+  "workspace": {
+    "extensions": false,
+    "skills": false,
+    "prompt_templates": true,
+    "sessions": false
+  },
+  "model_registry": {
+    "provider_id": "vllm-local",
+    "api": "openai-completions",
+    "auth": "none",
+    "contextWindow": 200000,
+    "maxTokens": 2048,
+    "reasoning": false,
+    "input": [
+      "text"
+    ],
+    "compat": {
+      "supportsStore": false,
+      "supportsDeveloperRole": false,
+      "supportsReasoningEffort": false,
+      "supportsUsageInStreaming": true,
+      "maxTokensField": "max_completion_tokens",
+      "thinkingFormat": "qwen",
+      "supportsStrictMode": false
+    }
+  },
+  "request_policy": {
+    "preserve_thinking": true,
+    "chat_template_kwargs": {
+      "preserve_thinking": true
+    },
+    "max_token_field": "max_completion_tokens",
+    "supports_store": false,
+    "citations": {
+      "preserve_thinking": "node_modules/@oh-my-pi/pi-ai/src/providers/openai-shared.ts:883-886",
+      "chat_template_kwargs": "node_modules/@oh-my-pi/pi-ai/src/providers/openai-shared.ts:883-886",
+      "thinking_format_compat": "node_modules/@oh-my-pi/pi-catalog/src/compat/openai.ts:387-398",
+      "max_tokens_field": "node_modules/@oh-my-pi/pi-catalog/src/compat/openai.ts:431",
+      "supports_store": "node_modules/@oh-my-pi/pi-catalog/src/compat/openai.ts:401"
+    }
+  },
+  "harness_controls": {
+    "request_cap": 8
+  },
+  "dropped_items": [
+    {
+      "item": "--no-prompt-templates",
+      "probe": "f0",
+      "case": "declared__f0_no_prompt_templates_rejected",
+      "exit_code": 2,
+      "stderr": "Error: unknown flag: --no-prompt-templates\nRun `omp --help` for available flags.",
+      "reason": "CLI flag rejected by upstream 16.2.13 CLI parser"
+    },
+    {
+      "item": "--config key=value",
+      "probe": "f1",
+      "case": "declared__f1_config_key_value_rejected",
+      "exit_code": 1,
+      "stderr": "error: Config overlay not found: /testbed/retry.enabled=false",
+      "reason": "16.2.13 --config expects an overlay file path, rejecting key=value syntax"
+    }
+  ],
+  "advertisement": {}
+}

@@ -1,0 +1,65 @@
+{
+  "case_id": "o12_process_lifecycle",
+  "request_cap": 8,
+  "steps": [
+    {
+      "assistant_content": "starting lifecycle probe",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf parent > lifecycle_parent.txt; (sleep 0.2; printf child > lifecycle_child.txt) &\",\"i\":\"Lifecycle probe\"}",
+          "id": "omp16213-call-o12_process_lifecycle-01",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "The lifecycle probe is complete.",
+      "finish_reason": "tool_calls",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [
+        {
+          "arguments": "{\"command\":\"printf 'COMPLETE_TASK_AND_SUBMIT_FINAL_OUTPUT\\\\nlifecycle launched\\\\n'\",\"i\":\"Submitting\"}",
+          "id": "omp16213-call-o12_process_lifecycle-02",
+          "name": "bash",
+          "split": null
+        }
+      ],
+      "usage": null
+    },
+    {
+      "assistant_content": "The lifecycle probe is complete; stop now.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Final answer: lifecycle effects observed.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    },
+    {
+      "assistant_content": "Done.",
+      "finish_reason": "stop",
+      "keep_chunks": null,
+      "kind": "completion",
+      "text_fragments": null,
+      "tool_calls": [],
+      "usage": null
+    }
+  ]
+}
