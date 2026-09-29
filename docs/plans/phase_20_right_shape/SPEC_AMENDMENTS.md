@@ -2,7 +2,7 @@
 
 Every deviation from BB_RS_MASTER_PLAN.md is recorded here, dated, with evidence (§1.5 spec_gap protocol).
 
-Current state: **32 numbered amendments (AM1-AM32)** plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a, AM23a, AM23b (below).
+Current state: **34 numbered amendments (AM1-AM34)** plus addenda AM9a, AM11a, AM14a, AM17a, AM17b-r, AM19a, AM20a, AM21a, AM22a, AM23a, AM23b (below).
 
 ---
 
@@ -521,3 +521,9 @@ review gates; it does not authorize runtime or recipient acceptance.
 **Consumer and gap:** the mini-swe-agent 2.4.6 profile needs an executable lane that compares BreadBoard's replay with an independent supplier capture. The frozen lane inventory has no lane for that profile, and the freeze gate rejects the ID.
 
 **Scope:** `scripts/check_phase20_freeze.py` admits exactly one lane ID, `mini_swe_agent_2_4_6_replay`, under the existing `target_support` lane kind and comparator protocol. The lane is evidence-only: status `compared`, 0 points. The checker pins `kind`, `status` and `points` for this ID in `ALLOWED_LANE_IDS`; if a lane document with the ID drifts from those values, the exemption lapses and the ID is reported as a freeze violation. The amendment adds no lane kind, schema ID, SDK package, ledger or scorecard. The freeze baseline is unchanged. Claim, acceptance and points remain external gates, and changing any pin needs a new amendment. The other E4 profiles need their own amendments.
+
+## Amendment 34 - 2026-09-28 - Compiled provider tool-error observations for RL
+
+**Authorization and defect:** `ACR-20260928-rl-lease-start-seal-and-close` records the RL consumer failure: policy tool errors ended a turn instead of becoming bounded, policy-visible tool observations. The repair selects an opt-in compiled `provider_tools.tool_errors_as_observations` boolean; the existing closed v2 config surface rejected that selector before compilation. The demonstrated correctness defect requires admitting exactly this property, not a general widening of the frozen schema.
+
+**Scope:** Add the optional boolean `provider_tools.tool_errors_as_observations` to the existing `bb.agent_config_surface.v2` schema; absent or false retains strict failure semantics. Pin its post-change SHA-256 `13db722eb115daf39f8753efcc8bff2fe45aa9f66041645f8f260a6c828a83b5` in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `ACR-20260928-rl-lease-start-seal-and-close` and ref `AM34`. Update only its generated TypeScript declaration, registry, bundled Node validator and behavioral regression cases. No new schema ID, lane, package, default behavior, evidence cap, grader rule or other v2 property is authorized; the freeze baseline is unchanged. PR #153 still requires current-head protected CI and normal merge before use.

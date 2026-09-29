@@ -3,7 +3,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import stat
+import subprocess
 import threading
 from dataclasses import replace
 from pathlib import Path
@@ -35,7 +37,9 @@ from breadboard.rl.harness.sandbox import (
     VerifierExecutionError,
     VerifierSnapshotError,
     WorkspaceStateError,
+    _sealed_repository_diff,
 )
+from breadboard.rl.harness.evidence import SafeFailureFactV2
 from tests.rl.harness.test_sandbox_runtime import (
     RecordingBackend,
     RecordingHandle,
@@ -213,7 +217,8 @@ async def test_seeded_verifier_rejects_mutated_seed_baseline(
         (baseline / "tampered.txt").write_text("tampered", encoding="utf-8")
         with pytest.raises(VerifierSnapshotError) as captured:
             await primary.seal_for_verifier()
-        assert captured.value.code == "workspace seed baseline identity changed"
+        assert captured.value.code == "snapshot_tampered"
+        assert "workspace seed baseline identity changed" in str(captured.value)
         assert primary.state is WorkspaceLeaseState.QUARANTINED
     finally:
         if primary.state is not WorkspaceLeaseState.QUARANTINED:
@@ -265,22 +270,45 @@ async def test_patch_uses_the_terminated_immutable_verifier_snapshot(
 ) -> None:
     fixture = make_runtime_fixture(with_writable_mount=True)
     harness = RuntimeHarness(tmp_path, fixture)
+    launch = harness.backend.launch
+    baseline = sandbox_module.RepositoryBaseline(
+        tree="1" * 40, object_directory=tmp_path / "baseline-objects"
+    )
+
+    async def launch_with_repository(plan: Any, workspace: Path, *, context: Any):
+        handle, measurement = await launch(plan, workspace, context=context)
+        handle.repository_base_commit = "0" * 40
+        handle.repository_relative_path = "work"
+        return handle, measurement
+
+    captured: list[Path] = []
+
+    def capture_baseline(**kwargs: Any) -> Any:
+        assert kwargs["base_commit"] == "0" * 40
+        captured.append(kwargs["repository"])
+        return baseline
+
+    monkeypatch.setattr(harness.backend, "launch", launch_with_repository)
+    monkeypatch.setattr(
+        sandbox_module, "_capture_repository_baseline", capture_baseline
+    )
     primary = await harness.manager.open(fixture.request)
+    assert captured == [primary._materialized.workspace_path / "work"]
     handle = harness.backend.handles[0]
-    handle.repository_base_commit = "0" * 40
-    handle.repository_relative_path = "work"
     order: list[str] = []
     original_seal = harness.store.seal_snapshot
 
     def sealed_diff(**kwargs: Any) -> Mapping[str, Any]:
         assert handle.terminate_calls == 1
         assert kwargs["repository"] != primary._materialized.workspace_path / "work"
+        assert kwargs["baseline"] is baseline
         order.append("patch")
         return {
             "returncode": 0,
             "stdout": "diff --git a/a.py b/a.py\n",
             "stderr": "",
             "base_commit": kwargs["base_commit"],
+            "baseline_tree": kwargs["baseline"].tree,
             "git_executable_digest": digest(b"git"),
         }
 
@@ -468,7 +496,7 @@ async def test_snapshot_digest_independently_binds_every_path_byte_and_mode(
     await primary.close()
 
 
-@pytest.mark.parametrize("attack", ["symlink", "hardlink", "fifo", "depth", "files", "bytes"])
+@pytest.mark.parametrize("attack", ["hardlink", "fifo", "depth", "files", "bytes"])
 async def test_snapshot_rejects_links_special_files_and_budget_bombs_before_verifier(
     tmp_path: Path, attack: str
 ) -> None:
@@ -477,11 +505,7 @@ async def test_snapshot_rejects_links_special_files_and_budget_bombs_before_veri
     primary = await harness.manager.open(fixture.request)
     port = primary.runner_workspace
     work = primary._materialized.workspace_path / "work"
-    if attack == "symlink":
-        target = work / "escape"
-        target.symlink_to("/etc/passwd")
-        assert target.is_symlink()
-    elif attack == "hardlink":
+    if attack == "hardlink":
         target = work / "alias"
         os.link(work / "seed.txt", target)
         assert target.stat().st_ino == (work / "seed.txt").stat().st_ino
@@ -1026,8 +1050,9 @@ async def test_snapshot_copy_cancellation_waits_before_verifier_workspace_releas
     assert list(harness.lease_root.iterdir()) == []
 
 
+@pytest.mark.parametrize("mutation", ["content", "planted_symlink"])
 async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary(
-    tmp_path: Path,
+    tmp_path: Path, mutation: str
 ) -> None:
     harness, primary, snapshot = await _opened_snapshot(tmp_path)
     object_root = harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix(
@@ -1035,8 +1060,16 @@ async def test_post_seal_snapshot_mutation_starts_no_verifier_and_cleans_primary
     )
     primary_workspace = primary._materialized.workspace_path
     candidate = object_root / "work" / "candidate.txt"
-    candidate.chmod(0o600)
-    candidate.write_bytes(b"tampered")
+    if mutation == "content":
+        candidate.chmod(0o600)
+        candidate.write_bytes(b"tampered")
+    else:
+        # Only sealing a live workspace skips symlinks; a link planted in the
+        # immutable snapshot object is tampering.
+        work_mode = stat.S_IMODE((object_root / "work").stat().st_mode)
+        (object_root / "work").chmod(0o755)
+        (object_root / "work" / "planted").symlink_to("candidate.txt")
+        (object_root / "work").chmod(work_mode)
 
     with pytest.raises(VerifierSnapshotError) as captured:
         await harness.manager.open_verifier(primary, snapshot)
@@ -1197,6 +1230,7 @@ async def test_open_verifier_rejects_noncanonical_primary_before_effects(
             runtime=primary._runtime,
             measurement=primary.measurement,
             owner_token=primary._owner_token,
+            repository_baseline=primary._repository_baseline,
             epoch=primary._epoch,
         )
         candidate._state = WorkspaceLeaseState.QUIESCING
@@ -1801,4 +1835,137 @@ async def test_snapshot_rejects_inode_change_during_read_and_publishes_nothing(
     assert primary.state is WorkspaceLeaseState.QUARANTINED
     assert primary._verifier_children == []
     assert list((harness.cache_root / "staging").iterdir()) == []
+    assert (await primary.close()).state is CleanupState.RELEASED
+
+
+async def test_verifier_seal_skips_symlinks_without_following_them(
+    tmp_path: Path,
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+    work = primary._materialized.workspace_path / "work"
+    # git checkout / stash pop restores tracked symlinks that source
+    # materialization never created; an escaping link must not be followed.
+    (work / "restored.txt").symlink_to("seed.txt")
+    (work / "escape").symlink_to("/etc/passwd")
+
+    snapshot = await primary.seal_for_verifier()
+
+    snapshot_root = (
+        harness.cache_root / "snapshot-objects" / snapshot.root_digest.removeprefix("sha256:")
+    )
+    assert (snapshot_root / "work" / "seed.txt").is_file()
+    assert not os.path.lexists(snapshot_root / "work" / "restored.txt")
+    assert not os.path.lexists(snapshot_root / "work" / "escape")
+    assert snapshot.skipped_symlink_count == 2
+    assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@pytest.mark.parametrize(
+    ("damage", "code"),
+    [("move_repository", "workspace_repository_missing"),
+     ("remove_git", "workspace_repository_unsupported")],
+)
+def test_sealed_diff_of_a_damaged_repository_fails_with_a_bounded_code(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, damage: str, code: str
+) -> None:
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedGit(),
+    )
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git(*arguments: str) -> str:
+        return subprocess.run(
+            ("git", *arguments), cwd=repository, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "--quiet")
+    (repository / "tracked.txt").write_text("content\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c", "user.name=BreadBoard",
+        "-c", "user.email=breadboard@example.invalid",
+        "commit", "--quiet", "-m", "base",
+    )
+    base_commit = git("rev-parse", "HEAD")
+    plan = type(
+        "SealedDiffPlan", (),
+        {
+            "runtime": type("Runtime", (), {"fixed_environment": (("PATH", os.environ["PATH"]),)})(),
+            "limits": type("Limits", (), {"action_timeout_ms": 10_000, "artifact_bytes_each": 1024 * 1024})(),
+        },
+    )()
+    baseline_directory = tmp_path / "baseline"
+    baseline_directory.mkdir(mode=0o700)
+    baseline = sandbox_module._capture_repository_baseline(
+        repository=repository,
+        base_commit=base_commit,
+        baseline_directory=baseline_directory,
+        plan=plan,
+    )
+    if damage == "move_repository":
+        repository.rename(tmp_path / "moved_repository")
+    else:
+        shutil.rmtree(repository / ".git")
+
+    with pytest.raises(VerifierSnapshotError) as exc_info:
+        _sealed_repository_diff(
+            repository=repository,
+            scratch_directory=tmp_path,
+            base_commit=base_commit,
+            baseline=baseline,
+            plan=plan,
+        )
+
+    assert exc_info.value.code == code
+    SafeFailureFactV2(
+        category="runtime",
+        code=exc_info.value.code,
+        retry_disposition="reconcile",
+        side_effect_boundary="verifier",
+    )
+
+
+@pytest.mark.parametrize(
+    ("raised", "code"),
+    [(OSError("[Errno 2] No such file or directory: '/sandbox/" + "a" * 300 + "'"), "snapshot_failed"),
+     (RuntimeError("snapshot_race"), "snapshot_race")],
+)
+async def test_seal_for_verifier_failure_codes_are_bounded_identifiers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, raised: Exception, code: str
+) -> None:
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    primary = await harness.manager.open(fixture.request)
+
+    def failing_seal(*args: Any, **kwargs: Any) -> Any:
+        raise raised
+
+    monkeypatch.setattr(harness.store, "seal_snapshot", failing_seal)
+
+    with pytest.raises(VerifierSnapshotError) as exc_info:
+        await primary.seal_for_verifier()
+
+    assert exc_info.value.code == code
+    SafeFailureFactV2(
+        category="runtime",
+        code=exc_info.value.code,
+        retry_disposition="reconcile",
+        side_effect_boundary="verifier",
+    )
     assert (await primary.close()).state is CleanupState.RELEASED

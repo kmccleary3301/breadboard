@@ -11,6 +11,7 @@ import asyncio
 import base64
 from copy import deepcopy
 from contextlib import contextmanager
+from datetime import datetime, timezone
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -326,7 +327,7 @@ class _Omp16213WorkerPort:
         values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
-            "current_date": "2026-09-26",
+            "current_date": datetime.now(timezone.utc).date().isoformat(),
             "package_dir": self._package_dir(package_subpath),
         }
         return {name: values[name] for name in input_names}

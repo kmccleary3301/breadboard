@@ -49,6 +49,7 @@ from breadboard.rl.harness.sandbox import (
     WorkspaceStateError,
     WorkspaceStorageIdentity,
     build_sandbox_execution_plan,
+    _capture_repository_baseline,
     _sealed_repository_diff,
     _snapshot_installed_executable,
 )
@@ -955,8 +956,9 @@ def test_sealed_executable_works_without_python_exported_seal_constants(
 
 
 @requires_sealed_execution
-def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
+def test_sealed_repository_diff_includes_untracked_and_binary_files_but_not_new_ignored_files(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repository = tmp_path / "source"
     git_path = shutil.which("git")
@@ -990,12 +992,6 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
     git("config", "diff.hide.command", "/usr/bin/true")
     git("config", "filter.forge.clean", "sed s/after/forged/")
     git("config", "filter.forge.smudge", "cat")
-    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
-    (repository / "ignored.txt").write_text("included\n", encoding="utf-8")
-    binary = b"\x00\x01\xffbinary\n"
-    (repository / "new.bin").write_bytes(binary)
-    raw_binary = b"\xffnon-UTF-8-without-NUL\n"
-    (repository / "raw.bin").write_bytes(raw_binary)
     plan = type(
         "SealedDiffPlan", (),
         {
@@ -1008,10 +1004,25 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
             )(),
         },
     )()
+    baseline_directory = tmp_path / "baseline"
+    baseline_directory.mkdir(mode=0o700)
+    baseline = _capture_repository_baseline(
+        repository=repository,
+        base_commit=base_commit,
+        baseline_directory=baseline_directory,
+        plan=plan,
+    )
+    (repository / "tracked.txt").write_text("after\n", encoding="utf-8")
+    (repository / "ignored.txt").write_text("excluded\n", encoding="utf-8")
+    binary = b"\x00\x01\xffbinary\n"
+    (repository / "new.bin").write_bytes(binary)
+    raw_binary = b"\xffnon-UTF-8-without-NUL\n"
+    (repository / "raw.bin").write_bytes(raw_binary)
     result = _sealed_repository_diff(
         repository=repository,
         scratch_directory=tmp_path,
         base_commit=base_commit,
+        baseline=baseline,
         plan=plan,
     )
     reconstruction = tmp_path / "reconstruction"
@@ -1023,7 +1034,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
         input=result["stdout"].encode(), check=True,
     )
     assert (reconstruction / "tracked.txt").read_text(encoding="utf-8") == "after\n"
-    assert (reconstruction / "ignored.txt").read_text(encoding="utf-8") == "included\n"
+    assert not (reconstruction / "ignored.txt").exists()
     assert (reconstruction / "new.bin").read_bytes() == binary
     assert (reconstruction / "raw.bin").read_bytes() == raw_binary
     (repository / "nested" / ".git" / "objects").mkdir(parents=True)
@@ -1034,6 +1045,7 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
             repository=repository,
             scratch_directory=tmp_path,
             base_commit=base_commit,
+            baseline=baseline,
             plan=plan,
         )
     shutil.rmtree(repository / "nested")
@@ -1047,11 +1059,201 @@ def test_sealed_repository_diff_includes_ignored_untracked_and_binary_files(
             repository=repository,
             scratch_directory=tmp_path,
             base_commit=base_commit,
+            baseline=baseline,
             plan=plan,
         )
 
 
+async def test_sealed_workspace_diff_omits_lease_start_build_products(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git_path = shutil.which("git")
+    assert git_path is not None
 
+    class PinnedGit:
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedGit(),
+    )
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    launch = harness.backend.launch
+    prebuilt = b"\x7fELF" + bytes(range(256)) * 4
+
+    async def launch_image_checkout(plan, workspace, *, context):
+        handle, measurement = await launch(plan, workspace, context=context)
+        repository = workspace / "work"
+        repository.mkdir(exist_ok=True)
+
+        def git(*arguments: str) -> str:
+            return subprocess.run(
+                ("git", *arguments), cwd=repository, check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+
+        git("init", "--quiet", "--template=")
+        (repository / ".gitignore").write_text("build/\n*.so\n", encoding="utf-8")
+        (repository / "module.py").write_text("value = 1\n", encoding="utf-8")
+        git("add", ".")
+        git(
+            "-c", "user.name=BreadBoard",
+            "-c", "user.email=breadboard@example.invalid",
+            "commit", "--quiet", "-m", "base",
+        )
+        (repository / "build").mkdir()
+        (repository / "build" / "module.o").write_bytes(prebuilt)
+        (repository / "_module.so").write_bytes(prebuilt[::-1])
+        (repository / "notes.txt").write_text("image note\n", encoding="utf-8")
+        handle.repository_base_commit = git("rev-parse", "HEAD")
+        handle.repository_relative_path = "work"
+        return handle, measurement
+
+    monkeypatch.setattr(harness.backend, "launch", launch_image_checkout)
+    primary = await harness.manager.open(fixture.request)
+    await primary.runner_workspace.write_text("work/module.py", "value = 2\n")
+    await primary.runner_workspace.write_text("work/build/policy.log", "policy build\n")
+    await primary.runner_workspace.write_text("work/policy_notes.txt", "policy\n")
+    await primary.runner_workspace.write_text("work/notes.txt", "policy note\n")
+    await primary.seal_for_verifier()
+    patch = primary.sealed_workspace_diff()["stdout"]
+
+    changed = sorted(
+        line.split(" b/", 1)[1]
+        for line in patch.splitlines()
+        if line.startswith("diff --git ")
+    )
+    assert changed == ["module.py", "notes.txt", "policy_notes.txt"]
+    lease_start = tmp_path / "lease-start"
+    subprocess.run(
+        (
+            "git", "clone", "--quiet",
+            str(primary._materialized.workspace_path / "work"), str(lease_start),
+        ),
+        check=True,
+    )
+    (lease_start / "build").mkdir()
+    (lease_start / "build" / "module.o").write_bytes(prebuilt)
+    (lease_start / "_module.so").write_bytes(prebuilt[::-1])
+    subprocess.run(
+        ("git", "apply", "--binary", "-"), cwd=lease_start,
+        input=patch.encode(), check=True,
+    )
+    assert (lease_start / "module.py").read_text(encoding="utf-8") == "value = 2\n"
+    assert (lease_start / "notes.txt").read_text(encoding="utf-8") == "policy note\n"
+    assert (lease_start / "policy_notes.txt").read_text(encoding="utf-8") == "policy\n"
+    assert not (lease_start / "build" / "policy.log").exists()
+    assert (lease_start / "build" / "module.o").read_bytes() == prebuilt
+    baseline_path = harness.lease_root / (primary.lease_id + ".baseline")
+    assert baseline_path.is_dir()
+    assert (await primary.close()).state is CleanupState.RELEASED
+    assert not baseline_path.exists()
+
+
+async def test_sealed_workspace_diff_setup_created_then_edited_file_exports_add_diff(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    git_path = shutil.which("git")
+    assert git_path is not None
+
+    class PinnedGit:
+        def __init__(self) -> None:
+            self.fd = os.open(git_path, os.O_RDONLY)
+            self.proc_fd_path = git_path
+            self.digest = "sha256:" + "0" * 64
+
+        def close(self) -> None:
+            os.close(self.fd)
+
+    monkeypatch.setattr(
+        "breadboard.rl.harness.sandbox._snapshot_installed_executable",
+        lambda path, expected_digest: PinnedGit(),
+    )
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    harness = RuntimeHarness(tmp_path, fixture)
+    launch = harness.backend.launch
+    prebuilt = b"\x7fELF" + bytes(range(64))
+
+    async def launch_image_checkout(plan, workspace, *, context):
+        handle, measurement = await launch(plan, workspace, context=context)
+        repository = workspace / "work"
+        repository.mkdir(exist_ok=True)
+
+        def git(*arguments: str) -> str:
+            return subprocess.run(
+                ("git", *arguments), cwd=repository, check=True,
+                capture_output=True, text=True,
+            ).stdout.strip()
+
+        git("init", "--quiet", "--template=")
+        (repository / ".gitignore").write_text("build/\n", encoding="utf-8")
+        (repository / "tracked.py").write_text("v1 = True\n", encoding="utf-8")
+        git("add", ".")
+        git(
+            "-c", "user.name=BreadBoard",
+            "-c", "user.email=breadboard@example.invalid",
+            "commit", "--quiet", "-m", "base",
+        )
+        (repository / "build").mkdir()
+        (repository / "build" / "ignored.o").write_bytes(prebuilt)
+        (repository / "setup_created.py").write_text("setup_original = 1\n", encoding="utf-8")
+        (repository / "setup_untouched.py").write_text("setup_untouched = 2\n", encoding="utf-8")
+        handle.repository_base_commit = git("rev-parse", "HEAD")
+        handle.repository_relative_path = "work"
+        return handle, measurement
+
+    monkeypatch.setattr(harness.backend, "launch", launch_image_checkout)
+    primary = await harness.manager.open(fixture.request)
+    await primary.runner_workspace.write_text("work/tracked.py", "v1 = False\n")
+    await primary.runner_workspace.write_text("work/setup_created.py", "setup_original = 99\n")
+    await primary.runner_workspace.write_text("work/build/policy.log", "ignored build log\n")
+    await primary.runner_workspace.write_text("work/policy_new.py", "policy_created = True\n")
+    await primary.seal_for_verifier()
+    diff_record = primary.sealed_workspace_diff()
+    patch = diff_record["stdout"]
+
+    assert diff_record["base_commit"] == primary._runtime.repository_base_commit
+    assert diff_record["baseline_tree"] == primary._repository_baseline.tree
+    assert diff_record["baseline_tree"] != diff_record["base_commit"]
+
+    assert "diff --git a/setup_created.py b/setup_created.py\nnew file mode 100644\n" in patch
+    assert "\n--- /dev/null\n+++ b/setup_created.py\n" in patch
+    assert "diff --git a/setup_untouched.py b/setup_untouched.py\nnew file mode 100644\n" in patch
+    assert "\n--- /dev/null\n+++ b/setup_untouched.py\n" in patch
+    assert "diff --git a/policy_new.py b/policy_new.py\nnew file mode 100644\n" in patch
+    assert "\n--- /dev/null\n+++ b/policy_new.py\n" in patch
+    assert "--- a/tracked.py\n+++ b/tracked.py" in patch
+    assert "build/" not in patch
+
+    advertised_base = tmp_path / "advertised-base"
+    subprocess.run(
+        (
+            "git", "clone", "--quiet",
+            str(primary._materialized.workspace_path / "work"), str(advertised_base),
+        ),
+        check=True,
+    )
+    assert not (advertised_base / "setup_created.py").exists()
+    assert not (advertised_base / "setup_untouched.py").exists()
+    assert not (advertised_base / "policy_new.py").exists()
+
+    subprocess.run(
+        ("git", "apply", "--binary", "-"), cwd=advertised_base,
+        input=patch.encode(), check=True,
+    )
+    assert (advertised_base / "tracked.py").read_text(encoding="utf-8") == "v1 = False\n"
+    assert (advertised_base / "setup_created.py").read_text(encoding="utf-8") == "setup_original = 99\n"
+    assert (advertised_base / "setup_untouched.py").read_text(encoding="utf-8") == "setup_untouched = 2\n"
+    assert (advertised_base / "policy_new.py").read_text(encoding="utf-8") == "policy_created = True\n"
+    assert not (advertised_base / "build").exists()
+    await primary.close()
 
 def test_sealed_repository_diff_repository_mode_binds_alternate_environment(
     tmp_path: Path,
@@ -1400,7 +1602,6 @@ def test_sealed_workspace_seed_diff_rejects_workspace_git_metadata(
             plan=plan,
             seed_baseline=baseline,
         )
-
 async def test_process_backend_binds_identity_recorder_before_base_measurement(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

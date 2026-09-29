@@ -2,6 +2,7 @@ from __future__ import annotations
 from builtins import BaseExceptionGroup
 
 import asyncio
+import hashlib
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -9,6 +10,7 @@ import pytest
 
 from breadboard.rl.harness import service as service_module
 from breadboard.rl.harness.evidence import (
+    MAX_OBJECT_BYTES,
     EpisodeEvidenceRepository,
     InMemoryEpisodeLocatorStore,
 )
@@ -83,12 +85,15 @@ async def _service(monkeypatch: pytest.MonkeyPatch):
     return service, case, preflights
 
 
-async def _service_with_real_repository(monkeypatch: pytest.MonkeyPatch):
+async def _service_with_real_repository(
+    monkeypatch: pytest.MonkeyPatch, *, max_object_bytes: int = MAX_OBJECT_BYTES
+):
     case = service_case()
     case.runner.emit_result_events = True
     repository = EpisodeEvidenceRepository(
         InMemoryCAS(),
         InMemoryEpisodeLocatorStore(),
+        max_object_bytes=max_object_bytes,
     )
     case.repository = repository
     monkeypatch.setattr(
@@ -436,6 +441,47 @@ async def test_real_repository_close_returns_with_absorbing_terminal_locator(
     assert (
         await service.close_episode(case.request.episode_id)
     ).disposition is V2OperationDisposition.CACHED
+
+
+async def test_workspace_diff_too_large_for_evidence_fails_the_episode_before_publication(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service, case, repository = await _service_with_real_repository(
+        monkeypatch, max_object_bytes=64 * 1024
+    )
+    sealed_workspace_diff = case.sandbox.lease.sealed_workspace_diff
+    patch = "diff --git a/data.bin b/data.bin\n" + "+payload\n" * 8_000
+
+    def oversized_workspace_diff():
+        diff = dict(sealed_workspace_diff())
+        diff["stdout"] = patch
+        diff["patch_digest"] = "sha256:" + hashlib.sha256(patch.encode()).hexdigest()
+        return diff
+
+    monkeypatch.setattr(
+        case.sandbox.lease, "sealed_workspace_diff", oversized_workspace_diff
+    )
+    created = await service.create(case.request)
+
+    outcome = await service.run(
+        case.request.episode_id,
+        create_fingerprint=created.response.create_fingerprint,
+        task_input={"real-repository": "oversized-diff"},
+    )
+    recovered = repository.recover(case.request.episode_id)
+
+    assert outcome.response.primary_disposition is EpisodePrimaryDisposition.FAILED
+    assert outcome.response.primary_failure is not None
+    assert outcome.response.primary_failure.code == "workspace_diff_too_large"
+    assert "verifier.execute" not in case.calls
+    assert recovered is not None
+    assert recovered.locator.current_state == "closed"
+    assert [
+        event.primary_fact.code
+        for event in recovered.events
+        if event.event_kind == "verification_failed"
+    ] == ["workspace_diff_too_large"]
+
 
 
 @pytest.mark.parametrize("failure_at", ["resolve", "policy", "registry", "preflight"])

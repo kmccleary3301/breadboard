@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import sys
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,9 +13,19 @@ import pytest
 from breadboard.rl.harness import headless as headless_module
 from breadboard.rl.harness import contracts as c
 from breadboard.artifacts import InMemoryCAS
-from breadboard.rl.harness.service import EpisodePrimaryDisposition, V2RunResult
-from breadboard.rl.harness.composition import load_production_composition
+from breadboard.rl.harness.service import (
+    EpisodeCleanupDisposition,
+    EpisodeLifecycleState,
+    EpisodePrimaryDisposition,
+    V2RunResult,
+)
+from breadboard.rl.harness.composition import (
+    ProductionCleanupInventory,
+    load_production_composition,
+)
+from breadboard.rl.harness.evidence import SafeFailureFactV2
 from breadboard.rl.harness.headless import (
+    HeadlessEpisodeFailed,
     HeadlessRunFailed,
     HeadlessProviderInput,
     HeadlessProviderRouteAuthority,
@@ -24,6 +34,7 @@ from breadboard.rl.harness.headless import (
     ObsoleteOuterIsolationError,
     _atomic_write,
     _project_headless_run,
+    _safe_failure_projection,
     _validate_repository_base_commit_binding,
     _validate_seed_workspace_directory_mode,
     run_headless_request,
@@ -243,6 +254,57 @@ def test_atomic_result_publication_refuses_existing_destination(
     assert list(tmp_path.iterdir()) == [destination]
 
 
+# A failed service run may publish evidence or fail before the manifest exists.
+# Both paths must report its bounded failure code rather than a missing-patch error.
+@pytest.mark.parametrize("failure_evidence_published", (False, True))
+def test_headless_projection_reports_the_service_failure_code(
+    failure_evidence_published: bool,
+) -> None:
+    cas = InMemoryCAS()
+    events_ref = cas.put_bytes(b'{"event":"failed"}\n', media_type="application/json")
+    artifacts_ref = cas.put_bytes(
+        json.dumps({"objects": [{"role": "patch", "payload": "runner-result-json"}]}).encode(),
+        media_type="application/json",
+    )
+    manifest_ref = cas.put_bytes(
+        json.dumps({
+            "runner_ledger_ref": events_ref.to_dict(),
+            "artifact_manifest_ref": artifacts_ref.to_dict(),
+        }).encode(),
+        media_type="application/json",
+    )
+    failure = SafeFailureFactV2("runtime", "workspace_diff_too_large", "none", "verifier")
+    run = SimpleNamespace(
+        primary_disposition=EpisodePrimaryDisposition.FAILED,
+        primary_failure=failure,
+        termination=None,
+        turn_count=12,
+        response=None,
+        completed_envelope_ref=None,
+        closed_envelope_ref=None,
+        result_ref=None,
+        evidence_manifest_ref=manifest_ref if failure_evidence_published else None,
+        evidence_root=None,
+        artifact_manifest_ref=None,
+        primary_measurement_digest=None,
+        verifier_measurement_digest=None,
+        verifier_result_digest=None,
+        reward=None,
+        reward_components={},
+        workspace_diff=None,
+    )
+
+    with pytest.raises(HeadlessEpisodeFailed) as captured:
+        _project_headless_run(
+            {}, run, SimpleNamespace(authority_graph=SimpleNamespace(cas=cas)),
+            expected_base_commit="0" * 40,
+        )
+    assert _safe_failure_projection(captured.value) == {
+        "code": "workspace_diff_too_large",
+        "category": "runtime",
+    }
+
+
 def test_headless_projection_preserves_evidence_without_fabricating_patches() -> None:
     patch = b"diff --git a/a.py b/a.py\n"
     events = b'{"event":"done"}\n'
@@ -290,6 +352,7 @@ def test_headless_projection_preserves_evidence_without_fabricating_patches() ->
             "stdout": patch.decode(),
             "stderr": "",
             "base_commit": "0" * 40,
+            "baseline_tree": "1" * 40,
             "git_executable_digest": "sha256:" + "4" * 64,
             "patch_digest": "sha256:" + hashlib.sha256(patch).hexdigest(),
             "snapshot_root_digest": "sha256:" + "5" * 64,
@@ -571,3 +634,219 @@ async def test_headless_runner_rejects_unadmitted_requests_before_credentials(
         assert secret_reads == []
 
 
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("close_succeeds", (True, False))
+async def test_headless_runner_retains_primary_failure_without_spurious_cleanup_failure(
+    tmp_path: Path,
+    close_succeeds: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fixture = materialize_production_composition_fixture(tmp_path)
+    cas = InMemoryCAS()
+    plan_ref = cas.put_bytes(b"{}", media_type="application/json")
+    task_image_digest = "sha256:" + "0" * 64
+    req_payload = _strict_json_request_payload(tmp_path)
+    resolution = c.ResolveEpisodeRequest.model_validate(req_payload["resolve_request"])
+    cred_path = tmp_path / "cred"
+    cred_path.write_text("secret")
+    cred_path.chmod(0o600)
+    result_path = tmp_path / "result.json"
+    event_path = tmp_path / "events.json"
+
+    request = HeadlessRunRequest(
+        schema_version="bb.rl.headless-run-request.v1",
+        target_id="pi@0.57.1",
+        target_overlay_id="r3-json-no-session.v1",
+        target_dynamic_fields={"cwd": "/workspace"},
+        resolve_request=resolution,
+        prompt="test prompt",
+        tool_allowlist=("shell",),
+        context={"campaign": "e4"},
+        workspace=HeadlessWorkspaceInput(
+            repository_snapshot_digest=None,
+            base_commit="0" * 40,
+            task_image_digest=task_image_digest,
+            containment="attested",
+        ),
+        expected_resources=c.ResourceLimits(
+            cpu_millis=1_000,
+            memory_bytes=1_000_000,
+            pids=32,
+            storage_bytes=1_000_000,
+            open_files=128,
+            wall_time_ms=60_000,
+        ),
+        expected_limits=c.ExecutionLimits(
+            max_turns=4,
+            action_timeout_ms=9_000,
+            observation_bytes=20_000,
+            response_bytes=100_000,
+            artifact_bytes_each=10_000,
+            artifact_bytes_total=20_000,
+            transcript_bytes=100_000,
+            setup_timeout_ms=5_000,
+            verifier_timeout_ms=17_000,
+        ),
+        expected_sandbox=c.SandboxGrant(
+            runtime_id="fixture-trusted-process",
+            runtime_class=c.RuntimeClass.TRUSTED_PROCESS,
+            driver_implementation_digest=task_image_digest,
+            runtime_binary_digest="sha256:" + "1" * 64,
+            security_policy_digest="sha256:" + "2" * 64,
+            image_digest=task_image_digest,
+            network_policy_digest="sha256:" + "3" * 64,
+            egress_route_ids=(),
+            mounts=(),
+        ),
+        provider=HeadlessProviderInput(
+            model="Qwen/Qwen3.5-35B-A3B",
+            authority_model_id="qwen3.5-35b-a3b",
+            credential_handle="policy-callback",
+            context_window=131_072,
+            max_output_tokens=32_000,
+            timeout_seconds=30,
+        ),
+        result_path=str(result_path),
+        event_log_path=str(event_path),
+        patch_path=str(tmp_path / "workspace.patch"),
+    )
+    route_auth = HeadlessProviderRouteAuthority(
+        model=request.provider.model,
+        authority_model_id=request.provider.authority_model_id,
+        base_url="http://127.0.0.1:45219/v1",
+        policy_observation_digest=task_image_digest,
+    )
+    mock_target = SimpleNamespace(
+        overlay_id="r3-json-no-session.v1",
+        ordered_tool_names=("shell",),
+        identity_dict=lambda: {"target": "pi"},
+    )
+    monkeypatch.setattr(headless_module, "select_pinned_target_projection", lambda *a, **k: mock_target)
+    monkeypatch.setattr(headless_module, "_load_effective_plan", lambda *a, **k: SimpleNamespace(canonical_digest=lambda: "plan_digest"))
+    monkeypatch.setattr(headless_module, "_validate_effective_plan", lambda *a, **k: None)
+
+    failure_fact = SafeFailureFactV2("runtime", "workspace_diff_too_large", "none", "verifier")
+    failed_run = SimpleNamespace(
+        primary_disposition=EpisodePrimaryDisposition.FAILED,
+        primary_failure=failure_fact,
+        termination=None,
+        turn_count=1,
+        response=None,
+        completed_envelope_ref=None,
+        closed_envelope_ref=None,
+        result_ref=None,
+        evidence_manifest_ref=None,
+        evidence_root=None,
+        artifact_manifest_ref=None,
+        primary_measurement_digest=None,
+        verifier_measurement_digest=None,
+        verifier_result_digest=None,
+        reward=None,
+        reward_components={},
+        workspace_diff=None,
+    )
+
+    @dataclass
+    class _Preflight:
+        driver_runtime_id: str = "drv"
+
+    class _MockService:
+        async def start(self) -> None:
+            pass
+
+        async def create(self, *a: Any, **k: Any) -> Any:
+            return SimpleNamespace(response=SimpleNamespace(
+                create_fingerprint="fp",
+                effective_plan_digest="epd",
+                effective_plan_ref=plan_ref,
+                policy_binding_digest="pbd",
+                policy_observation_digest="pod",
+                sandbox_preflight=_Preflight(),
+            ))
+
+        async def run(self, *a: Any, **k: Any) -> Any:
+            return SimpleNamespace(response=failed_run)
+
+        async def close_episode(self, *a: Any, **k: Any) -> Any:
+            if not close_succeeds:
+                raise RuntimeError("actual close failure")
+            return SimpleNamespace(response=SimpleNamespace(
+                episode_id=resolution.episode_id,
+                lifecycle_state=EpisodeLifecycleState.CLOSED,
+                cleanup_disposition=EpisodeCleanupDisposition.RELEASED,
+                closed_envelope_ref=plan_ref,
+            ))
+
+        async def get_closed_envelope(self, *a: Any, **k: Any) -> Any:
+            if not close_succeeds:
+                raise AssertionError("unreachable")
+            return SimpleNamespace(
+                envelope_ref=plan_ref,
+                lifecycle_head_digest="sha256:" + "0" * 64,
+                primary_disposition=EpisodePrimaryDisposition.FAILED.value,
+                primary_failure=failure_fact,
+                session_close_failure=None,
+                verifier_cleanup_failure=None,
+                verifier_cleanup_receipt=None,
+                cleanup_receipt=None,
+                cleanup_receipt_digest=None,
+                digest="sha256:" + "0" * 64,
+                quarantine_receipt_digest=None,
+            )
+
+    class _MockComposition:
+        def __init__(self) -> None:
+            self.service = _MockService()
+            self.manifest_ref = "sha256:" + "m" * 64
+            self.authority_graph = SimpleNamespace(cas=cas)
+            self.outer_bridge_cleanup_receipt = None
+
+        async def close(self) -> None:
+            pass
+
+        def observe_cleanup_inventory(self) -> Any:
+            return ProductionCleanupInventory(
+                active_lease_ids=(),
+                orphan_resource_ids=(),
+                leaked_artifact_ids=(),
+                cleanup_errors=(),
+                container_ids=(),
+                process_ids=(),
+                cgroup_paths=(),
+                mount_paths=(),
+                workspace_paths=(),
+                artifact_paths=(),
+                secret_lease_ids=(),
+                broker_descriptor_count=0,
+            )
+
+    monkeypatch.setattr(headless_module, "load_production_composition", lambda *a, **k: _MockComposition())
+
+    with pytest.raises(HeadlessRunFailed) as captured:
+        await run_headless_request(
+            request,
+            composition_ref_path=str(fixture.composition_ref_path),
+            secret_files=fixture.secret_files,
+            provider_credentials={"policy-callback": str(cred_path)},
+            provider_routes={"policy-callback": route_auth},
+            repository_base_commits={task_image_digest: request.workspace.base_commit},
+        )
+
+    assert captured.value.result["terminal"]["status"] == "failed"
+    assert captured.value.result["terminal"]["primary_failure"] == {
+        "code": "workspace_diff_too_large",
+        "category": "runtime",
+    }
+    assert captured.value.result["terminal"]["failure"] == {
+        "code": "workspace_diff_too_large",
+        "category": "runtime",
+    }
+    if close_succeeds:
+        assert captured.value.result["terminal"]["cleanup_failure"] is None
+        assert captured.value.result["cleanup"] is not None
+    else:
+        assert captured.value.result["terminal"]["cleanup_failure"] == {
+            "code": "RuntimeError",
+            "category": "RuntimeError",
+        }

@@ -984,6 +984,14 @@ class RunnerCancelled(RunnerError):
         self.cancellation = cancellation
 
 
+class ToolActionTimeout(RuntimeError):
+    """A tool action outlived its admitted timeout; its process group is proven reaped."""
+
+    def __init__(self, timeout_ms: int) -> None:
+        super().__init__(f"tool action exceeded its {timeout_ms} ms timeout")
+        self.timeout_ms = timeout_ms
+
+
 @runtime_checkable
 class PolicyGeneratePort(Protocol):
     async def generate(self, request_payload: Mapping[str, Any]) -> dict[str, Any]: ...

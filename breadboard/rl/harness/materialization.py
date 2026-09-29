@@ -742,6 +742,7 @@ class VerifierSnapshotReceipt:
     inode_count: int
     byte_count: int
     immutable_storage_object_id: str
+    skipped_symlink_count: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -2570,19 +2571,22 @@ class FilesystemMaterializationStore:
         max_files: int,
         max_inodes: int,
         max_bytes: int,
-    ) -> tuple[tuple[SnapshotManifestEntry, ...], int, int, int]:
+        skip_symlinks: bool,
+    ) -> tuple[tuple[SnapshotManifestEntry, ...], int, int, int, int]:
         if destination is not None and destination_owner is None:
             raise ValueError("destination owner required")
         if min(max_depth, max_files, max_inodes, max_bytes) < 0:
             raise RuntimeError("snapshot_tampered")
         entries: list[SnapshotManifestEntry] = []
         inode_ids: set[tuple[int, int]] = set()
+        symlink_inodes: set[tuple[int, int]] = set()
         aliases: set[str] = set()
         file_count = 0
         total_bytes = 0
+        skipped_symlink_count = 0
 
         def walk(source_fd: int, destination_fd: int | None, prefix: str) -> None:
-            nonlocal file_count, total_bytes
+            nonlocal file_count, total_bytes, skipped_symlink_count
             names = tuple(sorted(os.listdir(source_fd)))
             for name in names:
                 relative = f"{prefix}/{name}" if prefix else name
@@ -2596,13 +2600,23 @@ class FilesystemMaterializationStore:
                 depth = len(PurePosixPath(relative).parts) - 1
                 if (
                     alias in aliases
-                    or inode in inode_ids
                     or depth > max_depth
-                    or len(inode_ids) + 1 > max_inodes
+                    or len(inode_ids) + len(symlink_inodes) + 1 > max_inodes
+                ):
+                    raise RuntimeError("snapshot_tampered")
+                if skip_symlinks and stat.S_ISLNK(before.st_mode):
+                    if inode in inode_ids or inode in symlink_inodes:
+                        raise RuntimeError("snapshot_tampered")
+                    aliases.add(alias)
+                    symlink_inodes.add(inode)
+                    skipped_symlink_count += 1
+                    continue
+                if (
+                    inode in inode_ids
+                    or inode in symlink_inodes
                     or not (
                         stat.S_ISDIR(before.st_mode) or stat.S_ISREG(before.st_mode)
                     )
-                    or stat.S_ISLNK(before.st_mode)
                     or (stat.S_ISREG(before.st_mode) and before.st_nlink != 1)
                 ):
                     raise RuntimeError("snapshot_tampered")
@@ -2751,7 +2765,7 @@ class FilesystemMaterializationStore:
                 os.close(destination_root_fd)
             os.close(source_root_fd)
         entries.sort(key=lambda item: item.logical_path)
-        return tuple(entries), file_count, len(inode_ids), total_bytes
+        return tuple(entries), file_count, len(inode_ids), total_bytes, skipped_symlink_count
 
     @contextmanager
     def _snapshot_lock(self, suffix: str) -> Iterator[None]:
@@ -2829,7 +2843,7 @@ class FilesystemMaterializationStore:
             or Path(os.path.abspath(path)) != expected_path
         ):
             raise RuntimeError("snapshot_tampered")
-        entries, file_count, inode_count, byte_count = self._snapshot_tree(
+        entries, file_count, inode_count, byte_count, _ = self._snapshot_tree(
             "snapshot-objects/" + expected_suffix,
             source_owner=self._cache,
             destination=None,
@@ -2838,6 +2852,7 @@ class FilesystemMaterializationStore:
             max_files=max_files,
             max_inodes=max_inodes,
             max_bytes=max_bytes,
+            skip_symlinks=False,
         )
         projections = [item.projection() for item in entries]
         manifest_digest = _digest(projections)
@@ -3377,7 +3392,7 @@ class FilesystemMaterializationStore:
         with self._lock:
             destination_owner.mkdir(destination_name)
             try:
-                entries, file_count, inode_count, byte_count = self._snapshot_tree(
+                entries, file_count, inode_count, byte_count, _ = self._snapshot_tree(
                     "snapshot-objects/" + expected_suffix,
                     source_owner=self._cache,
                     destination=destination_name,
@@ -3386,6 +3401,7 @@ class FilesystemMaterializationStore:
                     max_files=max_files,
                     max_inodes=max_inodes,
                     max_bytes=max_bytes,
+                    skip_symlinks=False,
                 )
                 projections = [item.projection() for item in entries]
                 manifest_digest = _digest(projections)
@@ -3448,7 +3464,7 @@ class FilesystemMaterializationStore:
         )
         try:
             self._cache.mkdir(staging)
-            entries, file_count, inode_count, byte_count = self._snapshot_tree(
+            entries, file_count, inode_count, byte_count, skipped_symlink_count = self._snapshot_tree(
                 workspace.receipt.workspace_id,
                 source_owner=self._workspace,
                 destination=staging,
@@ -3457,6 +3473,7 @@ class FilesystemMaterializationStore:
                 max_files=max_files,
                 max_inodes=max_inodes,
                 max_bytes=max_bytes,
+                skip_symlinks=True,
             )
             staging_fd = self._cache.open_dir(staging)
             try:
@@ -3499,6 +3516,7 @@ class FilesystemMaterializationStore:
                 inode_count,
                 byte_count,
                 "snapshot-object-" + suffix,
+                skipped_symlink_count=skipped_symlink_count,
             )
             marker_payload = self._snapshot_reference_payload(
                 root_digest=receipt.root_digest,

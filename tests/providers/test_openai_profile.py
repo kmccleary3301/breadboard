@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import json
 import pickle
+import sys
+import threading
 import types
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
@@ -312,6 +316,108 @@ def test_profile_projects_exact_sdk_stream_request(monkeypatch):
     assert "stream" not in captured["request_options"]
     assert "enable_thinking" not in captured["request_options"]
     assert result.messages[0].content == "done"
+
+
+def test_profile_stream_keeps_a_length_limited_completion_as_a_truncated_turn():
+    chunks = [
+        {"choices": [{"index": 0, "delta": {"role": "assistant", "content": "partial answer"}, "finish_reason": None}]},
+        {
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "length"}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
+        },
+    ]
+    body = b"".join(
+        b"data: "
+        + json.dumps({"id": "chatcmpl-length", "object": "chat.completion.chunk", "created": 1, "model": MODEL, **chunk}).encode()
+        + b"\n\n"
+        for chunk in chunks
+    ) + b"data: [DONE]\n\n"
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            return
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        profile = _profile(base_url=f"http://127.0.0.1:{server.server_port}/v1")
+        runtime = _runtime()
+        result = runtime.invoke(
+            client=runtime.create_client_from_profile(profile),
+            model=MODEL,
+            messages=[{"role": "user", "content": "hi"}],
+            tools=None,
+            stream=True,
+            context=ProviderRuntimeContext(None, {}, stream=True, provider_profile=profile),
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+    assert [(message.content, message.finish_reason) for message in result.messages] == [
+        ("partial answer", "length")
+    ]
+
+
+def test_profile_client_close_aborts_a_request_blocked_on_its_response():
+    # Closing an httpx client does not wake a thread blocked reading a response;
+    # the episode's close would wait out the whole provider read timeout.
+    received = threading.Event()
+    release = threading.Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            return
+
+        def do_POST(self):
+            self.rfile.read(int(self.headers["Content-Length"]))
+            received.set()
+            release.wait(30)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    outcome: list[BaseException] = []
+    try:
+        profile = _profile(base_url=f"http://127.0.0.1:{server.server_port}/v1")
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(profile, timeout_seconds=60)
+
+        def invoke():
+            try:
+                runtime.invoke(
+                    client=client,
+                    model=MODEL,
+                    messages=[{"role": "user", "content": "hi"}],
+                    tools=None,
+                    stream=True,
+                    context=ProviderRuntimeContext(None, {}, stream=True, provider_profile=profile),
+                )
+            except BaseException as exc:
+                outcome.append(exc)
+
+        worker = threading.Thread(target=invoke, daemon=True)
+        worker.start()
+        assert received.wait(10)
+        client.close()
+        worker.join(5)
+        assert not worker.is_alive()
+    finally:
+        release.set()
+        server.shutdown()
+        server.server_close()
+        thread.join()
+    assert len(outcome) == 1 and isinstance(outcome[0], ProviderRuntimeError)
 
 
 def test_profile_identity_is_deterministic_and_secret_free():
@@ -981,3 +1087,59 @@ def test_setup_failure_does_not_retain_provider_profile(tmp_path):
         )
 
     assert conductor._active_session_state is None
+
+
+def test_openai_sdk_without_length_finish_reason_error_still_creates_provider(monkeypatch):
+    import importlib
+    from breadboard_engine.provider.runtimes.openai import streaming as streaming_module
+
+    fake_openai = types.ModuleType("openai")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_openai.OpenAI = FakeClient
+    monkeypatch.setitem(sys.modules, "openai", fake_openai)
+
+    reloaded_bindings = importlib.reload(sdk_bindings)
+    monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
+    monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
+    try:
+        assert reloaded_bindings.provider_sdk_bindings.openai is FakeClient
+        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+
+        runtime = _runtime()
+        client = runtime.create_client_from_profile(_profile())
+        assert isinstance(client.transport, FakeClient)
+        assert client.transport.kwargs["api_key"] == "episode-secret"
+
+        direct_client = runtime.create_client(api_key="direct-secret")
+        assert isinstance(direct_client, FakeClient)
+        assert direct_client.kwargs["api_key"] == "direct-secret"
+    finally:
+        importlib.reload(sdk_bindings)
+
+
+def test_missing_openai_sdk_preserves_error_projection(monkeypatch):
+    import importlib
+    from breadboard_engine.provider.runtimes.openai import streaming as streaming_module
+
+    monkeypatch.setitem(sys.modules, "openai", None)
+    reloaded_bindings = importlib.reload(sdk_bindings)
+    monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
+    monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
+    try:
+        assert reloaded_bindings.provider_sdk_bindings.openai is None
+        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+
+        runtime = _runtime()
+        with pytest.raises(ProviderRuntimeError) as exc_info:
+            runtime.create_client_from_profile(_profile())
+        assert "openai package not installed" in str(exc_info.value)
+
+        with pytest.raises(ProviderRuntimeError) as exc_info_direct:
+            runtime.create_client(api_key="key")
+        assert "openai package not installed" in str(exc_info_direct.value)
+    finally:
+        importlib.reload(sdk_bindings)

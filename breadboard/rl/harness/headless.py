@@ -67,6 +67,19 @@ def _raise_obsolete_outer_isolation(_value: Any) -> None:
     )
 
 
+class HeadlessEpisodeFailed(RuntimeError):
+    """The service failed the episode before publishing completion evidence.
+
+    Carries the service's bounded failure fact so the headless result reports
+    its code (for example ``workspace_diff_too_large``) instead of the missing
+    evidence that follows from it.
+    """
+
+    def __init__(self, failure: Any) -> None:
+        super().__init__(failure.code)
+        self.failure = failure
+
+
 class HeadlessWorkspaceInput(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -671,27 +684,33 @@ async def run_headless_request(
                 close_operation = await composition.service.close_episode(episode_id)
                 closed = await composition.service.get_closed_envelope(episode_id)
                 _project_headless_cleanup(result, close_operation.response, closed)
-                if run_started and primary_failure is not None:
-                    replay = await composition.service.run(
-                        episode_id,
-                        create_fingerprint=create.create_fingerprint,
-                        task_input={"prompt": request.prompt},
-                        context=request.context,
-                    )
-                    run = replay.response
-                    event_bytes, patch_bytes = _project_headless_run(
-                        result,
-                        run,
-                        composition,
-                        expected_base_commit=(
-                            request.workspace.base_commit
-                            if request.workspace.workspace_mode == "repository"
-                            else request.workspace.workspace_seed_digest
-                        ),
-                    )
-                    terminal_unsuccessful = run.primary_disposition.value != "succeeded"
             except BaseException as exc:
                 cleanup_failure = exc
+            else:
+                if run_started and primary_failure is not None:
+                    try:
+                        replay = await composition.service.run(
+                            episode_id,
+                            create_fingerprint=create.create_fingerprint,
+                            task_input={"prompt": request.prompt},
+                            context=request.context,
+                        )
+                        run = replay.response
+                        event_bytes, patch_bytes = _project_headless_run(
+                            result,
+                            run,
+                            composition,
+                            expected_base_commit=(
+                                request.workspace.base_commit
+                                if request.workspace.workspace_mode == "repository"
+                                else request.workspace.workspace_seed_digest
+                            ),
+                        )
+                        terminal_unsuccessful = (
+                            run.primary_disposition.value != "succeeded"
+                        )
+                    except HeadlessEpisodeFailed:
+                        terminal_unsuccessful = True
         try:
             await composition.close()
         except BaseException as exc:
@@ -756,9 +775,9 @@ async def run_headless_request(
             **result.get("terminal", {}),
             "status": "failed",
             "failure": _safe_failure_projection(
-                publication_failure
+                primary_failure
                 or cleanup_failure
-                or primary_failure
+                or publication_failure
                 or RuntimeError()
             ),
             "primary_failure": (
@@ -1162,6 +1181,8 @@ def _project_headless_run(
         "reward_components": dict(run.reward_components),
     }
     if run.evidence_manifest_ref is None:
+        if run.primary_failure is not None:
+            raise HeadlessEpisodeFailed(run.primary_failure)
         raise ValueError("headless evidence manifest is unavailable")
     evidence_projection, event_bytes = _load_evidence_projection(
         composition,
@@ -1169,12 +1190,14 @@ def _project_headless_run(
     )
     workspace_diff = run.workspace_diff
     if workspace_diff is None:
+        if run.primary_failure is not None:
+            raise HeadlessEpisodeFailed(run.primary_failure)
         if run.primary_disposition is not EpisodePrimaryDisposition.SUCCEEDED:
             result["workspace_evidence"] = evidence_projection
             return event_bytes, None
         raise ValueError("canonical workspace diff is unavailable")
     expected_keys = {
-        "returncode", "stdout", "stderr", "base_commit",
+        "returncode", "stdout", "stderr", "base_commit", "baseline_tree",
         "git_executable_digest", "patch_digest", "snapshot_root_digest",
     }
     if (
@@ -1184,6 +1207,7 @@ def _project_headless_run(
         or type(workspace_diff.get("stdout")) is not str
         or workspace_diff.get("stderr") != ""
         or type(workspace_diff.get("base_commit")) is not str
+        or type(workspace_diff.get("baseline_tree")) is not str
         or type(workspace_diff.get("git_executable_digest")) is not str
         or type(workspace_diff.get("patch_digest")) is not str
         or type(workspace_diff.get("snapshot_root_digest")) is not str
@@ -1198,6 +1222,7 @@ def _project_headless_run(
         **evidence_projection,
         "patch_digest": workspace_diff["patch_digest"],
         "patch_base_commit": workspace_diff["base_commit"],
+        "patch_baseline_tree": workspace_diff["baseline_tree"],
         "patch_git_executable_digest": workspace_diff["git_executable_digest"],
         "patch_snapshot_root_digest": workspace_diff["snapshot_root_digest"],
     }

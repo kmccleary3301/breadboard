@@ -13,6 +13,11 @@ except ImportError:  # pragma: no cover
     _OpenAI = None
 
 try:  # pragma: no cover - import guard exercised through runtime error paths
+    from openai import LengthFinishReasonError as _OpenAILengthFinishReasonError
+except ImportError:  # pragma: no cover
+    _OpenAILengthFinishReasonError = ()
+
+try:  # pragma: no cover - import guard exercised through runtime error paths
     from anthropic import Anthropic as _Anthropic
     from anthropic import RateLimitError as _AnthropicRateLimitError
     try:
@@ -30,6 +35,7 @@ class ProviderSdkBindings:
     """SDK constructors, error types, and retry dependencies used by runtimes."""
 
     openai: Any = _OpenAI
+    openai_length_finish_error: Any = _OpenAILengthFinishReasonError
     anthropic: Any = _Anthropic
     anthropic_rate_limit_error: Any = _AnthropicRateLimitError
     anthropic_overloaded_error: Any = _AnthropicOverloadedError

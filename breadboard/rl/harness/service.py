@@ -1953,7 +1953,7 @@ class BreadBoardV2EpisodeService:
             if raw_workspace_diff is not None:
                 expected_keys = {
                     "returncode", "stdout", "stderr", "base_commit",
-                    "git_executable_digest", "patch_digest",
+                    "baseline_tree", "git_executable_digest", "patch_digest",
                     "snapshot_root_digest",
                 }
                 patch_bytes = raw_workspace_diff.get("stdout", "").encode("utf-8")
@@ -1963,6 +1963,7 @@ class BreadBoardV2EpisodeService:
                     or type(raw_workspace_diff["stdout"]) is not str
                     or type(raw_workspace_diff["stderr"]) is not str
                     or type(raw_workspace_diff["base_commit"]) is not str
+                    or type(raw_workspace_diff["baseline_tree"]) is not str
                     or type(raw_workspace_diff["git_executable_digest"]) is not str
                     or type(raw_workspace_diff["patch_digest"]) is not str
                     or type(raw_workspace_diff["snapshot_root_digest"]) is not str
@@ -1973,6 +1974,21 @@ class BreadBoardV2EpisodeService:
                     != "sha256:" + hashlib.sha256(patch_bytes).hexdigest()
                 ):
                     raise RuntimeError("canonical sealed workspace diff failed")
+                # The diff is published inline in the run-response evidence
+                # object; half the repository object bound is reserved for it.
+                if (
+                    len(canonical_json_bytes(raw_workspace_diff["stdout"]))
+                    > self._dependencies.evidence_repository.max_object_bytes // 2
+                ):
+                    raise V2EpisodeError(
+                        _v2_failure(
+                            "runtime",
+                            "workspace_diff_too_large",
+                            "none",
+                            "verifier",
+                            lease_id=coordinator.lease.lease_id,
+                        )
+                    )
                 coordinator.workspace_diff = MappingProxyType(dict(raw_workspace_diff))
             probe.raise_if_cancelled("before_verifier_open")
             verifier = await self._dependencies.sandbox_runtime.open_verifier(
