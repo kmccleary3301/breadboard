@@ -35,7 +35,7 @@ Measured defect on IBM Slurm, 2026-09-29, runtime v10, MiMo code train, episode 
 
 ## 4) Change Classification
 
-- Classification: `behavioral fix`, no schema or wire-format change.
+- Classification: `behavioral-change`. Model-authored provider output keeps credential-shaped literals. There is no schema or wire-format change.
 
 ## 5) Evidence and Validation Plan
 
