@@ -2069,6 +2069,7 @@ async def test_conductor_rejects_each_nonempty_unsupported_semantic_family(
         ("responses_stateful", True),
         ("responses_use_developer_role", "false"),
         ("terminal_tool_protocol", True),
+        ("tool_results_as_text", "false"),
     ],
 )
 async def test_conductor_rejects_every_unsupported_provider_control_value(
@@ -3895,4 +3896,235 @@ async def test_conductor_tool_action_timeout_follows_tool_error_observation_mode
     }]
     tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
     assert [e.error_type for e in tool_obs_events] == ["tool_error"]
+    await session.close()
+
+@pytest.mark.parametrize(
+    ("raw_observation", "expected_text"),
+    [
+        (
+            {"content": [{"type": "text", "text": "block 1"}, {"type": "text", "text": "block 2"}]},
+            "block 1\nblock 2",
+        ),
+        (
+            {
+                "content": [{"type": "text", "text": "Tool glob not found"}],
+                "details": {"truncated": False},
+                "isError": True,
+            },
+            "Tool glob not found",
+        ),
+        (
+            {"content": [{"type": "image", "data": "base64image"}]},
+            "(see attached image)",
+        ),
+        (
+            {"content": [{"type": "text", "text": "hello \ud800 world"}]},
+            "hello  world",
+        ),
+        (
+            {"content": [{"type": "text", "text": "hello \ud83d\ude00 world"}]},
+            "hello 😀 world",
+        ),
+    ],
+    ids=["multi-block", "isError", "image-only", "lone-surrogate", "surrogate-pair"],
+)
+async def test_conductor_tool_results_as_text_exact_pi_text(
+    raw_observation: dict[str, Any],
+    expected_text: str,
+) -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_results_as_text"] = True
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="read_file", call_id="call-1", arguments='{"path":"file.txt"}')
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "done"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding(),), results=[raw_observation])
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 2
+    assert len(client.requests) == 2
+    second_request = thaw_json(client.requests[1].request_payload)
+    output_items = [
+        item
+        for item in second_request["input"]
+        if item.get("type") == "function_call_output" and item.get("call_id") == "call-1"
+    ]
+    assert len(output_items) == 1
+    assert output_items[0]["output"] == expected_text
+
+    # The full observation (with details) stays in ToolObservationEvent
+    tool_obs_events = [e for e in sink.events if isinstance(e, ToolObservationEvent)]
+    assert len(tool_obs_events) == 1
+    assert thaw_json(tool_obs_events[0].observation) == raw_observation
+    await session.close()
+
+
+async def test_conductor_tool_results_as_text_false_preserves_exact_json_bytes() -> None:
+    raw_observation = {
+        "content": [{"type": "text", "text": "hello world"}],
+        "details": {"info": 123},
+        "isError": False,
+    }
+    expected_bytes = json.dumps(
+        raw_observation,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_results_as_text"] = False
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="read_file", call_id="call-1", arguments='{"path":"file.txt"}')
+    ]
+    response_turn2 = _response()
+    response_turn2["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "done"}],
+        }
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2])
+    tools = RecordingToolPort((_tool_binding(),), results=[raw_observation])
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    second_request = thaw_json(client.requests[1].request_payload)
+    output_items = [
+        item
+        for item in second_request["input"]
+        if item.get("type") == "function_call_output" and item.get("call_id") == "call-1"
+    ]
+    assert len(output_items) == 1
+    assert output_items[0]["output"] == expected_bytes
+    await session.close()
+
+
+@pytest.mark.parametrize(
+    "malformed_observation",
+    [
+        {"details": {"truncated": False}},
+        {"content": "not_a_list"},
+        {"content": [{"type": "text", "text": 123}]},
+        {"content": [{"type": "text"}]},
+        {"content": [123]},
+    ],
+    ids=["missing_content", "content_not_list", "text_not_string", "text_missing", "block_not_object"],
+)
+async def test_conductor_tool_results_as_text_malformed_observation_fails_closed(
+    malformed_observation: dict[str, Any],
+) -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_results_as_text"] = True
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    response_turn1 = _response()
+    response_turn1["output"] = [
+        _function_call(name="read_file", call_id="call-1", arguments='{"path":"file.txt"}')
+    ]
+    client = RecordingPolicyClient(observation, responses=[response_turn1])
+    tools = RecordingToolPort((_tool_binding(),), results=[malformed_observation])
+    session, _, _, _, sink, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    with pytest.raises(RunnerProtocolError) as error:
+        await session.run(ConductorRunRequest({"query": "work"}))
+    assert error.value.code == "tool_result_invalid"
+    assert len(client.requests) == 1
+    error_events = [e for e in sink.events if isinstance(e, RunnerErrorEvent)]
+    assert len(error_events) == 1
+    assert error_events[0].code == "tool_result_invalid"
+    await session.close()
+
+
+async def test_conductor_tool_results_as_text_append_only_prefix_equality_across_turns() -> None:
+    observation = _observation()
+    semantic = _tool_semantics(observation)
+    semantic["providers"]["provider_tools"]["tool_results_as_text"] = True
+    plan = _plan_with_tools(observation, semantics=_sync_root_semantics(semantic))
+
+    obs1 = {"content": [{"type": "text", "text": "output of tool 1"}]}
+    obs2 = {"content": [{"type": "text", "text": "output of tool 2"}]}
+
+    call1 = _function_call(name="read_file", call_id="call-1", arguments='{"path":"1.txt"}')
+    call2 = _function_call(name="read_file", call_id="call-2", arguments='{"path":"2.txt"}')
+
+    response_turn1 = _response()
+    response_turn1["output"] = [call1]
+    response_turn2 = _response()
+    response_turn2["output"] = [call2]
+    response_turn3 = _response()
+    response_turn3["output"] = [
+        {
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": "all done"}],
+        }
+    ]
+
+    client = RecordingPolicyClient(observation, responses=[response_turn1, response_turn2, response_turn3])
+    tools = RecordingToolPort((_tool_binding(),), results=[obs1, obs2])
+    session, _, _, _, _, _ = await _open(
+        observation=observation,
+        plan=plan,
+        client=client,
+        tools=tools,
+    )
+
+    run_result = await session.run(ConductorRunRequest({"query": "work"}))
+    assert run_result.termination == RunnerTermination.ASSISTANT_COMPLETE
+    assert run_result.turn_count == 3
+    assert len(client.requests) == 3
+
+    req1_input = thaw_json(client.requests[0].request_payload)["input"]
+    req2_input = thaw_json(client.requests[1].request_payload)["input"]
+    req3_input = thaw_json(client.requests[2].request_payload)["input"]
+
+    # Turn 2 must extend Turn 1 with [call1, output1]
+    assert req2_input[:len(req1_input)] == req1_input
+    assert req2_input[len(req1_input):] == [
+        call1,
+        {"type": "function_call_output", "call_id": "call-1", "output": "output of tool 1"},
+    ]
+
+    # Turn 3 must extend Turn 2 with [call2, output2]
+    assert req3_input[:len(req2_input)] == req2_input
+    assert req3_input[len(req2_input):] == [
+        call2,
+        {"type": "function_call_output", "call_id": "call-2", "output": "output of tool 2"},
+    ]
     await session.close()

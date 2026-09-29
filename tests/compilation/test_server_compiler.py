@@ -1389,6 +1389,56 @@ def test_representative_families_compile_by_semantics_not_name(
     assert semantic["modes"][0]["prompt_source_id"] == "mode:build"
 
 
+def test_server_compiler_validates_tool_results_as_text_flag() -> None:
+    valid_source = canonical_json_bytes(
+        {
+            "version": 2,
+            "profile": {"name": "test-flag"},
+            "workspace": {"root": "workspace"},
+            "providers": {
+                "default_model": "test-model",
+                "models": [{"id": "test-model", "adapter": "responses", "params": {}}],
+            },
+            "provider_tools": {"use_native": True, "tool_results_as_text": True},
+            "prompts": {
+                "tool_prompt_mode": "system_once",
+                "injection": {"system_order": [], "per_turn_order": []},
+            },
+            "modes": [{"id": "build", "prompt": {"literal": "behavior"}}],
+            "loop": {"sequence": ["build"]},
+            "features": {"family_capability": "opencode"},
+            "terminal_sessions": {"enabled": False},
+        }
+    )
+    manifest, _, _ = _compile({"config.yaml": valid_source})
+    semantic = manifest.semantic.to_canonical_obj()
+    assert semantic["providers"]["provider_tools"]["tool_results_as_text"] is True
+
+    invalid_source = canonical_json_bytes(
+        {
+            "version": 2,
+            "profile": {"name": "test-flag"},
+            "workspace": {"root": "workspace"},
+            "providers": {
+                "default_model": "test-model",
+                "models": [{"id": "test-model", "adapter": "responses", "params": {}}],
+            },
+            "provider_tools": {"use_native": True, "tool_results_as_text": "not-a-bool"},
+            "prompts": {
+                "tool_prompt_mode": "system_once",
+                "injection": {"system_order": [], "per_turn_order": []},
+            },
+            "modes": [{"id": "build", "prompt": {"literal": "behavior"}}],
+            "loop": {"sequence": ["build"]},
+            "features": {"family_capability": "opencode"},
+            "terminal_sessions": {"enabled": False},
+        }
+    )
+    with pytest.raises(ConfigCompileError) as caught:
+        _compile({"config.yaml": invalid_source})
+    assert caught.value.code is CompileErrorCode.PROVIDER_INVALID
+    assert caught.value.instance_pointer == "/provider_tools/tool_results_as_text"
+
 @pytest.mark.parametrize(
     ("family", "fragment", "code"),
     [

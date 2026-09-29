@@ -1909,7 +1909,7 @@ def _compile_providers(config: dict[str, Any]) -> dict[str, Any]:
     def validate_provider_tools(value: Any) -> dict[str, Any]:
         mapping = _require_object(value, "/provider_tools")
         _reject_embedded_authority(mapping, "/provider_tools")
-        for flag_name in ("use_native", "suppress_prompts", "responses_use_developer_role", "responses_stateful", "terminal_tool_protocol", "verifier_required", "tool_errors_as_observations"):
+        for flag_name in ("use_native", "suppress_prompts", "responses_use_developer_role", "responses_stateful", "terminal_tool_protocol", "verifier_required", "tool_errors_as_observations", "tool_results_as_text"):
             if flag_name in mapping and type(mapping[flag_name]) is not bool:
                 raise _error(CompileStage.SCHEMA, CompileErrorCode.PROVIDER_INVALID, instance_pointer="/provider_tools/" + flag_name)
         return deepcopy(mapping)
