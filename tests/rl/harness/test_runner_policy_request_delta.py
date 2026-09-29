@@ -778,3 +778,42 @@ def test_reconstruct_policy_requests_raises_on_digest_mismatch() -> None:
     )
     with pytest.raises(ValueError, match="reconstructed policy request digest mismatch"):
         reconstruct_policy_requests([corrupted_evt])
+
+
+def _deepest_accepted_request(leaf: str) -> dict[str, Any]:
+    """Return the deepest nested request that the default request snapshot still accepts."""
+    from breadboard.rl.harness.runners.base import JsonSnapshotError, freeze_json_object
+
+    def build(levels: int) -> dict[str, Any]:
+        value: Any = leaf
+        for _ in range(levels):
+            value = {"k": value}
+        return {"model": "m", "input": value}
+
+    levels = 1
+    while True:
+        try:
+            freeze_json_object(build(levels + 1), field_name="request")
+        except JsonSnapshotError:
+            return build(levels)
+        levels += 1
+
+
+def test_request_at_snapshot_depth_limit_is_recorded_first_and_as_nested_delta() -> None:
+    first = _deepest_accepted_request("a")
+    second = _deepest_accepted_request("b")
+    plan_digest = "sha256:" + "a" * 64
+    first_event = PolicyRequestEvent.from_request(
+        sequence=0, episode_id="ep", effective_plan_digest=plan_digest, turn=1, request=first
+    )
+    second_event = PolicyRequestEvent.from_request(
+        sequence=1,
+        episode_id="ep",
+        effective_plan_digest=plan_digest,
+        turn=2,
+        request=second,
+        previous=first,
+        previous_digest=first_event.request_digest,
+    )
+    assert second_event.request_delta["nested"]
+    assert reconstruct_policy_requests([first_event, second_event]) == [(1, first), (2, second)]

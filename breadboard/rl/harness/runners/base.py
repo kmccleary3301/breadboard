@@ -544,7 +544,10 @@ class PolicyRuntimeResponseEvent:
         _normalized_identifier(self.policy_slot_id, field_name="policy_slot_id")
 
 
-_MAX_DELTA_RECURSION_DEPTH = 64
+_MAX_DELTA_RECURSION_DEPTH = _DEFAULT_JSON_DEPTH
+# Each request mapping level becomes a delta level plus its operation mapping, and the top
+# wrapper adds one more, so a request at the default depth limit needs twice that depth here.
+_REQUEST_DELTA_JSON_DEPTH = 2 * _DEFAULT_JSON_DEPTH + 2
 _MAPPING_DELTA_KEYS = frozenset({"set", "extend", "splice", "nested", "remove"})
 
 
@@ -888,7 +891,11 @@ class PolicyRequestEvent:
         _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
         _positive_turn(self.turn)
         _implementation_digest(self.request_digest)
-        frozen_delta = freeze_json_object(self.request_delta, field_name="policy request delta")
+        frozen_delta = freeze_json_object(
+            self.request_delta,
+            field_name="policy request delta",
+            max_depth=_REQUEST_DELTA_JSON_DEPTH,
+        )
         top_allowed_keys = frozenset(
             {"base_request_digest", "set", "extend", "splice", "nested", "remove"}
         )

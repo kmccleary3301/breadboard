@@ -44,13 +44,13 @@ The cause is `PolicyRequestEvent`, the only runner event that carried a request 
 
 ## 5) Evidence and Validation Plan
 
-- New `tests/rl/harness/test_runner_policy_request_delta.py` has 22 test cases:
+- New `tests/rl/harness/test_runner_policy_request_delta.py` has 23 test cases:
   - A 50-turn growing request round-trips exactly. The serialized request events total less than 3× the final request, where the old encoding was more than 20×.
   - A 50-turn checkpointed native request, whose history grows inside `native_http_request.body_b64`, round-trips within the same 3× bound.
   - Reconstruction accepts the JSON mappings that evidence recovery returns.
-  - Tampering, key change and removal, `keep=0` list replacement, string splice, nested key removal, delta shape validation, and digest mismatch are each covered.
+  - Tampering, key change and removal, `keep=0` list replacement, string splice, nested key removal, a request at the snapshot depth limit, delta shape validation, and digest mismatch are each covered.
 - Linux Slurm job 122269 ran the same suites on `main` 5f44a794 and on the flat-delta branch head b7109d91:
-  - The new test file fails collection on `main` and passed 15/15 on b7109d91. The recursive grammar and its tests were added after that job, and they passed 22/22 locally.
+  - The new test file fails collection on `main` and passed 15/15 on b7109d91. The recursive grammar and its tests were added after that job, and they passed 23/23 locally.
   - terminal passes 166 here, versus 165 on `main`.
   - These pass on both trees: conductor 258, evidence 162, v2 service 156, oh-my-pi 16.2.13 comparator 69, pi@0.57.1 comparator 43.
   - These fail identically on both trees because of the test host, not this change: the provenance check (the source tree has no Git objects), 5 native-stream conductor cases (missing pinned Node package), 3 protocol-integration cases (`containment_receipt_invalid`) and 6 headless-runner cases.
