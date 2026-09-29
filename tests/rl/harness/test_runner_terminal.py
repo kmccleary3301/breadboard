@@ -66,8 +66,8 @@ FIXTURE_PATH = (
 )
 PROVENANCE_PATH = FIXTURE_PATH.with_name("terminal_adapter_parity_v1.provenance.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PINNED_PROVENANCE_SHA256 = "1df718ef287564530730966a6bc83cdcf6c9228e931ff8684980f25268a3fcdf"
-PINNED_FIXTURE_SHA256 = "ea305834d20f22cd05674db2478671ec5f1a40376aadc88a012bd6e4466e7b65"
+PINNED_PROVENANCE_SHA256 = "77f16e6539b340799d4f0693c782a2e82a3329f1827c9ae720d83f3be36669a3"
+PINNED_FIXTURE_SHA256 = "31a0fc22804f6b4f60b9fe15125e0b8ff11379722676341cd9ec3e543d23b422"
 RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 IMPLEMENTATION_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
 
@@ -498,6 +498,8 @@ def _default_policy_request_event_fields() -> dict[str, Any]:
             "base_request_digest": None,
             "set": {key: payload[key] for key in sorted(payload.keys())},
             "extend": {},
+            "splice": {},
+            "nested": {},
             "remove": [],
         },
     }
@@ -2663,6 +2665,8 @@ def _build_event(kind: str, **overrides: Any) -> RunnerEvent:
                 "base_request_digest": None,
                 "set": {"input": "work"},
                 "extend": {},
+                "splice": {},
+                "nested": {},
                 "remove": [],
             },
         },
@@ -2759,6 +2763,8 @@ def test_structured_event_members_are_recursively_snapshotted() -> None:
         "base_request_digest": None,
         "set": {"input": [{"content": "original"}]},
         "extend": {},
+        "splice": {},
+        "nested": {},
         "remove": [],
     }
     response_payload = {"output": [{"type": "reasoning", "summary": ["original"]}]}
