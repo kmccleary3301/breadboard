@@ -107,19 +107,25 @@ def test_build_config_view_accepts_minimal_v2_strips_dossier_from_projection_and
     assert not {path for path in _graph_paths(view) if path == "dossier" or path.startswith("dossier.")}
 
 
+@pytest.mark.parametrize("flag", ["tool_errors_as_observations", "tool_results_as_text"])
 @pytest.mark.parametrize("enabled", [True, False])
-def test_v2_tool_error_observations_reach_runtime_view(tmp_path: Path, enabled: bool) -> None:
+def test_v2_provider_tool_flags_reach_runtime_view(tmp_path: Path, flag: str, enabled: bool) -> None:
     config_path = tmp_path / "agent.v2.yaml"
     _write_config(
         config_path,
-        _minimal_v2_yaml(
-            extra_top_level=f"provider_tools:\n  tool_errors_as_observations: {str(enabled).lower()}\n"
-        ),
+        _minimal_v2_yaml(extra_top_level=f"provider_tools:\n  {flag}: {str(enabled).lower()}\n"),
     )
 
     view = v2_loader.build_config_view(str(config_path))
 
-    assert view.get_path("provider_tools.tool_errors_as_observations") is enabled
+    assert view.get_path(f"provider_tools.{flag}") is enabled
+
+
+@pytest.mark.parametrize("flag", ["tool_errors_as_observations", "tool_results_as_text"])
+def test_v2_schema_rejects_non_boolean_provider_tool_flag(flag: str) -> None:
+    config = yaml.safe_load(_minimal_v2_yaml(extra_top_level=f"provider_tools:\n  {flag}: \"true\"\n"))
+
+    assert _v2_schema_errors(config) != []
 
 
 @pytest.mark.parametrize("config_path", PUBLIC_V2_OPERATIONAL_SHAPES)

@@ -307,6 +307,7 @@ export interface AgentConfigSurfaceV2 {
     suppress_prompts?: boolean;
     tool_choice?: string;
     tool_errors_as_observations?: boolean;
+    tool_results_as_text?: boolean;
     use_native?: boolean;
   };
   providers: {

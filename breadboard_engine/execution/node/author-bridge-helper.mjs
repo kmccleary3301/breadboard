@@ -15949,6 +15949,9 @@ var GENERATED_SCHEMA_OBJECTS = {
           "tool_errors_as_observations": {
             "type": "boolean"
           },
+          "tool_results_as_text": {
+            "type": "boolean"
+          },
           "use_native": {
             "type": "boolean"
           }
