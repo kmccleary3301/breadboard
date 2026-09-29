@@ -1312,12 +1312,18 @@ class _ConductorSession:
             frozen_request = freeze_json_object(final_request, field_name="final policy request")
             request_digest = canonical_sha256(frozen_request)
             await self._checkpoint("before_policy", turn=turn)
-            await self._emit(
-                PolicyRequestEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, frozen_request,
-                )
+            policy_request_event = PolicyRequestEvent.from_request(
+                0,
+                self._open_request.episode_id,
+                self._open_request.effective_plan_digest,
+                turn,
+                frozen_request,
+                self._previous_policy_request,
+                self._previous_policy_request_digest,
             )
+            await self._emit(policy_request_event)
+            self._previous_policy_request = frozen_request
+            self._previous_policy_request_digest = policy_request_event.request_digest
             await self._checkpoint("before_policy", turn=turn)
             invoke_request = PolicyRuntimeInvokeRequest(
                 episode_id=self._open_request.episode_id,

@@ -644,138 +644,144 @@
       "type": "PolicyRequestEvent",
       "sequence": 0,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 1,
-      "request_payload": {
-        "model": "wrapper-model",
-        "input": [
-          {
-            "role": "user",
-            "content": "repair the project"
-          }
-        ],
-        "tools": [
-          {
-            "type": "function",
-            "name": "shell",
-            "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "command": {
-                  "type": "string"
+      "request_digest": "sha256:d879c4a1f6dc53b30e44a3ae2bec3ea448c7a9febb9a5af7339e0ff0a31fcb5f",
+      "request_delta": {
+        "base_request_digest": null,
+        "set": {
+          "input": [
+            {
+              "role": "user",
+              "content": "repair the project"
+            }
+          ],
+          "model": "wrapper-model",
+          "parallel_tool_calls": false,
+          "temperature": 0.2,
+          "tools": [
+            {
+              "type": "function",
+              "name": "shell",
+              "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string"
+                  },
+                  "timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
                 },
-                "timeout_seconds": {
-                  "type": "integer",
-                  "minimum": 1
-                }
+                "required": [
+                  "command"
+                ],
+                "additionalProperties": false
               },
-              "required": [
-                "command"
-              ],
-              "additionalProperties": false
+              "strict": true
             },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "read_file",
-            "description": "Read UTF-8 text from a workspace-relative file.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
+            {
+              "type": "function",
+              "name": "read_file",
+              "description": "Read UTF-8 text from a workspace-relative file.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
                 },
-                "offset": {
-                  "type": "integer",
-                  "minimum": 0
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false
+              },
+              "strict": true
+            },
+            {
+              "type": "function",
+              "name": "write_file",
+              "description": "Write UTF-8 text to a workspace-relative file.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  }
                 },
-                "limit": {
-                  "type": "integer",
-                  "minimum": 0
-                }
+                "required": [
+                  "path",
+                  "content"
+                ],
+                "additionalProperties": false
               },
-              "required": [
-                "path"
-              ],
-              "additionalProperties": false
+              "strict": true
             },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "write_file",
-            "description": "Write UTF-8 text to a workspace-relative file.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
+            {
+              "type": "function",
+              "name": "list_files",
+              "description": "List files below a workspace-relative directory.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 8
+                  }
                 },
-                "content": {
-                  "type": "string"
-                }
+                "required": [
+                  "path"
+                ],
+                "additionalProperties": false
               },
-              "required": [
-                "path",
-                "content"
-              ],
-              "additionalProperties": false
+              "strict": true
             },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "list_files",
-            "description": "List files below a workspace-relative directory.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
+            {
+              "type": "function",
+              "name": "submit",
+              "description": "Finish the episode after the task is complete.",
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "result": {
+                    "type": "string"
+                  }
                 },
-                "depth": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 8
-                }
+                "required": [
+                  "result"
+                ],
+                "additionalProperties": false
               },
-              "required": [
-                "path"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "submit",
-            "description": "Finish the episode after the task is complete.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "result": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "result"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          }
-        ],
-        "temperature": 0.2,
-        "parallel_tool_calls": false
+              "strict": true
+            }
+          ]
+        },
+        "extend": {},
+        "remove": []
       }
     },
     {
       "type": "PolicyResponseEvent",
       "sequence": 1,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 1,
       "response_payload": {
         "id": "response-turn-1",
@@ -801,7 +807,7 @@
       "type": "ToolCallEvent",
       "sequence": 2,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 1,
       "ordinal": 0,
       "call_id": "shell-1",
@@ -812,7 +818,7 @@
       "type": "ToolObservationEvent",
       "sequence": 3,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 1,
       "ordinal": 0,
       "call_id": "shell-1",
@@ -829,149 +835,38 @@
       "type": "PolicyRequestEvent",
       "sequence": 4,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
-      "request_payload": {
-        "model": "wrapper-model",
-        "input": [
-          {
-            "role": "user",
-            "content": "repair the project"
-          },
-          {
-            "type": "function_call",
-            "call_id": "shell-1",
-            "name": "shell",
-            "arguments": "{\"command\":\"pwd\"}"
-          },
-          {
-            "type": "function_call_output",
-            "call_id": "shell-1",
-            "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+      "request_digest": "sha256:b165b82e945a9a97acbff4b5fa142a9e1075b59ca19e94c0675d5c46f10715f5",
+      "request_delta": {
+        "base_request_digest": "sha256:d879c4a1f6dc53b30e44a3ae2bec3ea448c7a9febb9a5af7339e0ff0a31fcb5f",
+        "set": {},
+        "extend": {
+          "input": {
+            "keep": 1,
+            "items": [
+              {
+                "type": "function_call",
+                "call_id": "shell-1",
+                "name": "shell",
+                "arguments": "{\"command\":\"pwd\"}"
+              },
+              {
+                "type": "function_call_output",
+                "call_id": "shell-1",
+                "output": "{\"exit\":0,\"stderr\":\"\",\"stdout\":\"ran:pwd\"}"
+              }
+            ]
           }
-        ],
-        "tools": [
-          {
-            "type": "function",
-            "name": "shell",
-            "description": "Run a shell command in the admitted BreadBoard sandbox workspace.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "command": {
-                  "type": "string"
-                },
-                "timeout_seconds": {
-                  "type": "integer",
-                  "minimum": 1
-                }
-              },
-              "required": [
-                "command"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "read_file",
-            "description": "Read UTF-8 text from a workspace-relative file.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "offset": {
-                  "type": "integer",
-                  "minimum": 0
-                },
-                "limit": {
-                  "type": "integer",
-                  "minimum": 0
-                }
-              },
-              "required": [
-                "path"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "write_file",
-            "description": "Write UTF-8 text to a workspace-relative file.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "content": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "path",
-                "content"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "list_files",
-            "description": "List files below a workspace-relative directory.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "path": {
-                  "type": "string"
-                },
-                "depth": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "maximum": 8
-                }
-              },
-              "required": [
-                "path"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          },
-          {
-            "type": "function",
-            "name": "submit",
-            "description": "Finish the episode after the task is complete.",
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "result": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "result"
-              ],
-              "additionalProperties": false
-            },
-            "strict": true
-          }
-        ],
-        "temperature": 0.2,
-        "parallel_tool_calls": false
+        },
+        "remove": []
       }
     },
     {
       "type": "PolicyResponseEvent",
       "sequence": 5,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "response_payload": {
         "id": "response-final",
@@ -1048,7 +943,7 @@
       "type": "ToolCallEvent",
       "sequence": 6,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 0,
       "call_id": "write-1",
@@ -1059,7 +954,7 @@
       "type": "ToolObservationEvent",
       "sequence": 7,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 0,
       "call_id": "write-1",
@@ -1076,7 +971,7 @@
       "type": "ToolCallEvent",
       "sequence": 8,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 1,
       "call_id": "submit-1",
@@ -1087,7 +982,7 @@
       "type": "ToolObservationEvent",
       "sequence": 9,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 1,
       "call_id": "submit-1",
@@ -1104,7 +999,7 @@
       "type": "ToolCallEvent",
       "sequence": 10,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 2,
       "call_id": "list-after-submit",
@@ -1115,7 +1010,7 @@
       "type": "ToolObservationEvent",
       "sequence": 11,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turn": 2,
       "ordinal": 2,
       "call_id": "list-after-submit",
@@ -1132,7 +1027,7 @@
       "type": "RunnerTerminationEvent",
       "sequence": 12,
       "episode_id": "terminal-parity",
-      "effective_plan_digest": "sha256:41bfbfeda74f44cf97487bcd65e279e68612871c9d53aff6726569c7de92dc6b",
+      "effective_plan_digest": "sha256:c847510828d5759df09c97d131cfec7d71de6efcfa7075559be0fd62807b4e2a",
       "turns": 2,
       "reason": "submitted"
     }
