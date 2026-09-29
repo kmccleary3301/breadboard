@@ -20,11 +20,14 @@ Measured defect on IBM Slurm, 2026-09-29, runtime v10, MiMo code train, episode 
 
 - Kernel danger-zone: yes. This change touches `breadboard_engine/provider/contract_runtime.py`, `breadboard_engine/provider/contract_messages.py` and `breadboard_engine/security/redaction.py`.
 - `redaction.scrub_text(..., credential_shapes=True)` gains a keyword that defaults to true. Passing false keeps exact registered-secret redaction and skips the shape patterns.
-- `sanitize_provider_result` passes `credential_shapes=False` for model-authored fields only:
-  - `message.content`, `message.reasoning`, `result.reasoning_summaries`, `result.reasoning_blocks`;
-  - the reasoning annotations `annotations["reasoning_content" | "reasoning" | "reasoning_details"]`. `ProviderMessage.as_dict()` merges them with `reasoning` into thinking blocks, deduplicating only identical blocks. If they were scrubbed differently from `reasoning`, the turn would carry a verbatim block and a redacted block. The keys are `contract_messages.REASONING_ANNOTATION_KEYS`, shared with that merge;
-  - tool-call `name` and `parsed_arguments` (and therefore `arguments`/`arguments_json`).
-- Unchanged, with full shape plus registered redaction: `raw_message`, `raw_choice`, `raw_response`, tool-call `id` and `raw`, `finish_reason`, `message_id`, non-reasoning `annotations`, `tool_results`, `usage`, `encrypted_reasoning`, `provider_replay`.
+- `sanitize_provider_result` passes `credential_shapes=False` only for the model's own words:
+  - Model text: plain strings, and the `text` of `text`/`thinking` blocks, in `message.content`, `message.reasoning`, `result.reasoning_blocks`, `result.reasoning_summaries`, and the reasoning annotations `annotations["reasoning_content" | "reasoning" | "reasoning_details"]`.
+    - `ProviderMessage.as_dict()` merges those annotations with `reasoning` into thinking blocks, deduplicating only identical blocks. So they get exactly `reasoning`'s treatment; otherwise the turn would carry a verbatim block and a redacted block.
+    - The keys are `contract_messages.REASONING_ANNOTATION_KEYS`, shared with that merge.
+  - Tool-call `name` and `parsed_arguments` (and therefore `arguments`/`arguments_json`).
+- Provider-owned material keeps full shape plus registered redaction:
+  - inside those fields: `redacted_thinking` data, `provider_replay` envelopes, media URIs, and any non-text block or provider object inside content or reasoning;
+  - separate fields: `raw_message`, `raw_choice`, `raw_response`, tool-call `id` and `raw`, `finish_reason`, `message_id`, non-reasoning `annotations`, `tool_results`, `usage`, `encrypted_reasoning`, `provider_replay`.
 - Registered operation secrets (the profile's scoped credential and caller header values) are still removed from model-authored fields.
 - Evidence and log sinks keep their own full redaction: `logging/provider_dump.py`, request evidence in `conductor/modes.py`, and `conductor/implementation_receipts.py`.
 - Not changed: `OpenAIChatRuntime.invoke_native` (source-native `runtime_profile` targets) still fails closed with `native_response_redaction_required` when a native response contains a credential shape.
@@ -45,10 +48,10 @@ Measured defect on IBM Slurm, 2026-09-29, runtime v10, MiMo code train, episode 
   - The registered scoped credential is still redacted.
   - The test fails on the previous code and passes with the change.
 - Boundary test `tests/providers/test_provider_message_contracts.py::test_sanitize_keeps_model_authored_output_and_redacts_everything_else`:
-  - Reasoning (both `reasoning` and the `reasoning_content` annotation), content and tool arguments keep their credential-shaped literals, and the turn yields exactly one thinking block.
+  - These keep their credential-shaped literals: text-block content, thinking text (in `reasoning`, the `reasoning_content` annotation and `result.reasoning_blocks`), and tool arguments. The turn yields exactly one thinking block.
   - The registered operation secret is removed.
-  - A non-reasoning annotation and `raw_message` stay fully redacted.
-  - Without the annotation handling the test fails with a second, redacted thinking block.
+  - These stay fully redacted: `redacted_thinking` data (in both `reasoning` and `reasoning_blocks`), a non-reasoning annotation, and `raw_message`.
+  - Without the annotation handling the test fails with a second, redacted thinking block. With a blanket reasoning exemption it fails with unredacted `redacted_thinking` data.
 - Neighbouring suites (providers, security, RL policy runtime, request delta, production policy HTTP, conductor, evidence, v2 service/protocol) have the same results before and after, on macOS and on IBM Linux (job 124907).
 - Installed-runtime smoke on the real flal73j7 bytes:
   - Runtime v10 reproduces the rejected replay exactly.

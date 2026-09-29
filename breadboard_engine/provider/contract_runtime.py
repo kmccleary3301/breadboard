@@ -88,6 +88,31 @@ def _model_authored(value: Any) -> Any:
     return _portable_provider_payload(value, credential_shapes=False)
 
 
+_MODEL_TEXT_BLOCK_TYPES = frozenset({"text", "thinking"})
+
+
+def _model_text(value: Any) -> Any:
+    """Keep the model's own words verbatim; provider-owned material stays redacted.
+
+    Model text is a plain string or the ``text`` of a ``text``/``thinking`` block. Media
+    URIs, signatures, ``redacted_thinking`` data, ``provider_replay`` envelopes and any
+    other provider object keep full credential-shape redaction. Registered operation
+    secrets are removed everywhere.
+    """
+    if isinstance(value, str):
+        return _model_authored(value)
+    if isinstance(value, (list, tuple)):
+        return [_model_text(item) for item in value]
+    if isinstance(value, Mapping) and value.get("type") in _MODEL_TEXT_BLOCK_TYPES:
+        return {
+            redaction.scrub_text(str(key)): (
+                _model_authored(item) if key == "text" else _portable_provider_payload(item)
+            )
+            for key, item in value.items()
+        }
+    return _portable_provider_payload(value)
+
+
 def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
     """Remove operation secrets and SDK transport objects before lease release."""
     if not isinstance(result, ProviderResult):
@@ -95,7 +120,7 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
     for message in result.messages:
         if not isinstance(message, ProviderMessage):
             raise ProviderContractError("runtime result contains an invalid message")
-        message.content = _model_authored(message.content)
+        message.content = _model_text(message.content)
         message.finish_reason = (
             redaction.scrub_text(message.finish_reason)
             if message.finish_reason is not None
@@ -108,13 +133,13 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         )
         message.raw_message = _portable_provider_payload(message.raw_message)
         message.raw_choice = _portable_provider_payload(message.raw_choice)
-        message.reasoning = _model_authored(message.reasoning)
+        message.reasoning = _model_text(message.reasoning)
         # Reasoning annotations merge with ``reasoning`` into the replayed thinking blocks,
-        # so they must stay as verbatim as ``reasoning`` itself.
+        # so they get exactly the treatment ``reasoning`` gets.
         message.annotations = (
             {
                 redaction.scrub_text(str(key)): (
-                    _model_authored(item)
+                    _model_text(item)
                     if key in REASONING_ANNOTATION_KEYS
                     else _portable_provider_payload(item)
                 )
@@ -156,7 +181,7 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         else None
     )
     result.reasoning_blocks = (
-        _model_authored(result.reasoning_blocks)
+        _model_text(result.reasoning_blocks)
         if isinstance(result.reasoning_blocks, list)
         else None
     )
