@@ -14,16 +14,28 @@ from .profiles import OpenAICompletionsProviderProfile
 from .routing import ProviderDescriptor
 
 
-def _portable_provider_payload(value: Any, *, seen: set[int] | None = None) -> Any:
-    """Convert a provider SDK value to bounded redacted data for diagnostics only."""
+def _portable_provider_payload(
+    value: Any,
+    *,
+    seen: set[int] | None = None,
+    credential_shapes: bool = True,
+) -> Any:
+    """Convert a provider SDK value to bounded redacted data.
+
+    ``credential_shapes=False`` is for model-authored values (assistant text,
+    reasoning, tool-call names and arguments): only registered secrets are
+    removed, so the model's own output is kept byte-for-byte for execution and
+    replay.
+    """
     if value is None or isinstance(value, (bool, int, float)):
         return value
     if isinstance(value, str):
-        return redaction.scrub_text(value)
+        return redaction.scrub_text(value, credential_shapes=credential_shapes)
     if isinstance(value, (bytes, bytearray, memoryview)):
-        return redaction.scrub_text(bytes(value).decode("utf-8", errors="replace"))[
-            :8192
-        ]
+        return redaction.scrub_text(
+            bytes(value).decode("utf-8", errors="replace"),
+            credential_shapes=credential_shapes,
+        )[:8192]
     active = seen if seen is not None else set()
     marker = id(value)
     if marker in active:
@@ -32,17 +44,26 @@ def _portable_provider_payload(value: Any, *, seen: set[int] | None = None) -> A
     try:
         if isinstance(value, Mapping):
             return {
-                redaction.scrub_text(str(key)): _portable_provider_payload(
-                    item, seen=active
+                redaction.scrub_text(
+                    str(key), credential_shapes=credential_shapes
+                ): _portable_provider_payload(
+                    item, seen=active, credential_shapes=credential_shapes
                 )
                 for key, item in value.items()
             }
         if isinstance(value, (list, tuple, set, frozenset)):
-            return [_portable_provider_payload(item, seen=active) for item in value]
+            return [
+                _portable_provider_payload(
+                    item, seen=active, credential_shapes=credential_shapes
+                )
+                for item in value
+            ]
         if is_dataclass(value) and not isinstance(value, type):
             return {
                 item.name: _portable_provider_payload(
-                    getattr(value, item.name), seen=active
+                    getattr(value, item.name),
+                    seen=active,
+                    credential_shapes=credential_shapes,
                 )
                 for item in fields(value)
             }
@@ -54,10 +75,16 @@ def _portable_provider_payload(value: Any, *, seen: set[int] | None = None) -> A
                 except Exception:
                     continue
                 if converted is not value:
-                    return _portable_provider_payload(converted, seen=active)
+                    return _portable_provider_payload(
+                        converted, seen=active, credential_shapes=credential_shapes
+                    )
         return f"<{type(value).__name__}>"
     finally:
         active.discard(marker)
+
+
+def _model_authored(value: Any) -> Any:
+    return _portable_provider_payload(value, credential_shapes=False)
 
 
 def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
@@ -67,7 +94,7 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
     for message in result.messages:
         if not isinstance(message, ProviderMessage):
             raise ProviderContractError("runtime result contains an invalid message")
-        message.content = _portable_provider_payload(message.content)
+        message.content = _model_authored(message.content)
         message.finish_reason = (
             redaction.scrub_text(message.finish_reason)
             if message.finish_reason is not None
@@ -80,7 +107,7 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         )
         message.raw_message = _portable_provider_payload(message.raw_message)
         message.raw_choice = _portable_provider_payload(message.raw_choice)
-        message.reasoning = _portable_provider_payload(message.reasoning)
+        message.reasoning = _model_authored(message.reasoning)
         message.annotations = (
             _portable_provider_payload(message.annotations)
             if isinstance(message.annotations, dict)
@@ -90,9 +117,11 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         for call in message.tool_calls:
             call.id = redaction.scrub_text(call.id) if call.id is not None else None
             call.name = (
-                redaction.scrub_text(call.name) if call.name is not None else None
+                redaction.scrub_text(call.name, credential_shapes=False)
+                if call.name is not None
+                else None
             )
-            call.parsed_arguments = _portable_provider_payload(call.parsed_arguments)
+            call.parsed_arguments = _model_authored(call.parsed_arguments)
             canonical_arguments = canonical_json(call.parsed_arguments)
             call.arguments = canonical_arguments
             call.arguments_json = canonical_arguments
@@ -109,12 +138,15 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         else None
     )
     result.reasoning_summaries = (
-        [redaction.scrub_text(str(item))[:8192] for item in result.reasoning_summaries]
+        [
+            redaction.scrub_text(str(item), credential_shapes=False)[:8192]
+            for item in result.reasoning_summaries
+        ]
         if result.reasoning_summaries is not None
         else None
     )
     result.reasoning_blocks = (
-        _portable_provider_payload(result.reasoning_blocks)
+        _model_authored(result.reasoning_blocks)
         if isinstance(result.reasoning_blocks, list)
         else None
     )

@@ -329,6 +329,85 @@ async def test_profile_client_projects_multi_turn_tool_history_and_completion(
 
 
 @pytest.mark.asyncio
+async def test_profile_client_replays_credential_shaped_policy_output_verbatim(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Policy-authored text and tool arguments are actions, not provider secrets.
+
+    The real profile runtime sanitizes results before lease release. Pattern
+    redaction there rewrote a policy's own ``Bearer <token>`` literal, so the
+    replayed assistant turn no longer matched what the policy produced and the
+    trainer relay rejected the request as a non-append-only prefix.
+    """
+    transport = _Transport()
+    authored_text = 'Use header "Authorization: Bearer tumblr-token-here" with sk-abcdefghij.'
+    authored_arguments = {
+        "path": "config/http.go",
+        "newText": (
+            '// Format: "Bearer tumblr-token-here"\n'
+            "token := \"ghp_abcdefghijklmnopqrstuvwxyz\"\n"
+            "jwt := \"eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSM\"\n"
+            "episode-secret\n"
+        ),
+    }
+    results = [
+        ProviderResult(
+            messages=[
+                ProviderMessage(
+                    role="assistant",
+                    content=authored_text,
+                    tool_calls=[
+                        ProviderToolCall(
+                            id="call-one", name="edit", arguments=authored_arguments
+                        ),
+                        ProviderToolCall(
+                            id="call-two", name="rule", arguments=authored_arguments
+                        ),
+                    ],
+                )
+            ],
+            raw_response={},
+        )
+    ]
+    monkeypatch.setattr(
+        OpenAIChatRuntime,
+        "create_client_from_profile",
+        lambda _self, _profile, **_kwargs: transport,
+    )
+    monkeypatch.setattr(
+        OpenAIChatRuntime, "_invoke", lambda _self, **_kwargs: results.pop(0)
+    )
+    client = EpisodeOpenAICompletionsPolicyClient(
+        episode_id="episode-one",
+        effective_plan_digest=DIGEST,
+        observation=_observation(),
+        profile=_profile(),
+    )
+
+    response = await client.invoke(
+        _request([{"role": "user", "content": {"task": "configure"}}])
+    )
+
+    # The episode's own scoped credential stays protected; every other
+    # credential-shaped literal the policy wrote is preserved exactly.
+    expected_arguments = dict(
+        authored_arguments,
+        newText=authored_arguments["newText"].replace("episode-secret", "***REDACTED***"),
+    )
+    output = thaw_json(response.response_payload)["output"]
+    assert output[0] == {
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": authored_text}],
+    }
+    assert [(item["name"], json.loads(item["arguments"])) for item in output[1:]] == [
+        ("edit", expected_arguments),
+        ("rule", expected_arguments),
+    ]
+    await client.close()
+
+
+@pytest.mark.asyncio
 async def test_profile_client_retires_worker_and_retries_transport_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
