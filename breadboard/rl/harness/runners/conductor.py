@@ -1447,6 +1447,8 @@ class _ConductorSession:
         "_close_task", "_poison", "_terminal_committing",
         "_native_stream_close_callback", "_native_stream_close_started",
         "_native_cleanup_outcome",
+        "_previous_policy_request",
+        "_previous_policy_request_digest",
     )
 
     def __init__(
@@ -1481,6 +1483,8 @@ class _ConductorSession:
         self._native_stream_close_callback: Any = None
         self._native_stream_close_started = False
         self._native_cleanup_outcome = NativeCleanupOutcome(False, None, None, None)
+        self._previous_policy_request: Mapping[str, Any] | None = None
+        self._previous_policy_request_digest: str | None = None
 
     @property
     def native_cleanup_outcome(self) -> NativeCleanupOutcome | None:
@@ -1732,12 +1736,18 @@ class _ConductorSession:
             frozen_request = freeze_json_object(final_request, field_name="final policy request")
             request_digest = canonical_sha256(frozen_request)
             await self._checkpoint("before_policy", turn=turn)
-            await self._emit(
-                PolicyRequestEvent(
-                    0, self._open_request.episode_id,
-                    self._open_request.effective_plan_digest, turn, frozen_request,
-                )
+            policy_request_event = PolicyRequestEvent.from_request(
+                0,
+                self._open_request.episode_id,
+                self._open_request.effective_plan_digest,
+                turn,
+                frozen_request,
+                self._previous_policy_request,
+                self._previous_policy_request_digest,
             )
+            await self._emit(policy_request_event)
+            self._previous_policy_request = frozen_request
+            self._previous_policy_request_digest = policy_request_event.request_digest
             await self._checkpoint("before_policy", turn=turn)
             invoke_request = PolicyRuntimeInvokeRequest(
                 episode_id=self._open_request.episode_id,
@@ -3600,10 +3610,18 @@ class _ConductorSession:
         turn: int, phase_mode: Literal["streaming", "checkpointed"],
     ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
         request_digest = canonical_sha256(frozen_request)
-        await self._emit(PolicyRequestEvent(
-            0, self._open_request.episode_id,
-            self._open_request.effective_plan_digest, turn, frozen_request,
-        ))
+        policy_request_event = PolicyRequestEvent.from_request(
+            0,
+            self._open_request.episode_id,
+            self._open_request.effective_plan_digest,
+            turn,
+            frozen_request,
+            self._previous_policy_request,
+            self._previous_policy_request_digest,
+        )
+        await self._emit(policy_request_event)
+        self._previous_policy_request = frozen_request
+        self._previous_policy_request_digest = policy_request_event.request_digest
         await self._emit(PolicyRuntimeRequestEvent(
             0, self._open_request.episode_id,
             self._open_request.effective_plan_digest, turn, 1,

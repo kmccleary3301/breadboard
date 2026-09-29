@@ -66,8 +66,8 @@ FIXTURE_PATH = (
 )
 PROVENANCE_PATH = FIXTURE_PATH.with_name("terminal_adapter_parity_v1.provenance.json")
 REPO_ROOT = Path(__file__).resolve().parents[3]
-PINNED_PROVENANCE_SHA256 = "d845a272a61576cb3285a70d213968d5f2d1a125a820c1919c823505e66bf1e8"
-PINNED_FIXTURE_SHA256 = "f55f214cde5a25f5a2cc7399a5c86d73d9116edbe4e1a08cf333fb807babbfdb"
+PINNED_PROVENANCE_SHA256 = "77f16e6539b340799d4f0693c782a2e82a3329f1827c9ae720d83f3be36669a3"
+PINNED_FIXTURE_SHA256 = "31a0fc22804f6b4f60b9fe15125e0b8ff11379722676341cd9ec3e543d23b422"
 RUNTIME_ABI = TERMINAL_RUNTIME_ABI
 IMPLEMENTATION_DIGEST = TERMINAL_IMPLEMENTATION_DIGEST
 
@@ -490,6 +490,20 @@ def _default_policy_request_payload() -> dict[str, Any]:
         "tools": [_thaw(tool.responses_schema) for tool in _tools()],
         "parallel_tool_calls": False,
     }
+def _default_policy_request_event_fields() -> dict[str, Any]:
+    payload = _default_policy_request_payload()
+    return {
+        "request_digest": canonical_sha256(payload),
+        "request_delta": {
+            "base_request_digest": None,
+            "set": {key: payload[key] for key in sorted(payload.keys())},
+            "extend": {},
+            "splice": {},
+            "nested": {},
+            "remove": [],
+        },
+    }
+
 
 def _thaw(value: Any) -> Any:
     return thaw_json(value)
@@ -913,7 +927,7 @@ async def test_terminal_adapter_rejects_malformed_policy_outputs_with_typed_erro
             "episode_id": "episode",
             "effective_plan_digest": digest,
             "turn": 1,
-            "request_payload": _default_policy_request_payload(),
+            **_default_policy_request_event_fields(),
         },
         {
             "type": "RunnerErrorEvent",
@@ -1172,7 +1186,7 @@ async def test_terminal_adapter_external_policy_failure_is_typed_and_preserves_c
             "episode_id": "episode",
             "effective_plan_digest": digest,
             "turn": 1,
-            "request_payload": _default_policy_request_payload(),
+            **_default_policy_request_event_fields(),
         },
         {
             "type": "RunnerErrorEvent",
@@ -1214,7 +1228,7 @@ async def test_terminal_adapter_sink_failure_is_visible_and_excludes_failed_even
             "episode_id": "episode",
             "effective_plan_digest": digest,
             "turn": 1,
-            "request_payload": _default_policy_request_payload(),
+            **_default_policy_request_event_fields(),
         }
     ]
     assert _public_event_record(captured.value.failed_event) == {
@@ -2644,7 +2658,18 @@ def _build_event(kind: str, **overrides: Any) -> RunnerEvent:
         "effective_plan_digest": _digest("event"),
     }
     values: dict[str, dict[str, Any]] = {
-        "policy_request": {"turn": 1, "request_payload": {"input": "work"}},
+        "policy_request": {
+            "turn": 1,
+            "request_digest": _digest("request"),
+            "request_delta": {
+                "base_request_digest": None,
+                "set": {"input": "work"},
+                "extend": {},
+                "splice": {},
+                "nested": {},
+                "remove": [],
+            },
+        },
         "policy_response": {
             "turn": 1,
             "response_payload": {"output": []},
@@ -2699,6 +2724,7 @@ def _build_event(kind: str, **overrides: Any) -> RunnerEvent:
     ("kind", "field_name", "invalid"),
     [
         ("policy_request", "turn", []),
+        ("policy_request", "request_digest", []),
         ("policy_response", "turn", []),
         ("tool_call", "turn", []),
         ("tool_call", "ordinal", []),
@@ -2733,11 +2759,22 @@ def test_every_event_variant_rejects_wrong_typed_scalar_members(
 
 
 def test_structured_event_members_are_recursively_snapshotted() -> None:
-    request_payload = {"input": [{"content": "original"}]}
+    request_delta = {
+        "base_request_digest": None,
+        "set": {"input": [{"content": "original"}]},
+        "extend": {},
+        "splice": {},
+        "nested": {},
+        "remove": [],
+    }
     response_payload = {"output": [{"type": "reasoning", "summary": ["original"]}]}
     normalized_output = [{"type": "reasoning", "summary": ["original"]}]
     observation = {"output": {"nested": ["original"]}}
-    request_event = _build_event("policy_request", request_payload=request_payload)
+    request_event = _build_event(
+        "policy_request",
+        request_digest=_digest("request"),
+        request_delta=request_delta,
+    )
     response_event = _build_event(
         "policy_response",
         response_payload=response_payload,
@@ -2745,12 +2782,12 @@ def test_structured_event_members_are_recursively_snapshotted() -> None:
     )
     observation_event = _build_event("tool_observation", observation=observation)
 
-    request_payload["input"][0]["content"] = "mutated"
+    request_delta["set"]["input"][0]["content"] = "mutated"
     response_payload["output"][0]["summary"][0] = "mutated"
     normalized_output[0]["summary"][0] = "mutated"
     observation["output"]["nested"][0] = "mutated"
 
-    assert _thaw(request_event.request_payload) == {
+    assert _thaw(request_event.request_delta)["set"] == {
         "input": [{"content": "original"}]
     }
     assert _thaw(response_event.response_payload) == {

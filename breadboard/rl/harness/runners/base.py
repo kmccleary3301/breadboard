@@ -11,6 +11,10 @@ from breadboard.rl.harness.contracts import (
     EffectiveExecutionPlan,
     PolicyCapabilityObservation,
 )
+from breadboard_engine.compilation.contracts import (
+    canonical_json_bytes,
+    canonical_sha256,
+)
 
 
 _JSON_SCALARS = (str, int, float, bool, type(None))
@@ -542,18 +546,406 @@ class PolicyRuntimeResponseEvent:
         _normalized_identifier(self.policy_slot_id, field_name="policy_slot_id")
 
 
+_MAX_DELTA_RECURSION_DEPTH = _DEFAULT_JSON_DEPTH
+# Each request mapping level becomes a delta level plus its operation mapping, and the top
+# wrapper adds one more, so a request at the default depth limit needs twice that depth here.
+_REQUEST_DELTA_JSON_DEPTH = 2 * _DEFAULT_JSON_DEPTH + 2
+# A delta copies at most every node of the current request. A mapping reached through "nested"
+# costs its delta object plus five operation containers (6 nodes), and an "extend" or "splice"
+# entry costs 3 nodes in place of 1. "remove" names are bounded by the previous request's
+# nodes, and the top level adds base_request_digest. So a request accepted at the default
+# node limit needs at most 6 + 1 times that limit, plus 1, here.
+_REQUEST_DELTA_JSON_NODES = 7 * _DEFAULT_JSON_NODES + 1
+_MAPPING_DELTA_KEYS = frozenset({"set", "extend", "splice", "nested", "remove"})
+
+
+def _common_prefix_length(previous: str, current: str) -> int:
+    # Binary search over slice equality keeps the comparison in C for long strings.
+    low, high = 0, min(len(previous), len(current))
+    while low < high:
+        middle = (low + high + 1) // 2
+        if previous[low:middle] == current[low:middle]:
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def _mapping_delta(
+    previous: Mapping[str, Any],
+    current: Mapping[str, Any],
+    depth: int = 0,
+) -> dict[str, Any]:
+    if depth > _MAX_DELTA_RECURSION_DEPTH:
+        raise ValueError(
+            f"policy request delta depth exceeds maximum bound of {_MAX_DELTA_RECURSION_DEPTH}"
+        )
+    prev_keys = set(previous.keys())
+    curr_keys = set(current.keys())
+    remove = sorted(prev_keys - curr_keys)
+
+    set_dict: dict[str, Any] = {}
+    extend_dict: dict[str, Any] = {}
+    splice_dict: dict[str, Any] = {}
+    nested_dict: dict[str, Any] = {}
+
+    for key in sorted(curr_keys):
+        curr_val = current[key]
+        if key not in previous:
+            set_dict[key] = thaw_json(curr_val)
+        else:
+            prev_val = previous[key]
+            if canonical_json_bytes(curr_val) == canonical_json_bytes(prev_val):
+                continue
+            elif isinstance(curr_val, (list, tuple)) and isinstance(prev_val, (list, tuple)):
+                keep = 0
+                for item_prev, item_curr in zip(prev_val, curr_val):
+                    if canonical_json_bytes(item_prev) == canonical_json_bytes(item_curr):
+                        keep += 1
+                    else:
+                        break
+                extend_dict[key] = {
+                    "keep": keep,
+                    "items": [thaw_json(item) for item in curr_val[keep:]],
+                }
+            elif isinstance(curr_val, str) and isinstance(prev_val, str):
+                keep = _common_prefix_length(prev_val, curr_val)
+                splice_dict[key] = {
+                    "keep": keep,
+                    "text": curr_val[keep:],
+                }
+            elif isinstance(curr_val, Mapping) and isinstance(prev_val, Mapping):
+                nested_dict[key] = _mapping_delta(prev_val, curr_val, depth + 1)
+            else:
+                set_dict[key] = thaw_json(curr_val)
+
+    return {
+        "set": set_dict,
+        "extend": extend_dict,
+        "splice": splice_dict,
+        "nested": nested_dict,
+        "remove": remove,
+    }
+
+
+def policy_request_delta(
+    previous: Mapping[str, Any] | None,
+    previous_digest: str | None,
+    current: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(current, Mapping):
+        raise TypeError("current request must be an object")
+    if previous is None or previous_digest is None:
+        return {
+            "base_request_digest": None,
+            "set": {key: thaw_json(current[key]) for key in sorted(current.keys())},
+            "extend": {},
+            "splice": {},
+            "nested": {},
+            "remove": [],
+        }
+    _implementation_digest(previous_digest)
+    if not isinstance(previous, Mapping):
+        raise TypeError("previous request must be an object")
+
+    delta = _mapping_delta(previous, current, depth=0)
+    return {
+        "base_request_digest": previous_digest,
+        **delta,
+    }
+
+
+def _apply_mapping_delta(
+    previous: Mapping[str, Any],
+    delta: Mapping[str, Any],
+    depth: int = 0,
+) -> dict[str, Any]:
+    if depth > _MAX_DELTA_RECURSION_DEPTH:
+        raise ValueError(
+            f"delta recursion depth exceeds maximum bound of {_MAX_DELTA_RECURSION_DEPTH}"
+        )
+    if not isinstance(delta, Mapping):
+        raise TypeError("delta must be an object")
+
+    result = {key: thaw_json(previous[key]) for key in previous}
+
+    remove_val = delta.get("remove")
+    if remove_val is not None:
+        if not isinstance(remove_val, (list, tuple)):
+            raise ValueError("mapping delta 'remove' must be a list")
+        for key in remove_val:
+            result.pop(key, None)
+
+    set_val = delta.get("set")
+    if set_val is not None:
+        if not isinstance(set_val, Mapping):
+            raise ValueError("mapping delta 'set' must be an object")
+        for key, val in set_val.items():
+            result[key] = thaw_json(val)
+
+    extend_val = delta.get("extend")
+    if extend_val is not None:
+        if not isinstance(extend_val, Mapping):
+            raise ValueError("mapping delta 'extend' must be an object")
+        for key, entry in extend_val.items():
+            if not isinstance(entry, Mapping):
+                raise ValueError(f"mapping delta extend entry for {key!r} must be an object")
+            keep = entry.get("keep")
+            items = entry.get("items")
+            if type(keep) is not int or keep < 0:
+                raise ValueError(f"mapping delta keep must be a non-negative integer for {key!r}")
+            if not isinstance(items, (list, tuple)):
+                raise ValueError(f"mapping delta items must be a list for {key!r}")
+            if key not in result or not isinstance(result[key], list):
+                raise ValueError(f"cannot extend non-list field {key!r}")
+            if keep > len(result[key]):
+                raise ValueError(
+                    f"keep {keep} exceeds previous list length {len(result[key])} for key {key!r}"
+                )
+            result[key] = result[key][:keep] + [thaw_json(item) for item in items]
+
+    splice_val = delta.get("splice")
+    if splice_val is not None:
+        if not isinstance(splice_val, Mapping):
+            raise ValueError("mapping delta 'splice' must be an object")
+        for key, entry in splice_val.items():
+            if not isinstance(entry, Mapping):
+                raise ValueError(f"mapping delta splice entry for {key!r} must be an object")
+            keep = entry.get("keep")
+            text = entry.get("text")
+            if type(keep) is not int or keep < 0:
+                raise ValueError(f"mapping delta keep must be a non-negative integer for {key!r}")
+            if not isinstance(text, str):
+                raise ValueError(f"mapping delta text must be a string for {key!r}")
+            if key not in result or not isinstance(result[key], str):
+                raise ValueError(f"cannot splice non-string field {key!r}")
+            if keep > len(result[key]):
+                raise ValueError(
+                    f"keep {keep} exceeds previous string length {len(result[key])} for key {key!r}"
+                )
+            result[key] = result[key][:keep] + text
+
+    nested_val = delta.get("nested")
+    if nested_val is not None:
+        if not isinstance(nested_val, Mapping):
+            raise ValueError("mapping delta 'nested' must be an object")
+        for key, nested_delta in nested_val.items():
+            if not isinstance(nested_delta, Mapping):
+                raise ValueError(f"mapping delta nested entry for {key!r} must be an object")
+            if key not in result or not isinstance(result[key], Mapping):
+                raise ValueError(f"cannot apply nested delta to non-mapping field {key!r}")
+            result[key] = _apply_mapping_delta(result[key], nested_delta, depth + 1)
+
+    return {key: result[key] for key in sorted(result.keys())}
+
+
+def apply_policy_request_delta(
+    previous: Mapping[str, Any] | None,
+    delta: Mapping[str, Any],
+) -> dict[str, Any]:
+    if not isinstance(delta, Mapping):
+        raise TypeError("delta must be an object")
+    base_digest = delta.get("base_request_digest")
+    if base_digest is None:
+        if previous is not None:
+            raise ValueError("base_request_digest is null but previous request was supplied")
+        set_val = delta.get("set")
+        if not isinstance(set_val, Mapping):
+            raise ValueError("request_delta 'set' must be an object")
+        if delta.get("extend"):
+            raise ValueError("cannot apply extend when base_request_digest is null")
+        if delta.get("splice"):
+            raise ValueError("cannot apply splice when base_request_digest is null")
+        if delta.get("nested"):
+            raise ValueError("cannot apply nested when base_request_digest is null")
+        if delta.get("remove"):
+            raise ValueError("cannot apply remove when base_request_digest is null")
+        return {key: thaw_json(set_val[key]) for key in sorted(set_val.keys())}
+
+    if previous is None:
+        raise ValueError(
+            f"base_request_digest is {base_digest!r} but previous request is None"
+        )
+    prev_digest = canonical_sha256(previous)
+    if prev_digest != base_digest:
+        raise ValueError(
+            f"base_request_digest mismatch: delta specifies {base_digest}, "
+            f"supplied previous request digest is {prev_digest}"
+        )
+
+    return _apply_mapping_delta(previous, delta, depth=0)
+
+
+def reconstruct_policy_requests(
+    events: Iterable[Any],
+) -> list[tuple[int, dict[str, Any]]]:
+    reconstructed: list[tuple[int, dict[str, Any]]] = []
+    previous: dict[str, Any] | None = None
+    for event in events:
+        if isinstance(event, PolicyRequestEvent):
+            turn = event.turn
+            request_digest = event.request_digest
+            request_delta = event.request_delta
+        elif isinstance(event, Mapping):
+            if "request_digest" in event and "request_delta" in event and "turn" in event:
+                turn = event["turn"]
+                request_digest = event["request_digest"]
+                request_delta = event["request_delta"]
+            else:
+                continue
+        else:
+            continue
+
+        current = apply_policy_request_delta(previous, request_delta)
+        current_digest = canonical_sha256(current)
+        if current_digest != request_digest:
+            raise ValueError(
+                f"reconstructed policy request digest mismatch at turn {turn}: "
+                f"event request_digest is {request_digest}, "
+                f"reconstructed digest is {current_digest}"
+            )
+        reconstructed.append((turn, current))
+        previous = current
+    return reconstructed
+
+
+def _validate_mapping_delta(delta: Mapping[str, Any], depth: int = 0) -> None:
+    if depth > _MAX_DELTA_RECURSION_DEPTH:
+        raise ValueError(
+            f"delta recursion depth exceeds maximum bound of {_MAX_DELTA_RECURSION_DEPTH}"
+        )
+    allowed_keys = _MAPPING_DELTA_KEYS
+    if set(delta.keys()) != allowed_keys:
+        unknown = set(delta.keys()) - allowed_keys
+        if unknown:
+            raise ValueError(f"unknown delta keys: {sorted(unknown)}")
+        missing = allowed_keys - set(delta.keys())
+        raise ValueError(f"missing delta keys: {sorted(missing)}")
+
+    set_val = delta["set"]
+    if not isinstance(set_val, Mapping):
+        raise ValueError("mapping delta 'set' must be an object")
+
+    extend_val = delta["extend"]
+    if not isinstance(extend_val, Mapping):
+        raise ValueError("mapping delta 'extend' must be an object")
+    for key, entry in extend_val.items():
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"mapping delta extend entry for {key!r} must be an object")
+        if set(entry.keys()) != {"keep", "items"}:
+            raise ValueError(
+                f"mapping delta extend entry for {key!r} must contain only 'keep' and 'items'"
+            )
+        keep = entry["keep"]
+        if type(keep) is not int or keep < 0:
+            raise ValueError(f"mapping delta keep must be a non-negative integer for {key!r}")
+        if not isinstance(entry["items"], (list, tuple)):
+            raise ValueError(f"mapping delta items must be a list for {key!r}")
+
+    splice_val = delta["splice"]
+    if not isinstance(splice_val, Mapping):
+        raise ValueError("mapping delta 'splice' must be an object")
+    for key, entry in splice_val.items():
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"mapping delta splice entry for {key!r} must be an object")
+        if set(entry.keys()) != {"keep", "text"}:
+            raise ValueError(
+                f"mapping delta splice entry for {key!r} must contain only 'keep' and 'text'"
+            )
+        keep = entry["keep"]
+        if type(keep) is not int or keep < 0:
+            raise ValueError(f"mapping delta keep must be a non-negative integer for {key!r}")
+        if not isinstance(entry["text"], str):
+            raise ValueError(f"mapping delta text must be a string for {key!r}")
+
+    nested_val = delta["nested"]
+    if not isinstance(nested_val, Mapping):
+        raise ValueError("mapping delta 'nested' must be an object")
+    for key, entry in nested_val.items():
+        if not isinstance(entry, Mapping):
+            raise ValueError(f"mapping delta nested entry for {key!r} must be an object")
+        _validate_mapping_delta(entry, depth + 1)
+
+    remove_val = delta["remove"]
+    if not isinstance(remove_val, (list, tuple)):
+        raise ValueError("mapping delta 'remove' must be a list")
+    for k in remove_val:
+        if type(k) is not str:
+            raise ValueError("mapping delta 'remove' items must be strings")
+
+    set_keys = set(set_val.keys())
+    extend_keys = set(extend_val.keys())
+    splice_keys = set(splice_val.keys())
+    nested_keys = set(nested_val.keys())
+    remove_keys = set(remove_val)
+
+    all_keys = [set_keys, extend_keys, splice_keys, nested_keys, remove_keys]
+    total_len = sum(len(s) for s in all_keys)
+    union_len = len(set().union(*all_keys))
+    if total_len != union_len:
+        raise ValueError("overlapping keys across set/extend/splice/nested/remove in request_delta")
+
+
 @dataclass(frozen=True, slots=True)
 class PolicyRequestEvent:
     sequence: int
     episode_id: str
     effective_plan_digest: str
     turn: int
-    request_payload: FrozenJsonObject
+    request_digest: str
+    request_delta: FrozenJsonObject
 
     def __post_init__(self) -> None:
         _validate_event_identity(self.sequence, self.episode_id, self.effective_plan_digest)
         _positive_turn(self.turn)
-        object.__setattr__(self, "request_payload", freeze_json_object(self.request_payload, field_name="policy request"))
+        _implementation_digest(self.request_digest)
+        frozen_delta = freeze_json_object(
+            self.request_delta,
+            field_name="policy request delta",
+            max_depth=_REQUEST_DELTA_JSON_DEPTH,
+            max_nodes=_REQUEST_DELTA_JSON_NODES,
+        )
+        top_allowed_keys = frozenset(
+            {"base_request_digest", "set", "extend", "splice", "nested", "remove"}
+        )
+        if set(frozen_delta.keys()) != top_allowed_keys:
+            unknown = set(frozen_delta.keys()) - top_allowed_keys
+            if unknown:
+                raise ValueError(f"unknown top-level delta keys: {sorted(unknown)}")
+            missing = top_allowed_keys - set(frozen_delta.keys())
+            raise ValueError(f"missing top-level delta keys: {sorted(missing)}")
+
+        base_digest = frozen_delta["base_request_digest"]
+        if base_digest is not None:
+            if type(base_digest) is not str:
+                raise ValueError("base_request_digest must be a string or None")
+            _implementation_digest(base_digest)
+
+        mapping_part = {k: frozen_delta[k] for k in _MAPPING_DELTA_KEYS}
+        _validate_mapping_delta(mapping_part, depth=0)
+
+        object.__setattr__(self, "request_delta", frozen_delta)
+    @classmethod
+    def from_request(
+        cls,
+        sequence: int,
+        episode_id: str,
+        effective_plan_digest: str,
+        turn: int,
+        request: Mapping[str, Any],
+        previous: Mapping[str, Any] | None = None,
+        previous_digest: str | None = None,
+    ) -> PolicyRequestEvent:
+        request_digest = canonical_sha256(request)
+        delta = policy_request_delta(previous, previous_digest, request)
+        return cls(
+            sequence=sequence,
+            episode_id=episode_id,
+            effective_plan_digest=effective_plan_digest,
+            turn=turn,
+            request_digest=request_digest,
+            request_delta=delta,
+        )
 
 @dataclass(frozen=True, slots=True)
 class PolicyResponseEvent:
