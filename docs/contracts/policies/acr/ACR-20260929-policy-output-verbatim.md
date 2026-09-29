@@ -18,12 +18,13 @@ Measured defect on IBM Slurm, 2026-09-29, runtime v10, MiMo code train, episode 
 
 ## 2) Scope and Surfaces
 
-- Kernel danger-zone: yes. This change touches `breadboard_engine/provider/contract_runtime.py` and `breadboard_engine/security/redaction.py`.
+- Kernel danger-zone: yes. This change touches `breadboard_engine/provider/contract_runtime.py`, `breadboard_engine/provider/contract_messages.py` and `breadboard_engine/security/redaction.py`.
 - `redaction.scrub_text(..., credential_shapes=True)` gains a keyword that defaults to true. Passing false keeps exact registered-secret redaction and skips the shape patterns.
 - `sanitize_provider_result` passes `credential_shapes=False` for model-authored fields only:
   - `message.content`, `message.reasoning`, `result.reasoning_summaries`, `result.reasoning_blocks`;
+  - the reasoning annotations `annotations["reasoning_content" | "reasoning" | "reasoning_details"]`. `ProviderMessage.as_dict()` merges them with `reasoning` into thinking blocks, deduplicating only identical blocks. If they were scrubbed differently from `reasoning`, the turn would carry a verbatim block and a redacted block. The keys are `contract_messages.REASONING_ANNOTATION_KEYS`, shared with that merge;
   - tool-call `name` and `parsed_arguments` (and therefore `arguments`/`arguments_json`).
-- Unchanged, with full shape plus registered redaction: `raw_message`, `raw_choice`, `raw_response`, tool-call `id` and `raw`, `finish_reason`, `message_id`, `annotations`, `tool_results`, `usage`, `encrypted_reasoning`, `provider_replay`.
+- Unchanged, with full shape plus registered redaction: `raw_message`, `raw_choice`, `raw_response`, tool-call `id` and `raw`, `finish_reason`, `message_id`, non-reasoning `annotations`, `tool_results`, `usage`, `encrypted_reasoning`, `provider_replay`.
 - Registered operation secrets (the profile's scoped credential and caller header values) are still removed from model-authored fields.
 - Evidence and log sinks keep their own full redaction: `logging/provider_dump.py`, request evidence in `conductor/modes.py`, and `conductor/implementation_receipts.py`.
 - Not changed: `OpenAIChatRuntime.invoke_native` (source-native `runtime_profile` targets) still fails closed with `native_response_redaction_required` when a native response contains a credential shape.
@@ -43,6 +44,11 @@ Measured defect on IBM Slurm, 2026-09-29, runtime v10, MiMo code train, episode 
   - Assistant text and the arguments of a known tool (`edit`) and an unknown tool (`rule`) keep their Bearer, `sk-`, `ghp_` and JWT literals.
   - The registered scoped credential is still redacted.
   - The test fails on the previous code and passes with the change.
+- Boundary test `tests/providers/test_provider_message_contracts.py::test_sanitize_keeps_model_authored_output_and_redacts_everything_else`:
+  - Reasoning (both `reasoning` and the `reasoning_content` annotation), content and tool arguments keep their credential-shaped literals, and the turn yields exactly one thinking block.
+  - The registered operation secret is removed.
+  - A non-reasoning annotation and `raw_message` stay fully redacted.
+  - Without the annotation handling the test fails with a second, redacted thinking block.
 - Neighbouring suites (providers, security, RL policy runtime, request delta, production policy HTTP, conductor, evidence, v2 service/protocol) have the same results before and after, on macOS and on IBM Linux (job 124907).
 - Installed-runtime smoke on the real flal73j7 bytes:
   - Runtime v10 reproduces the rejected replay exactly.

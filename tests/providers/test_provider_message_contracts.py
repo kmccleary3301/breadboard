@@ -6,13 +6,20 @@ from pathlib import Path
 import pytest
 
 from breadboard.product.runtime.artifacts import ArtifactStore
-from breadboard_engine.provider.contracts import ProviderContractError
+from breadboard_engine.provider.contract_runtime import sanitize_provider_result
+from breadboard_engine.provider.contracts import (
+    ProviderContractError,
+    ProviderMessage,
+    ProviderResult,
+    ProviderToolCall,
+)
 from breadboard_engine.provider.routing import provider_router
 from breadboard_engine.provider.runtime import (
     OpenAIResponsesRuntime,
     ProviderRuntimeContext,
     provider_registry,
 )
+from breadboard_engine.security import redaction
 
 
 def _dummy_context() -> ProviderRuntimeContext:
@@ -346,3 +353,42 @@ def test_responses_runtime_produces_string_content(monkeypatch):
     assert result.messages, "Expected at least one ProviderMessage"
     msg = result.messages[0]
     assert isinstance(msg.content, str)
+
+
+def test_sanitize_keeps_model_authored_output_and_redacts_everything_else() -> None:
+    bearer = "Bearer abcdefghijklmnop0123"
+    reasoning = f"The API wants `Authorization: {bearer}`; the key is operation-secret-7f3a."
+    message = ProviderMessage(
+        role="assistant",
+        content=f"Set {bearer} in the config.",
+        reasoning=reasoning,
+        annotations={"reasoning_content": reasoning, "provider_note": bearer},
+        tool_calls=[
+            ProviderToolCall(
+                id="call-1",
+                name="write",
+                arguments={"path": ".env", "content": "GH=ghp_abcdefghijklmnopqrstuvwxyz"},
+            )
+        ],
+        raw_message={"echo": bearer},
+    )
+
+    with redaction.secret_value_scope("operation-secret-7f3a"):
+        sanitized = sanitize_provider_result(
+            ProviderResult(messages=[message], raw_response={"echo": bearer})
+        ).messages[0]
+
+    # Model-authored fields keep credential-shaped literals; only the registered
+    # operation secret is removed, identically in ``reasoning`` and its annotation,
+    # so the replayed turn carries exactly one thinking block.
+    kept_reasoning = reasoning.replace("operation-secret-7f3a", redaction.REDACTED)
+    thinking = [b for b in sanitized.as_dict()["content"] if b["type"] == "thinking"]
+    assert thinking == [{"type": "thinking", "text": kept_reasoning}]
+    assert sanitized.content == f"Set {bearer} in the config."
+    assert sanitized.tool_calls[0].parsed_arguments == {
+        "path": ".env",
+        "content": "GH=ghp_abcdefghijklmnopqrstuvwxyz",
+    }
+    # Provider/SDK fields keep full credential-shape redaction.
+    assert sanitized.annotations["provider_note"] == redaction.REDACTED
+    assert sanitized.raw_message == {"echo": redaction.REDACTED}

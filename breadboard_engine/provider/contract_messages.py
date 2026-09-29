@@ -96,6 +96,16 @@ class ProviderToolCall:
         }
 
 
+# Annotation keys whose values are model reasoning (merged with ``reasoning``), with
+# the label used in contract errors.
+_REASONING_ANNOTATION_LABELS = {
+    "reasoning_content": "reasoning_content",
+    "reasoning": "reasoning annotation",
+    "reasoning_details": "reasoning_details",
+}
+REASONING_ANNOTATION_KEYS = tuple(_REASONING_ANNOTATION_LABELS)
+
+
 def _normalized_reasoning_blocks(
     reasoning: Any, annotations: Mapping[str, Any]
 ) -> List[Dict[str, Any]]:
@@ -130,9 +140,8 @@ def _normalized_reasoning_blocks(
                 blocks.append(block)
 
     append_value("reasoning", reasoning)
-    append_value("reasoning_content", annotations.get("reasoning_content"))
-    append_value("reasoning annotation", annotations.get("reasoning"))
-    append_value("reasoning_details", annotations.get("reasoning_details"))
+    for key, label in _REASONING_ANNOTATION_LABELS.items():
+        append_value(label, annotations.get(key))
     return blocks
 
 
