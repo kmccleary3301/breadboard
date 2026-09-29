@@ -684,6 +684,7 @@ class _RuntimeProjection:
     responses_use_developer_role: bool
     tool_prompt_mode: str
     tool_errors_as_observations: bool = False
+    tool_results_as_text: bool = False
     source_profile: FrozenJsonObject | None = None
     source_consumer_id: str | None = None
 
@@ -787,6 +788,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     allowed_provider_controls = {
         "api_variant", "use_native", "responses_use_developer_role",
         "suppress_prompts", "responses_stateful", "tool_errors_as_observations",
+        "tool_results_as_text",
     }
     if (
         any(
@@ -800,10 +802,12 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         or provider_tools.get("responses_stateful", False) is not False
         or type(provider_tools.get("responses_use_developer_role", True)) is not bool
         or type(provider_tools.get("tool_errors_as_observations", False)) is not bool
+        or type(provider_tools.get("tool_results_as_text", False)) is not bool
     ):
         raise _plan_error(request, "compiled provider authority is unsupported", "compiled_ir_mismatch")
     responses_use_developer_role = provider_tools.get("responses_use_developer_role", True)
     tool_errors_as_observations = provider_tools.get("tool_errors_as_observations", False)
+    tool_results_as_text = provider_tools.get("tool_results_as_text", False)
 
     models = providers.get("models")
     slots = providers.get("policy_slots")
@@ -1116,6 +1120,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         tuple(projected_models), tuple(projected_modes), tuple(sequence),
         tuple(projected_tools), responses_use_developer_role,
         prompts["tool_prompt_mode"], tool_errors_as_observations,
+        tool_results_as_text,
         source_profile, source_consumer_id,
     )
 
@@ -1438,6 +1443,39 @@ class ConductorAdapter:
             projection=projection,
         )
 
+
+_SURROGATE_PATTERN = re.compile(r"[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]")
+
+
+def _sanitize_surrogates(text: str) -> str:
+    # pi-ai sanitizeSurrogates drops unpaired surrogates; a remaining pair is one JS code point.
+    return _SURROGATE_PATTERN.sub("", text).encode("utf-16", "surrogatepass").decode("utf-16")
+
+
+def _encode_tool_output(observation: Mapping[str, Any] | Any, *, tool_results_as_text: bool) -> str:
+    if not tool_results_as_text:
+        return json.dumps(
+            thaw_json(observation),
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    if not isinstance(observation, Mapping) or "content" not in observation:
+        raise RunnerProtocolError("tool observation is not Pi-shaped: missing content", code="tool_result_invalid")
+    content = observation["content"]
+    if not isinstance(content, (list, tuple)):
+        raise RunnerProtocolError("tool observation is not Pi-shaped: content must be a list", code="tool_result_invalid")
+    text_parts: list[str] = []
+    for block in content:
+        if not isinstance(block, Mapping):
+            raise RunnerProtocolError("tool observation is not Pi-shaped: content block must be an object", code="tool_result_invalid")
+        if block.get("type") == "text":
+            text = block.get("text")
+            if not isinstance(text, str):
+                raise RunnerProtocolError("tool observation is not Pi-shaped: text block text must be a str", code="tool_result_invalid")
+            text_parts.append(text)
+    joined = "\n".join(text_parts)
+    raw_text = joined if joined else "(see attached image)"
+    return _sanitize_surrogates(raw_text)
 
 class _ConductorSession:
     __slots__ = (
@@ -1956,14 +1994,20 @@ class _ConductorSession:
                         max_nodes=limits.observation_bytes + 1,
                     )
                     await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                    try:
+                        encoded_output = _encode_tool_output(
+                            observation,
+                            tool_results_as_text=self._projection.tool_results_as_text,
+                        )
+                    except RunnerProtocolError as exc:
+                        await self._raise_error(
+                            RunnerProtocolError(str(exc), code=exc.code, **self._context()),
+                            turn=turn, call_id=call_id,
+                        )
                     output_item = {
                         "type": "function_call_output",
                         "call_id": call_id,
-                        "output": json.dumps(
-                            thaw_json(observation),
-                            sort_keys=True,
-                            separators=(",", ":"),
-                        ),
+                        "output": encoded_output,
                     }
                     added_size = _encoded_json_size(call) + _encoded_json_size(output_item)
                     if transcript_size + added_size > limits.transcript_bytes:
@@ -2200,14 +2244,20 @@ class _ConductorSession:
                         break
                     continue
                 await self._checkpoint("after_action", turn=turn, call_id=call_id)
+                try:
+                    encoded_output = _encode_tool_output(
+                        observation,
+                        tool_results_as_text=self._projection.tool_results_as_text,
+                    )
+                except RunnerProtocolError as exc:
+                    await self._raise_error(
+                        RunnerProtocolError(str(exc), code=exc.code, **self._context()),
+                        turn=turn, call_id=call_id,
+                    )
                 output_item = {
                     "type": "function_call_output",
                     "call_id": call_id,
-                    "output": json.dumps(
-                        thaw_json(observation),
-                        sort_keys=True,
-                        separators=(",", ":"),
-                    ),
+                    "output": encoded_output,
                 }
                 added_size = _encoded_json_size(call) + _encoded_json_size(output_item)
                 if transcript_size + added_size > limits.transcript_bytes:
