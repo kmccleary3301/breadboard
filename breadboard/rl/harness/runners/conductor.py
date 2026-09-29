@@ -1140,6 +1140,7 @@ class _ConductorSession:
         "_projection", "_events", "_sequence", "_lock", "_emit_lock", "_phase",
         "_cancellation", "_turns", "_cancellation_published", "_binding_cancel_task",
         "_close_task", "_poison", "_terminal_committing",
+        "_previous_policy_request", "_previous_policy_request_digest",
     )
 
     def __init__(
@@ -1170,6 +1171,8 @@ class _ConductorSession:
         self._close_task: asyncio.Task[None] | None = None
         self._poison: RunnerEventSinkError | None = None
         self._terminal_committing = False
+        self._previous_policy_request: Mapping[str, Any] | None = None
+        self._previous_policy_request_digest: str | None = None
 
     async def run(self, request: ConductorRunRequest) -> RunnerResult:
         async with self._lock:
