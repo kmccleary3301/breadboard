@@ -774,6 +774,8 @@
           ]
         },
         "extend": {},
+        "splice": {},
+        "nested": {},
         "remove": []
       }
     },
@@ -859,6 +861,8 @@
             ]
           }
         },
+        "splice": {},
+        "nested": {},
         "remove": []
       }
     },

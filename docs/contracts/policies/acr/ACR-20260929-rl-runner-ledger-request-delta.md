@@ -17,11 +17,14 @@ The cause is `PolicyRequestEvent`, the only runner event that carried a request 
 - Kernel danger-zone: yes. This branch changes `breadboard/rl/harness/runners/{base,conductor,terminal}.py`.
 - `PolicyRequestEvent.request_payload` is replaced by two fields:
   - `request_digest`: the canonical sha256 of the exact request the policy receives.
-  - `request_delta`: a delta against the previous request of the same runner session, with keys `base_request_digest`, `set`, `extend` (`keep` prefix length plus appended `items`) and `remove`.
-- The first request has a null base and carries the full request. The delta base advances only after the event is emitted.
+  - `request_delta`: a delta against the previous request of the same runner session. The delta grammar is recursive:
+    - Mapping delta: `{"set": {k: v}, "extend": {k: {"keep": n, "items": [...]}}, "splice": {k: {"keep": n, "text": "..."}}, "nested": {k: <mapping delta>}, "remove": [k, ...]}`
+    - Top-level delta: mapping delta plus `base_request_digest` (`str | None`).
+    - Key transition rules: canonical JSON equality omits the key; list pairs use `extend` with longest common item prefix; string pairs use `splice` with longest common character prefix; mapping pairs use `nested` (recursing); all other value transitions use `set`. Keys present only in the previous request use `remove`.
+- The first request has a null base and carries the full request under `set`. The delta base advances only after the event is emitted.
 - Pure helpers:
   - `policy_request_delta` and `apply_policy_request_delta` build and apply deltas.
-  - `reconstruct_policy_requests` replays a ledger's deltas and rejects any reconstructed request whose digest differs from `request_digest`.
+  - `reconstruct_policy_requests` replays a ledger's deltas from dataclasses or recovered evidence mappings, and rejects any reconstructed request whose digest differs from `request_digest`.
 - The request sent to the policy, `PolicyRuntimeRequestEvent`, `PolicyRuntimeInvokeRequest` and every repository bound are unchanged.
 
 ## 3) Coupling and Generalization Impact
@@ -41,11 +44,13 @@ The cause is `PolicyRequestEvent`, the only runner event that carried a request 
 
 ## 5) Evidence and Validation Plan
 
-- New `tests/rl/harness/test_runner_policy_request_delta.py` has 15 tests:
+- New `tests/rl/harness/test_runner_policy_request_delta.py` has 22 test cases:
   - A 50-turn growing request round-trips exactly. The serialized request events total less than 3× the final request, where the old encoding was more than 20×.
-  - Tampering, key change and removal, `keep=0` list replacement, delta shape validation, and digest mismatch are each covered.
-- Linux Slurm job 122269 ran the same suites on `main` 5f44a794 and on this branch:
-  - The new test file fails collection on `main` and passes 15/15 here.
+  - A 50-turn checkpointed native request, whose history grows inside `native_http_request.body_b64`, round-trips within the same 3× bound.
+  - Reconstruction accepts the JSON mappings that evidence recovery returns.
+  - Tampering, key change and removal, `keep=0` list replacement, string splice, nested key removal, delta shape validation, and digest mismatch are each covered.
+- Linux Slurm job 122269 ran the same suites on `main` 5f44a794 and on the flat-delta branch head b7109d91:
+  - The new test file fails collection on `main` and passed 15/15 on b7109d91. The recursive grammar and its tests were added after that job, and they passed 22/22 locally.
   - terminal passes 166 here, versus 165 on `main`.
   - These pass on both trees: conductor 258, evidence 162, v2 service 156, oh-my-pi 16.2.13 comparator 69, pi@0.57.1 comparator 43.
   - These fail identically on both trees because of the test host, not this change: the provenance check (the source tree has no Git objects), 5 native-stream conductor cases (missing pinned Node package), 3 protocol-integration cases (`containment_receipt_invalid`) and 6 headless-runner cases.
