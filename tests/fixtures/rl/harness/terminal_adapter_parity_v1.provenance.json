@@ -39,7 +39,7 @@
   ],
   "fixture": {
     "path": "tests/fixtures/rl/harness/terminal_adapter_parity_v1.json",
-    "sha256": "f55f214cde5a25f5a2cc7399a5c86d73d9116edbe4e1a08cf333fb807babbfdb",
+    "sha256": "ea305834d20f22cd05674db2478671ec5f1a40376aadc88a012bd6e4466e7b65",
     "characterization_id": "terminal-adapter-multiturn-submit-v1",
     "expected_records": [
       "policy_requests",

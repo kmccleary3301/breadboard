@@ -332,6 +332,8 @@ class _TerminalSession:
         "_response_base_size",
         "_response_output_items",
         "_response_output_size",
+        "_previous_policy_request",
+        "_previous_policy_request_digest",
     )
 
     def __init__(
@@ -365,6 +367,8 @@ class _TerminalSession:
         self._response_base_size = 0
         self._response_output_items = 0
         self._response_output_size = 2
+        self._previous_policy_request: Mapping[str, Any] | None = None
+        self._previous_policy_request_digest: str | None = None
 
     async def run(self, request: TerminalRunRequest) -> RunnerResult:
         async with self._state_lock:
@@ -541,15 +545,18 @@ class _TerminalSession:
                 {"event": "policy_request", "turn": turn, "payload": turn_request},
                 turn=turn,
             )
-            await self._emit(
-                PolicyRequestEvent(
-                    sequence=0,
-                    episode_id=self._open_request.episode_id,
-                    effective_plan_digest=self._open_request.effective_plan_digest,
-                    turn=turn,
-                    request_payload=turn_request,
-                )
+            event = PolicyRequestEvent.from_request(
+                sequence=0,
+                episode_id=self._open_request.episode_id,
+                effective_plan_digest=self._open_request.effective_plan_digest,
+                turn=turn,
+                request=turn_request,
+                previous=self._previous_policy_request,
+                previous_digest=self._previous_policy_request_digest,
             )
+            await self._emit(event)
+            self._previous_policy_request = turn_request
+            self._previous_policy_request_digest = event.request_digest
             try:
                 policy_carrier = await self._policy.generate(thaw_json(turn_request))
             except Exception as exc:

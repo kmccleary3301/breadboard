@@ -677,7 +677,8 @@ async def test_wp8_exact_conductor_and_fake_wp7_preserve_every_digest_carrier(
     ledger_payload = json.loads(cas.get_bytes(manifest_payload["runner_ledger_ref"]["artifact_id"]))
     assert ledger_payload["event_count"] == 5
     assert [event["sequence"] for event in ledger_payload["events"]] == list(range(5))
-    assert "request_payload" in recovered.runner_events[0]
+    assert recovered.runner_events[0]["request_delta"]["base_request_digest"] is None
+    assert recovered.runner_events[0]["request_digest"] == ledger_payload["events"][1]["request_digest"]
     assert "trainable_values" in recovered.runner_events[1]
     assert "policy_capability_observation_digest" in recovered.runner_events[1]
     assert "response_digest" in recovered.runner_events[2]
