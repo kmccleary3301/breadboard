@@ -817,3 +817,29 @@ def test_request_at_snapshot_depth_limit_is_recorded_first_and_as_nested_delta()
     )
     assert second_event.request_delta["nested"]
     assert reconstruct_policy_requests([first_event, second_event]) == [(1, first), (2, second)]
+
+
+def test_request_at_snapshot_node_limit_is_recorded_first_and_as_extend_delta() -> None:
+    from breadboard.rl.harness.runners.base import JsonSnapshotError, freeze_json_object
+
+    # Root mapping, "model", and the "input" list are 3 nodes, so this fills the default 100,000.
+    first = {"model": "m", "input": ["x"] * 99_997}
+    freeze_json_object(first, field_name="request")
+    with pytest.raises(JsonSnapshotError, match="node limit"):
+        freeze_json_object({**first, "input": [*first["input"], "x"]}, field_name="request")
+    second = {"model": "m", "input": [*first["input"][:-1], "y"]}
+    plan_digest = "sha256:" + "a" * 64
+    first_event = PolicyRequestEvent.from_request(
+        sequence=0, episode_id="ep", effective_plan_digest=plan_digest, turn=1, request=first
+    )
+    second_event = PolicyRequestEvent.from_request(
+        sequence=1,
+        episode_id="ep",
+        effective_plan_digest=plan_digest,
+        turn=2,
+        request=second,
+        previous=first,
+        previous_digest=first_event.request_digest,
+    )
+    assert second_event.request_delta["extend"]["input"]["keep"] == 99_996
+    assert reconstruct_policy_requests([first_event, second_event]) == [(1, first), (2, second)]

@@ -548,6 +548,12 @@ _MAX_DELTA_RECURSION_DEPTH = _DEFAULT_JSON_DEPTH
 # Each request mapping level becomes a delta level plus its operation mapping, and the top
 # wrapper adds one more, so a request at the default depth limit needs twice that depth here.
 _REQUEST_DELTA_JSON_DEPTH = 2 * _DEFAULT_JSON_DEPTH + 2
+# A delta copies at most every node of the current request. A mapping reached through "nested"
+# costs its delta object plus five operation containers (6 nodes), and an "extend" or "splice"
+# entry costs 3 nodes in place of 1. "remove" names are bounded by the previous request's
+# nodes, and the top level adds base_request_digest. So a request accepted at the default
+# node limit needs at most 6 + 1 times that limit, plus 1, here.
+_REQUEST_DELTA_JSON_NODES = 7 * _DEFAULT_JSON_NODES + 1
 _MAPPING_DELTA_KEYS = frozenset({"set", "extend", "splice", "nested", "remove"})
 
 
@@ -895,6 +901,7 @@ class PolicyRequestEvent:
             self.request_delta,
             field_name="policy request delta",
             max_depth=_REQUEST_DELTA_JSON_DEPTH,
+            max_nodes=_REQUEST_DELTA_JSON_NODES,
         )
         top_allowed_keys = frozenset(
             {"base_request_digest", "set", "extend", "splice", "nested", "remove"}
