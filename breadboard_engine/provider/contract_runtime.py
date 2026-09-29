@@ -8,7 +8,7 @@ from typing import Any, Callable, Dict, List, Literal, Mapping, Optional
 from ..security import redaction
 from .contract_wire import ProviderContractError, canonical_json
 from .contract_events import _safe_error_code
-from .contract_messages import ProviderMessage, ProviderResult
+from .contract_messages import REASONING_ANNOTATION_KEYS, ProviderMessage, ProviderResult
 from .contract_recorder import ProviderExchangeRecorder
 from .profiles import OpenAICompletionsProviderProfile
 from .routing import ProviderDescriptor
@@ -108,8 +108,17 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
         message.raw_message = _portable_provider_payload(message.raw_message)
         message.raw_choice = _portable_provider_payload(message.raw_choice)
         message.reasoning = _model_authored(message.reasoning)
+        # Reasoning annotations merge with ``reasoning`` into the replayed thinking blocks,
+        # so they must stay as verbatim as ``reasoning`` itself.
         message.annotations = (
-            _portable_provider_payload(message.annotations)
+            {
+                redaction.scrub_text(str(key)): (
+                    _model_authored(item)
+                    if key in REASONING_ANNOTATION_KEYS
+                    else _portable_provider_payload(item)
+                )
+                for key, item in message.annotations.items()
+            }
             if isinstance(message.annotations, dict)
             else {}
         )
