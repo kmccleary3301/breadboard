@@ -622,8 +622,14 @@ def scrub_text(
     text: str,
     *,
     exact_short_registered_secrets: bool = False,
+    credential_shapes: bool = True,
 ) -> str:
-    """Replace registered secret values and well-known credential shapes."""
+    """Replace registered secret values and, unless disabled, well-known credential shapes.
+
+    ``credential_shapes=False`` keeps only exact registered-secret redaction. Use it for
+    model-authored text, where a credential-shaped literal is content the model wrote
+    (and will act on or see replayed), not a secret the runtime owns.
+    """
     if not isinstance(text, str) or not text:
         return text
     occurs = (
@@ -639,8 +645,9 @@ def scrub_text(
             ):
                 return REDACTED
             text = text.replace(secret, REDACTED)
-    for pattern in SECRET_VALUE_PATTERNS:
-        text = pattern.sub(REDACTED, text)
+    if credential_shapes:
+        for pattern in SECRET_VALUE_PATTERNS:
+            text = pattern.sub(REDACTED, text)
     return text
 
 
