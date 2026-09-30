@@ -26,6 +26,11 @@ The graded patch did not depend on these probes. It comes from the shell-free se
 
 - Kernel danger-zone: yes, under `breadboard/**`. This change touches `breadboard/rl/harness/sandbox.py` only.
 - `TrustedProcessHandle.run_argv`, `measure_repository_base_commit` and `workspace_diff` pass `-c` instead of `-lc` to the pinned shell. The argv, positional parameters, environment, timeouts and output limits are unchanged.
+- `InstalledRuntime` rejects a `fixed_environment` that carries `BASH_ENV` or any `BASH_FUNC_*` key (`fixed environment cannot carry shell startup hooks`).
+  - Every trusted launch runs the pinned shell non-interactively with `-c`: the stopped-process bootstrap, the native worker, and the three executions above.
+  - Such a shell sources `$BASH_ENV` and imports exported functions, which can override `exec` and `printf`, before the requested argv runs. If `BASH_ENV` named a policy-writable file, it would reopen the same hole.
+  - `ENV` is read only by interactive shells.
+  - The production composer's fixed environment is `PATH`, `HOME`, `LANG` and `LC_ALL`.
 - Not changed: policy-facing `run_shell` and `run_native_tool` keep `-lc`, so policy commands still see the image's login environment. The idle process argv is also unchanged.
 - This matches the existing backends:
   - The Docker backend's `run_argv` executes argv directly.
@@ -51,6 +56,8 @@ The graded patch did not depend on these probes. It comes from the shell-free se
   - With the change, all three pass.
   - `test_verifier_snapshot`, `test_sandbox_runtime`, `test_v2_service`, `test_production_composition_runtime` and `test_headless_runner` have the same results in both trees, as does the rest of `test_sandbox_process_integration`.
 - On `main`, the two pinning tests fail before and pass after (job 129373). The sealed test is skipped as `runtime_unsupported` on hosts without namespace/UID mapping.
+- `test_runtime_authority_rejects_shell_startup_hooks` (`BASH_ENV` and `BASH_FUNC_exec%%`) fails before the validation and passes after, on macOS. The sandbox runtime, native phase admission, v2 service and verifier snapshot suites have identical results otherwise.
+- Runtime `bbagent-runtime/v12` carries only the `-c` change, not the hook validation. Its composed fixed environment has neither key.
 
 ## 6) Rollout Plan
 

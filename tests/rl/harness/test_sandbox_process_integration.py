@@ -2158,6 +2158,21 @@ async def test_trusted_argv_ignores_policy_written_login_profile(
     assert (await primary.close()).state is CleanupState.RELEASED
 
 
+@pytest.mark.parametrize(
+    ("key", "value"),
+    (("BASH_ENV", "/tmp/policy-hook"), ("BASH_FUNC_exec%%", "() { :; }")),
+)
+def test_runtime_authority_rejects_shell_startup_hooks(key: str, value: str) -> None:
+    # Trusted launches run the pinned shell with -c, which sources $BASH_ENV
+    # and imports exported functions before the requested argv.
+    fixture = make_runtime_fixture(with_writable_mount=True)
+    runtime = fixture.authorities.runtimes[0]
+    with pytest.raises(ValueError, match="shell startup hooks"):
+        replace(
+            runtime,
+            fixed_environment=tuple(sorted((*runtime.fixed_environment, (key, value)))),
+        )
+
 
 @requires_sealed_execution
 async def test_symlinked_runtime_ancestor_is_rejected_before_child_creation(
