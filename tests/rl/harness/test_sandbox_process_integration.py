@@ -1711,7 +1711,7 @@ async def test_run_argv_executes_requested_command_through_pinned_shell() -> Non
         (
             (
                 "/proc/self/fd/71",
-                "-lc",
+                "-c",
                 'exec "$@"',
                 "breadboard-execute",
                 "/bin/echo",
@@ -1777,7 +1777,7 @@ async def test_workspace_diff_uses_nested_repository_and_types_missing_git() -> 
     assert calls[0] == (
         (
             "/proc/self/fd/71",
-            "-lc",
+            "-c",
             'exec "$2" -C "$1" diff --no-ext-diff --binary',
             "breadboard-workspace-diff",
             "nested/repository",
@@ -2073,6 +2073,90 @@ async def test_process_lease_execute_runs_requested_argv(tmp_path: Path) -> None
     assert result["returncode"] == 0
     assert result["stdout"] == "requested-argv"
     assert (await primary.close()).state is CleanupState.RELEASED
+
+
+@requires_sealed_execution
+async def test_trusted_argv_ignores_policy_written_login_profile(
+    tmp_path: Path,
+) -> None:
+    # A policy that overwrites its shell profile must not run code inside the
+    # trusted base-commit, workspace-diff, or setup/verifier argv executions.
+    fixture = make_runtime_fixture(
+        with_writable_mount=True,
+        runtime_install_root=tmp_path / "runtime",
+    )
+    runtime = next(
+        runtime
+        for runtime in fixture.authorities.runtimes
+        if runtime.runtime_id == fixture.plan.sandbox.runtime_id
+    )
+    composed = replace(
+        runtime,
+        fixed_environment=tuple(sorted((*runtime.fixed_environment, ("HOME", "/tmp")))),
+    )
+    authorities = replace(
+        fixture.authorities,
+        runtimes=tuple(
+            composed if candidate.runtime_id == composed.runtime_id else candidate
+            for candidate in fixture.authorities.runtimes
+        ),
+    )
+    (tmp_path / "harness").mkdir()
+    harness = RuntimeHarness(
+        tmp_path / "harness", replace(fixture, authorities=authorities)
+    )
+    harness.manager.process_backend = TrustedProcessBackend()
+    primary = await harness.manager.open(fixture.request)
+    workspace = primary._materialized.workspace_path
+    repository = workspace / "work"
+    repository.mkdir(exist_ok=True)
+
+    def git(*arguments: str) -> str:
+        return subprocess.run(
+            ("git", *arguments), cwd=repository, check=True,
+            capture_output=True, text=True,
+        ).stdout.strip()
+
+    git("init", "--quiet", "--template=")
+    (repository / "module.py").write_text("value = 1\n", encoding="utf-8")
+    git("add", ".")
+    git(
+        "-c", "user.name=BreadBoard",
+        "-c", "user.email=breadboard@example.invalid",
+        "commit", "--quiet", "-m", "base",
+    )
+    (repository / "module.py").write_text("value = 2\n", encoding="utf-8")
+    head = git("rev-parse", "HEAD")
+    handle = primary._runtime
+    mount = next(
+        entry
+        for entry in handle.plan.materialization_plan.entries
+        if entry.target_logical_path == "work"
+    )
+    handle.plan = replace(
+        handle.plan,
+        materialization_plan=replace(
+            handle.plan.materialization_plan,
+            entries=(replace(mount, role="repository"),),
+        ),
+    )
+    expected_diff = (await handle.workspace_diff())["stdout"]
+    assert "+value = 2" in expected_diff
+    written = await primary.runner_workspace.run_shell(
+        "printf 'printf %s policy-profile-ran\\n' > \"$HOME/.profile\""
+        " && cp \"$HOME/.profile\" \"$HOME/.bash_profile\"",
+        timeout=2,
+    )
+    assert written["returncode"] == 0
+    login = await primary.runner_workspace.run_shell("true", timeout=2)
+    assert login["stdout"] == "policy-profile-ran"
+
+    assert await handle.measure_repository_base_commit() == head
+    assert (await handle.workspace_diff())["stdout"] == expected_diff
+    executed = await primary.execute(("/usr/bin/printf", "requested-argv"))
+    assert executed["stdout"] == "requested-argv"
+    assert (await primary.close()).state is CleanupState.RELEASED
+
 
 
 @requires_sealed_execution

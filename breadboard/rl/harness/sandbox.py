@@ -2682,7 +2682,9 @@ class TrustedProcessHandle:
         return await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                # Not a login shell: setup and verifier argv are trusted, and the
+                # policy can write the profiles a login shell sources.
+                "-c",
                 'exec "$@"',
                 "breadboard-execute",
                 *execution_argv,
@@ -3005,7 +3007,9 @@ class TrustedProcessHandle:
         result = await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                # Not a login shell: a policy-written profile would run inside
+                # this trusted measurement.
+                "-c",
                 'exec "$2" -C "$1" rev-parse --verify "HEAD^{commit}"',
                 "breadboard-workspace-base",
                 relative_path,
@@ -3046,7 +3050,7 @@ class TrustedProcessHandle:
         result = await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                "-c",
                 'exec "$2" -C "$1" diff --no-ext-diff --binary',
                 "breadboard-workspace-diff",
                 repositories[0].target_logical_path,
