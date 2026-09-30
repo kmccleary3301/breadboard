@@ -2162,16 +2162,31 @@ async def test_trusted_argv_ignores_policy_written_login_profile(
     ("key", "value"),
     (("BASH_ENV", "/tmp/policy-hook"), ("BASH_FUNC_exec%%", "() { :; }")),
 )
-def test_runtime_authority_rejects_shell_startup_hooks(key: str, value: str) -> None:
-    # Trusted launches run the pinned shell with -c, which sources $BASH_ENV
-    # and imports exported functions before the requested argv.
-    fixture = make_runtime_fixture(with_writable_mount=True)
-    runtime = fixture.authorities.runtimes[0]
-    with pytest.raises(ValueError, match="shell startup hooks"):
-        replace(
-            runtime,
-            fixed_environment=tuple(sorted((*runtime.fixed_environment, (key, value)))),
-        )
+@pytest.mark.parametrize(
+    "runtime_class",
+    (
+        sandbox_module.RuntimeClass.TRUSTED_PROCESS,
+        sandbox_module.RuntimeClass.HARDENED_DOCKER,
+    ),
+)
+def test_trusted_process_runtime_rejects_shell_startup_hooks(
+    runtime_class: sandbox_module.RuntimeClass, key: str, value: str
+) -> None:
+    # Trusted-process launches run the pinned host shell with -c, which sources
+    # $BASH_ENV and imports exported functions before the requested argv.
+    # Hardened backends exec argv in the container and keep the variable.
+    fixture = make_runtime_fixture(runtime_class=runtime_class, with_writable_mount=True)
+    runtime = next(
+        runtime
+        for runtime in fixture.authorities.runtimes
+        if runtime.runtime_id == fixture.plan.sandbox.runtime_id
+    )
+    environment = tuple(sorted((*runtime.fixed_environment, (key, value))))
+    if runtime_class is sandbox_module.RuntimeClass.TRUSTED_PROCESS:
+        with pytest.raises(ValueError, match="shell startup hooks"):
+            replace(runtime, fixed_environment=environment)
+    else:
+        assert replace(runtime, fixed_environment=environment).fixed_environment == environment
 
 
 @requires_sealed_execution

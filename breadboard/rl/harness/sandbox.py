@@ -830,11 +830,15 @@ class InstalledRuntime:
             raise ValueError("fixed environment keys must be unique")
         if any(not key or "=" in key or "\x00" in key + value for key, value in self.fixed_environment):
             raise ValueError("invalid fixed environment")
-        # Trusted launches run the pinned shell non-interactively (-c), which
-        # sources $BASH_ENV and imports BASH_FUNC_<name>%% functions (able to
-        # override exec/printf) before the requested argv. ENV is read only by
-        # interactive shells.
-        if any(key == "BASH_ENV" or key.startswith("BASH_FUNC_") for key, _ in self.fixed_environment):
+        # Trusted-process launches run the pinned host shell non-interactively
+        # (-c), which sources $BASH_ENV and imports BASH_FUNC_<name>%% functions
+        # (able to override exec/printf) before the requested argv. ENV is read
+        # only by interactive shells. Hardened backends exec argv in the
+        # container without that wrapper.
+        if self.runtime_class is RuntimeClass.TRUSTED_PROCESS and any(
+            key == "BASH_ENV" or key.startswith("BASH_FUNC_")
+            for key, _ in self.fixed_environment
+        ):
             raise ValueError("fixed environment cannot carry shell startup hooks")
 
 
