@@ -386,3 +386,11 @@ history prefixes; it does not bypass receipt-based completion guards.
 The first canonical re-append still changes multipart shape (two wire text blocks
 become one). Persist the exact sent content, not an equivalent concatenated string.
 Both `none` and `per_turn_append` real tool-turn HTTP histories now pass.
+
+The final installed wheel reproducer now compiles temperature `1.0` through the
+real exact locked derivation. Six installed serial HTTP cases also pass, including
+both real tool-turn histories. The authenticated runtime uses public `5dfc0d29`
+and private `745bf351`; four-image proof343 is still pending. PR158's first
+compatibility guard failure is a missing reviewed-nonbreaking body marker.
+Re-running its original event retains the old body; a new documentation-only
+event carries the reviewed acknowledgement without changing runtime inputs.
