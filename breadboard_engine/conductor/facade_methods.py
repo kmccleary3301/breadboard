@@ -210,8 +210,12 @@ class OpenAIConductorFacadeMethods:
             return current
 
 
-    def _setup_native_tools(self, model: str, use_native_tools: bool) -> bool:
-        return setup_native_tools(self, model, use_native_tools)
+    def _setup_native_tools(
+        self, model: str, use_native_tools: bool, *, provider_id: Optional[str] = None
+    ) -> bool:
+        return setup_native_tools(
+            self, model, use_native_tools, provider_id=provider_id
+        )
 
     def _adjust_tool_prompt_mode(self, tool_prompt_mode: str, will_use_native_tools: bool) -> str:
         return adjust_tool_prompt_mode(self, tool_prompt_mode, will_use_native_tools)

@@ -593,12 +593,6 @@ class OpenAICompletionsProviderProfile:
                 "effective": request["stream"],
                 "uncertainty": None,
             },
-            "stream_options": {
-                "status": "adapter",
-                "source": "openai_chat.profile",
-                "effective": request["stream_options"],
-                "uncertainty": None,
-            },
             "max_tokens": {
                 "status": "effective",
                 "source": "lock.provider_profile.max_output_tokens",
@@ -619,13 +613,15 @@ class OpenAICompletionsProviderProfile:
                 "effective": request["n"],
                 "uncertainty": None,
             },
-            "enable_thinking": {
-                "status": "adapter",
-                "source": "openai_chat.profile",
-                "effective": request["enable_thinking"],
-                "uncertainty": None,
-            },
         }
+        for field_name in ("stream_options", "enable_thinking"):
+            if field_name in request:
+                provenance[field_name] = {
+                    "status": "adapter",
+                    "source": "openai_chat.profile",
+                    "effective": request[field_name],
+                    "uncertainty": None,
+                }
         for field_name in (
             "temperature",
             "top_p",
@@ -640,7 +636,7 @@ class OpenAICompletionsProviderProfile:
                     "effective": request[field_name],
                     "uncertainty": None,
                 }
-        for index, _tool in enumerate(effective_tools):
+        for index, _tool in enumerate(effective_tools if self.stream else []):
             requested_strict = None
             if index < len(requested_tools):
                 requested_function = requested_tools[index].get("function")

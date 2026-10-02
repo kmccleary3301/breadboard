@@ -370,6 +370,19 @@ the differently encoded pre-serialization Python object. Exact generated-member
 and lock verification stay mandatory; no comparison is removed or relaxed.
 The compiler regression covers `1.0` and `0.0` with sampling values preserved.
 
-The scoped provider/compiler suite passed284 cases. Installed four-image
+The final scoped provider/compiler suite passed286 cases. Installed four-image
 composition/native dispatch, private grading and optimizer qualification remain
 separate gates; this source repair awards none of them.
+
+Independent review catches two missed caller migrations: serial native setup
+must forward provider identity through the conductor facade, and request
+provenance must describe only effective serial fields. Actual conductor smoke
+reproduces the pre-HTTP `TypeError`; after both repairs its opaque-model HTTP
+episode completes. A real two-turn read-tool episode then reproduces disappearing
+per-turn directives in the next request's earlier user message. Persist serial
+directives under the existing context-mutation lock, leaving streaming unchanged.
+The regression observes real file contents in the tool response and exact HTTP
+history prefixes; it does not bypass receipt-based completion guards.
+The first canonical re-append still changes multipart shape (two wire text blocks
+become one). Persist the exact sent content, not an equivalent concatenated string.
+Both `none` and `per_turn_append` real tool-turn HTTP histories now pass.

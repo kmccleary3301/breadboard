@@ -71,6 +71,7 @@ class _LoopbackOpenAIServer:
         self.release_first_request = threading.Event()
         self.block_first_request = False
         self.status_code = 200
+        self.reply_messages = []
         self._lock = threading.Lock()
         self._handler_threads = []
         self._server = None
@@ -96,6 +97,7 @@ class _LoopbackOpenAIServer:
                         }
                     )
                     first_request = len(owner.requests) == 1
+                    request_index = len(owner.requests) - 1
                 owner.request_started.set()
                 if owner.block_first_request and first_request:
                     owner.release_first_request.wait(timeout=5)
@@ -116,8 +118,17 @@ class _LoopbackOpenAIServer:
                         "choices": [
                             {
                                 "index": 0,
-                                "message": {"role": "assistant", "content": "done"},
-                                "finish_reason": "stop",
+                                "message": (
+                                    owner.reply_messages[request_index]
+                                    if owner.reply_messages
+                                    else {"role": "assistant", "content": "done"}
+                                ),
+                                "finish_reason": (
+                                    "tool_calls"
+                                    if owner.reply_messages
+                                    and owner.reply_messages[request_index].get("tool_calls")
+                                    else "stop"
+                                ),
                             }
                         ],
                         "usage": {
@@ -269,6 +280,62 @@ def test_profile_serial_mode_uses_exact_nonstreaming_wire(loopback_openai_server
         "frequency_penalty": 0.1,
         "presence_penalty": -0.1,
     }
+
+
+
+@pytest.mark.parametrize("tool_prompt_mode", ["none", "per_turn_append"])
+def test_serial_conductor_tool_turn_preserves_wire_history(
+    tmp_path, loopback_openai_server, tool_prompt_mode
+):
+    loopback_openai_server.reply_messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "read-proof",
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "arguments": json.dumps({"path": "proof.txt"}),
+                },
+            }],
+        },
+        {"role": "assistant", "content": "done"},
+    ]
+    profile = _serial_profile(loopback_openai_server)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    workspace.joinpath("proof.txt").write_text("actual serial tool observation\n")
+    cls = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = cls(
+        workspace=str(workspace),
+        config={
+            "provider_tools": {"use_native": True},
+            "turn_strategy": {"flow": "tool_role", "relay": "tool_role"},
+        },
+        local_mode=True,
+    )
+    result = conductor.run_agentic_loop(
+        "Complete the requested file operation.",
+        "Read proof.txt, then finish.",
+        profile.model,
+        max_steps=2,
+        tool_prompt_mode=tool_prompt_mode,
+        completion_config={},
+        context={"session_id": "serial-tool", "input_id": "input", "turn_id": "turn"},
+        provider_profile=profile,
+    )
+    assert result["completed"] is True
+    first, second = [request["body"] for request in loopback_openai_server.requests]
+    assert first["model"] == second["model"] == profile.model
+    assert first["stream"] is second["stream"] is False
+    previous = first["messages"]
+    assert second["messages"][:len(previous)] == previous
+    appended = second["messages"][len(previous):]
+    assert [message["role"] for message in appended] == ["assistant", "tool"]
+    assert appended[1]["tool_call_id"] == "read-proof"
+    assert "actual serial tool observation" in appended[1]["content"]
+
 
 @pytest.mark.parametrize("status_code", [503, 429])
 def test_profile_serial_mode_does_not_retry_http_errors(
