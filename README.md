@@ -569,6 +569,13 @@ Use these before repeating a claim:
 - [docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md](docs/contracts/policies/KERNEL_CONTRACT_PACK_V1.md)
 - [docs/conformance/README.md](docs/conformance/README.md)
 
+The pinned cyber campaign backport adds episode-scoped
+`OpenAICompletionsProviderProfile(wire_mode="serial_nonstreaming")` without changing
+the default streamed profile. It also binds E4 source-lock derivation to the exact
+captured runtime-number encoding. See
+[the campaign ACR](docs/contracts/policies/acr/ACR-20260901-e4-product-ownership.md#16-pinned-cyber-campaign-provider-and-captured-number-repair-2026-10-02)
+for scope and evidence limits.
+
 ---
 
 ## Repo status

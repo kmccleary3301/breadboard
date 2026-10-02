@@ -1058,7 +1058,12 @@ def handle_native_tool_calls(
                 call_id = entry.get("call_id")
                 if relay_strategy == "tool_role" and call_id:
                     route_hint = getattr(conductor, "_current_route_id", None) or model
-                    provider_id = provider_router.parse_model_id(route_hint)[0]
+                    profile = getattr(session_state, "_episode_provider_profile", None)
+                    provider_id = (
+                        profile.provider_id
+                        if profile is not None and not profile.stream
+                        else provider_router.parse_model_id(route_hint)[0]
+                    )
                     adapter = provider_adapter_manager.get_adapter(provider_id)
                     tool_messages_to_relay.append(
                         adapter.create_tool_result_message(

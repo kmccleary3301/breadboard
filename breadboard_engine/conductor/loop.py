@@ -173,6 +173,9 @@ def run_main_loop(
     # terminating the session; only consecutive empties past the cap are fatal.
     loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
     max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
+    episode_profile = getattr(session_state, "_episode_provider_profile", None)
+    if episode_profile is not None and not episode_profile.stream:
+        max_empty_response_retries = 0
     consecutive_empty_responses = 0
 
     def poll_control_stop() -> bool:

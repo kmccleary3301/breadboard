@@ -372,6 +372,11 @@ def lower_e4_harness(
     config = copy_harness_json(runtime_configuration, freeze=False)
     if type(config.get("version")) is not int or config["version"] != 2:
         raise HarnessCompileError("E4 runtime configuration requires version 2")
+    # The lock must derive from the exact captured runtime bytes. The compiler's
+    # canonical number encoder normalizes integral floats (1.0 -> 1); hashing
+    # the pre-serialization Python object would produce a different layer hash.
+    runtime_bytes = canonical_json_bytes(config)
+    config = json.loads(runtime_bytes)
     owned = {"extends", "prompts", "tools", "modes", "loop", "e4_target"}
     if owned.intersection(config):
         raise HarnessCompileError("runtime configuration overrides target-owned fields")
@@ -386,7 +391,7 @@ def lower_e4_harness(
     descriptor_parent = package.descriptor_path.rpartition("/")[0]
     members = {
         inputs_ref: input_bytes,
-        runtime_ref: canonical_json_bytes(config),
+        runtime_ref: runtime_bytes,
         index_ref: package.index_bytes,
         descriptor_ref: package.descriptor_bytes,
     }

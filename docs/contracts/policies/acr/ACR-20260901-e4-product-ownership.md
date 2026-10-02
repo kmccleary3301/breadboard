@@ -344,3 +344,32 @@ Protected checks, exact-artifact independent review, actual runtime and
 recipient evidence, and the prohibition on custody deletion remain in force.
 This record does not award worker qualification, final acceptance or public
 package release.
+
+## 16) Pinned cyber campaign provider and captured-number repair, 2026-10-02
+
+This backport targets `e4src/trusted-argv-nonlogin-v11` at
+`44754a17ccb5b5b0094d40752fa3546b2b7388aa`, not modern main's provider API.
+The authenticated private RL source already requires a scoped
+`serial_nonstreaming` profile. Installing the private wheel over public
+cc13 or v12 exposed missing `stream`/`wire_mode`; checkout-only private
+provider files had masked that distribution boundary.
+
+Port the existing private profile feature from `0117f051` while retaining
+the campaign's native tools, session compaction, append-only request history,
+socket cancellation, explicit sampling identity and default streamed profile.
+Opaque serial models use one episode-owned client, `n=1`, no transport/empty
+response retries and a nonblocking concurrent-invocation guard. Loopback HTTP
+tests cover exact request behavior, 503/429 single attempts, credential/profile
+mismatch before HTTP, and concurrent request rejection.
+
+Actual installed v12 target compilation with temperature `1.0` reproduces
+`target Harness Lock differs from its captured derivation`. CPU136983 confirms
+the same layer/graph/lock hash mismatch. The compiler encodes integral floats
+as integers; derive the source graph from those captured runtime bytes, not
+the differently encoded pre-serialization Python object. Exact generated-member
+and lock verification stay mandatory; no comparison is removed or relaxed.
+The compiler regression covers `1.0` and `0.0` with sampling values preserved.
+
+The scoped provider/compiler suite passed284 cases. Installed four-image
+composition/native dispatch, private grading and optimizer qualification remain
+separate gates; this source repair awards none of them.

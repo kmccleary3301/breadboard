@@ -739,8 +739,13 @@ class OpenAIBaseRuntime(OpenAIConversionMixin, ProviderRuntime):
             if extra_headers:
                 kwargs["extra_headers"] = extra_headers
 
-        # Small, bounded retry plan per V11 next steps
-        max_retries = 2
+        # Serial episode profiles forbid transport retries as well as SDK retries.
+        profile = context.provider_profile
+        max_retries = (
+            profile.compatibility.transport_max_retries
+            if profile is not None and not profile.stream
+            else 2
+        )
         backoffs = [0.4, 0.9]
         retry_schedule: List[float] = []
 

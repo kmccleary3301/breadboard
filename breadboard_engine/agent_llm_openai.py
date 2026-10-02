@@ -5689,6 +5689,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             provider_profile, OpenAICompletionsProviderProfile
         ):
             raise ProviderContractError("provider_profile is invalid")
+        serial_profile = provider_profile is not None and not provider_profile.stream
         # Initialize components
         emitter = event_emitter
         if emitter is None and event_queue is not None:
@@ -5920,21 +5921,43 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             requested_route_id = str(locked_target["route_id"])
         if self._active_replay_session:
             requested_route_id = "replay"
+        if serial_profile and (
+            self._active_replay_session
+            or requested_route_id != provider_profile.model
+        ):
+            raise ProviderContractError(
+                "serial provider profile conflicts with the selected model route"
+            )
 
         runtime = None
         client = None
         provider_tools_cfg = dict((self.config.get("provider_tools") or {}))
         
-        # Initialize runtime (ReplayRuntime if replay, else standard)
-        provider_config, resolved_model, supports_native_tools_for_model = (
-            provider_router.get_provider_config(requested_route_id)
-        )
-        runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
-        client_config = provider_router.create_client_config(requested_route_id)
+        # An episode profile owns its model literally, not as a catalogue route.
+        if serial_profile:
+            provider_config = provider_router.providers[provider_profile.provider_id]
+            runtime_descriptor = provider_config.to_descriptor(
+                supports_native_override=provider_profile.capabilities.supports_tools
+            )
+            runtime_descriptor.runtime_id = provider_profile.runtime_id
+            runtime_descriptor.default_api_variant = "chat"
+            runtime_descriptor.supports_streaming = False
+            runtime_model = provider_profile.model
+            client_config = {"model": runtime_model, "api_key": None}
+        else:
+            provider_config, resolved_model, supports_native_tools_for_model = (
+                provider_router.get_provider_config(requested_route_id)
+            )
+            runtime_descriptor, runtime_model = provider_router.get_runtime_descriptor(requested_route_id)
+            client_config = provider_router.create_client_config(requested_route_id)
 
         api_variant_override = provider_tools_cfg.get("api_variant")
         if api_variant_override and runtime_descriptor.provider_id == "openai":
             variant = str(api_variant_override).lower()
+            if serial_profile and variant != "chat":
+                raise ProviderContractError(
+                    "serial provider profile requires Chat Completions"
+                )
             if variant == "responses":
                 runtime_descriptor.runtime_id = "openai_responses"
                 runtime_descriptor.default_api_variant = "responses"
@@ -6469,8 +6492,19 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         effective_config = dict(self.config)
         effective_config["provider_tools"] = provider_tools_cfg
         self._provider_tools_effective = provider_tools_cfg
-        use_native_tools = provider_router.should_use_native_tools(requested_route_id, effective_config)
-        will_use_native_tools = self._setup_native_tools(requested_route_id, use_native_tools)
+        if serial_profile:
+            use_native_tools = (
+                provider_profile.capabilities.supports_tools
+                and provider_tools_cfg.get("use_native") is not False
+            )
+            will_use_native_tools = self._setup_native_tools(
+                requested_route_id,
+                use_native_tools,
+                provider_id=provider_profile.provider_id,
+            )
+        else:
+            use_native_tools = provider_router.should_use_native_tools(requested_route_id, effective_config)
+            will_use_native_tools = self._setup_native_tools(requested_route_id, use_native_tools)
         tool_prompt_mode = self._adjust_tool_prompt_mode(tool_prompt_mode, will_use_native_tools)
         session_state.last_tool_prompt_mode = tool_prompt_mode
         

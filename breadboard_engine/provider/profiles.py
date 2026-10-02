@@ -11,7 +11,7 @@ import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlsplit
 
 from ..security import redaction
@@ -39,11 +39,16 @@ _RESERVED_CALLER_HEADERS = frozenset(
         "upgrade",
     }
 )
-_REQUIRED_CAPABILITIES = (
+_REFERENCE_REQUIRED_CAPABILITIES = (
     "supports_tools",
     "supports_strict_tools",
     "supports_stream_options",
     "supports_thinking_control",
+    "supports_n",
+    "supports_max_tokens",
+)
+_SERIAL_REQUIRED_CAPABILITIES = (
+    "supports_tools",
     "supports_n",
     "supports_max_tokens",
 )
@@ -288,7 +293,17 @@ class OpenAICompletionsCompatibility:
 
 @dataclass(frozen=True)
 class OpenAICompletionsProviderProfile:
-    """Immutable, episode-scoped authority for one Chat Completions route."""
+    """Immutable, episode-scoped authority for one Chat Completions route.
+
+    ``reference_streaming`` preserves the frozen reference model and wire mode.
+    ``serial_nonstreaming`` accepts an opaque model and sends ``stream=False``
+    with ``n=1`` through the episode-owned, zero-retry client.
+
+    Pass the profile to ``AgenticCoder.run_task(provider_profile=...)``. Native
+    Chat tool results require ``turn_strategy.flow`` and ``relay`` set to
+    ``tool_role``. Serial mode omits transient user-continuation placeholders;
+    it does not disable completion guards or qualify the execution sandbox.
+    """
 
     model: str
     scoped_credential: str = field(repr=False)
@@ -311,10 +326,20 @@ class OpenAICompletionsProviderProfile:
         init=False, repr=False, compare=False
     )
 
+    wire_mode: Literal["reference_streaming", "serial_nonstreaming"] = field(
+        default="reference_streaming", kw_only=True
+    )
+
     def __post_init__(self) -> None:
+        if self.wire_mode not in (
+            "reference_streaming",
+            "serial_nonstreaming",
+        ):
+            raise ProviderContractError("profile.wire_mode is unsupported")
         model = _text(self.model, "profile.model", max_length=256)
-        if model != _EXACT_MODEL:
-            raise ProviderContractError(f"profile.model must be {_EXACT_MODEL}")
+        if self.wire_mode == "reference_streaming":
+            if model != _EXACT_MODEL:
+                raise ProviderContractError(f"profile.model must be {_EXACT_MODEL}")
         base_url = _text(self.base_url, "profile.base_url", max_length=2048)
         parsed = urlsplit(base_url)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -330,14 +355,28 @@ class OpenAICompletionsProviderProfile:
             "profile.scoped_credential",
             max_length=8192,
         )
-        if self.context_window != _EXACT_CONTEXT_WINDOW:
-            raise ProviderContractError(
-                f"profile.context_window must be {_EXACT_CONTEXT_WINDOW}"
-            )
-        if self.max_output_tokens != _EXACT_MAX_OUTPUT_TOKENS:
-            raise ProviderContractError(
-                f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
-            )
+        if self.wire_mode == "reference_streaming":
+            if self.context_window != _EXACT_CONTEXT_WINDOW:
+                raise ProviderContractError(
+                    f"profile.context_window must be {_EXACT_CONTEXT_WINDOW}"
+                )
+            if self.max_output_tokens != _EXACT_MAX_OUTPUT_TOKENS:
+                raise ProviderContractError(
+                    f"profile.max_output_tokens must be {_EXACT_MAX_OUTPUT_TOKENS}"
+                )
+        else:
+            if type(self.context_window) is not int or self.context_window <= 0:
+                raise ProviderContractError(
+                    "profile.context_window must be a positive integer"
+                )
+            if (
+                type(self.max_output_tokens) is not int
+                or self.max_output_tokens <= 0
+                or self.max_output_tokens > self.context_window
+            ):
+                raise ProviderContractError(
+                    "profile.max_output_tokens must be a positive integer no greater than profile.context_window"
+                )
         sampling_explicit_fields = (
             frozenset(str(key) for key in self.sampling)
             if isinstance(self.sampling, Mapping)
@@ -354,7 +393,12 @@ class OpenAICompletionsProviderProfile:
             "capabilities",
             OpenAICompletionsCapabilities.from_value(self.capabilities),
         )
-        for field_name in _REQUIRED_CAPABILITIES:
+        required_capabilities = (
+            _REFERENCE_REQUIRED_CAPABILITIES
+            if self.wire_mode == "reference_streaming"
+            else _SERIAL_REQUIRED_CAPABILITIES
+        )
+        for field_name in required_capabilities:
             if not getattr(self.capabilities, field_name):
                 raise ProviderContractError(f"capabilities.{field_name} must be true")
         if self.capabilities.supports_store:
@@ -412,7 +456,7 @@ class OpenAICompletionsProviderProfile:
             (name.casefold(), value) for name, value in self.caller_headers.items()
         )
         header_names = [name for name, _value in header_items]
-        return {
+        identity: dict[str, Any] = {
             "base_url_sha256": hashlib.sha256(
                 self.base_url.encode("utf-8")
             ).hexdigest(),
@@ -432,6 +476,13 @@ class OpenAICompletionsProviderProfile:
             "runtime_id": self.runtime_id,
             "sampling": self.sampling.as_dict(),
         }
+        if not self.stream:
+            identity["wire_mode"] = self.wire_mode
+        return identity
+
+    @property
+    def stream(self) -> bool:
+        return self.wire_mode == "reference_streaming"
 
     def identity_json(self) -> str:
         """Return canonical JSON identity with no credential material."""
@@ -442,7 +493,7 @@ class OpenAICompletionsProviderProfile:
         messages: list[dict[str, Any]],
         tools: list[dict[str, Any]] | None,
     ) -> dict[str, Any]:
-        """Build the exact streamed Chat Completions payload for this profile."""
+        """Build the exact Chat Completions payload for this profile."""
         if type(messages) is not list or any(
             type(message) is not dict for message in messages
         ):
@@ -465,12 +516,14 @@ class OpenAICompletionsProviderProfile:
                     )
                 copied = dict(tool)
                 function_copy = dict(tool["function"])
-                function_copy["strict"] = False
+                if self.stream:
+                    function_copy["strict"] = False
                 copied["function"] = function_copy
                 copied_tools.append(copied)
             request["tools"] = copied_tools
-        request["stream"] = True
-        request["stream_options"] = {"include_usage": True}
+        request["stream"] = self.stream
+        if self.stream:
+            request["stream_options"] = {"include_usage": True}
         request["max_tokens"] = self.max_output_tokens
         request["n"] = self.sampling.n
         for field_name in (
@@ -483,7 +536,8 @@ class OpenAICompletionsProviderProfile:
             value = getattr(self.sampling, field_name)
             if value is not None:
                 request[field_name] = value
-        request["enable_thinking"] = False
+        if self.stream:
+            request["enable_thinking"] = False
         return request
 
     def chat_request_provenance(
