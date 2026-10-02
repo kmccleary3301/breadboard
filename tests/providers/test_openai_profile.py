@@ -64,6 +64,359 @@ def _runtime():
     )
 
 
+class _LoopbackOpenAIServer:
+    def __init__(self):
+        self.requests = []
+        self.request_started = threading.Event()
+        self.release_first_request = threading.Event()
+        self.block_first_request = False
+        self.status_code = 200
+        self.reply_messages = []
+        self._lock = threading.Lock()
+        self._handler_threads = []
+        self._server = None
+
+    @property
+    def base_url(self):
+        return f"http://127.0.0.1:{self._server.server_port}/v1"
+
+    def start(self):
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                with owner._lock:
+                    owner._handler_threads.append(threading.current_thread())
+                content_length = int(self.headers.get("Content-Length", "0"))
+                body = json.loads(self.rfile.read(content_length))
+                with owner._lock:
+                    owner.requests.append(
+                        {
+                            "body": body,
+                            "path": self.path,
+                        }
+                    )
+                    first_request = len(owner.requests) == 1
+                    request_index = len(owner.requests) - 1
+                owner.request_started.set()
+                if owner.block_first_request and first_request:
+                    owner.release_first_request.wait(timeout=5)
+
+                if owner.status_code >= 400:
+                    response = {
+                        "error": {
+                            "message": "loopback failure",
+                            "type": "server_error",
+                        }
+                    }
+                else:
+                    response = {
+                        "id": "chatcmpl-loopback",
+                        "object": "chat.completion",
+                        "created": 1,
+                        "model": body["model"],
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": (
+                                    owner.reply_messages[request_index]
+                                    if owner.reply_messages
+                                    else {"role": "assistant", "content": "done"}
+                                ),
+                                "finish_reason": (
+                                    "tool_calls"
+                                    if owner.reply_messages
+                                    and owner.reply_messages[request_index].get("tool_calls")
+                                    else "stop"
+                                ),
+                            }
+                        ],
+                        "usage": {
+                            "prompt_tokens": 1,
+                            "completion_tokens": 1,
+                            "total_tokens": 2,
+                        },
+                    }
+                encoded = json.dumps(response).encode("utf-8")
+                self.send_response(owner.status_code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+                self.wfile.write(encoded)
+
+            def log_message(self, _format, *_args):
+                return
+
+        self._server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._server.daemon_threads = True
+        self._thread = threading.Thread(
+            target=self._server.serve_forever,
+            name="openai-profile-loopback",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def close(self):
+        self.release_first_request.set()
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+        assert not self._thread.is_alive()
+        with self._lock:
+            handler_threads = tuple(self._handler_threads)
+        for handler_thread in handler_threads:
+            handler_thread.join(timeout=5)
+            assert not handler_thread.is_alive()
+
+@pytest.fixture
+def loopback_openai_server():
+    server = _LoopbackOpenAIServer()
+    server.start()
+    try:
+        yield server
+    finally:
+        server.close()
+
+def _serial_profile(server, **overrides):
+    values = {
+        "base_url": server.base_url,
+        "model": "opaque/vendor/model",
+        "wire_mode": "serial_nonstreaming",
+        "context_window": 4096,
+        "max_output_tokens": 512,
+    }
+    values.update(overrides)
+    return _profile(**values)
+
+def _invoke_serial(runtime, profile, client, *, stream=False):
+    return runtime.invoke(
+        client=client,
+        model=profile.model,
+        messages=[{"role": "user", "content": "hi"}],
+        tools=None,
+        stream=stream,
+        context=ProviderRuntimeContext(
+            None,
+            {},
+            stream=stream,
+            provider_profile=profile,
+        ),
+    )
+
+def test_profile_serial_mode_uses_exact_nonstreaming_wire(loopback_openai_server):
+    runtime = _runtime()
+    tools = [
+        {
+            "type": "function",
+            "function": {
+                "name": "lookup",
+                "description": "Look up a value",
+                "parameters": {
+                    "type": "object",
+                    "properties": {"key": {"type": "string"}},
+                    "required": ["key"],
+                    "additionalProperties": False,
+                },
+            },
+        }
+    ]
+    profile = _serial_profile(
+        loopback_openai_server,
+        sampling={
+            "temperature": 0.2,
+            "top_p": 0.8,
+            "seed": 7,
+            "frequency_penalty": 0.1,
+            "presence_penalty": -0.1,
+        },
+    )
+    client = runtime.create_client_from_profile(profile)
+    try:
+        result = runtime.invoke(
+            client=client,
+            model=profile.model,
+            messages=[{"role": "user", "content": "hi"}],
+            tools=tools,
+            stream=False,
+            context=ProviderRuntimeContext(
+                None,
+                {},
+                stream=False,
+                provider_profile=profile,
+            ),
+        )
+    finally:
+        client.close()
+
+    assert result.messages[0].content == "done"
+    assert len(loopback_openai_server.requests) == 1
+    request = loopback_openai_server.requests[0]
+    assert request["path"] == "/v1/chat/completions"
+    assert request["body"] == {
+        "model": "opaque/vendor/model",
+        "messages": [{"role": "user", "content": "hi"}],
+        "tools": [
+            {
+                "type": "function",
+                "function": {
+                    "name": "lookup",
+                    "description": "Look up a value",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"key": {"type": "string"}},
+                        "required": ["key"],
+                        "additionalProperties": False,
+                    },
+                },
+            }
+        ],
+        "stream": False,
+        "n": 1,
+        "max_tokens": 512,
+        "temperature": 0.2,
+        "top_p": 0.8,
+        "seed": 7,
+        "frequency_penalty": 0.1,
+        "presence_penalty": -0.1,
+    }
+
+
+
+@pytest.mark.parametrize("tool_prompt_mode", ["none", "per_turn_append"])
+def test_serial_conductor_tool_turn_preserves_wire_history(
+    tmp_path, loopback_openai_server, tool_prompt_mode
+):
+    loopback_openai_server.reply_messages = [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "read-proof",
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "arguments": json.dumps({"path": "proof.txt"}),
+                },
+            }],
+        },
+        {"role": "assistant", "content": "done"},
+    ]
+    profile = _serial_profile(loopback_openai_server)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    workspace.joinpath("proof.txt").write_text("actual serial tool observation\n")
+    cls = OpenAIConductor.__ray_metadata__.modified_class
+    conductor = cls(
+        workspace=str(workspace),
+        config={
+            "provider_tools": {"use_native": True},
+            "turn_strategy": {"flow": "tool_role", "relay": "tool_role"},
+        },
+        local_mode=True,
+    )
+    result = conductor.run_agentic_loop(
+        "Complete the requested file operation.",
+        "Read proof.txt, then finish.",
+        profile.model,
+        max_steps=2,
+        tool_prompt_mode=tool_prompt_mode,
+        completion_config={},
+        context={"session_id": "serial-tool", "input_id": "input", "turn_id": "turn"},
+        provider_profile=profile,
+    )
+    assert result["completed"] is True
+    first, second = [request["body"] for request in loopback_openai_server.requests]
+    assert first["model"] == second["model"] == profile.model
+    assert first["stream"] is second["stream"] is False
+    previous = first["messages"]
+    assert second["messages"][:len(previous)] == previous
+    appended = second["messages"][len(previous):]
+    assert [message["role"] for message in appended] == ["assistant", "tool"]
+    assert appended[1]["tool_call_id"] == "read-proof"
+    assert "actual serial tool observation" in appended[1]["content"]
+
+
+@pytest.mark.parametrize("status_code", [503, 429])
+def test_profile_serial_mode_does_not_retry_http_errors(
+    loopback_openai_server, status_code
+):
+    # 503 exercises SDK retries; 429 also reaches the runtime's retry loop.
+    loopback_openai_server.status_code = status_code
+    profile = _serial_profile(loopback_openai_server)
+    runtime = _runtime()
+    client = runtime.create_client_from_profile(profile)
+    try:
+        with pytest.raises(ProviderRuntimeError):
+            _invoke_serial(runtime, profile, client)
+    finally:
+        client.close()
+
+    assert len(loopback_openai_server.requests) == 1
+
+def test_profile_client_mismatch_rejects_before_http_request(loopback_openai_server):
+    runtime = _runtime()
+    first = _serial_profile(loopback_openai_server, scoped_credential="first")
+    second = _serial_profile(
+        loopback_openai_server,
+        scoped_credential="second",
+    )
+    client = runtime.create_client_from_profile(first)
+    try:
+        with pytest.raises(ProviderRuntimeError) as raised:
+            runtime.invoke(
+                client=client,
+                model=second.model,
+                messages=[{"role": "user", "content": "hi"}],
+                tools=None,
+                stream=False,
+                context=ProviderRuntimeContext(
+                    None,
+                    {},
+                    stream=False,
+                    provider_profile=second,
+                ),
+            )
+    finally:
+        client.close()
+
+    assert raised.value.safe_code == "profile_client_mismatch"
+    assert loopback_openai_server.requests == []
+
+def test_profile_serial_client_rejects_concurrent_invocation(loopback_openai_server):
+    runtime = _runtime()
+    profile = _serial_profile(loopback_openai_server)
+    loopback_openai_server.block_first_request = True
+    client = runtime.create_client_from_profile(profile)
+    first_result = []
+    first_errors = []
+
+    def invoke_first():
+        try:
+            first_result.append(_invoke_serial(runtime, profile, client))
+        except Exception as exc:
+            first_errors.append(exc)
+
+    first_thread = threading.Thread(target=invoke_first, daemon=True)
+    try:
+        first_thread.start()
+        assert loopback_openai_server.request_started.wait(timeout=5)
+        with pytest.raises(ProviderRuntimeError) as raised:
+            _invoke_serial(runtime, profile, client)
+        assert raised.value.safe_code == "profile_concurrent_invocation"
+        assert len(loopback_openai_server.requests) == 1
+        loopback_openai_server.release_first_request.set()
+        first_thread.join(timeout=5)
+        assert not first_thread.is_alive()
+    finally:
+        loopback_openai_server.release_first_request.set()
+        first_thread.join(timeout=5)
+        client.close()
+
+    assert first_errors == []
+    assert len(first_result) == 1
+
+
 def test_profile_builds_exact_qwen_stream_request_without_fallback():
     profile = _profile(sampling={"temperature": 0.2})
     tools = [

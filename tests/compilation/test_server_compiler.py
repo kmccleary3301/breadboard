@@ -226,6 +226,36 @@ def _captured_pi_members(
     members[index_ref] = index_bytes
     return members, source.edges
 
+@pytest.mark.parametrize("temperature", [1.0, 0.0])
+def test_captured_e4_integral_float_preserves_locked_sampling_derivation(
+    temperature: float,
+) -> None:
+    configuration = strict_parse_payload(_MINIMAL_CONFIG, logical_path="runtime.yaml")
+    runtime = {
+        key: value for key, value in configuration.items()
+        if key not in {"prompts", "modes", "loop"}
+    }
+    runtime["providers"]["models"][0]["params"]["temperature"] = temperature
+    runtime["provider_tools"] = {"use_native": True}
+    source = lower_e4_harness(load_e4_target("pi@0.57.1"), _PI_DYNAMIC_FIELDS, runtime)
+    references = {
+        layer["source_ref"]: configuration_artifact_ref(
+            layer["source_ref"], source.members[layer["source_ref"]],
+            layer_hash=layer["layer_hash"],
+        ).to_dict()
+        for layer in source.compilation.lock.configuration_graph["source_layers"]
+    }
+    members = dict(source.members)
+    members[source.lock_ref] = source.compilation.with_configuration_artifacts(
+        references
+    ).lock.canonical_json().encode("utf-8")
+    manifest, _, _ = _compile(
+        members, edges=source.edges, root=source.source_ref,
+    )
+    assert manifest.semantic.providers["models"][0]["params"]["temperature"] == temperature
+    assert manifest.semantic.metadata["e4_target"]["target_id"] == "pi@0.57.1"
+
+
 
 @pytest.mark.parametrize(
     ("captured_harness", "expected_code"),

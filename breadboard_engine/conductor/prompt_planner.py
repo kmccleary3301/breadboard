@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 from typing import Callable, List, Optional
 
 from ..compilation.system_prompt_compiler import get_compiler
@@ -40,6 +41,14 @@ class ToolPromptPlanner:
                 "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
             )
             append_text_block(last_message, tool_directive_text)
+            profile = getattr(session_state, "_episode_provider_profile", None)
+            if profile is not None and not profile.stream:
+                # Serial requests extend the previous wire history. Persist the
+                # directive on the real message, not only the transient send copy.
+                with session_state.context_mutation():
+                    session_state.provider_messages[-1]["content"] = copy.deepcopy(
+                        last_message["content"]
+                    )
             if markdown_logger:
                 try:
                     markdown_logger.log_tool_availability(tool_names)

@@ -470,7 +470,11 @@ class AgenticCoder:
         if context is None:
             context = _admit_standalone_run()
 
-        model = self._select_model()
+        model = (
+            provider_profile.model
+            if provider_profile is not None and not provider_profile.stream
+            else self._select_model()
+        )
         loop_cfg = self.config.get('loop') or {}
         steps = int(
             max_iterations

@@ -12,6 +12,7 @@ from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
 from ..provider import provider_adapter_manager, sanitize_openai_tool_name
 from ..provider.contracts import (
+    OpenAICompletionsProviderProfile,
     ProviderContractError,
     ProviderResult,
     ProviderRuntimeContext,
@@ -164,7 +165,7 @@ def _bind_episode_provider_profile(
     if profile_client is None:
         profile_client = runtime.create_client_from_profile(profile)
         episode._episode_provider_client = profile_client
-    return profile_client, True, profile
+    return profile_client, profile.stream, profile
 
 
 def _provider_wire_evidence(
@@ -253,6 +254,35 @@ def _provider_wire_evidence(
     )
 
 
+def _ensure_provider_continuation(
+    send_messages: List[Dict[str, Any]],
+    runtime: Any,
+    profile: OpenAICompletionsProviderProfile | None,
+) -> None:
+    """Keep transient continuation placeholders out of append-only episodes."""
+    if profile is not None and not profile.stream:
+        return
+
+    stub_text = ""
+    try:
+        descriptor = getattr(runtime, "descriptor", None)
+        if (
+            getattr(descriptor, "runtime_id", None) == "openai_responses"
+            or getattr(descriptor, "default_api_variant", None) == "responses"
+        ):
+            stub_text = "Continue."
+    except Exception:
+        pass
+
+    if not send_messages:
+        send_messages.append({"role": "user", "content": stub_text})
+    elif send_messages[-1].get("role") != "user":
+        send_messages.append({"role": "user", "content": stub_text})
+    else:
+        last_content = send_messages[-1].get("content")
+        if isinstance(last_content, str) and not last_content.strip() and stub_text:
+            send_messages[-1]["content"] = stub_text
+
 def get_model_response(
     conductor: Any,
     runtime,
@@ -286,6 +316,12 @@ def get_model_response(
     except Exception:
         pass
 
+    episode_profile = getattr(session_state, "_episode_provider_profile", None)
+    serial_profile = (
+        episode_profile
+        if episode_profile is not None and not episode_profile.stream
+        else None
+    )
     send_messages = copy.deepcopy(session_state.provider_messages)
     requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
@@ -308,25 +344,7 @@ def get_model_response(
         if provider_id_for_cache != "anthropic":
             apply_cache_control_to_tool_messages(send_messages, cache_control)
 
-    stub_text = ""
-    try:
-        descriptor = getattr(runtime, "descriptor", None)
-        if (
-            getattr(descriptor, "runtime_id", None) == "openai_responses"
-            or getattr(descriptor, "default_api_variant", None) == "responses"
-        ):
-            stub_text = "Continue."
-    except Exception:
-        pass
-
-    if not send_messages:
-        send_messages.append({"role": "user", "content": stub_text})
-    elif send_messages[-1].get("role") != "user":
-        send_messages.append({"role": "user", "content": stub_text})
-    else:
-        last_content = send_messages[-1].get("content")
-        if isinstance(last_content, str) and not last_content.strip() and stub_text:
-            send_messages[-1]["content"] = stub_text
+    _ensure_provider_continuation(send_messages, runtime, episode_profile)
 
     per_turn_written_text = conductor.tool_prompt_planner.plan(
         tool_prompt_mode=tool_prompt_mode,
@@ -388,20 +406,40 @@ def get_model_response(
     effective_config["provider_tools"] = provider_tools_cfg
     conductor._provider_tools_effective = provider_tools_cfg
     route_hint = getattr(conductor, "_current_route_id", None) or model
-    use_native_tools = provider_router.should_use_native_tools(
-        route_hint, effective_config
+    profile_provider_id = (
+        serial_profile.provider_id if serial_profile is not None else None
     )
+    if profile_provider_id is not None:
+        profile_capabilities = serial_profile.capabilities
+        supports_native_tools = bool(profile_capabilities.supports_tools)
+        native_override = provider_tools_cfg.get("use_native")
+        use_native_tools = (
+            supports_native_tools
+            if native_override is None
+            else bool(native_override) and supports_native_tools
+        )
+    else:
+        use_native_tools = provider_router.should_use_native_tools(
+            route_hint, effective_config
+        )
     if use_native_tools and not getattr(conductor, "current_native_tools", None):
         try:
-            conductor._setup_native_tools(route_hint, True)
+            if profile_provider_id is not None:
+                conductor._setup_native_tools(
+                    route_hint,
+                    True,
+                    provider_id=profile_provider_id,
+                )
+            else:
+                conductor._setup_native_tools(route_hint, True)
         except Exception:
             pass
     tools_schema = None
-    provider_id: Optional[str] = None
+    provider_id: Optional[str] = profile_provider_id
     allowed_tool_names = set(getattr(conductor, "_active_tool_names", []) or [])
     if use_native_tools and getattr(conductor, "current_native_tools", None):
         try:
-            provider_id = provider_router.parse_model_id(route_hint)[0]
+            provider_id = provider_id or provider_router.parse_model_id(route_hint)[0]
             native_tools = getattr(conductor, "current_native_tools", [])
             if allowed_tool_names:
                 native_tools = [
@@ -918,21 +956,29 @@ def apply_turn_strategy_from_loop(conductor: Any) -> None:
         pass
 
 
-def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bool:
+def setup_native_tools(
+    conductor: Any,
+    model: str,
+    use_native_tools: bool,
+    *,
+    provider_id: Optional[str] = None,
+) -> bool:
     will_use_native_tools = False
 
     if use_native_tools and getattr(conductor, "yaml_tools", None):
         try:
-            provider_id = provider_router.parse_model_id(model)[0]
+            resolved_provider_id = (
+                provider_id or provider_router.parse_model_id(model)[0]
+            )
             native_tools, text_based_tools = (
                 provider_adapter_manager.filter_tools_for_provider(
-                    conductor.yaml_tools, provider_id
+                    conductor.yaml_tools, resolved_provider_id
                 )
             )
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools
-            if will_use_native_tools and provider_id in (
+            if will_use_native_tools and resolved_provider_id in (
                 "openai",
                 "openrouter",
                 "mock",
@@ -1130,7 +1176,14 @@ def add_enhanced_message_fields(
                 route_hint = getattr(
                     conductor, "_current_route_id", None
                 ) or conductor.config.get("model", "gpt-4")
-                provider_id = provider_router.parse_model_id(route_hint)[0]
+                episode_profile = getattr(
+                    session_state, "_episode_provider_profile", None
+                )
+                provider_id = (
+                    episode_profile.provider_id
+                    if episode_profile is not None and not episode_profile.stream
+                    else provider_router.parse_model_id(route_hint)[0]
+                )
                 native_tools_spec = (
                     provider_adapter_manager.translate_tools_to_native_schema(
                         native_tools, provider_id

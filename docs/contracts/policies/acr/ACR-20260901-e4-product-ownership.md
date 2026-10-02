@@ -344,3 +344,53 @@ Protected checks, exact-artifact independent review, actual runtime and
 recipient evidence, and the prohibition on custody deletion remain in force.
 This record does not award worker qualification, final acceptance or public
 package release.
+
+## 16) Pinned cyber campaign provider and captured-number repair, 2026-10-02
+
+This backport targets `e4src/trusted-argv-nonlogin-v11` at
+`44754a17ccb5b5b0094d40752fa3546b2b7388aa`, not modern main's provider API.
+The authenticated private RL source already requires a scoped
+`serial_nonstreaming` profile. Installing the private wheel over public
+cc13 or v12 exposed missing `stream`/`wire_mode`; checkout-only private
+provider files had masked that distribution boundary.
+
+Port the existing private profile feature from `0117f051` while retaining
+the campaign's native tools, session compaction, append-only request history,
+socket cancellation, explicit sampling identity and default streamed profile.
+Opaque serial models use one episode-owned client, `n=1`, no transport/empty
+response retries and a nonblocking concurrent-invocation guard. Loopback HTTP
+tests cover exact request behavior, 503/429 single attempts, credential/profile
+mismatch before HTTP, and concurrent request rejection.
+
+Actual installed v12 target compilation with temperature `1.0` reproduces
+`target Harness Lock differs from its captured derivation`. CPU136983 confirms
+the same layer/graph/lock hash mismatch. The compiler encodes integral floats
+as integers; derive the source graph from those captured runtime bytes, not
+the differently encoded pre-serialization Python object. Exact generated-member
+and lock verification stay mandatory; no comparison is removed or relaxed.
+The compiler regression covers `1.0` and `0.0` with sampling values preserved.
+
+The final scoped provider/compiler suite passed286 cases. Installed four-image
+composition/native dispatch, private grading and optimizer qualification remain
+separate gates; this source repair awards none of them.
+
+Independent review catches two missed caller migrations: serial native setup
+must forward provider identity through the conductor facade, and request
+provenance must describe only effective serial fields. Actual conductor smoke
+reproduces the pre-HTTP `TypeError`; after both repairs its opaque-model HTTP
+episode completes. A real two-turn read-tool episode then reproduces disappearing
+per-turn directives in the next request's earlier user message. Persist serial
+directives under the existing context-mutation lock, leaving streaming unchanged.
+The regression observes real file contents in the tool response and exact HTTP
+history prefixes; it does not bypass receipt-based completion guards.
+The first canonical re-append still changes multipart shape (two wire text blocks
+become one). Persist the exact sent content, not an equivalent concatenated string.
+Both `none` and `per_turn_append` real tool-turn HTTP histories now pass.
+
+The final installed wheel reproducer now compiles temperature `1.0` through the
+real exact locked derivation. Six installed serial HTTP cases also pass, including
+both real tool-turn histories. The authenticated runtime uses public `5dfc0d29`
+and private `745bf351`; four-image proof343 is still pending. PR158's first
+compatibility guard failure is a missing reviewed-nonbreaking body marker.
+Re-running its original event retains the old body; a new documentation-only
+event carries the reviewed acknowledgement without changing runtime inputs.

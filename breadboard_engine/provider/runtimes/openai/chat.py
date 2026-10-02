@@ -7,7 +7,7 @@ import os
 import socket
 import threading
 from builtins import ExceptionGroup
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 import httpx
@@ -68,6 +68,9 @@ class _ProfileClient:
     profile: OpenAICompletionsProviderProfile
     http_client: httpx.Client
     connections: _ConnectionSockets
+    _serial_invocation_guard: Any = field(
+        default_factory=threading.Lock, repr=False, compare=False
+    )
 
     def close(self) -> None:
         failures: list[Exception] = []
@@ -223,16 +226,33 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             *profile.caller_headers.values(),
             allow_short=True,
         ):
-            return sanitize_provider_result(
-                self._invoke(
-                    client=client,
-                    model=model,
-                    messages=messages,
-                    tools=tools,
-                    stream=stream,
-                    context=context,
+            serial_guard = None
+            if (
+                not profile.stream
+                and isinstance(client, _ProfileClient)
+                and client.profile is profile
+            ):
+                serial_guard = client._serial_invocation_guard
+                if not serial_guard.acquire(blocking=False):
+                    raise ProviderRuntimeError(
+                        "OpenAI Completions serial profile invocation is already in progress",
+                        kind="configuration",
+                        details={"code": "profile_concurrent_invocation"},
+                    )
+            try:
+                return sanitize_provider_result(
+                    self._invoke(
+                        client=client,
+                        model=model,
+                        messages=messages,
+                        tools=tools,
+                        stream=stream,
+                        context=context,
+                    )
                 )
-            )
+            finally:
+                if serial_guard is not None:
+                    serial_guard.release()
 
     def profile_chat_request(
         self,
@@ -337,11 +357,17 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     details={"code": "profile_client_mismatch"},
                 )
             client = client.transport
-            if not stream:
+            if stream != profile.stream:
+                if profile.stream:
+                    raise ProviderRuntimeError(
+                        "OpenAI Completions profile requires streaming",
+                        kind="configuration",
+                        details={"code": "profile_requires_streaming"},
+                    )
                 raise ProviderRuntimeError(
-                    "OpenAI Completions profile requires streaming",
+                    "OpenAI Completions profile requires non-streaming",
                     kind="configuration",
-                    details={"code": "profile_requires_streaming"},
+                    details={"code": "profile_requires_nonstreaming"},
                 )
             if model != profile.model:
                 raise ProviderRuntimeError(
@@ -354,12 +380,15 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             profile_request.pop("messages")
             profile_request.pop("stream")
             request_tools = profile_request.pop("tools", None)
-            thinking_control = profile_request.pop("enable_thinking", None)
-            extra_body = (
-                {"enable_thinking": thinking_control}
-                if thinking_control is not None
-                else None
-            )
+            if profile.stream:
+                thinking_control = profile_request.pop("enable_thinking", None)
+                extra_body = (
+                    {"enable_thinking": thinking_control}
+                    if thinking_control is not None
+                    else None
+                )
+            else:
+                extra_body = None
             role_request = profile_request
         elif isinstance(client, _ProfileClient):
             raise ProviderRuntimeError(
