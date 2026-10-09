@@ -119,7 +119,6 @@ class CompactionContext:
     custom_instructions: Optional[str] = None
     clock: Callable[[], str] = _utc_now
     prior_compactions: int = 0
-    token_estimator: Optional[Callable[[Mapping[str, Any]], int]] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

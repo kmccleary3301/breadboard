@@ -70,10 +70,6 @@ def _recipe(case: Mapping[str, Any]):
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
-    estimates = inp.get("message_token_estimates")
-    if estimates is not None:
-        assert len(estimates) == len(messages)
-    token_counts = {id(m): tokens for m, tokens in zip(messages, estimates or [])}
     return CompactionContext(
         messages=messages,
         state=state,
@@ -84,7 +80,6 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         tokens_before=recipe.count(state.project(messages, TARGET)),
         summarizer=summarizer,
         prior_compactions=inp.get("prior_compactions", 0),
-        token_estimator=(lambda message: token_counts[id(message)]) if estimates is not None else None,
     )
 
 
@@ -200,6 +195,8 @@ def test_oracle_case(case_file: Path) -> None:
     if "selection" in expect:
         stage = recipe.pipeline.stages[inp.get("stage", recipe.pipeline.order[0])]
         assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
+        if "message_token_estimates" in inp:
+            assert [stage.step.selector.count([message]) for message in messages] == inp["message_token_estimates"]
         selection = stage.step.selector.select(context)
         got_selection = {
             k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])

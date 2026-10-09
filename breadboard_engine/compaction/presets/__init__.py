@@ -275,6 +275,8 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS and s not in ids]
     if unknown_steps:
         raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
+    if "omp_inline_snapcompact" in request_view[:-1]:
+        raise PresetError(f"preset {config.preset}: omp_inline_snapcompact must be the final request_view entry")
 
     order = None
     if order_source == "omp_method_order":

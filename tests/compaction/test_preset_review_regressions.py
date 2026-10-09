@@ -181,7 +181,7 @@ def test_request_view_validates_and_runs_pipeline_stage_ids_in_order():
         build_recipe(config, document)
 
 
-def test_controller_supplies_real_ledger_count_and_recipe_estimator_in_both_passes():
+def test_controller_supplies_real_boundary_count_in_both_passes():
     from breadboard_engine.compaction import MessageEdit, MethodUnavailable
 
     observed = []
@@ -212,7 +212,6 @@ def test_controller_supplies_real_ledger_count_and_recipe_estimator_in_both_pass
     assert [context.reason for context in observed] == ["manual", "request"]
     for context in observed:
         assert context.prior_compactions == 1
-        assert context.token_estimator(state.provider_messages[3]) == controller.recipe.count([state.provider_messages[3]])
 
 
 @pytest.mark.parametrize("policy, status", [("strict", "failed"), ("off", "committed")])
@@ -231,3 +230,106 @@ def test_safeguard_audits_prior_summary_identifiers_according_to_policy(policy, 
     if policy == "strict":
         assert "tx_123456789" in outcome.stages[0].detail
         assert state.records[-1].summary == previous
+
+
+@pytest.mark.parametrize("preset, mode, headed", [
+    ("openclaw@2026.9.4", "safeguard", True),
+    ("openclaw@2026.9.4", "default", False),
+    ("pi@0.73.1", None, False),
+])
+def test_real_selector_empty_history_split_turn_preserves_mode_fallback(preset, mode, headed):
+    config = {"enabled": True, "preset": preset, "keepRecentTokens": 1}
+    if mode is not None:
+        config.update(mode=mode, identifierPolicy="off")
+    recipe = build_recipe(load_compaction_config(config))
+    messages = [{"role": "user", "content": "Review the design"},
+                {"role": "assistant", "content": "I am working on it"}]
+    summaries = Summaries("ordinary turn context")
+    state = CompactionState()
+    context = CompactionContext(messages, state, recipe.settings, "manual", TARGET, 200000,
+                                recipe.count(messages), summarizer=summaries)
+    stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
+    selection = stage.step.selector.select(context)
+    assert selection.first_kept_index == 1
+    assert selection.summarize == () and selection.turn_prefix == (0,)
+    outcome = recipe.pipeline.run(context, target_tokens=200000)
+    assert outcome.status == "committed", outcome.stages
+    assert len(summaries.requests) == 1 and summaries.requests[0].purpose == "turn_prefix"
+    summary = state.records[-1].summary
+    assert "ordinary turn context" in summary
+    if headed:
+        expected = (
+            "## Decisions\nNo prior history.\n\n## Open TODOs\nNone.\n\n"
+            "## Constraints/Rules\nNone.\n\n## Pending user asks\nNone.\n\n"
+            "## Exact identifiers\nNone captured."
+        )
+        assert summary.startswith(expected)
+    else:
+        assert summary.startswith("No prior history.")
+        assert "## Decisions" not in summary
+
+
+@pytest.mark.parametrize("after", ["observation", "omp_prune", "omp_inline_snapcompact"])
+def test_loader_rejects_any_entry_after_inline_snapcompact(after):
+    config = load_compaction_config({"enabled": True, "preset": "mini_swe_agent@2.4.6"})
+    document = load_preset_document(config.preset)
+    document["request_view"] = ["omp_inline_snapcompact", after]
+    with pytest.raises(ValueError, match="omp_inline_snapcompact.*final"):
+        build_recipe(config, document)
+
+
+def test_controller_uses_the_stage_estimator_when_recipe_estimator_differs():
+    config = load_compaction_config({"enabled": True, "preset": "openclaw@2026.9.4", "keepRecentTokens": 2})
+    document = load_preset_document(config.preset)
+    document["estimator"] = "bb_chars4"
+    recipe = build_recipe(config, document)
+    summaries = Summaries("old history", "unused prefix")
+    controller = CompactionController({"compaction": {"enabled": True, "preset": config.preset}},
+                                     summary_model=summaries)
+    controller.recipe = recipe
+    state = SessionState("ws", "image", {})
+    for role, text in [("user", "old"), ("assistant", "prior"), ("user", "middle"), ("assistant", "last")]:
+        state.add_message({"role": role, "content": text})
+    outcome = controller.compact(state, reason="manual", target=TARGET, context_window=200000)
+    assert outcome.status == "committed", outcome.stages
+    assert outcome.records[-1].first_kept_index == 2
+    assert len(summaries.requests) == 1
+
+
+@pytest.mark.parametrize("observation_length, status", [(100, "unavailable"), (12000, "edited")])
+def test_final_inline_imaging_composes_with_request_stage_outcomes(observation_length, status):
+    import base64
+    import io
+    from PIL import Image
+    from breadboard_engine.compaction.settings import SnapcompactSettings
+    from breadboard_engine.compaction.snapcompact.inline import SYSTEM_STUB
+
+    config = load_compaction_config({"enabled": True, "preset": "mini_swe_agent@2.4.6"})
+    settings = replace(config.settings, snapcompact=SnapcompactSettings(system_prompt="all", inline_min_tokens=50))
+    document = load_preset_document(config.preset)
+    document["request_view"] = ["observation", "omp_inline_snapcompact"]
+    recipe = build_recipe(replace(config, settings=settings), document)
+    controller = CompactionController({"compaction": {"enabled": True, "preset": config.preset}})
+    controller.settings, controller.recipe = settings, recipe
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "system", "content": "You are an autonomous engineering agent with extensive guidelines. " * 250})
+    state.add_message({"role": "user", "content": "Inspect the output"})
+    state.add_message({"role": "assistant", "tool_calls": [{"id": "call", "type": "function",
+                       "function": {"name": "read", "arguments": "{}"}}]})
+    state.add_message({"role": "tool", "tool_call_id": "call", "content": json.dumps(
+        {"returncode": 0, "output": "x" * observation_length, "exception_info": None})})
+    history = copy.deepcopy(state.provider_messages)
+    view = controller.build_request_view(
+        state, target=ProjectionTarget("google", "google-generative-ai", "gemini-2.5-flash"),
+        supports_images=True, context_window=200000)
+    assert state.provider_messages == history
+    assert view[0]["content"] == SYSTEM_STUB
+    image_url = next(block["image_url"]["url"] for block in view[1]["content"] if block["type"] == "image_url")
+    assert Image.open(io.BytesIO(base64.b64decode(image_url.split("base64,")[1]))).format == "PNG"
+    event = [event["payload"] for event in state.lifecycle_events if event["type"] == "compaction_finished"][-1]
+    assert event["reason"] == "request" and event["stages"][0]["status"] == status
+    if status == "edited":
+        assert view[-1]["content"] == state.compaction_state.records[-1].edits[0].message["content"]
+        assert view[-1]["content"] != history[-1]["content"]
+    else:
+        assert view[-1] == history[-1]

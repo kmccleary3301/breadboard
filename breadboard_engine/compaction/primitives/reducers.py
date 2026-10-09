@@ -291,6 +291,19 @@ class Summarize:
                 reasons.append(f"missing_identifiers:{','.join(missing[:3])}")
         return {"ok": not reasons, "reasons": reasons}
 
+    def _structured_fallback_history(self, previous_summary: Optional[str]) -> str:
+        """Keep a headed prior body, or construct the pinned five-section fallback."""
+        previous = (previous_summary or "").strip()
+        if previous and self.audit_summary(previous)["ok"]:
+            return previous
+        sections = []
+        for index, heading in enumerate(self.required_sections):
+            value = previous or self.empty_history if index == 0 else (
+                "None captured." if index == len(self.required_sections) - 1 else "None."
+            )
+            sections.append(f"{heading}\n{value}")
+        return "\n\n".join(sections)
+
     def _summarize_window(
         self,
         context: CompactionContext,
@@ -357,9 +370,11 @@ class Summarize:
         previous_summary = previous.summary if previous is not None else None
         window = context.context_window
 
-        # A split turn with no earlier history gets the placeholder; otherwise
-        # the history is summarized even when empty (Pi ``compaction.js:568-577``).
-        if to_summarize or not prefix:
+        # Safeguard supplies a structured body even when only a split-turn
+        # prefix remains. Ordinary mode retains Pi's unheaded placeholder.
+        if not to_summarize and self.quality_mode == "safeguard":
+            summary = self._structured_fallback_history(previous_summary)
+        elif to_summarize or not prefix:
             summary = self._history_summary(context, to_summarize, previous_summary, self.max_tokens.tokens(window))
         else:
             summary = self.empty_history

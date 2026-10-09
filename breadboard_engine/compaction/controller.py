@@ -204,56 +204,57 @@ class CompactionController:
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
         window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
-        view = compaction_state.project(messages, target)
-        tokens_before = self.recipe.count(view)
+        tokens_before = self.recipe.count(compaction_state.project(messages, target))
         target_tokens = self.recipe.target_tokens("threshold", window)
         request_records = []
         request_stages = []
         steps = self.recipe.request_view if self.active else ()
+        ledger_steps = steps[:-1] if steps and steps[-1] == "omp_inline_snapcompact" else steps
         index = 0
-        while index < len(steps):
-            step = steps[index]
+        while index < len(ledger_steps):
+            step = ledger_steps[index]
             if step == "omp_prune":
                 if self.settings.prune.enabled:
                     context = CompactionContext(
                         messages=messages, state=compaction_state, settings=self.settings, reason="threshold",
-                        target=target, context_window=window, tokens_before=self.recipe.count(view),
+                        target=target, context_window=window,
+                        tokens_before=self.recipe.count(compaction_state.project(messages, target)),
                         prior_compactions=sum(record.is_boundary for record in compaction_state.records),
-                        token_estimator=lambda message: self.recipe.count([message]),
                     )
                     record = prune_tool_results(context)
                     if record is not None:
                         compaction_state.append(record, messages)
                         self._after_record_appended(session_state, record, target, turn_index)
-                        view = compaction_state.project(messages, target)
-                index += 1
-            elif step == "omp_inline_snapcompact":
-                if supports_images:
-                    view = apply_inline_snapcompact(
-                        view, self.settings, supports_images=supports_images,
-                        provider=target.provider, api=target.api, model_id=target.model,
-                    )
                 index += 1
             else:
                 # Consecutive stage ids share pipeline routing and execute in the
                 # configured request-view order, independently of preset order.
                 order = []
-                while index < len(steps) and steps[index] in self.recipe.pipeline.stages:
-                    order.append(steps[index])
+                while index < len(ledger_steps) and ledger_steps[index] in self.recipe.pipeline.stages:
+                    order.append(ledger_steps[index])
                     index += 1
                 context = CompactionContext(
                     messages=messages, state=compaction_state, settings=self.settings, reason="request",
-                    target=target, context_window=window, tokens_before=self.recipe.count(view),
+                    target=target, context_window=window,
+                    tokens_before=self.recipe.count(compaction_state.project(messages, target)),
                     summarizer=self.summary_model,
                     prior_compactions=sum(record.is_boundary for record in compaction_state.records),
-                    token_estimator=lambda message: self.recipe.count([message]),
                 )
                 outcome = self.recipe.pipeline.run(context, target_tokens=target_tokens, order=order)
                 request_records.extend(outcome.records)
                 request_stages.extend(outcome.stages)
                 for record in outcome.records:
                     self._after_record_appended(session_state, record, target, turn_index)
-                view = compaction_state.project(messages, target)
+        # All ledger-producing entries run first. Build the outgoing projection
+        # once; the only non-ledger translation is necessarily the final entry.
+        view = compaction_state.project(messages, target)
+        if not callable(getattr(runtime, "compaction_port", None)):
+            view = strip_native_markers(view)
+        if supports_images and steps and steps[-1] == "omp_inline_snapcompact":
+            view = apply_inline_snapcompact(
+                view, self.settings, supports_images=supports_images,
+                provider=target.provider, api=target.api, model_id=target.model,
+            )
         if request_stages:
             tokens_after = self.recipe.count(view)
             outcome = CompactionOutcome(
@@ -266,8 +267,6 @@ class CompactionController:
                 "reached_target": outcome.reached_target,
                 "stages": [stage.to_dict() for stage in request_stages],
             }, turn_index)
-        if not callable(getattr(runtime, "compaction_port", None)):
-            view = strip_native_markers(view)
         return view
 
     def should_trigger_threshold(
@@ -400,7 +399,6 @@ class CompactionController:
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
             prior_compactions=sum(record.is_boundary for record in compaction_state.records),
-            token_estimator=lambda message: self.recipe.count([message]),
             **kwargs,
         )
 

@@ -83,8 +83,7 @@ class RecentTokens:
     def select(self, context: CompactionContext) -> Selection:
         messages = context.messages
         start = context.state.kept_start(messages)
-        count_one = context.token_estimator or self._count_one
-        cut = _WALKS[self.walk](messages, start, len(messages), self.budget, count_tokens=count_one)
+        cut = _WALKS[self.walk](messages, start, len(messages), self.budget, count_tokens=self._count_one)
         first = cut.first_kept_index
         history_end = cut.turn_start_index if cut.is_split_turn else first
         summarize = tuple(range(start, history_end))
