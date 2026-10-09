@@ -94,13 +94,6 @@ class PruneResult:
     pruned_count: int
     tokens_saved: int
 
-    @property
-    def prunedCount(self) -> int:
-        return self.pruned_count
-
-    @property
-    def tokensSaved(self) -> int:
-        return self.tokens_saved
 
 
 @dataclass(frozen=True)
@@ -323,8 +316,6 @@ def prune_superseded_tool_results(
     return PruneResult(len(to_prune), tokens_saved)
 
 
-pruneSupersededToolResults = prune_superseded_tool_results
-
 
 def prune_tool_outputs(
     entries: Sequence[Any],
@@ -445,8 +436,6 @@ def prune_tool_outputs(
 
     return PruneResult(len(candidates), tokens_saved)
 
-
-pruneToolOutputs = prune_tool_outputs
 
 
 def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]:
