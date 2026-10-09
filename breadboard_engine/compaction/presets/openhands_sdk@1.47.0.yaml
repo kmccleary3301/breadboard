@@ -1,0 +1,63 @@
+schema: bb.compaction_preset.v1
+id: openhands_sdk@1.47.0
+source:
+  repo: https://github.com/OpenHands/software-agent-sdk
+  commit: 50080b58d35b4824fda25fca2345d80bcd08aeff
+  evidence:
+    - openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:120-399
+    - openhands-sdk/openhands/sdk/context/view/view.py:38-51
+    - openhands-sdk/openhands/sdk/context/condenser/pipeline_condenser.py:45-51
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    max_size: [triggers.0.maximum, pipeline.stages.0.select.maximum]
+    keep_first: [pipeline.stages.0.select.keep_first]
+    max_tokens: [triggers.0.max_tokens, pipeline.stages.0.select.max_tokens]
+    minimum_progress: [pipeline.stages.0.select.minimum_progress]
+    hard_context_reset_max_retries: [pipeline.stages.1.reduce.attempts]
+    hard_context_reset_context_scaling: [pipeline.stages.1.reduce.context_scaling]
+estimator: event_count
+triggers:
+  - {kind: event_count, maximum: 240, max_tokens: null, estimator: chars_div4_floor}
+target:
+  threshold: {kind: fixed, tokens: 120}
+  manual: {kind: fixed, tokens: 120}
+  overflow: {kind: fixed, tokens: 120}
+overflow:
+  # BreadBoard recovery budget, not the SDK's internal reset retry count.
+  max_attempts_per_turn: {setting: max_passes_per_turn}
+  policy: compact
+request_view: []
+pipeline:
+  mode: until_boundary
+  failure_policy: {soft: return, hard: raise_original}
+  stages:
+    - id: balanced_summary
+      accept: any
+      select:
+        kind: prefix_suffix_events
+        maximum: 240
+        keep_first: 2
+        max_tokens: null
+        estimator: chars_div4_floor
+        minimum_progress: 0.1
+      reduce:
+        kind: event_summary
+        prompt: {file: summarizing_prompt.j2}
+        truncate_notice: {file: truncate-notice.txt}
+      place: {kind: offset_summary, coalesce_user: true}
+      on_failure:
+        next_on_severity: hard
+        kinds: [NoCondensationAvailableException]
+    - id: hard_context_reset
+      when: {severity: hard}
+      accept: any
+      select: {kind: whole_view}
+      reduce:
+        kind: event_summary
+        prompt: {file: summarizing_prompt.j2}
+        truncate_notice: {file: truncate-notice.txt}
+        attempts: 5
+        context_scaling: 0.8
+      place: {kind: offset_summary, coalesce_user: true}

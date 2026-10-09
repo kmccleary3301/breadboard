@@ -206,7 +206,7 @@ class Recipe:
         return self.settings.enabled and bool(stage_order)
 
     def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None) -> int:
-        return self.targets[reason].tokens(context_window, max_output)
+        return self.targets["threshold" if reason == "request" else reason].tokens(context_window, max_output)
 
     def pressure(self, data: TriggerInput, history: Any) -> Optional[Pressure]:
         """The first firing trigger's decision; else the first trigger's; ``None`` without triggers."""
@@ -251,8 +251,9 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         build_trigger(params.child(item, f"triggers[{i}]")) for i, item in enumerate(params.list("triggers"))
     )
     target_params = params.child(params.mapping("target"), "target")
-    targets = {reason: build_limit(target_params.child(target_params.mapping(reason), reason)) for reason in REASONS}
+    targets = {reason: build_limit(target_params.child(target_params.mapping(reason), reason)) for reason in REASONS if reason != "request"}
     target_params.done()
+    targets["request"] = targets["threshold"]
 
     overflow = params.child(params.mapping("overflow"), "overflow")
     preset_attempts = overflow.int("max_attempts_per_turn", minimum=0)
@@ -260,13 +261,17 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
-    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS]
-    if unknown_steps:
-        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
+    if "omp_inline_snapcompact" in request_view[:-1]:
+        raise PresetError("request_view: omp_inline_snapcompact must be the final entry")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)
     order_source = pipe.choice("order", ("preset", "omp_method_order"), "preset")
+    failure_policy = pipe.mapping("failure_policy", None)
+    if failure_policy is not None:
+        policy = pipe.child(failure_policy, "failure_policy")
+        failure_policy = {severity: policy.choice(severity, ("return", "raise_original")) for severity in ("soft", "hard")}
+        policy.done()
     stages = [
         build_stage(pipe.child(item, f"stages[{i}]"), ALGORITHMS) for i, item in enumerate(pipe.list("stages"))
     ]
@@ -275,6 +280,9 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     ids = [s.id for s in stages]
     if len(set(ids)) != len(ids):
         raise PresetError(f"preset {config.preset} has duplicate stage ids {ids}")
+    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS and s not in ids]
+    if unknown_steps:
+        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
     order = None
     if order_source == "omp_method_order":
@@ -287,7 +295,7 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         count=count,
         triggers=triggers,
         targets=targets,
-        pipeline=Pipeline(stages, mode, count),
+        pipeline=Pipeline(stages, mode, count, failure_policy),
         order=order,
         max_attempts_per_turn=attempts,
         overflow_policy=config.overflow_policy or preset_policy,

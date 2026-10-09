@@ -35,6 +35,7 @@ class Selection:
     replay: Tuple[int, ...] = ()
     targets: Tuple[int, ...] = ()
     details: Mapping[str, Any] = field(default_factory=dict)
+    reset_context: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -93,7 +94,9 @@ class RecentTokens:
         return Selection(first_kept_index=first, summarize=summarize, turn_prefix=turn_prefix)
 
 
-SELECTOR_KINDS = {RecentTokens.kind: RecentTokens}
+from .event_selection import PrefixSuffixEvents, WholeView
+
+SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, PrefixSuffixEvents, WholeView)}
 
 
 def build_selector(params: Params) -> Any:

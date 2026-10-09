@@ -380,7 +380,9 @@ class Summarize:
         return Reduction(summary=summary, short_summary=short_summary, details=details)
 
 
-REDUCER_KINDS = {Summarize.kind: Summarize}
+from .event_summary import EventSummary
+
+REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary)}
 
 
 def build_reducer(params: Params) -> Any:
