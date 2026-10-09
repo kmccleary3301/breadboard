@@ -222,3 +222,97 @@ def test_inline_request_projection_must_be_last(preset):
     document["request_view"] = ["omp_inline_snapcompact", "prune"]
     with pytest.raises(PresetError, match="final request_view entry"):
         build_recipe(controller.config, document)
+
+
+def test_request_summary_receives_configured_custom_instructions():
+    state = _session()
+    # Include completed earlier turns so the history-summary path runs;
+    # native OMP does not apply custom focus to a split-turn prefix alone.
+    for turn in (2, 3):
+        state.add_message({"role": "user", "content": f"Turn {turn} " + "data " * 20})
+        state.add_message({"role": "assistant", "content": f"Answer {turn} " + "data " * 20})
+    controller = _controller(customInstructions="PRESERVE_SENTINEL", keepRecentTokens=30)
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["soft"]
+    controller.recipe = build_recipe(controller.config, document)
+    runtime = FakeRuntime()
+    controller.build_request_view(state, target=_target(), runtime=runtime, client=object())
+    assert runtime.summary_requests
+    assert any("Additional focus: PRESERVE_SENTINEL" in str(message["content"])
+               for message in runtime.summary_requests[0])
+    finished = [e for e in state.lifecycle_events if e["type"] == "compaction_finished"]
+    assert len(finished) == 1
+    assert finished[0]["payload"]["reason"] == "request"
+    assert finished[0]["payload"]["stages"][0]["status"] == "committed"
+
+
+def test_request_remote_stage_receives_native_port_and_model_dependencies():
+    from types import SimpleNamespace
+    from .test_remote_dispatch import DummyPort
+
+    class Port(DummyPort):
+        def compact(self, context):
+            assert context.reason == "request"
+            assert context.custom_instructions == "PRESERVE_SENTINEL"
+            assert context.max_input_tokens == 120000
+            assert context.max_output_tokens == 10000
+            assert context.supports_images is True
+            return super().compact(context)
+
+    port = Port("openai", "chat", ["gpt-test"])
+    client = object()
+
+    class PortRuntime(FakeRuntime):
+        def compaction_port(self, *, client, model):
+            assert client is expected_client and model == "gpt-test"
+            return port
+
+    expected_client = client
+    state = _session()
+    controller = _controller(methodOrder=["remote"], remoteEnabled=True, customInstructions="PRESERVE_SENTINEL")
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["remote"]
+    controller.recipe = build_recipe(controller.config, document)
+    conductor = SimpleNamespace(config={"providers": {"models": [{
+        "model_id": "gpt-test", "max_input_tokens": 120000, "max_output_tokens": 10000,
+    }]}})
+    view = controller.build_request_view(
+        state, target=_target(), runtime=PortRuntime(), client=client, conductor=conductor, supports_images=True,
+    )
+    assert port.called
+    assert state.compaction_state.records[-1].reason == "request"
+    assert any("bb_native_compaction" in message for message in view)
+    finished = [e for e in state.lifecycle_events if e["type"] == "compaction_finished"]
+    assert len(finished) == 1
+    assert finished[0]["payload"]["stages"][0]["status"] == "committed"
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+@pytest.mark.parametrize("enabled", [True, False])
+def test_request_only_recipe_runs_prune_without_enabling_disabled_recipes(preset, enabled):
+    state = _eligible_tool_history()
+    state.add_message({"role": "user", "content": "Next turn"})
+    history = copy.deepcopy(state.provider_messages)
+    controller = CompactionController({"compaction": {"enabled": enabled, "preset": preset}})
+    document = load_preset_document(preset)
+    document["pipeline"]["stages"] = [s for s in document["pipeline"]["stages"] if s["id"] == "prune"]
+    controller.recipe = build_recipe(controller.config, document)
+    assert controller.recipe.order == ()
+    assert controller.active is enabled
+    runtime = FakeRuntime()
+    view = controller.prepare_request(
+        state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1,
+    )
+    assert not runtime.summary_requests
+    finished = [e for e in state.lifecycle_events if e["type"] == "compaction_finished"]
+    if enabled:
+        assert view[2]["content"] == "[Old tool result content cleared]"
+        assert len(finished) == 1
+        assert finished[0]["payload"]["reason"] == "request"
+        assert [s["id"] for s in finished[0]["payload"]["stages"]] == ["prune"]
+        assert finished[0]["payload"]["stages"][0]["status"] == "edited"
+    else:
+        assert view == history
+        assert not state.compaction_state.records
+        assert not state.lifecycle_events
+    assert state.provider_messages == history

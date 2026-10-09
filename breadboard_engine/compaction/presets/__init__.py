@@ -215,7 +215,7 @@ class Recipe:
     @property
     def active(self) -> bool:
         stage_order = self.order if self.order is not None else self.pipeline.order
-        return self.settings.enabled and bool(stage_order)
+        return self.settings.enabled and bool(stage_order or self.request_view)
 
     def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None,
                       max_input: Optional[int] = None) -> int:

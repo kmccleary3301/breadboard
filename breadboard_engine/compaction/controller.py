@@ -165,6 +165,52 @@ class CompactionController:
             return []
         return [port] if port is not None else []
 
+    def _context_for_pass(
+        self,
+        session_state: Any,
+        *,
+        reason: CompactionReason,
+        target: ProjectionTarget,
+        conductor: Optional[Any] = None,
+        runtime: Optional[Any] = None,
+        client: Optional[Any] = None,
+        context_window: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        custom_instructions: Optional[str] = None,
+        remote_ports: Optional[Sequence[RemoteCompactionPort]] = None,
+        supports_images: bool = False,
+        clock: Optional[Callable[[], str]] = None,
+        overflow_tokens: Optional[int] = None,
+        overflow_limit: Optional[int] = None,
+    ) -> CompactionContext:
+        """Populate the same production dependencies for either kind of pass."""
+        messages = session_state.provider_messages
+        state = getattr(session_state, "compaction_state", None)
+        if state is None:
+            state = CompactionState()
+            session_state.compaction_state = state
+        if remote_ports is None:
+            remote_ports = self.remote_ports_for(runtime, client, target.model)
+        summarizer = self.summary_model
+        if summarizer is None and callable(getattr(runtime, "invoke", None)):
+            summarizer = ConductorSummaryModel(
+                runtime=runtime, client=client, model=self.settings.summary_model or target.model,
+                session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
+                turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
+            )
+        kwargs = {}
+        if clock is not None:
+            kwargs["clock"] = clock
+        return CompactionContext(
+            messages=messages, state=state, settings=self.settings, reason=reason, target=target,
+            context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
+            tokens_before=self.recipe.count(state.project(messages, target)),
+            summarizer=summarizer, remote_ports=remote_ports, supports_images=supports_images,
+            custom_instructions=custom_instructions or self.settings.custom_instructions,
+            overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
+            **self.resolve_token_limits(session_state, conductor, target.model), **kwargs,
+        )
+
     def prepare_request(
         self,
         session_state: Any,
@@ -233,21 +279,12 @@ class CompactionController:
         records = []
         stages = []
         if self.active and self.recipe.request_view:
-            token_limits = self.resolve_token_limits(session_state, conductor, target.model)
-            summarizer = self.summary_model
-            if summarizer is None and callable(getattr(runtime, "invoke", None)):
-                summarizer = ConductorSummaryModel(
-                    runtime=runtime, client=client, model=self.settings.summary_model or target.model,
-                    session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
-                    turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
-                )
-            context = CompactionContext(
-                messages=messages, state=compaction_state, settings=self.settings, reason="request", target=target,
-                context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-                summarizer=summarizer, supports_images=supports_images,
-                **token_limits,
+            context = self._context_for_pass(
+                session_state, reason="request", target=target, runtime=runtime, client=client,
+                conductor=conductor, context_window=context_window, turn_index=turn_index,
+                supports_images=supports_images,
             )
+            compaction_state = context.state
             target_tokens = self.recipe.target_tokens(
                 "threshold", context.context_window, context.max_output_tokens, context.max_input_tokens,
             )
@@ -385,57 +422,19 @@ class CompactionController:
         """Run the preset pipeline for ``reason``; record events and persist."""
         if reason not in self.recipe.targets:
             raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
-        messages = session_state.provider_messages
-        compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
-        if compaction_state is None:
-            compaction_state = CompactionState()
-            session_state.compaction_state = compaction_state
 
         resolved_target = target or ProjectionTarget("unknown", "unknown", "unknown")
-        resolved_window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
-        if remote_ports is None:
-            remote_ports = self.remote_ports_for(runtime, client, resolved_target.model)
-
-        projected = compaction_state.project(messages, resolved_target)
-        tokens_before = self.recipe.count(projected)
-
-        summarizer = self.summary_model
-        if summarizer is None and callable(getattr(runtime, "invoke", None)):
-            summarizer = ConductorSummaryModel(
-                runtime=runtime,
-                client=client,
-                model=self.settings.summary_model or resolved_target.model,
-                session_state=session_state,
-                agent_config=getattr(conductor, "config", None) or {},
-                turn_index=turn_index,
-                recorder=getattr(conductor, "structured_request_recorder", None),
-            )
-
-        kwargs = {}
-        if clock is not None:
-            kwargs["clock"] = clock
-
-        token_limits = self.resolve_token_limits(session_state, conductor, resolved_target.model)
-        context = CompactionContext(
-            messages=messages,
-            state=compaction_state,
-            settings=self.settings,
-            reason=reason,
-            target=resolved_target,
-            context_window=resolved_window,
-            tokens_before=tokens_before,
-            summarizer=summarizer,
-            remote_ports=remote_ports,
-            supports_images=supports_images,
-            custom_instructions=custom_instructions or self.settings.custom_instructions,
-            overflow_tokens=overflow_tokens,
-            overflow_limit=overflow_limit,
-            **token_limits,
-            **kwargs,
+        context = self._context_for_pass(
+            session_state, reason=reason, target=resolved_target, conductor=conductor,
+            runtime=runtime, client=client, context_window=context_window, turn_index=turn_index,
+            custom_instructions=custom_instructions, remote_ports=remote_ports, supports_images=supports_images,
+            clock=clock, overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
         )
-
-        target_tokens = self.recipe.target_tokens(reason, resolved_window, token_limits["max_output_tokens"],
-                                                 token_limits["max_input_tokens"])
+        compaction_state = context.state
+        tokens_before = context.tokens_before
+        target_tokens = self.recipe.target_tokens(
+            reason, context.context_window, context.max_output_tokens, context.max_input_tokens,
+        )
         self._record_event(
             session_state,
             "compaction_started",
