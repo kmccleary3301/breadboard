@@ -152,16 +152,6 @@ const messagesSlice = loadSlice(
   COMPACTION_SUMMARY_SUFFIX: string;
 };
 
-// Read verbatim prompt files from checkout
-const systemPromptVerbatim = fs.readFileSync(
-  path.join(sourceCheckout, "packages/agent-core/src/harness/compaction/compaction.ts"),
-  "utf-8"
-).split("\n").slice(590, 593).join("\n"); // lines 591-593
-
-const initialPromptVerbatim = fs.readFileSync(
-  path.join(sourceCheckout, "packages/agent-core/src/harness/compaction/compaction.ts"),
-  "utf-8"
-).split("\n").slice(594, 626).join("\n"); // lines 595-626
 
 const cases: string[] = [];
 
@@ -320,6 +310,15 @@ function emitCase(caseName: string, payload: unknown) {
   ];
 
   const tokenWeights: Record<string, number> = { e0: 1000, e1: 1000, e2: 1000, e3: 500, e4: 500, e5: 500 };
+  // Encode the recorded callback weights in the messages themselves so the
+  // declared stage estimator reproduces them without hidden runtime state.
+  // The pinned character estimator uses four ASCII characters per token.
+  for (const entry of entries) {
+    const calls = entry.message.tool_calls ?? [];
+    const callChars = calls.reduce((total, call) =>
+      total + call.function.name.length + JSON.stringify(JSON.parse(call.function.arguments)).length, 0);
+    entry.message.content = entry.message.content.padEnd(tokenWeights[entry.id] * 4 - callChars, "x");
+  }
   const constraints = {
     budget: {
       maxTokens: 200000,
@@ -342,6 +341,7 @@ function emitCase(caseName: string, payload: unknown) {
       commit: OPENCLAW_COMMIT,
       evidence: [
         "packages/agent-core/src/harness/compaction/compaction.ts:410-447,491-589",
+        "packages/normalization-core/src/cjk-chars.ts:10",
       ],
     },
     capture: {
@@ -351,10 +351,14 @@ function emitCase(caseName: string, payload: unknown) {
         "Executed slice packages/agent-core/src/harness/compaction/compaction.ts:410-589 (`findCutPoint`, `isCutPointMessage`, `isTurnStartMessage`, `isTurnStartEntry`).",
         "Backward token accumulation breaks at accumulated >= keepRecentTokens (1400).",
         "Verified cut index snaps to turn start at entry index 3 (role: user), preserving earlier toolResult pairing atomically in the summarized region.",
+        "Callback weights are encoded in ASCII message lengths; toolResult input rows are projected to wire role tool. No oracle-only estimator override is required.",
       ].join("\n"),
     },
     input: {
-      messages: entries.map((e) => e.message),
+      messages: entries.map((entry) => ({
+        ...entry.message,
+        role: entry.message.role === "toolResult" ? "tool" : entry.message.role,
+      })),
       usage: {
         input_tokens: 4000,
         output_tokens: 500,
@@ -365,6 +369,7 @@ function emitCase(caseName: string, payload: unknown) {
       context_window: 200_000,
       max_input_tokens: null,
       max_output_tokens: 4096,
+      message_token_estimates: entries.map((entry) => tokenWeights[entry.id]),
       reason: "threshold",
       native_settings: {
         keepRecentTokens: 1400,
@@ -444,22 +449,13 @@ function emitCase(caseName: string, payload: unknown) {
       native_settings: {
         identifierPolicy: "strict",
       },
-      summary_responses: [validSummary],
+      summary_responses: [],
+      component: "quality_audit",
+      stage: "summary",
+      audit_input: { summary: validSummary, identifiers: ["tx_987654321", "commit_3a9d69db306cd7f081e06254cb89c4bcc14a7107"] },
     },
     expect: {
-      summary_requests: [
-        {
-          system: systemPromptVerbatim,
-          messages: [
-            {
-              role: "user",
-              content: initialPromptVerbatim,
-            },
-          ],
-          max_tokens: null,
-          tools: [],
-        },
-      ],
+      details: auditResult,
     },
   });
 }
@@ -511,13 +507,13 @@ function emitCase(caseName: string, payload: unknown) {
       native_settings: {
         mode: "safeguard",
       },
-      summary_responses: [incompleteSummary],
+      summary_responses: [],
+      component: "quality_audit",
+      stage: "summary",
+      audit_input: { summary: incompleteSummary, identifiers: [] },
     },
     expect: {
-      failure: {
-        kind: "quality_audit_failed",
-        message: auditFail.reasons.join(", "),
-      },
+      details: auditFail,
     },
   });
 }
@@ -563,7 +559,10 @@ function emitCase(caseName: string, payload: unknown) {
       max_output_tokens: 4096,
       reason: "threshold",
       native_settings: {},
-      summary_responses: [summaryContent],
+      summary_responses: [],
+      component: "placement",
+      stage: "summary",
+      placement_input: { selection: { first_kept_index: 2 }, summary: summaryContent },
     },
     expect: {
       projected_view: [

@@ -46,7 +46,16 @@
     "max_input_tokens": null,
     "max_output_tokens": 2048,
     "reason": "manual",
-    "native_settings": {}
+    "native_settings": {},
+    "component": "reduction",
+    "stage": "observation",
+    "reduction_input": {
+      "selection": {
+        "targets": [
+          2
+        ]
+      }
+    }
   },
   "expect": {
     "projected_view": [

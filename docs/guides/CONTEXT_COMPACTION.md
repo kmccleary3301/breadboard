@@ -121,6 +121,31 @@ old tool outputs after the threshold check, preserving recent calls and savings
 gates. Ordinary overflow is terminal. Bundle captures cover these operations,
 not Claude Code's full attachment, persistence or routing behavior.
 
+### `hermes_agent@2026.9.11`
+
+Accepts `threshold`, `context_length`, `max_tokens`, `threshold_tokens`,
+`protect_first_n`, `protect_last_n`, `tail_mode`, `min_tail_user_messages`
+and `target_ratio`. Prunes duplicate tool results, selects a decaying protected
+prefix/tail, and writes checkpoint summaries with alternation-safe carriers.
+Merged carrier facts live in the ledger, not provider messages. Empty and
+length-truncated summaries fail explicitly. Overflow compacts and retries.
+Captured compressor helpers do not establish parity with the whole agent.
+
+### `openclaw@2026.9.4`
+
+Accepts `keepRecentTokens`, `mode` and `identifierPolicy`. Uses a floored,
+capped reserve, Pi-style recent-token selection and the pinned user summary
+wrapper. Safeguard mode audits required sections and identifiers before
+accepting the summary. Overflow compacts and retries. Captures cover reserve,
+selection, quality checks and placement, not all OpenClaw hooks or runtime.
+
+### `mini_swe_agent@2.4.6`
+
+Accepts no harness-specific settings. No proactive threshold compaction runs.
+The request pass renders tool observations through the pinned clipping
+template, including the exact 10,000-character boundary. Overflow is terminal.
+This preset does not add summarization to a harness that has none.
+
 ## When it runs
 
 | Trigger | What happens |

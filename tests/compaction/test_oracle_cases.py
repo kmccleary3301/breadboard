@@ -24,13 +24,15 @@ from breadboard_engine.compaction import (
     available_presets,
     load_compaction_config,
 )
-from breadboard_engine.compaction.pipeline import ComposedStep
+from breadboard_engine.compaction.pipeline import CompactionOutcome, ComposedStep, StageResult
 from breadboard_engine.compaction.presets import build_recipe
 from breadboard_engine.compaction.primitives.accounting import OccupancyInput, normalize_usage
 from breadboard_engine.compaction.primitives.triggers import TriggerInput
 from breadboard_engine.compaction.state import NATIVE_MARKER_KEY
 from breadboard_engine.compaction.remote.openai import OpenAIResponsesCompactionPort
 from breadboard_engine.compaction.primitives.byte_estimator import response_items
+from breadboard_engine.compaction.primitives.reducers import Reduction
+from breadboard_engine.compaction.primitives.selectors import Selection
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
@@ -62,6 +64,8 @@ class ScriptedSummaries:
             kinds = {"RuntimeError": RuntimeError, "ValueError": ValueError}
             assert error["kind"] in kinds, f"unsupported scripted exception {error['kind']}"
             raise kinds[error["kind"]](error["message"])
+        if isinstance(response, Mapping):
+            return SummaryResponse(response["content"], finish_reason=response.get("finish_reason"))
         return SummaryResponse(response)
 
 
@@ -105,6 +109,7 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         last_usage=inp.get("usage"),
         native_retention=recipe.native_retention,
         remote_ports=(ScriptedNative(inp["native_responses"]),) if "native_responses" in inp else (),
+        prior_compactions=inp.get("prior_compactions", 0),
     )
 
 
@@ -125,6 +130,45 @@ def _state_from_ledger(case, messages) -> CompactionState:
         )
         state.append(record, prefix)
     return state
+
+
+# Helper captures declare the stage role, production method, argument object,
+# and whether that method consumes the pass context. There are no preset names
+# or expected-output-derived arguments in this dispatch.
+_COMPONENT_METHODS = {
+    "quality_audit": ("reducer", "audit_summary", "audit_input", False),
+    "summary_request": ("reducer", "reduce_text", "summary_input", True),
+    "placement": ("placement", "place", "placement_input", True),
+    "reduction": ("reducer", "reduce", "reduction_input", True),
+}
+
+
+def _run_component(component, inp, recipe, context):
+    owner, method, input_key, uses_context = _COMPONENT_METHODS[component]
+    step = recipe.pipeline.stages[inp["stage"]].step
+    assert isinstance(step, ComposedStep)
+    arguments = dict(inp[input_key])
+    if "selection" in arguments:
+        arguments["selection"] = Selection(**arguments["selection"])
+    if owner == "placement":
+        arguments["reduction"] = Reduction(summary=arguments.pop("summary"),
+                                           details=arguments.pop("details", {}))
+    if uses_context:
+        arguments["context"] = context
+    records, stages, result = (), (), None
+    try:
+        result = getattr(getattr(step, owner), method)(**arguments)
+        if "selection" in arguments:
+            reduction = result if isinstance(result, Reduction) else arguments["reduction"]
+            placed = () if isinstance(result, Reduction) else result
+            record = step.record_output(context, arguments["selection"], reduction, placed)
+            context.state.append(record, context.messages)
+            records = (record,)
+    except Exception as exc:
+        stages = (StageResult(inp["stage"], "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"),)
+    after = recipe.count(context.projected())
+    target = recipe.target_tokens(context.reason, context.context_window)
+    return CompactionOutcome(records, stages, context.tokens_before, after, target, bool(records) and after <= target), result
 
 
 _CASE_KEYS = {"schema", "preset", "case", "source", "capture", "input", "expect"}
@@ -166,6 +210,7 @@ def test_oracle_case(case_file: Path) -> None:
             inp.get("max_output_tokens"),
             reason=inp.get("reason") or "threshold",
             max_input_tokens=inp.get("max_input_tokens"),
+            blocked=inp.get("trigger_blocked", False),
         )
         pressure = recipe.pressure(data, messages)
         assert pressure is not None, "trigger case for a preset without triggers"
@@ -183,23 +228,35 @@ def test_oracle_case(case_file: Path) -> None:
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
     if "selection" in expect:
-        stage = next(
+        stage = recipe.pipeline.stages[inp["stage"]] if "stage" in inp else next(
             stage for stage in recipe.pipeline.stages.values()
             if isinstance(stage.step, ComposedStep)
             and (stage.reasons is None or context.reason in stage.reasons)
         )
+        assert isinstance(stage.step, ComposedStep), "selection cases need a composed stage"
+        if "message_token_estimates" in inp:
+            assert [stage.step.selector.count([message]) for message in messages] == inp["message_token_estimates"]
         selection = stage.step.selector.select(context)
 
-    outcome = recipe.pipeline.run(
-        context,
-        target_tokens=recipe.target_tokens("threshold" if context.reason == "request" else context.reason, inp["context_window"]),
-        order=inp.get("pipeline_order"),
-    )
     if "selection" in expect:
         got_selection = {
             k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
         }
         assert got_selection == expect["selection"]
+        if set(expect) == {"selection"}:
+            return
+
+    component = inp.get("component")
+    component_result = None
+    if component is not None:
+        assert component in _COMPONENT_METHODS, f"unknown helper component {component!r}"
+        outcome, component_result = _run_component(component, inp, recipe, context)
+    else:
+        outcome = recipe.pipeline.run(
+            context,
+            target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
+            order=inp.get("pipeline_order", inp.get("stages")),
+        )
     for port in context.remote_ports:
         assert not port.responses, "oracle recorded native calls this preset did not make"
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
@@ -218,11 +275,13 @@ def test_oracle_case(case_file: Path) -> None:
         assert got == want
     if "summary" in expect or "details" in expect:
         boundaries = [r for r in outcome.records if r.is_boundary]
-        assert boundaries, outcome.stages
+        assert boundaries or component_result is not None, outcome.stages
+        result = boundaries[-1] if boundaries else component_result
         if "summary" in expect:
-            assert boundaries[-1].summary == expect["summary"]
+            assert result.summary == expect["summary"]
         if "details" in expect:
-            assert dict(boundaries[-1].details) == expect["details"]
+            details = result if isinstance(result, Mapping) else result.details
+            assert dict(details) == expect["details"]
     if "edits" in expect:
         got_edits = [{"index": e.index, "message": dict(e.message)} for r in outcome.records for e in r.edits]
         assert got_edits == expect["edits"]

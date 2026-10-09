@@ -251,6 +251,9 @@ class Summarize:
         self.file_ops = params.choice("file_ops", ("omp_files_block", "read_modified_tags", "none"))
         self.split_turn_join = params.str("split_turn_join", DEFAULT_SPLIT_TURN_JOIN)
         self.empty_history = params.str("empty_history", "No prior history.")
+        self.quality_mode = params.choice("quality_mode", ("default", "safeguard"), "default")
+        self.identifier_policy = params.choice("identifier_policy", ("strict", "off"), "strict")
+        self.required_sections = params.list("required_sections", [])
         params.done()
 
     # -- requests -------------------------------------------------------
@@ -272,7 +275,34 @@ class Summarize:
             purpose=purpose,
             model=context.settings.summary_model or context.target.model,
         )
-        return context.summarizer.complete(request).text
+        response = context.summarizer.complete(request)
+        return response.text
+
+    def audit_summary(
+        self, summary: str, identifiers: Sequence[str] = (), structural_summary: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Audit finalized output; only the history body must have section headings."""
+        from .summary_quality import includes_identifier
+        lines = {line.strip() for line in (summary if structural_summary is None else structural_summary).splitlines()}
+        reasons = [f"missing_section:{section}" for section in self.required_sections if section not in lines]
+        if self.identifier_policy == "strict":
+            missing = [identifier for identifier in identifiers if not includes_identifier(summary, identifier)]
+            if missing:
+                reasons.append(f"missing_identifiers:{','.join(missing[:3])}")
+        return {"ok": not reasons, "reasons": reasons}
+
+    def _structured_fallback_history(self, previous_summary: Optional[str]) -> str:
+        """Keep a headed prior body, or construct the pinned five-section fallback."""
+        previous = (previous_summary or "").strip()
+        if previous and self.audit_summary(previous)["ok"]:
+            return previous
+        sections = []
+        for index, heading in enumerate(self.required_sections):
+            value = previous or self.empty_history if index == 0 else (
+                "None captured." if index == len(self.required_sections) - 1 else "None."
+            )
+            sections.append(f"{heading}\n{value}")
+        return "\n\n".join(sections)
 
     def _summarize_window(
         self,
@@ -340,12 +370,15 @@ class Summarize:
         previous_summary = previous.summary if previous is not None else None
         window = context.context_window
 
-        # A split turn with no earlier history gets the placeholder; otherwise
-        # the history is summarized even when empty (Pi ``compaction.js:568-577``).
-        if to_summarize or not prefix:
+        # Safeguard supplies a structured body even when only a split-turn
+        # prefix remains. Ordinary mode retains Pi's unheaded placeholder.
+        if not to_summarize and self.quality_mode == "safeguard":
+            summary = self._structured_fallback_history(previous_summary)
+        elif to_summarize or not prefix:
             summary = self._history_summary(context, to_summarize, previous_summary, self.max_tokens.tokens(window))
         else:
             summary = self.empty_history
+        structural_summary = summary
         if prefix:
             prefix_prompt = f"<conversation>\n{self._transcript(prefix)}\n</conversation>\n\n{self.turn_prefix}"
             prefix_summary = self._complete(
@@ -377,13 +410,30 @@ class Summarize:
             read_files, modified_files = _pi_file_lists(ops)
             summary += _pi_format_file_operations(read_files, modified_files)
             details = {"read_files": read_files, "modified_files": modified_files}
+        if self.quality_mode == "safeguard":
+            from .checkpoint_summary import SummaryFailure
+            from .summary_quality import extract_identifiers
+            def message_text(message):
+                content = message.get("content") or ""
+                if isinstance(content, str):
+                    return content
+                return "\n".join(block.get("text", "") for block in content
+                                 if isinstance(block, Mapping) and block.get("type") == "text")
+            source = "\n".join(filter(None, [previous_summary, *(
+                message_text(message) for message in [*to_summarize, *prefix][-10:]
+            )]))
+            audit = self.audit_summary(summary, extract_identifiers(source), structural_summary)
+            if not audit["ok"]:
+                raise SummaryFailure("quality_audit_failed", ", ".join(audit["reasons"]))
         return Reduction(summary=summary, short_summary=short_summary, details=details)
 
 
 from .event_summary import EventSummary
 from .chat_reducers import ChatSummary, MaskToolOutputs
+from .observation_edits import DuplicateToolResults, ObservationClip
+from .checkpoint_summary import CheckpointSummary
 
-REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary, ChatSummary, MaskToolOutputs)}
+REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary, ChatSummary, MaskToolOutputs, DuplicateToolResults, ObservationClip, CheckpointSummary)}
 
 
 def build_reducer(params: Params) -> Any:

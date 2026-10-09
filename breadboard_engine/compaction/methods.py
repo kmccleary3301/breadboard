@@ -68,6 +68,7 @@ class SummaryResponse:
     text: str
     usage: Optional[Mapping[str, Any]] = None
     model: Optional[str] = None
+    finish_reason: Optional[str] = None
 
 
 @runtime_checkable
@@ -123,6 +124,7 @@ class CompactionContext:
     last_usage: Optional[Any] = None
     usage_fresh: bool = True
     native_retention: Optional[Any] = None
+    prior_compactions: int = 0
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

@@ -37,6 +37,7 @@ class Usage:
     total: int = 0
     raw_context: Optional[int] = None
     """BreadBoard v1 reading (prompt plus completion, cache-aware)."""
+    provider_context: Optional[int] = None
 
 
 def _num(source: Mapping[str, Any], *names: str) -> Optional[int]:
@@ -73,6 +74,10 @@ def normalize_usage(usage: Any) -> Optional[Usage]:
         return None
     cache_read = _num(usage, "cache_read_tokens", "cache_read_input_tokens") or 0
     cache_write = _num(usage, "cache_write_tokens", "cache_creation_input_tokens") or 0
+    context_usage = usage.get("contextUsage") or usage.get("context_usage")
+    provider_context = None
+    if isinstance(context_usage, Mapping) and context_usage.get("state") == "available":
+        provider_context = _num(context_usage, "totalTokens", "total_tokens")
     return Usage(
         input=input_tokens or 0,
         output=_num(usage, "output_tokens", "completion_tokens") or 0,
@@ -80,6 +85,7 @@ def normalize_usage(usage: Any) -> Optional[Usage]:
         cache_write=cache_write,
         total=_num(usage, "total_tokens") or 0,
         raw_context=raw_context,
+        provider_context=provider_context,
     )
 
 
@@ -238,6 +244,12 @@ class Occupancy:
 def _usage_total(usage: Usage, total_rule: str) -> int:
     if total_rule == "bb_context":
         return max(0, usage.raw_context or 0)
+    if total_rule == "input":
+        return usage.input
+    if total_rule == "provider_context":
+        if usage.provider_context is not None:
+            return usage.provider_context
+        return usage.total or usage.input + usage.output + usage.cache_read + usage.cache_write
     components = usage.input + usage.output + usage.cache_read + usage.cache_write
     if total_rule == "total_or_components":
         return usage.total or components
@@ -246,7 +258,7 @@ def _usage_total(usage: Usage, total_rule: str) -> int:
     raise ValueError(f"unknown usage total rule {total_rule!r}")
 
 
-_TOTAL_RULES = ("bb_context", "total_or_components", "components")
+_TOTAL_RULES = ("bb_context", "total_or_components", "components", "input", "provider_context")
 
 
 def _last_index(messages: Sequence[Message], role: str) -> Optional[int]:

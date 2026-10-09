@@ -108,4 +108,6 @@ class ConductorSummaryModel:
             for message in result.messages
             if getattr(message, "role", "assistant") == "assistant"
         )
-        return SummaryResponse(text=text, usage=result.usage, model=result.model or model)
+        finish_reason = next((message.finish_reason for message in reversed(result.messages)
+                              if getattr(message, "role", "assistant") == "assistant"), None)
+        return SummaryResponse(text=text, usage=result.usage, model=result.model or model, finish_reason=finish_reason)

@@ -288,6 +288,7 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     if unknown_steps:
         raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
+
     order = None
     if order_source == "omp_method_order":
         order = config.settings.method_order

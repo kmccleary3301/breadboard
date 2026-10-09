@@ -115,9 +115,12 @@ class FixedLimit:
         return self.value
 
 
+from .budget_limits import EffectiveBudget, FlooredCappedReserve
+
 LIMIT_KINDS = {
     cls.kind: cls
-    for cls in (OmpSettingsLimit, WindowMinusReserve, WindowFraction, OutputReservePlusBuffer, FixedLimit)
+    for cls in (OmpSettingsLimit, WindowMinusReserve, WindowFraction, OutputReservePlusBuffer, FixedLimit,
+                EffectiveBudget, FlooredCappedReserve)
 }
 
 
@@ -142,6 +145,7 @@ class TriggerInput:
     max_output_tokens: Optional[int] = None
     reason: str = "threshold"
     max_input_tokens: Optional[int] = None
+    blocked: bool = False
 
 
 @dataclass(frozen=True)
@@ -199,7 +203,7 @@ class ThresholdTrigger:
         measured = self.accounting.measure(data.occupancy)
         if measured is None:
             return Pressure(False, None, limit, "no_usage", self.severity, in_phase)
-        fires = in_phase and COMPARATORS[self.compare](measured.tokens, limit)
+        fires = self.enabled and not data.blocked and in_phase and COMPARATORS[self.compare](measured.tokens, limit)
         return Pressure(fires, measured.tokens, limit, measured.source, self.severity, in_phase)
 
 

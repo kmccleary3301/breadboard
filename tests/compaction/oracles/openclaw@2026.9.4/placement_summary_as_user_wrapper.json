@@ -35,9 +35,15 @@
     "max_output_tokens": 4096,
     "reason": "threshold",
     "native_settings": {},
-    "summary_responses": [
-      "Summary text from LLM"
-    ]
+    "summary_responses": [],
+    "component": "placement",
+    "stage": "summary",
+    "placement_input": {
+      "selection": {
+        "first_kept_index": 2
+      },
+      "summary": "Summary text from LLM"
+    }
   },
   "expect": {
     "projected_view": [

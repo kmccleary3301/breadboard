@@ -96,23 +96,33 @@ class ComposedStep:
     def run(self, context: CompactionContext) -> StepOutput:
         selection = self.selector.select(context)
         reduction = self.reducer.reduce(context, selection)
-        summary_messages: Sequence[Mapping[str, Any]] = ()
+        placed = ()
         if selection.first_kept_index is not None and self.placement is not None:
-            summary_messages = self.placement.place(context, selection, reduction)
-        record = context.new_record(
+            placed = self.placement.place(context, selection, reduction)
+        return StepOutput(self.record_output(context, selection, reduction, placed), selection)
+
+    def record_output(self, context: CompactionContext, selection: Selection, reduction: Any, placed: Any = ()) -> CompactionRecord:
+        """Package reducer/placement output using the production ledger contract."""
+        from .primitives.alternation import PlacementResult
+        edits = reduction.edits
+        details = dict(reduction.details)
+        if isinstance(placed, PlacementResult):
+            edits = (*edits, *placed.edits)
+            details.update(placed.details)
+            placed = placed.messages
+        return context.new_record(
             method=self.name,
             first_kept_index=selection.first_kept_index,
             prefix_end=selection.prefix_end,
             summary=reduction.summary,
             short_summary=reduction.short_summary,
-            summary_messages=summary_messages,
+            summary_messages=placed,
             native=reduction.native,
-            edits=reduction.edits,
-            details=reduction.details,
+            edits=edits,
+            details=details,
             reset_context=selection.reset_context,
             coalesce_user=bool(getattr(self.placement, "coalesce_user", False)),
         )
-        return StepOutput(record, selection)
 
 
 class AlgorithmStep:
@@ -205,7 +215,7 @@ class Pipeline:
                     stopped = f"stopped after {stage_id} unavailable"
                 continue
             except Exception as exc:
-                results.append(StageResult(stage_id, "failed", f"{type(exc).__name__}: {exc}"))
+                results.append(StageResult(stage_id, "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"))
                 permitted = (
                     stage.failure_next_on == context.severity
                     and type(exc).__name__ in stage.failure_kinds

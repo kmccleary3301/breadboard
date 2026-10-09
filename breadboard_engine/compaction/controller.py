@@ -451,6 +451,7 @@ class CompactionController:
             custom_instructions=custom_instructions or self.settings.custom_instructions,
             max_input_tokens=max_input,
             max_output_tokens=max_output,
+            prior_compactions=sum(record.is_boundary for record in compaction_state.records),
             **kwargs,
             last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
             usage_fresh=len(messages) != self._messages_len_at_last_record,

@@ -29,14 +29,22 @@
     "native_settings": {
       "mode": "safeguard"
     },
-    "summary_responses": [
-      "## Decisions\n- Chose sqlite\n\n## Constraints/Rules\n- Memory limit 512MB"
-    ]
+    "summary_responses": [],
+    "component": "quality_audit",
+    "stage": "summary",
+    "audit_input": {
+      "summary": "## Decisions\n- Chose sqlite\n\n## Constraints/Rules\n- Memory limit 512MB",
+      "identifiers": []
+    }
   },
   "expect": {
-    "failure": {
-      "kind": "quality_audit_failed",
-      "message": "missing_section:## Open TODOs, missing_section:## Pending user asks, missing_section:## Exact identifiers"
+    "details": {
+      "ok": false,
+      "reasons": [
+        "missing_section:## Open TODOs",
+        "missing_section:## Pending user asks",
+        "missing_section:## Exact identifiers"
+      ]
     }
   }
 }

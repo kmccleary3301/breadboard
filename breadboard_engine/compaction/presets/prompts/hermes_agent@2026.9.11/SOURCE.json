@@ -1,15 +1,16 @@
 {
   "repo": "https://github.com/NousResearch/hermes-agent.git",
   "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
-  "files": {
-    "summary_prefix.txt": "agent/context_compressor.py:180-220",
-    "summary_end_marker.txt": "agent/context_compressor.py:356",
-    "merged_prior_context_header.txt": "agent/context_compressor.py:360",
-    "merged_summary_delimiter.txt": "agent/context_compressor.py:361",
-    "inflight_task_replay_header.txt": "agent/context_compressor.py:373-376",
-    "lean_session_log_section.txt": "agent/context_compressor.py:852-862",
-    "micro_summary_user_prompt.txt": "agent/micro_compaction.py:95-110",
-    "micro_summary_system_prompt.txt": "agent/micro_compaction.py:112"
+  "source_sha256": {
+    "agent/context_compressor.py": "29b12a7bb57bd76dadcbcfdfee470001f9b5b0b015b6eaa8801c7cfc6a6139d0"
   },
-  "license": "MIT"
+  "files": {
+    "initial-user.txt": "agent/context_compressor.py:3352-3483",
+    "update-user.txt": "agent/context_compressor.py:3352-3483",
+    "initial-no-user.txt": "agent/context_compressor.py:3352-3483",
+    "update-no-user.txt": "agent/context_compressor.py:3352-3483",
+    "end-marker.txt": "agent/context_compressor.py:356-361",
+    "prior-header.txt": "agent/context_compressor.py:356-361",
+    "merge-delimiter.txt": "agent/context_compressor.py:356-361"
+  }
 }
