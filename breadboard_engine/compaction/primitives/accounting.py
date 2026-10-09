@@ -137,6 +137,8 @@ def pi_estimate_message(message: Message) -> int:
     User images are free, tool-result images cost 4800 chars, assistant
     reasoning counts as thinking, tool-call arguments are measured as
     ``JSON.stringify`` of the parsed object, lengths are UTF-16 units.
+    System messages count 0: Pi keeps the system prompt outside session
+    entries, so its estimate never sees it (unknown roles return 0).
     """
     role = message.get("role")
     chars = 0
@@ -152,7 +154,7 @@ def pi_estimate_message(message: Message) -> int:
         for call in message.get("tool_calls") or ():
             if isinstance(call, Mapping):
                 chars += _pi_tool_call_chars(call)
-    elif role in {"tool", "function", "system"}:
+    elif role in {"tool", "function"}:
         chars = sum(_utf16_len(text) for text in _text_parts(content))
         chars += 4800 * _image_parts(content)
     else:
