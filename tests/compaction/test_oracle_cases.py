@@ -130,8 +130,9 @@ def test_oracle_case(case_file: Path) -> None:
             inp["context_window"],
             inp.get("max_output_tokens"),
         )
-        assert len(recipe.triggers) == 1, "trigger cases assume a single-trigger preset"
-        assert recipe.triggers[0].evaluate(data, messages).to_dict() == expect["trigger"]
+        pressure = recipe.pressure(data, messages)
+        assert pressure is not None, "trigger case for a preset without triggers"
+        assert pressure.to_dict() == expect["trigger"]
 
     compaction_keys = _EXPECT_KEYS - {"trigger"}
     if not compaction_keys & set(expect):

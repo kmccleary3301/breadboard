@@ -262,7 +262,8 @@ class CompactionController:
         # compaction and its usage would retrigger it.
         usage_fresh = len(messages) != self._messages_len_at_last_record
         data = TriggerInput(OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window)
-        return any(trigger.evaluate(data, messages).fires for trigger in self.recipe.triggers)
+        pressure = self.recipe.pressure(data, messages)
+        return pressure is not None and pressure.fires
 
     @staticmethod
     def _record_event(session_state: Any, event_type: str, payload: Dict[str, Any], turn_index: Optional[int]) -> None:

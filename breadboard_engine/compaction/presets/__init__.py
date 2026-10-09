@@ -39,7 +39,7 @@ from ..methods import CompactionMethod
 from ..params import BuildEnv, Params, PresetError
 from ..pipeline import MODES, REASONS, Pipeline, build_stage
 from ..primitives.accounting import build_estimator
-from ..primitives.triggers import build_limit, build_trigger
+from ..primitives.triggers import Pressure, TriggerInput, build_limit, build_trigger
 from ..remote import RemoteCompaction
 from ..settings import CompactionSettings, settings_from_config
 from ..shake import ShakeCompaction
@@ -207,6 +207,11 @@ class Recipe:
 
     def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None) -> int:
         return self.targets[reason].tokens(context_window, max_output)
+
+    def pressure(self, data: TriggerInput, history: Any) -> Optional[Pressure]:
+        """The first firing trigger's decision; else the first trigger's; ``None`` without triggers."""
+        decisions = [trigger.evaluate(data, history) for trigger in self.triggers]
+        return next((d for d in decisions if d.fires), decisions[0] if decisions else None)
 
 
 def _set_path(doc: Dict[str, Any], path: str, value: Any, where: str) -> None:
