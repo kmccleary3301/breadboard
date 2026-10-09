@@ -31,6 +31,7 @@ from .state import CompactionRecord, CompactionState
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
 MODES = ("fallback", "sequence", "until_boundary")
 REASONS = ("threshold", "overflow", "manual")
+STAGE_REASONS = (*REASONS, "request")
 
 
 @dataclass(frozen=True)
@@ -94,26 +95,31 @@ class ComposedStep:
     def run(self, context: CompactionContext) -> StepOutput:
         selection = self.selector.select(context)
         reduction = self.reducer.reduce(context, selection)
-        summary_messages: Sequence[Mapping[str, Any]] = ()
-        edits = reduction.edits
+        placed = ()
         if selection.first_kept_index is not None and self.placement is not None:
-            summary_messages = self.placement.place(context, selection, reduction)
-            from .primitives.alternation import PlacementResult
-            if isinstance(summary_messages, PlacementResult):
-                edits = (*edits, *summary_messages.edits)
-                summary_messages = summary_messages.messages
-        record = context.new_record(
+            placed = self.placement.place(context, selection, reduction)
+        return StepOutput(self.record_output(context, selection, reduction, placed), selection)
+
+    def record_output(self, context: CompactionContext, selection: Selection, reduction: Any, placed: Any = ()) -> CompactionRecord:
+        """Package reducer/placement output using the production ledger contract."""
+        from .primitives.alternation import PlacementResult
+        edits = reduction.edits
+        details = dict(reduction.details)
+        if isinstance(placed, PlacementResult):
+            edits = (*edits, *placed.edits)
+            details.update(placed.details)
+            placed = placed.messages
+        return context.new_record(
             method=self.name,
             first_kept_index=selection.first_kept_index,
             prefix_end=selection.prefix_end,
             summary=reduction.summary,
             short_summary=reduction.short_summary,
-            summary_messages=summary_messages,
+            summary_messages=placed,
             native=reduction.native,
             edits=edits,
-            details=reduction.details,
+            details=details,
         )
-        return StepOutput(record, selection)
 
 
 class AlgorithmStep:
@@ -217,9 +223,9 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
     if when is not None:
         when_params = params.child(when, "when")
         raw_reasons = when_params.list("reasons")
-        bad = [r for r in raw_reasons if r not in REASONS]
+        bad = [r for r in raw_reasons if r not in STAGE_REASONS]
         if bad:
-            raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(REASONS)}")
+            raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(STAGE_REASONS)}")
         reasons = frozenset(raw_reasons)
         when_params.done()
     accept = params.choice("accept", ("progress", "any"), "progress")

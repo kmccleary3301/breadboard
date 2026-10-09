@@ -1,6 +1,6 @@
 """Summary carrier placement that preserves template-visible role alternation."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ..state import MessageEdit
 from .protected_windows import visible_messages
 
@@ -9,6 +9,7 @@ from .protected_windows import visible_messages
 class PlacementResult:
     messages: tuple
     edits: tuple = ()
+    details: dict = field(default_factory=dict)
 
 
 class AlternationTemplate:
@@ -40,11 +41,10 @@ class AlternationTemplate:
                 role = flipped
             else:
                 merge = True
-        flags = {"_compressed_summary": True,
-                 "_compressed_summary_has_user_turn": bool(reduction.details.get("has_user_turn"))}
+        details = {"summary_has_user_turn": bool(reduction.details.get("has_user_turn"))}
         summary = reduction.summary or ""
         if not merge:
-            return PlacementResult(({"role": role, "content": summary + "\n\n" + self.marker, **flags},))
+            return PlacementResult(({"role": role, "content": summary + "\n\n" + self.marker},), details=details)
         message = dict(tail[tail_index])
         old = message.get("content") or ""
         prefix = summary + "\n\n" + self.marker + "\n\n" if force_user else self.header + "\n"
@@ -55,8 +55,8 @@ class AlternationTemplate:
             message["content"] = [{"type": "text", "text": prefix}, *old]
             if suffix:
                 message["content"].append({"type": "text", "text": suffix})
-        message.update(flags)
         message.pop("api_content", None)
         # The merged row is the boundary's carrier; consume it once, not once as
         # a synthetic summary and again as a retained original.
-        return PlacementResult((), (MessageEdit(first + tail_index, message),))
+        details["summary_carrier_index"] = first + tail_index
+        return PlacementResult((), (MessageEdit(first + tail_index, message),), details)

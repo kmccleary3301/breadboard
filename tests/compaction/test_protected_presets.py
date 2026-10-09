@@ -15,25 +15,9 @@ def test_available_provider_context_usage_takes_precedence():
     assert pressure.fires
 
 
-def test_pending_entry_bounds_the_discard_boundary():
-    recipe = build_recipe(load_compaction_config({"enabled": True, "preset": "openclaw@2026.9.4", "keepRecentTokens": 1}))
-    messages = [{"role": "user", "content": "old", "id": "old"},
-                {"role": "assistant", "content": "done"},
-                {"role": "user", "content": "pending", "id": "pending"},
-                {"role": "assistant", "content": "a" * 100},
-                {"role": "user", "content": "queued"}]
-    context = CompactionContext(messages, CompactionState(), recipe.settings, "manual",
-                                ProjectionTarget("oracle", "oracle", "oracle"), 200000, 100,
-                                pending_entry_id="pending")
-    selection = recipe.pipeline.stages["summary"].step.selector.select(context)
-    assert selection.first_kept_index == 2
-    assert selection.summarize == (0, 1)
-
-
 def test_disabled_preset_preserves_observation_bytes():
     from breadboard_engine.compaction.controller import CompactionController
     from types import SimpleNamespace
-    config = load_compaction_config({"enabled": False, "preset": "mini_swe_agent@2.4.6"})
     messages = [{"role": "tool", "tool_call_id": "call", "content": "x" * 15000}]
     state = SimpleNamespace(provider_messages=messages, compaction_state=CompactionState())
     controller = CompactionController({"compaction": {"enabled": False, "preset": "mini_swe_agent@2.4.6"}})

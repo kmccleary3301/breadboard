@@ -47,7 +47,6 @@ pipeline:
       walk: message_crossing_ge
       estimator: pi_chars4
       when_empty: summarize
-      preserve_pending: true
     reduce:
       kind: summarize
       transcript: pi

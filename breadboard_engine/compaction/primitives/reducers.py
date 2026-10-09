@@ -276,22 +276,19 @@ class Summarize:
             model=context.settings.summary_model or context.target.model,
         )
         response = context.summarizer.complete(request)
-        if self.quality_mode == "safeguard":
-            audit = self.audit_summary(response.text)
-            if not audit["ok"]:
-                from .checkpoint_summary import SummaryFailure
-                raise SummaryFailure("quality_audit_failed", ", ".join(audit["reasons"]))
         return response.text
 
-    def audit_summary(self, summary: str, identifiers: Sequence[str] = ()) -> Dict[str, Any]:
-        import re
-        lines = {line.strip() for line in summary.splitlines()}
+    def audit_summary(
+        self, summary: str, identifiers: Sequence[str] = (), structural_summary: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Audit finalized output; only the history body must have section headings."""
+        from .summary_quality import includes_identifier
+        lines = {line.strip() for line in (summary if structural_summary is None else structural_summary).splitlines()}
         reasons = [f"missing_section:{section}" for section in self.required_sections if section not in lines]
         if self.identifier_policy == "strict":
-            for identifier in identifiers:
-                present = identifier.lower() in summary.lower() if re.fullmatch(r"[a-fA-F0-9]+", identifier) else identifier in summary
-                if not present:
-                    reasons.append(f"missing_identifier:{identifier}")
+            missing = [identifier for identifier in identifiers if not includes_identifier(summary, identifier)]
+            if missing:
+                reasons.append(f"missing_identifiers:{','.join(missing[:3])}")
         return {"ok": not reasons, "reasons": reasons}
 
     def _summarize_window(
@@ -366,6 +363,7 @@ class Summarize:
             summary = self._history_summary(context, to_summarize, previous_summary, self.max_tokens.tokens(window))
         else:
             summary = self.empty_history
+        structural_summary = summary
         if prefix:
             prefix_prompt = f"<conversation>\n{self._transcript(prefix)}\n</conversation>\n\n{self.turn_prefix}"
             prefix_summary = self._complete(
@@ -397,6 +395,21 @@ class Summarize:
             read_files, modified_files = _pi_file_lists(ops)
             summary += _pi_format_file_operations(read_files, modified_files)
             details = {"read_files": read_files, "modified_files": modified_files}
+        if self.quality_mode == "safeguard":
+            from .checkpoint_summary import SummaryFailure
+            from .summary_quality import extract_identifiers
+            def message_text(message):
+                content = message.get("content") or ""
+                if isinstance(content, str):
+                    return content
+                return "\n".join(block.get("text", "") for block in content
+                                 if isinstance(block, Mapping) and block.get("type") == "text")
+            source = "\n".join(filter(None, [previous_summary, *(
+                message_text(message) for message in [*to_summarize, *prefix][-10:]
+            )]))
+            audit = self.audit_summary(summary, extract_identifiers(source), structural_summary)
+            if not audit["ok"]:
+                raise SummaryFailure("quality_audit_failed", ", ".join(audit["reasons"]))
         return Reduction(summary=summary, short_summary=short_summary, details=details)
 
 

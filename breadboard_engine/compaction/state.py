@@ -128,7 +128,7 @@ class CompactionRecord:
     @property
     def readable(self) -> bool:
         return self.is_boundary and (bool(self.summary_messages) or any(
-            edit.index >= int(self.first_kept_index) and edit.message.get("_compressed_summary")
+            edit.index >= int(self.first_kept_index) and edit.index == self.details.get("summary_carrier_index")
             for edit in self.edits))
 
     def to_dict(self) -> Dict[str, Any]:
@@ -257,9 +257,7 @@ class CompactionState:
                 raise CompactionStateError("compaction boundary moved backwards")
             if first < len(messages) and is_tool_result(messages[first]):
                 raise CompactionStateError("compaction boundary orphans a tool result")
-            merged_carrier = any(edit.index >= first and edit.message.get("_compressed_summary")
-                                 for edit in record.edits)
-            if not record.summary_messages and record.native is None and not merged_carrier:
+            if not record.readable and record.native is None:
                 raise CompactionStateError("boundary record has neither summary nor native payload")
             if record.prefix_end is not None:
                 self._validate_prefix(int(record.prefix_end), first, head, previous, messages)

@@ -203,53 +203,71 @@ class CompactionController:
         if compaction_state is None or (not self.active and not compaction_state.records):
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
-        if self.active and "pipeline_edits" in self.recipe.request_view:
-            context = CompactionContext(
-                messages=messages, state=compaction_state, settings=self.settings, reason="manual",
-                target=target, context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-            )
-            outcome = self.recipe.pipeline.run(context, target_tokens=context.context_window)
-            for record in outcome.records:
-                self._after_record_appended(session_state, record, target, turn_index)
-
-        # 1. Prune tool results if enabled
-        if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
-            context = CompactionContext(
-                messages=messages,
-                state=compaction_state,
-                settings=self.settings,
-                reason="threshold",
-                target=target,
-                context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-            )
-            prune_record = prune_tool_results(context)
-            if prune_record is not None:
-                compaction_state.append(prune_record, messages)
-                self._after_record_appended(session_state, prune_record, target, turn_index)
-
-        # 2. Project view
+        window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
         view = compaction_state.project(messages, target)
-
-        # 3. Native markers replay only through a runtime that owns them.
+        tokens_before = self.recipe.count(view)
+        target_tokens = self.recipe.target_tokens("threshold", window)
+        request_records = []
+        request_stages = []
+        steps = self.recipe.request_view if self.active else ()
+        index = 0
+        while index < len(steps):
+            step = steps[index]
+            if step == "omp_prune":
+                if self.settings.prune.enabled:
+                    context = CompactionContext(
+                        messages=messages, state=compaction_state, settings=self.settings, reason="threshold",
+                        target=target, context_window=window, tokens_before=self.recipe.count(view),
+                        prior_compactions=sum(record.is_boundary for record in compaction_state.records),
+                        token_estimator=lambda message: self.recipe.count([message]),
+                    )
+                    record = prune_tool_results(context)
+                    if record is not None:
+                        compaction_state.append(record, messages)
+                        self._after_record_appended(session_state, record, target, turn_index)
+                        view = compaction_state.project(messages, target)
+                index += 1
+            elif step == "omp_inline_snapcompact":
+                if supports_images:
+                    view = apply_inline_snapcompact(
+                        view, self.settings, supports_images=supports_images,
+                        provider=target.provider, api=target.api, model_id=target.model,
+                    )
+                index += 1
+            else:
+                # Consecutive stage ids share pipeline routing and execute in the
+                # configured request-view order, independently of preset order.
+                order = []
+                while index < len(steps) and steps[index] in self.recipe.pipeline.stages:
+                    order.append(steps[index])
+                    index += 1
+                context = CompactionContext(
+                    messages=messages, state=compaction_state, settings=self.settings, reason="request",
+                    target=target, context_window=window, tokens_before=self.recipe.count(view),
+                    summarizer=self.summary_model,
+                    prior_compactions=sum(record.is_boundary for record in compaction_state.records),
+                    token_estimator=lambda message: self.recipe.count([message]),
+                )
+                outcome = self.recipe.pipeline.run(context, target_tokens=target_tokens, order=order)
+                request_records.extend(outcome.records)
+                request_stages.extend(outcome.stages)
+                for record in outcome.records:
+                    self._after_record_appended(session_state, record, target, turn_index)
+                view = compaction_state.project(messages, target)
+        if request_stages:
+            tokens_after = self.recipe.count(view)
+            outcome = CompactionOutcome(
+                tuple(request_records), tuple(request_stages), tokens_before, tokens_after, target_tokens,
+                bool(request_records) and tokens_after <= target_tokens,
+            )
+            self._record_event(session_state, "compaction_finished", {
+                "preset": self.recipe.preset_id, "reason": "request", "status": outcome.status,
+                "tokens_before": tokens_before, "tokens_after": tokens_after, "target_tokens": target_tokens,
+                "reached_target": outcome.reached_target,
+                "stages": [stage.to_dict() for stage in request_stages],
+            }, turn_index)
         if not callable(getattr(runtime, "compaction_port", None)):
             view = strip_native_markers(view)
-
-        # 4. Inline snapcompact if model supports images
-        if self.active and supports_images and "omp_inline_snapcompact" in self.recipe.request_view:
-            view = apply_inline_snapcompact(
-                view,
-                self.settings,
-                supports_images=supports_images,
-                provider=target.provider,
-                api=target.api,
-                model_id=target.model,
-            )
-
-        for message in view:
-            message.pop("_compressed_summary", None)
-            message.pop("_compressed_summary_has_user_turn", None)
         return view
 
     def should_trigger_threshold(
@@ -381,7 +399,8 @@ class CompactionController:
             remote_ports=remote_ports,
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
-            pending_entry_id=getattr(session_state, "pending_entry_id", None),
+            prior_compactions=sum(record.is_boundary for record in compaction_state.records),
+            token_estimator=lambda message: self.recipe.count([message]),
             **kwargs,
         )
 

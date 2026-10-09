@@ -48,9 +48,10 @@ class DecayingPrefixTail:
         n = len(messages)
         head = leading_system_count(messages)
         previous = context.state.latest_boundary()
-        resumed = any(m.get("_compressed_summary") for m in messages[head:head + self.first + 4])
-        start = align_forward(messages, min(n, head + (0 if previous or resumed or context.prior_compactions else self.first)))
+        start = align_forward(messages, min(n, head + (0 if previous or context.prior_compactions else self.first)))
         start = max(start, context.state.kept_start(messages))
+        protected = tuple(range(head, context.state.prefix_end(messages))) if previous else ()
+        carrier = previous.details.get("summary_carrier_index") if previous else None
         if start >= n:
             raise MethodUnavailable("Nothing to summarize")
         budget = (max(self.minimum, min(self.maximum, int(context.context_window * self.fraction)))
@@ -78,7 +79,7 @@ class DecayingPrefixTail:
         cut = align_backward(messages, cut)
         users = [i for i in range(n - 1, start - 1, -1)
                  if messages[i].get("role") == "user" and str(messages[i].get("content") or "").strip()
-                 and not messages[i].get("_compressed_summary")]
+                 and i != carrier]
         if users:
             latest = users[0]
             if latest < cut:
@@ -86,14 +87,14 @@ class DecayingPrefixTail:
                 if cut > latest:
                     cut = next((i for i in range(latest + 1, n) if messages[i].get("role") == "user"), n)
         assistant = next((i for i in range(n - 1, start - 1, -1)
-                          if messages[i].get("role") == "assistant" and not messages[i].get("_compressed_summary")), None)
+                          if messages[i].get("role") == "assistant" and i != carrier), None)
         if assistant is not None and assistant < cut:
             cut = max(align_backward(messages, assistant), start + 1)
         if self.users > 1 and users:
             cut = min(cut, max(start + 1, users[min(self.users, len(users)) - 1]))
         cut = min(n, align_forward(messages, max(cut, start + 1)))
         return Selection(prefix_end=head if previous else start, first_kept_index=cut,
-                         summarize=tuple(range(start, cut)))
+                         summarize=protected + tuple(range(start, cut)))
 
 
 class VisibleToolOutputs:

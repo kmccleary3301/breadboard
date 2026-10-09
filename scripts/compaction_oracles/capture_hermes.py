@@ -962,6 +962,18 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         if name == "failure_guard_cooldown_blocked":
             inp["trigger_blocked"] = cc_cd._summary_failure_cooldown_until > 100.0
 
+    # Capture the actual wire rows, not the compressor's in-process metadata.
+    # BreadBoard retains carrier provenance in record.details.
+    from agent.transports.chat_completions import _sanitize_message
+    for case in cases:
+        if "projected_view" in case["expect"]:
+            case["expect"]["projected_view"] = [
+                _sanitize_message(message, strip_extra_content=True) or message
+                for message in case["expect"]["projected_view"]
+            ]
+            case["source"]["evidence"].append("agent/transports/chat_completions.py:296-332")
+            case["capture"]["notes"] += " Executed the pinned transport serializer to remove ledger-only metadata."
+
     return cases
 
 

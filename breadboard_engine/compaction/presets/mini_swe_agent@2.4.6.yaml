@@ -33,12 +33,14 @@ overflow:
   policy: terminal
   max_attempts_per_turn: 0
 request_view:
-- pipeline_edits
+- observation
 pipeline:
   mode: sequence
   stages:
   - id: observation
     accept: any
+    when:
+      reasons: [request]
     select:
       kind: visible_tool_outputs
     reduce:

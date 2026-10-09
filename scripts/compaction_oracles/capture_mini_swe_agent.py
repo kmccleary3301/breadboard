@@ -60,6 +60,15 @@ def render_observation(output_str: str, returncode: int = 0, exception_info: str
 cases = []
 
 def emit_case(case_name: str, payload: dict):
+    if payload["capture"]["kind"] == "executed":
+        payload["input"].update({
+            "component": "reduction",
+            "stage": "observation",
+            "reduction_input": {"selection": {"targets": [
+                index for index, message in enumerate(payload["input"]["messages"])
+                if message["role"] == "tool"
+            ]}},
+        })
     file_path = TARGET_DIR / f"{case_name}.json"
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(payload, f, indent=2)

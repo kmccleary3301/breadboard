@@ -33,8 +33,12 @@ class CheckpointSummary:
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
         messages = visible_messages(context)
+        previous = context.state.latest_readable_boundary()
+        carrier = previous.details.get("summary_carrier_index") if previous else None
         turns = [messages[i] for i in selection.summarize]
-        has_user = any(m.get("role") == "user" and str(m.get("content") or "").strip() for m in turns)
+        has_user = bool(previous and previous.details.get("summary_has_user_turn")) or any(
+            i != carrier and messages[i].get("role") == "user" and str(messages[i].get("content") or "").strip()
+            for i in selection.summarize)
         parts = []
         for message in turns:
             role = message.get("role", "unknown")
@@ -56,7 +60,6 @@ class CheckpointSummary:
                         calls.append(f"{function.get('name', '')}({str(function.get('arguments', ''))[:1500]})")
                     content += "\n[Tool calls:\n" + "\n".join(calls) + "\n]"
                 parts.append(f"[{role.upper()}]: {content}")
-        previous = context.state.latest_readable_boundary()
         budget = max(2000, min(int(context.context_window * 0.05), 10000,
                                int(sum(len(p) for p in parts) / 4 * 0.2)))
         return self.reduce_text(context, "\n\n".join(parts), previous.summary if previous else "", budget, has_user)

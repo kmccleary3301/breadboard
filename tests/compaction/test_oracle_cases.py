@@ -24,10 +24,12 @@ from breadboard_engine.compaction import (
     available_presets,
     load_compaction_config,
 )
-from breadboard_engine.compaction.pipeline import ComposedStep
+from breadboard_engine.compaction.pipeline import CompactionOutcome, ComposedStep, StageResult
 from breadboard_engine.compaction.presets import build_recipe
 from breadboard_engine.compaction.primitives.accounting import OccupancyInput, normalize_usage
 from breadboard_engine.compaction.primitives.triggers import TriggerInput
+from breadboard_engine.compaction.primitives.reducers import Reduction
+from breadboard_engine.compaction.primitives.selectors import Selection
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
@@ -83,7 +85,6 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         summarizer=summarizer,
         prior_compactions=inp.get("prior_compactions", 0),
         token_estimator=(lambda message: token_counts[id(message)]) if estimates is not None else None,
-        pending_entry_id=inp.get("pending_entry_id"),
     )
 
 
@@ -101,6 +102,45 @@ def _state_from_ledger(case, messages) -> CompactionState:
         )
         state.append(record, prefix)
     return state
+
+
+# Helper captures declare the stage role, production method, argument object,
+# and whether that method consumes the pass context. There are no preset names
+# or expected-output-derived arguments in this dispatch.
+_COMPONENT_METHODS = {
+    "quality_audit": ("reducer", "audit_summary", "audit_input", False),
+    "summary_request": ("reducer", "reduce_text", "summary_input", True),
+    "placement": ("placement", "place", "placement_input", True),
+    "reduction": ("reducer", "reduce", "reduction_input", True),
+}
+
+
+def _run_component(component, inp, recipe, context):
+    owner, method, input_key, uses_context = _COMPONENT_METHODS[component]
+    step = recipe.pipeline.stages[inp["stage"]].step
+    assert isinstance(step, ComposedStep)
+    arguments = dict(inp[input_key])
+    if "selection" in arguments:
+        arguments["selection"] = Selection(**arguments["selection"])
+    if owner == "placement":
+        arguments["reduction"] = Reduction(summary=arguments.pop("summary"),
+                                           details=arguments.pop("details", {}))
+    if uses_context:
+        arguments["context"] = context
+    records, stages, result = (), (), None
+    try:
+        result = getattr(getattr(step, owner), method)(**arguments)
+        if "selection" in arguments:
+            reduction = result if isinstance(result, Reduction) else arguments["reduction"]
+            placed = () if isinstance(result, Reduction) else result
+            record = step.record_output(context, arguments["selection"], reduction, placed)
+            context.state.append(record, context.messages)
+            records = (record,)
+    except Exception as exc:
+        stages = (StageResult(inp["stage"], "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"),)
+    after = recipe.count(context.projected())
+    target = recipe.target_tokens(context.reason, context.context_window)
+    return CompactionOutcome(records, stages, context.tokens_before, after, target, bool(records) and after <= target), result
 
 
 _CASE_KEYS = {"schema", "preset", "case", "source", "capture", "input", "expect"}
@@ -169,38 +209,10 @@ def test_oracle_case(case_file: Path) -> None:
             return
 
     component = inp.get("component")
-    if component == "quality_audit":
-        step = recipe.pipeline.stages[inp["stage"]].step
-        assert step.reducer.audit_summary(**inp["audit_input"]) == expect["details"]
-        return
-    if component in {"summary_request", "placement"}:
-        from types import SimpleNamespace
-        from breadboard_engine.compaction.primitives.selectors import Selection
-        from breadboard_engine.compaction.primitives.reducers import Reduction
-        from breadboard_engine.compaction.pipeline import StageResult
-        step = recipe.pipeline.stages[inp["stage"]].step
-        assert isinstance(step, ComposedStep)
-        try:
-            if component == "summary_request":
-                reduction = step.reducer.reduce_text(context, **inp["summary_input"])
-                outcome = SimpleNamespace(records=(), stages=())
-            else:
-                selection = Selection(**inp["placement_input"]["selection"])
-                reduction = Reduction(summary=inp["placement_input"]["summary"],
-                                      details=inp["placement_input"].get("details") or {})
-                placed = step.placement.place(context, selection, reduction)
-                from breadboard_engine.compaction.primitives.alternation import PlacementResult
-                record = context.new_record(
-                    method=inp["stage"], first_kept_index=selection.first_kept_index,
-                    prefix_end=selection.prefix_end, summary=reduction.summary,
-                    summary_messages=placed.messages if isinstance(placed, PlacementResult) else placed,
-                    edits=placed.edits if isinstance(placed, PlacementResult) else (),
-                )
-                state.append(record, messages)
-                outcome = SimpleNamespace(records=(record,), stages=())
-        except Exception as exc:
-            outcome = SimpleNamespace(records=(), stages=(StageResult(
-                inp["stage"], "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"),))
+    component_result = None
+    if component is not None:
+        assert component in _COMPONENT_METHODS, f"unknown helper component {component!r}"
+        outcome, component_result = _run_component(component, inp, recipe, context)
     else:
         outcome = recipe.pipeline.run(
             context,
@@ -223,11 +235,13 @@ def test_oracle_case(case_file: Path) -> None:
         assert got == want
     if "summary" in expect or "details" in expect:
         boundaries = [r for r in outcome.records if r.is_boundary]
-        assert boundaries, outcome.stages
+        assert boundaries or component_result is not None, outcome.stages
+        result = boundaries[-1] if boundaries else component_result
         if "summary" in expect:
-            assert boundaries[-1].summary == expect["summary"]
+            assert result.summary == expect["summary"]
         if "details" in expect:
-            assert dict(boundaries[-1].details) == expect["details"]
+            details = result if isinstance(result, Mapping) else result.details
+            assert dict(details) == expect["details"]
     if "edits" in expect:
         got_edits = [{"index": e.index, "message": dict(e.message)} for r in outcome.records for e in r.edits]
         assert got_edits == expect["edits"]
