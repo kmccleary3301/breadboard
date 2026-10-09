@@ -259,16 +259,10 @@ class CompactionController:
                         _request_outcomes=outcomes,
                     )
                 elif step == "omp_prune" and self.settings.prune.enabled:
-                    context = CompactionContext(
-                        messages=messages,
-                        state=compaction_state,
-                        settings=self.settings,
-                        reason="threshold",
-                        target=target,
-                        context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                        tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-                        max_input_tokens=max_input,
-                        max_output_tokens=max_output,
+                    context = self._context_for_pass(
+                        session_state, reason="threshold", target=target, conductor=conductor,
+                        runtime=runtime, client=client, context_window=context_window,
+                        turn_index=turn_index, supports_images=supports_images,
                     )
                     prune_record = prune_tool_results(context)
                     if prune_record is not None:
@@ -381,6 +375,66 @@ class CompactionController:
             except Exception as exc:
                 logger.warning("Failed to persist compaction snapshot: %s", exc)
 
+    def _context_for_pass(
+        self,
+        session_state: Any,
+        *,
+        reason: CompactionReason,
+        target: ProjectionTarget,
+        conductor: Optional[Any] = None,
+        runtime: Optional[Any] = None,
+        client: Optional[Any] = None,
+        context_window: Optional[int] = None,
+        turn_index: Optional[int] = None,
+        custom_instructions: Optional[str] = None,
+        remote_ports: Optional[Sequence[RemoteCompactionPort]] = None,
+        supports_images: bool = False,
+        clock: Optional[Callable[[], str]] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> CompactionContext:
+        """Populate the production dependencies for every ledger-producing pass."""
+        messages = session_state.provider_messages
+        state = getattr(session_state, "compaction_state", None)
+        if state is None:
+            state = CompactionState()
+            session_state.compaction_state = state
+        max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
+        if max_output_tokens is not None:
+            max_output = max_output_tokens
+        if remote_ports is None:
+            remote_ports = self.remote_ports_for(runtime, client, target.model)
+        summarizer = self.summary_model
+        if summarizer is None and callable(getattr(runtime, "invoke", None)):
+            summarizer = ConductorSummaryModel(
+                runtime=runtime, client=client, model=self.settings.summary_model or target.model,
+                session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
+                turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
+            )
+        projected = state.project(messages, target, coalesce=False)
+        window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
+        pressure = self.recipe.pressure(
+            TriggerInput(OccupancyInput(projected, None, False), context_window,
+                         max_output_tokens=max_output, reason=reason, max_input_tokens=max_input),
+            messages,
+        )
+        kwargs = {}
+        if clock is not None:
+            kwargs["clock"] = clock
+        return CompactionContext(
+            messages=messages, state=state, settings=self.settings, reason=reason, target=target,
+            context_window=window, tokens_before=self.recipe.count(projected),
+            summarizer=summarizer, remote_ports=remote_ports, artifacts=None,
+            supports_images=supports_images,
+            custom_instructions=custom_instructions or self.settings.custom_instructions,
+            max_input_tokens=max_input, max_output_tokens=max_output,
+            last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
+            usage_fresh=len(messages) != self._messages_len_at_last_record,
+            native_retention=self.recipe.native_retention,
+            prior_compactions=sum(record.is_boundary for record in state.records),
+            severity="hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft",
+            **kwargs,
+        )
+
     def compact(
         self,
         session_state: Any,
@@ -404,64 +458,15 @@ class CompactionController:
         target_reason = "threshold" if reason == "request" else reason
         if target_reason not in self.recipe.targets:
             raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
-        messages = session_state.provider_messages
-        compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
-        if compaction_state is None:
-            compaction_state = CompactionState()
-            session_state.compaction_state = compaction_state
-
         resolved_target = target or ProjectionTarget("unknown", "unknown", "unknown")
-        resolved_window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
-        max_input, max_output = self.resolve_model_limits(session_state, conductor, resolved_target.model)
-        if max_output_tokens is not None:
-            max_output = max_output_tokens
-        if remote_ports is None:
-            remote_ports = self.remote_ports_for(runtime, client, resolved_target.model)
-
-        projected = compaction_state.project(messages, resolved_target, coalesce=False)
-        tokens_before = self.recipe.count(projected)
-
-        summarizer = self.summary_model
-        if summarizer is None and callable(getattr(runtime, "invoke", None)):
-            summarizer = ConductorSummaryModel(
-                runtime=runtime,
-                client=client,
-                model=self.settings.summary_model or resolved_target.model,
-                session_state=session_state,
-                agent_config=getattr(conductor, "config", None) or {},
-                turn_index=turn_index,
-                recorder=getattr(conductor, "structured_request_recorder", None),
-            )
-
-        kwargs = {}
-        if clock is not None:
-            kwargs["clock"] = clock
-
-        context = CompactionContext(
-            messages=messages,
-            state=compaction_state,
-            settings=self.settings,
-            reason=reason,
-            target=resolved_target,
-            context_window=resolved_window,
-            tokens_before=tokens_before,
-            summarizer=summarizer,
-            remote_ports=remote_ports,
-            supports_images=supports_images,
-            custom_instructions=custom_instructions or self.settings.custom_instructions,
-            max_input_tokens=max_input,
-            max_output_tokens=max_output,
-            prior_compactions=sum(record.is_boundary for record in compaction_state.records),
-            **kwargs,
-            last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
-            usage_fresh=len(messages) != self._messages_len_at_last_record,
-            native_retention=self.recipe.native_retention,
+        context = self._context_for_pass(
+            session_state, reason=reason, target=resolved_target, conductor=conductor,
+            runtime=runtime, client=client, context_window=context_window, turn_index=turn_index,
+            custom_instructions=custom_instructions, remote_ports=remote_ports,
+            supports_images=supports_images, clock=clock, max_output_tokens=max_output_tokens,
         )
-        pressure = self.recipe.pressure(
-            TriggerInput(OccupancyInput(projected, None, False), context_window, max_output, reason, max_input),
-            messages,
-        )
-        context.severity = "hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft"
+        messages, compaction_state = context.messages, context.state
+        resolved_window, tokens_before, max_output = context.context_window, context.tokens_before, context.max_output_tokens
 
         target_tokens = self.recipe.target_tokens(reason, resolved_window, max_output)
         self._record_event(
@@ -566,14 +571,8 @@ class CompactionController:
         messages = session_state.provider_messages
         state: CompactionState = session_state.compaction_state
         target = projection_target_for(runtime, model)
-        context = CompactionContext(
-            messages=messages,
-            state=state,
-            settings=self.settings,
-            reason="manual",
-            target=target,
-            context_window=self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-            tokens_before=self.recipe.count(state.project(messages, target)),
+        context = self._context_for_pass(
+            session_state, reason="manual", target=target, runtime=runtime, turn_index=turn_index,
         )
         record = drop_images(context)
         if record is None:
