@@ -23,9 +23,12 @@ from breadboard_engine.compilation.provider_response import (
     NATIVE_CHAT_RESPONSE_TARGETS,
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
+    PI_0_73_1_TARGET_IDS,
+    PI_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
 from breadboard_engine.provider.contracts import NativeProviderRequestFailure
+from breadboard_engine.compaction.overflow import is_context_overflow
 from breadboard.rl.harness.contracts import PolicyCapabilityObservation
 from breadboard.rl.harness.contracts import RuntimeClass
 from breadboard.rl.harness.lease_envelope import (
@@ -772,8 +775,13 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
             if stream_profile is not None
             else "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
         )
+        target_id_valid = (
+            target.get("target_id") in PI_0_73_1_TARGET_IDS
+            if source_consumer_id == PI_RESPONSE_CONSUMER_ID
+            else target.get("target_id") == expected_target
+        )
         if (
-            target.get("target_id") != expected_target
+            not target_id_valid
             or target.get("version") != expected_version
             or not isinstance(target.get("runtime_profile"), Mapping)
         ):
@@ -2672,6 +2680,12 @@ class _ConductorSession:
                     "public_stop": state.exit_status,
                 },
             )
+        source_profile = self._projection.source_profile
+        compaction_enabled = bool(
+            source_profile.get("compaction")
+            or (isinstance(source_profile.get("agent"), Mapping) and source_profile["agent"].get("compaction_enabled"))
+        ) if isinstance(source_profile, Mapping) else False
+        overflow_recovery_attempted = [False]
 
         await commit(0, "initial", None)
         async def step(turn: int) -> RunnerTermination | None:
@@ -2680,30 +2694,136 @@ class _ConductorSession:
                 # Pi's streamFn seam refuses the ninth query before any HTTP.
                 await commit(before, "exit", len(self._turns) or None)
                 return RunnerTermination.LIMITS_EXCEEDED
-            projected = await phase("project_request", {"messages": state.messages})
-            if projected.get("kind") != "request":
-                raise RunnerProtocolError(
-                    "native request projection failed",
-                    code="policy_request_invalid", **self._context(),
-                )
-            frozen_request = freeze_json_object({
-                "model": model.model_id,
-                "messages": projected.get("messages"),
-                "tools": projected.get("tools"),
-            }, field_name="native policy request")
+
             failure: NativeProviderRequestFailure | None = None
-            try:
-                response, request_body = await self._native_policy_exchange(
-                    frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
-                )
-            except RunnerDependencyError as exc:
-                failure = (
-                    _find_native_provider_failure(exc)
-                    if profile.provider_failure_terminates else None
-                )
-                if failure is None:
-                    raise
-                request_body = thaw_json(failure.request_body)
+            response: Any = None
+            request_body: Any = None
+            projected: Any = None
+
+            while True:
+                projected = await phase("project_request", {"messages": state.messages})
+                if projected.get("kind") != "request":
+                    raise RunnerProtocolError(
+                        "native request projection failed",
+                        code="policy_request_invalid", **self._context(),
+                    )
+                frozen_request = freeze_json_object({
+                    "model": model.model_id,
+                    "messages": projected.get("messages"),
+                    "tools": projected.get("tools"),
+                }, field_name="native policy request")
+
+                try:
+                    response, request_body = await self._native_policy_exchange(
+                        frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                    )
+                    overflow_recovery_attempted[0] = False
+                    failure = None
+                    break
+                except RunnerDependencyError as exc:
+                    candidate_failure = _find_native_provider_failure(exc)
+                    is_overflow = is_context_overflow(exc) or (
+                        candidate_failure is not None and is_context_overflow(candidate_failure)
+                    )
+                    if compaction_enabled and is_overflow and not overflow_recovery_attempted[0]:
+                        overflow_recovery_attempted[0] = True
+                        if candidate_failure is not None:
+                            failed_body = thaw_json(candidate_failure.request_body)
+                            trace_requests.append(dict(failed_body))
+                        else:
+                            trace_requests.append(dict(thaw_json(frozen_request)))
+
+                        if (
+                            state.messages
+                            and state.messages[-1].get("role") == "assistant"
+                            and state.messages[-1].get("stopReason") == "error"
+                        ):
+                            state.messages.pop()
+
+                        compaction_settings = (
+                            source_profile.get("compaction_settings")
+                            or (
+                                source_profile.get("agent", {}).get("compaction_settings")
+                                if isinstance(source_profile.get("agent"), Mapping)
+                                else None
+                            )
+                        )
+                        payload = {"messages": state.messages}
+                        if compaction_settings:
+                            payload["settings"] = compaction_settings
+                        prep_result = await phase("prepare_compaction", payload)
+                        if prep_result.get("kind") == "compaction_prepared":
+                            summary_req = prep_result["summary_request"]
+                            frozen_summary_req = freeze_json_object({
+                                "model": model.model_id,
+                                "messages": summary_req["messages"],
+                                "tools": [],
+                            }, field_name="native summary request")
+                            summary_response, summary_receipt = await self._native_policy_exchange(
+                                frozen_summary_req, model=model, turn=turn, phase_mode=profile.phase_mode,
+                                compaction_summary=True,
+                            )
+                            summary_receipt_body = thaw_json(summary_receipt)
+                            summary_body = (
+                                dict(summary_receipt_body)
+                                if isinstance(summary_receipt_body, Mapping)
+                                else {"request": summary_receipt}
+                            )
+                            summary_body["_compaction_summary"] = True
+                            trace_requests.append(summary_body)
+
+                            summary_native = thaw_json(summary_response["native_response"])
+                            summary_text = summary_native.get("content") or ""
+
+                            turn_prefix_summary = None
+                            if prep_result.get("turn_prefix_request") is not None:
+                                tp_req = prep_result["turn_prefix_request"]
+                                frozen_tp_req = freeze_json_object({
+                                    "model": model.model_id,
+                                    "messages": tp_req["messages"],
+                                    "tools": [],
+                                }, field_name="native turn prefix summary request")
+                                tp_response, tp_receipt = await self._native_policy_exchange(
+                                    frozen_tp_req, model=model, turn=turn, phase_mode=profile.phase_mode,
+                                    compaction_summary=True,
+                                )
+                                tp_receipt_body = thaw_json(tp_receipt)
+                                tp_body = (
+                                    dict(tp_receipt_body)
+                                    if isinstance(tp_receipt_body, Mapping)
+                                    else {"request": tp_receipt}
+                                )
+                                tp_body["_compaction_summary"] = True
+                                trace_requests.append(tp_body)
+                                tp_native = thaw_json(tp_response["native_response"])
+                                turn_prefix_summary = tp_native.get("content") or ""
+
+                            finalized = await phase("finalize_compaction", {
+                                "summary": summary_text,
+                                "turn_prefix_summary": turn_prefix_summary,
+                                "preparation": prep_result["preparation"],
+                            })
+                            if finalized.get("kind") == "compaction_finalized":
+                                compaction_msg = finalized["compaction_message"]
+                                first_kept_index = finalized["first_kept_index"]
+
+                                state.messages = [compaction_msg, *state.messages[first_kept_index:]]
+                                await commit(
+                                    0, "before_policy", turn,
+                                    events=[{
+                                        "kind": "compaction",
+                                        "summary": finalized["summary"],
+                                        "first_kept_index": first_kept_index,
+                                        "tokens_before": prep_result["preparation"].get("tokensBefore", 0),
+                                    }],
+                                )
+                                continue
+
+                    failure = _find_native_provider_failure(exc) if profile.provider_failure_terminates else None
+                    if failure is None:
+                        raise
+                    request_body = thaw_json(failure.request_body)
+                    break
             expected_members = projected.get("request_members")
             if expected_members is not None and (
                 not isinstance(expected_members, (list, tuple))
@@ -3658,6 +3778,7 @@ class _ConductorSession:
     async def _native_policy_exchange(
         self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
         turn: int, phase_mode: Literal["streaming", "checkpointed"],
+        compaction_summary: bool = False,
     ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
         request_digest = canonical_sha256(frozen_request)
         policy_request_event = PolicyRequestEvent.from_request(
@@ -3689,6 +3810,7 @@ class _ConductorSession:
             policy_slot_id=model.policy_slot_id,
             request_digest=request_digest, request_payload=frozen_request,
             turn=turn, attempt=1,
+            compaction_summary=compaction_summary,
         ))
         await self._checkpoint("after_policy", turn=turn)
         response, _ = freeze_json_object_with_size(

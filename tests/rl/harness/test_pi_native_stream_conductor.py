@@ -78,11 +78,12 @@ def _compile_target(
     *,
     profile_digest: str,
     model_id: str = "model-a",
+    target_id: str = "pi@0.73.1",
 ) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], c.CompiledConfigManifest]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
         compiled = compile_e4_harness(
-            load_e4_target("pi@0.73.1"),
+            load_e4_target(target_id),
             {},
             {
                 "version": 2,
@@ -456,6 +457,7 @@ async def _run_episode(
     *,
     request_features: list[str] | None = None,
     model_id: str = "model-a",
+    target_id: str = "pi@0.73.1",
     task_prompt: str = "work",
     assistant_texts: list[str] | None = None,
     initialize_workspace_write: bool = False,
@@ -480,6 +482,7 @@ async def _run_episode(
             tmp_path,
             profile_digest=profile_identity_digest(profile),
             model_id=model_id,
+            target_id=target_id,
         )
         observation = _observation(
             provider_id="openai",

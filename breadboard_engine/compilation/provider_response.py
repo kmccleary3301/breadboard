@@ -24,6 +24,7 @@ NATIVE_RESPONSE_POLICY_SCHEMA_VERSION: Final = "bb.provider_native_response_poli
 NATIVE_RESPONSE_CONSUMER_ID: Final = "breadboard.provider.recording.v1"
 MINI_RESPONSE_CONSUMER_ID: Final = "breadboard.mini-swe-agent.v2.4.6"
 PI_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.73.1"
+PI_0_73_1_TARGET_IDS: Final[frozenset[str]] = frozenset({"pi@0.73.1", "pi-r2@0.73.1"})
 PI_0_57_1_RESPONSE_CONSUMER_ID: Final = "breadboard.pi-coding-agent.v0.57.1"
 OMP_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v18.1.17"
 OMP_16_2_13_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v16.2.13"
@@ -389,7 +390,7 @@ def admit_native_response_binding(
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != "pi@0.73.1"
+            or target.get("target_id") not in PI_0_73_1_TARGET_IDS
             or target.get("renderer_id") != PI_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or effective_mode != "streaming"
@@ -526,6 +527,7 @@ __all__ = [
     "MINI_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_BINDING_SCHEMA_VERSION",
     "NATIVE_RESPONSE_CONSUMER_ID",
+    "PI_0_73_1_TARGET_IDS",
     "OMP_RESPONSE_CONSUMER_ID",
     "OMP_16_2_13_RESPONSE_CONSUMER_ID",
     "OPENHANDS_RESPONSE_CONSUMER_ID",
