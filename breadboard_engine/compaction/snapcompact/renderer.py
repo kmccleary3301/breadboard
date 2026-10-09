@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+import gzip
 import io
 import math
 from pathlib import Path
@@ -193,7 +194,8 @@ _FONT_SILVER_FACE: Optional[Any] = None
 def get_font_5x8() -> BitmapFont:
     global _FONT_5X8
     if _FONT_5X8 is None:
-        _FONT_5X8 = parse_bdf((FONTS_DIR / "5x8.bdf").read_text("latin-1"), 5, 8)
+        with gzip.open(FONTS_DIR / "5x8.bdf.gz", "rt", encoding="latin-1") as f:
+            _FONT_5X8 = parse_bdf(f.read(), 5, 8)
     return _FONT_5X8
 
 
@@ -207,14 +209,16 @@ def get_font_8x8() -> BitmapFont:
 def get_font_6x12() -> BitmapFont:
     global _FONT_6X12
     if _FONT_6X12 is None:
-        _FONT_6X12 = parse_bdf((FONTS_DIR / "6x12.bdf").read_text("latin-1"), 6, 12)
+        with gzip.open(FONTS_DIR / "6x12.bdf.gz", "rt", encoding="latin-1") as f:
+            _FONT_6X12 = parse_bdf(f.read(), 6, 12)
     return _FONT_6X12
 
 
 def get_font_8x13() -> BitmapFont:
     global _FONT_8X13
     if _FONT_8X13 is None:
-        _FONT_8X13 = parse_bdf((FONTS_DIR / "8x13.bdf").read_text("latin-1"), 8, 13)
+        with gzip.open(FONTS_DIR / "8x13.bdf.gz", "rt", encoding="latin-1") as f:
+            _FONT_8X13 = parse_bdf(f.read(), 8, 13)
     return _FONT_8X13
 
 
