@@ -76,7 +76,10 @@ run outside the pipeline:
   `[image removed]`.
 - **Inline snapcompact** (`snapcompact.systemPrompt` / `toolResults`) renders
   the system prompt or large old tool results as images in the request view
-  for vision models. The stored history is not changed.
+  for vision models. The stored history is not changed. As in OMP, the system
+  prompt (`all`) or its context-file sections (`agents-md`) are swapped only
+  when the whole text fits in at most 6 frames and imaging saves tokens.
+  Otherwise the text stays.
 
 ### `pi@0.73.1`
 
@@ -274,3 +277,11 @@ For eval, the `pi-r2@0.73.1` revision turns on stock Pi 0.73.1 compaction.
 The pinned worker (`breadboard/rl/harness/pi_tools_0_73_1.mjs`) runs Pi's own
 `prepareCompaction` and summary prompts, and recovery is attempted once per
 overflow, as in stock Pi. It does not use the engine presets above.
+
+Overflow recovery for an RL target needs two things:
+- **The BreadBoard setting:** `policy.provider.compaction: true` in the target's `harness.yaml`.
+- **Worker support:** the target's native stream profile (`breadboard/rl/harness/native_stream_profiles.py`) must set `implements_compaction_phases`. This means its worker handles `prepare_compaction` and `finalize_compaction`.
+
+Only Pi 0.73.1 sets that field. A target that turns compaction on without it is refused when the episode starts, with `native_compaction_unsupported`.
+
+A source's own setting copied into `native-config.json` (for example OMP's `agent.compaction_enabled`) describes the stock harness. It does not turn on recovery. The Conductor side is `breadboard/rl/harness/runners/native_compaction.py`.
