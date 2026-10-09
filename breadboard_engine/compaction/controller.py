@@ -204,7 +204,7 @@ class CompactionController:
                 context_window=context_window,
                 turn_index=turn_index,
                 supports_images=supports_images,
-                max_output_tokens=session_state.get_provider_metadata("max_output_tokens"),
+                max_output_tokens=max_output,
             )
         return self.build_request_view(
             session_state,

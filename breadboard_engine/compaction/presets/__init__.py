@@ -308,6 +308,10 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     )
     if order_source == "omp_method_order":
         order = config.settings.method_order
+        if not order:
+            # An explicit OMP off/empty method order disables its builtins,
+            # without disabling named request-only pipeline stages.
+            request_view = tuple(step for step in request_view if step not in REQUEST_VIEW_STEPS)
     attempts = config.max_passes_per_turn if config.max_passes_per_turn is not None else preset_attempts
     return Recipe(
         preset_id=config.preset,

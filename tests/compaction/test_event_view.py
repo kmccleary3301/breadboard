@@ -366,3 +366,51 @@ def test_cancelled_request_pass_reports_all_stage_ids_once():
     finished = [payload for event, payload in events if event == "compaction_finished"]
     assert len(finished) == 1 and finished[0]["status"] == "cancelled"
     assert [stage["id"] for stage in finished[0]["stages"]] == ["hard_context_reset", "balanced_summary"]
+
+
+@pytest.mark.parametrize("disabled_order", [{"strategy": "off"}, {"methodOrder": []}])
+def test_explicit_empty_omp_order_disables_request_builtins(disabled_order):
+    from breadboard_engine.compaction.controller import CompactionController
+
+    controller = CompactionController({"compaction": {
+        "enabled": True, **disabled_order, "prune": {"enabled": True},
+        "snapcompact": {"systemPrompt": "all", "inlineMinTokens": 1},
+    }})
+    messages = [{"role": "system", "content": "long system " * 100}, {"role": "user", "content": "task"}]
+    state = session(messages)
+    events = []
+    state.record_lifecycle_event = lambda *args, **kwargs: events.append(args)
+    assert not controller.active
+    assert controller.build_request_view(state, target=TARGET, supports_images=True) == messages
+    assert not events and not state.compaction_state.records
+
+
+@pytest.mark.parametrize("profile_output,metadata_output", [(10000, 32000), (10000, "invalid"), (None, "invalid")])
+def test_threshold_and_context_share_validated_route_output_cap(profile_output, metadata_output):
+    from types import SimpleNamespace
+    from breadboard_engine.compaction import MethodUnavailable
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.pipeline import AlgorithmStep
+
+    observed = []
+
+    class Observe:
+        name = "observe"
+
+        def run(self, context):
+            observed.append(context)
+            raise MethodUnavailable("inspection only")
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "opencode@1.2.17"}})
+    controller.recipe = replace(
+        controller.recipe, request_view=(), order=("observe",),
+        pipeline=Pipeline([Stage("observe", AlgorithmStep(Observe()))], "sequence", controller.recipe.count),
+    )
+    state = session(turns(3), context_window=200000, max_output_tokens=metadata_output, usage={"total_tokens": 195000})
+    state._episode_provider_profile = SimpleNamespace(context_window=200000, max_output_tokens=profile_output)
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
+    assert len(observed) == 1 and observed[0].max_output_tokens == profile_output
+    started = next(payload for event, payload in events if event == "compaction_started")
+    assert started["target_tokens"] == 200000 - (profile_output or 32000)
