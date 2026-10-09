@@ -228,11 +228,13 @@ class CompactionController:
                     self._after_record_appended(session_state, prune_record, target, turn_index)
         if request_outcomes:
             first, last = request_outcomes[0], request_outcomes[-1]
+            records = tuple(r for item in request_outcomes for r in item.records)
             outcome = CompactionOutcome(
-                records=tuple(r for item in request_outcomes for r in item.records),
+                records=records,
                 stages=tuple(s for item in request_outcomes for s in item.stages),
                 tokens_before=first.tokens_before, tokens_after=last.tokens_after,
-                target_tokens=last.target_tokens, reached_target=last.reached_target,
+                target_tokens=last.target_tokens,
+                reached_target=bool(records) and last.tokens_after <= last.target_tokens,
             )
             self._record_finished(session_state, outcome, "request", turn_index)
         view = compaction_state.project(messages, target)

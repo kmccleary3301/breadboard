@@ -50,10 +50,13 @@ def test_controller_honors_summary_model_and_does_not_reuse_stale_usage(preset):
     assert all(set(message) == {"role", "content"} for message in second)
 
 
-def test_claude_request_masking_follows_threshold_without_summary():
+@pytest.mark.parametrize("repeated_stage", [False, True])
+def test_claude_request_masking_follows_threshold_without_summary(monkeypatch, repeated_stage):
     controller = CompactionController({"compaction": {
         "enabled": True, "preset": "claude_code@2.1.63", "contextWindow": 200000,
     }})
+    if repeated_stage:
+        controller.recipe = replace(controller.recipe, request_view=("microcompact", "microcompact"))
     runtime = Runtime()
     calls = [{"id": f"call_{i}", "type": "function", "function": {"name": "Read", "arguments": "{}"}}
              for i in range(4)]
@@ -62,6 +65,15 @@ def test_claude_request_masking_follows_threshold_without_summary():
         *({"role": "tool", "tool_call_id": call["id"], "content": "x" * 120000} for call in calls),
         {"role": "assistant", "content": "ready"},
     ], 150000)
+    events = []
+    original_record = state.record_lifecycle_event
+
+    def record(event, payload, **kwargs):
+        if event == "compaction_finished" and payload["reason"] == "request":
+            events.append(payload)
+        return original_record(event, payload, **kwargs)
+
+    monkeypatch.setattr(state, "record_lifecycle_event", record)
     first = controller.prepare_request(state, conductor=None, runtime=runtime, client=None, model="conversation-model", turn_index=1)
     second = controller.prepare_request(state, conductor=None, runtime=runtime, client=None, model="conversation-model", turn_index=1)
     assert first[2]["content"] == "[Old tool result content cleared]"
@@ -71,6 +83,8 @@ def test_claude_request_masking_follows_threshold_without_summary():
     assert not runtime.models
     assert len(state.compaction_state.records) == 1
     assert state.compaction_state.records[0].reason == "request"
+    assert events[0]["reached_target"] is True
+    assert len(events[0]["stages"]) == (2 if repeated_stage else 1)
 
 
 @pytest.mark.parametrize("preset", [None, "codex@0.139.0", "claude_code@2.1.63"])
