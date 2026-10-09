@@ -11,12 +11,10 @@ from breadboard_engine.compaction.pruning import (
     MIN_PRUNE_TOKENS,
     SUPERSEDED_NOTICE,
     USELESS_NOTICE,
-    PruneCompaction,
     prune_superseded_tool_results,
     prune_tool_outputs,
     prune_tool_results,
     read_tool_supersede_key,
-    split_read_selector,
 )
 from breadboard_engine.compaction.settings import settings_from_config
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
@@ -282,7 +280,8 @@ def test_prune_tool_results_runs_and_produces_valid_record():
         messages,
         prune={"enabled": True, "supersede_reads": True, "minimum_savings": 50, "protect_tokens": 40000},
     )
-    record = PruneCompaction().run(ctx)
+    record = prune_tool_results(ctx)
+    assert record is not None
     assert record.method == "prune"
     assert not record.is_boundary
     assert len(record.edits) == 1

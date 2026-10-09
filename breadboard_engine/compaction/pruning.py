@@ -28,7 +28,7 @@ from typing import (
     Tuple,
     Union,
 )
-
+from .file_ops import split_read_selector
 from .methods import CompactionContext, MethodUnavailable
 from .settings import PruneSettings
 from .shake import (
@@ -49,12 +49,6 @@ MIN_PRUNE_TOKENS = 50
 DEFAULT_SUFFIX_TOKEN_LIMIT = 8000
 DEFAULT_IDLE_FLUSH_MS = 30 * 60 * 1000
 
-# Read-tool selector grammar, mirrored from OMP utils.ts (splitReadSelector)
-_RANGE_CHUNK_SRC = r"L?\d+(?:(?:[-+]|\.\.)L?\d+|-|\.\.)?"
-_RANGE_LIST_SRC = rf"{_RANGE_CHUNK_SRC}(?:,{_RANGE_CHUNK_SRC})*"
-_READ_SELECTOR_RE = re.compile(rf"^(?:{_RANGE_LIST_SRC}|raw|conflicts)$", re.IGNORECASE)
-_READ_RANGE_ONLY_RE = re.compile(rf"^{_RANGE_LIST_SRC}$", re.IGNORECASE)
-_READ_RAW_ONLY_RE = re.compile(r"^raw$", re.IGNORECASE)
 
 SupersedeKeyFn = Callable[[str, Mapping[str, Any]], Optional[str]]
 
@@ -67,37 +61,6 @@ def estimate_pruned_savings(tokens: int, notice: str) -> int:
     notice_tokens = math.ceil(len(notice) / 4)
     return max(0, tokens - notice_tokens)
 
-
-def split_read_selector(path: str) -> Tuple[str, Optional[str]]:
-    """Split a read-tool path into its base path and trailing selector.
-
-    Mirrors OMP ``splitReadSelector``.
-    """
-    colon = path.rfind(":")
-    if colon <= 0:
-        return path, None
-    candidate = path[colon + 1 :]
-    if not _READ_SELECTOR_RE.match(candidate):
-        return path, None
-    base = path[:colon]
-    sel: Optional[str] = candidate
-
-    # Compound trailing selector: `path:1-50:raw` or `path:raw:1-50`.
-    inner = base.rfind(":")
-    if inner > 0:
-        inner_candidate = base[inner + 1 :]
-        inner_is_raw = bool(_READ_RAW_ONLY_RE.match(inner_candidate))
-        outer_is_raw = bool(_READ_RAW_ONLY_RE.match(candidate))
-        inner_is_range = bool(_READ_RANGE_ONLY_RE.match(inner_candidate))
-        outer_is_range = bool(_READ_RANGE_ONLY_RE.match(candidate))
-        if (inner_is_raw and outer_is_range) or (inner_is_range and outer_is_raw):
-            sel = f"{inner_candidate}:{candidate}"
-            base = base[:inner]
-
-    return base, sel
-
-
-splitReadSelector = split_read_selector
 
 
 def read_tool_supersede_key(tool_name: str, args: Mapping[str, Any]) -> Optional[str]:
@@ -124,7 +87,6 @@ def read_tool_supersede_key(tool_name: str, args: Mapping[str, Any]) -> Optional
     return base if sel is None else f"{base}\u0000{sel}"
 
 
-readToolSupersedeKey = read_tool_supersede_key
 
 
 @dataclass(frozen=True)
@@ -602,14 +564,3 @@ def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]
     context.state.validate(record, context.messages)
     return record
 
-
-class PruneCompaction:
-    """Edit-only compaction method ('prune') for tool result pruning."""
-
-    name: str = "prune"
-
-    def run(self, context: CompactionContext) -> CompactionRecord:
-        record = prune_tool_results(context)
-        if record is None:
-            raise MethodUnavailable("prune found no candidates meeting savings threshold")
-        return record
