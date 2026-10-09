@@ -98,6 +98,8 @@ class LatestToolOutputs:
         self.eligible_tools = params.list("eligible_tools")
         self.disabled = params.bool("disabled", False)
         self.limit = build_limit(params.child(params.mapping("limit"), "limit"))
+        self.auto_compact_enabled = params.bool("auto_compact_enabled", True)
+        self.disabled_auto_limit = build_limit(params.child(params.mapping("disabled_auto_limit"), "disabled_auto_limit"))
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
@@ -127,7 +129,8 @@ class LatestToolOutputs:
                 selected.append(results[call][0])
                 saved += results[call][1]
         usage = normalize_usage(context.last_usage)
-        warning = self.limit.tokens(context.context_window, context.max_output_tokens) - self.warning_delta
+        limit = self.limit if self.auto_compact_enabled else self.disabled_auto_limit
+        warning = limit.tokens(context.context_window, context.max_output_tokens) - self.warning_delta
         if not context.usage_fresh or usage is None or _usage_total(usage, "components") < warning or saved < self.min_savings:
             selected = []
         if not selected:

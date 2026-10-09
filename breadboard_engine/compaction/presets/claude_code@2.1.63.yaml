@@ -12,7 +12,7 @@ claim: source_golden
 native_settings:
   adapter: paths
   keys:
-    autoCompactEnabled: [triggers.0.enabled]
+    autoCompactEnabled: [triggers.0.enabled, pipeline.stages.0.select.auto_compact_enabled]
     CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: [triggers.0.limit.pct_override, target.threshold.pct_override, pipeline.stages.0.select.limit.pct_override]
     DISABLE_MICROCOMPACT: [pipeline.stages.0.select.disabled]
 estimator: chars4_round
@@ -44,6 +44,8 @@ pipeline:
         eligible_tools: [Read, Bash, Grep, Glob, WebSearch, WebFetch, Edit, Write]
         disabled: false
         limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
+        auto_compact_enabled: true
+        disabled_auto_limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 0}
       reduce:
         kind: mask_tool_outputs
         placeholder: {file: placeholder.txt}

@@ -113,8 +113,8 @@ function runVmThreshold(tokens, contextWindow = 200000, maxOutput = 32000, env =
 }
 
 // Function to execute microcompact selector in VM from sliced bundle code
-function runVmMicrocompact(toolCallIds, toolSizes, currentTokens, contextWindow = 200000, maxOutput = 32000) {
-  const thresh = runVmThreshold(currentTokens, contextWindow, maxOutput);
+function runVmMicrocompact(toolCallIds, toolSizes, currentTokens, contextWindow = 200000, maxOutput = 32000, autoCompactEnabled = true) {
+  const thresh = runVmThreshold(currentTokens, contextWindow, maxOutput, {}, autoCompactEnabled);
   const isAboveWarning = thresh.acResult.isAboveWarningThreshold;
 
   const sandbox = createVmSandbox({
@@ -592,6 +592,31 @@ We identified missing CSRF validation and token leakage in URL params.
           }
         }
       ]
+    }
+  });
+}
+
+// Warning gating still applies when full autocompaction is disabled.
+{
+  const fallback = cases.find(c => c.case === "microcompact_persist_failure_fallback");
+  const toolIds = ["call_read_fail", "call_k1", "call_k2", "call_k3"];
+  const sizes = Object.fromEntries(toolIds.map(id => [id, 30000]));
+  const result = runVmMicrocompact(toolIds, sizes, 150000, 200000, 32000, false);
+  cases.push({
+    ...fallback,
+    case: "microcompact_autocompact_disabled_warning",
+    source: { ...baseSource, evidence: ["package/cli.js:2307 (ac warning basis)", "package/cli.js:2015 (H.clear warning gate)"] },
+    capture: {
+      kind: "executed",
+      script: "scripts/compaction_oracles/capture_claude_code.js",
+      notes: "Executed pinned ac with Vg=false and the sliced microcompact loop. ac uses Y=Vg()?PQ6:h96; h96 is 180000 at window200000/output32000, so warning is 160000. At usage150000 the pinned gate '!ac(j,J).isAboveWarningThreshold||O<G3Y' clears H. Input records autoCompactEnabled=false; expected edits come from the executed loop."
+    },
+    input: { ...fallback.input, native_settings: { autoCompactEnabled: false } },
+    expect: {
+      edits: result.compactedIds.map(id => {
+        const index = fallback.input.messages.findIndex(m => m.tool_call_id === id);
+        return { index, message: { ...fallback.input.messages[index], content: fallback.expect.edits[0].message.content } };
+      })
     }
   });
 }
