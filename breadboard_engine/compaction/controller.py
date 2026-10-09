@@ -177,7 +177,7 @@ class CompactionController:
         model: str,
         turn_index: Optional[int],
     ) -> List[Dict[str, Any]]:
-        """Threshold-compact if due, then return the provider request view."""
+        """Threshold-compact if due, then run the ordered request-view pass."""
         target = projection_target_for(runtime, model)
         context_window = self.resolve_context_window(
             conductor=conductor, session_state=session_state, model=model
@@ -201,6 +201,7 @@ class CompactionController:
                 context_window=context_window,
                 turn_index=turn_index,
                 supports_images=supports_images,
+                max_output_tokens=session_state.get_provider_metadata("max_output_tokens"),
             )
         return self.build_request_view(
             session_state,
@@ -347,6 +348,7 @@ class CompactionController:
         except Exception:  # events are observability; a recorder failure never fails compaction
             logger.debug("lifecycle event %s not recorded", event_type, exc_info=True)
 
+
     def _after_record_appended(
         self,
         session_state: Any,
@@ -395,10 +397,12 @@ class CompactionController:
         supports_images: bool = False,
         order: Optional[Sequence[str]] = None,
         clock: Optional[Callable[[], str]] = None,
+        max_output_tokens: Optional[int] = None,
         _request_outcomes: Optional[List[CompactionOutcome]] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
-        if reason not in self.recipe.targets:
+        target_reason = "threshold" if reason == "request" else reason
+        if target_reason not in self.recipe.targets:
             raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
         messages = session_state.provider_messages
         compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
@@ -409,6 +413,8 @@ class CompactionController:
         resolved_target = target or ProjectionTarget("unknown", "unknown", "unknown")
         resolved_window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
         max_input, max_output = self.resolve_model_limits(session_state, conductor, resolved_target.model)
+        if max_output_tokens is not None:
+            max_output = max_output_tokens
         if remote_ports is None:
             remote_ports = self.remote_ports_for(runtime, client, resolved_target.model)
 
@@ -446,6 +452,9 @@ class CompactionController:
             max_input_tokens=max_input,
             max_output_tokens=max_output,
             **kwargs,
+            last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
+            usage_fresh=len(messages) != self._messages_len_at_last_record,
+            native_retention=self.recipe.native_retention,
         )
         pressure = self.recipe.pressure(
             TriggerInput(OccupancyInput(projected, None, False), context_window, max_output, reason, max_input),

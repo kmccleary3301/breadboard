@@ -26,8 +26,8 @@ compaction:
 | BreadBoard key | Meaning |
 |---|---|
 | `enabled` | Off unless `true`, whatever the harness default is. |
-| `preset` | `omp@18.4.5` (default) or `pi@0.73.1`. |
-| `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. Both shipped presets use `compact`. |
+| `preset` | A packaged preset below; defaults to `omp@18.4.5`. |
+| `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. |
 | `contextWindow` | Optional; otherwise provider or model metadata. |
 | `summaryModel` | Optional; defaults to the turn's model. |
 | `maxPassesPerTurn` | Optional; overrides the preset's overflow attempts per turn. |
@@ -93,6 +93,34 @@ Accepts Pi's `reserveTokens` (default 16384) and `keepRecentTokens` (default
   `<modified-files>` tags, and one summary message in Pi's wording.
 - Overflow: one compact-and-retry until a response succeeds.
 
+### `openhands_sdk@1.47.0`
+
+Accepts `max_size`, `keep_first`, `max_tokens`, `minimum_progress`,
+`hard_context_reset_max_retries` and `hard_context_reset_context_scaling`.
+Event-count and input-token pressure select an atomic prefix/suffix view.
+Summaries replace forgotten events at their offset and coalesce adjacent users.
+Hard pressure can fall back to bounded whole-view reset retries; soft failure
+keeps the view unchanged. The preset uses compact-and-retry overflow recovery.
+The SDK's direct-agent no-condenser default is not an enabled compaction recipe.
+
+### `codex@0.139.0`
+
+Accepts `model_auto_compact_token_limit`, `model_auto_compact_token_limit_scope`,
+`compact_prompt`, `phase`, `needs_follow_up` and `features`. Uses byte-based
+accounting and the 90% window limit, retains user text within a 20,000-token
+budget, and installs the pinned handoff summary. `RemoteCompactionV2` selects
+native replacement with a 64,000-token retained-user budget. Ordinary sampling
+overflow is terminal. These cases are source-derived, not a full Codex runtime.
+
+### `claude_code@2.1.63`
+
+Accepts `autoCompactEnabled`, `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE` and
+`DISABLE_MICROCOMPACT`. Threshold compaction summarizes whole history and
+installs the pinned bridge and automatic continuation. Each request can mask
+old tool outputs after the threshold check, preserving recent calls and savings
+gates. Ordinary overflow is terminal. Bundle captures cover these operations,
+not Claude Code's full attachment, persistence or routing behavior.
+
 ## When it runs
 
 | Trigger | What happens |
@@ -109,9 +137,17 @@ route-health failures, so they cannot open the route circuit before the retry.
 Every run records lifecycle events: `compaction_started` (preset, reason,
 tokens, target), `compaction_record_appended` per record, and
 `compaction_finished` with one entry per stage. Each stage reports
-`committed`, `edited`, `noop`, `unavailable` or `failed`, with a
-detail string; no stage is skipped silently. A cancelled run ends with
+`committed`, `edited`, `noop`, `unavailable` or `failed`. Successful stages have
+no detail; noop, unavailable and failed stages explain why they did not commit.
+No stage is skipped silently. A cancelled run ends with
 `compaction_finished` status `cancelled`, and the cancellation propagates.
+
+`request_view` lists OMP builtins or declared stage IDs. Ledger-producing
+entries run in order after threshold compaction, then the controller projects
+the wire messages. `omp_inline_snapcompact` may only be the final entry.
+Request stages use reason `request`, the threshold target, and one aggregated
+`compaction_finished` event with every stage result. A stage's own estimator
+always overrides the recipe's estimator. Ledger metadata stays in record details.
 
 Summary stages call the turn's provider runtime with no tools and no
 streaming. Each summary request is recorded as

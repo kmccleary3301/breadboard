@@ -134,19 +134,3 @@ class PrefixSuffixEvents:
             details={"events": events[start:end], "synthetic_prefix": retained},
         )
 
-
-class WholeView:
-    kind = "whole_view"
-
-    def __init__(self, params: Params) -> None:
-        params.done()
-
-    def select(self, context: CompactionContext) -> Selection:
-        from .selectors import Selection
-
-        events, indices = indexed_view(context)
-        if not events:
-            raise MethodUnavailable("Empty event view")
-        return Selection(prefix_end=0, first_kept_index=len(context.messages),
-                         summarize=tuple(i for i in indices if i is not None),
-                         reset_context=True, details={"events": events})

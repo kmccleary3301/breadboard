@@ -30,7 +30,8 @@ from .state import CompactionRecord, CompactionState
 
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
 MODES = ("fallback", "sequence", "until_boundary")
-REASONS = ("threshold", "overflow", "manual", "request")
+TARGET_REASONS = ("threshold", "overflow", "manual")
+REASONS = (*TARGET_REASONS, "request")
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class StageResult:
     detail: Optional[str] = None
     tokens_after: Optional[int] = None
     record_id: Optional[str] = None
+    selection: Optional[Selection] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -228,7 +230,7 @@ class Pipeline:
             records.append(record)
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
-            results.append(StageResult(stage_id, status, None, after, record.record_id))
+            results.append(StageResult(stage_id, status, None, after, record.record_id, output.selection))
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
         outcome = CompactionOutcome(

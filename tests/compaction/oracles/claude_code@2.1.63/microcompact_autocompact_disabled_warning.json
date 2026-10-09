@@ -1,22 +1,21 @@
 {
   "schema": "bb.compaction_oracle_case.v1",
   "preset": "claude_code@2.1.63",
-  "case": "microcompact_persist_failure_fallback",
+  "case": "microcompact_autocompact_disabled_warning",
   "source": {
     "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
     "package": "@anthropic-ai/claude-code@2.1.63",
     "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
     "commit": null,
     "evidence": [
-      "package/cli.js:1661 (zZ8 constant)",
-      "package/cli.js:2015 (let L=zZ8, S=await lg6)",
-      "package/cli.js:1661 [bytes 5064257-5064380]"
+      "package/cli.js:2307 (ac warning basis)",
+      "package/cli.js:2015 (H.clear warning gate)"
     ]
   },
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_claude_code.js",
-    "notes": "Executed bundle constant zZ8 sliced from cli.js (bytes 5064257-5064380). Verbatim text: \"var KZ8=\\\"tool-results\\\",YD1=\\\"<persisted-output>\\\",YZ8=\\\"</persisted-output>\\\",zZ8=\\\"[Old tool result content cleared]\\\",zD1=2000;\". In C:2015: \"let L=zZ8,S=await lg6(v.content,v.tool_use_id);if(!ig6(S))L=`${YD1}Tool result saved to: ${S.filepath}\\n\\nUse ${n4} to view${YZ8}`\". When disk persistence fails (or result is non-text), L remains zZ8, yielding exactly \"[Old tool result content cleared]\"."
+    "notes": "Executed pinned ac with Vg=false and the sliced microcompact loop. ac uses Y=Vg()?PQ6:h96; h96 is 180000 at window200000/output32000, so warning is 160000. At usage150000 the pinned gate '!ac(j,J).isAboveWarningThreshold||O<G3Y' clears H. Input records autoCompactEnabled=false; expected edits come from the executed loop."
   },
   "input": {
     "messages": [
@@ -98,29 +97,10 @@
       "microcompact"
     ],
     "native_settings": {
-      "autoCompactEnabled": true
+      "autoCompactEnabled": false
     }
   },
   "expect": {
-    "selection": {
-      "prefix_end": null,
-      "first_kept_index": null,
-      "summarize": [],
-      "turn_prefix": [],
-      "replay": [],
-      "targets": [
-        2
-      ]
-    },
-    "edits": [
-      {
-        "index": 2,
-        "message": {
-          "role": "tool",
-          "tool_call_id": "call_read_fail",
-          "content": "[Old tool result content cleared]"
-        }
-      }
-    ]
+    "edits": []
   }
 }

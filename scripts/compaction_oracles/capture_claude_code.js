@@ -113,8 +113,8 @@ function runVmThreshold(tokens, contextWindow = 200000, maxOutput = 32000, env =
 }
 
 // Function to execute microcompact selector in VM from sliced bundle code
-function runVmMicrocompact(toolCallIds, toolSizes, currentTokens, contextWindow = 200000, maxOutput = 32000) {
-  const thresh = runVmThreshold(currentTokens, contextWindow, maxOutput);
+function runVmMicrocompact(toolCallIds, toolSizes, currentTokens, contextWindow = 200000, maxOutput = 32000, autoCompactEnabled = true) {
+  const thresh = runVmThreshold(currentTokens, contextWindow, maxOutput, {}, autoCompactEnabled);
   const isAboveWarning = thresh.acResult.isAboveWarningThreshold;
 
   const sandbox = createVmSandbox({
@@ -149,6 +149,26 @@ runLoop();
   };
 }
 
+// Execute the pinned persistence-success/failure masking branch, not a copied template.
+const maskStart = bundleContent.indexOf("let L=zZ8,S=await lg6(v.content,v.tool_use_id);");
+const maskEnd = bundleContent.indexOf("f.push({...v,content:L})", maskStart);
+const maskSlice = bundleContent.slice(maskStart, maskEnd);
+const igStart = bundleContent.indexOf("function ig6(A){");
+const igEnd = bundleContent.indexOf("function ", igStart + 1);
+const readToolName = bundleContent.match(/n4="([^"]+)"/)[1];
+
+async function runVmMask(content, id, artifactSink) {
+  const sandbox = createVmSandbox({
+    v: { content, tool_use_id: id },
+    n4: readToolName,
+    lg6: async () => artifactSink.fail
+      ? { error: "captured persistence failure" }
+      : { filepath: `${artifactSink.root}/${id}.txt` }
+  });
+  vm.runInContext(plSlice + bundleContent.slice(igStart, igEnd), sandbox);
+  return await vm.runInContext(`(async () => { ${maskSlice} return L; })()`, sandbox);
+}
+
 // --- 3. Build Oracle Cases ---
 
 const baseSource = {
@@ -159,6 +179,7 @@ const baseSource = {
   evidence: ["package/cli.js:2307", "package/cli.js:2015-2017", "package/cli.js:2095-2211", "package/cli.js:1661"]
 };
 
+async function capture() {
 const cases = [];
 
 // Case 1: Threshold below 200k (Executed)
@@ -497,98 +518,14 @@ We identified missing CSRF validation and token leakage in URL params.
   });
 }
 
-// Case 9: Microcompact masking with placeholders & keep-latest (Executed)
-{
-  const toolIds = ["call_read_1", "call_bash_2", "call_grep_3", "call_edit_4"];
-  const toolSizes = {
-    call_read_1: 30000,
-    call_bash_2: 30000,
-    call_grep_3: 30000,
-    call_edit_4: 30000
-  };
-
-  const mcResult = runVmMicrocompact(toolIds, toolSizes, 150000, 200000, 32000);
-
-  const bigOutput = "A".repeat(120000);
-  const messages = [
-    { role: "user", content: "Run analysis" },
-    {
-      role: "assistant",
-      content: "",
-      tool_calls: [
-        { id: "call_read_1", type: "function", function: { name: "Read", arguments: '{"file_path":"a.txt"}' } },
-        { id: "call_bash_2", type: "function", function: { name: "Bash", arguments: '{"command":"ls"}' } },
-        { id: "call_grep_3", type: "function", function: { name: "Grep", arguments: '{"pattern":"foo"}' } },
-        { id: "call_edit_4", type: "function", function: { name: "Edit", arguments: '{"file_path":"b.txt"}' } }
-      ]
-    },
-    { role: "tool", tool_call_id: "call_read_1", content: bigOutput },
-    { role: "tool", tool_call_id: "call_bash_2", content: bigOutput },
-    { role: "tool", tool_call_id: "call_grep_3", content: bigOutput },
-    { role: "tool", tool_call_id: "call_edit_4", content: bigOutput },
-    {
-      role: "assistant",
-      content: "",
-      tool_calls: [{ id: "call_mcp_5", type: "function", function: { name: "mcp__custom", arguments: "{}" } }]
-    },
-    { role: "tool", tool_call_id: "call_mcp_5", content: bigOutput }
-  ];
-
-  cases.push({
-    schema: "bb.compaction_oracle_case.v1",
-    preset: "claude_code@2.1.63",
-    case: "microcompact_masking_keep_latest",
-    source: {
-      ...baseSource,
-      evidence: [
-        "package/cli.js:2015-2017 (function Lg, T3Y)",
-        `package/cli.js:2015 [${mcConstsRange}]`,
-        `package/cli.js:2015 [${mcLoopRange}]`,
-        `package/cli.js:1661 [${plRange}]`
-      ]
-    },
-    capture: {
-      kind: "executed",
-      script: "scripts/compaction_oracles/capture_claude_code.js",
-      notes: `Executed microcompact selection loop sliced from cli.js (${mcLoopRange}) and constants (${mcConstsRange}) in node vm. Verbatim text: "var G3Y=20000,Z3Y=40000,f3Y=3,cv8=2000,", "let _=z.slice(-f3Y),$=Array.from(w.values()).reduce((Z,f)=>Z+f,0),O=0,H=new Set;for(let Z of z){if(_.includes(Z))continue;if($-O>Y)H.add(Z),O+=w.get(Z)||0}". Eligible tools whitelist C:2015: "T3Y=new Set([n4,...wd,k5,Sz,uy,HX,Lq,U3,...[]])" where n4="Read", wd=["Bash",null], k5="Grep", Sz="Glob", uy="WebSearch", HX="WebFetch", Lq="Edit", U3="Write". Keeps last 3 eligible calls (call_bash_2, call_grep_3, call_edit_4). Masks call_read_1. Ineligible MCP call_mcp_5 is excluded from T3Y and preserved untouched. Sliced template from C:1661/2015: "<persisted-output>Tool result saved to: \${filepath}\\n\\nUse Read to view</persisted-output>".`
-    },
-    input: {
-      messages,
-      usage: { input_tokens: 145000, output_tokens: 5000, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 150000 },
-      context_window: 200000,
-      max_input_tokens: null,
-      max_output_tokens: 32000,
-      reason: "threshold",
-      native_settings: { autoCompactEnabled: true }
-    },
-    expect: {
-      selection: {
-        prefix_end: null,
-        first_kept_index: 0,
-        summarize: [],
-        turn_prefix: [],
-        replay: [],
-        targets: [2]
-      },
-      edits: [
-        {
-          index: 2,
-          message: {
-            role: "tool",
-            tool_call_id: "call_read_1",
-            content: "<persisted-output>Tool result saved to: /tmp/session/tool-results/call_read_1.txt\n\nUse Read to view</persisted-output>"
-          }
-        }
-      ]
-    }
-  });
-}
 
 // Case 10: Microcompact persist fallback to cleared placeholder (Executed)
 {
   const toolIds = ["call_read_fail", "call_k1", "call_k2", "call_k3"];
   const toolSizes = { call_read_fail: 30000, call_k1: 30000, call_k2: 30000, call_k3: 30000 };
   const mcResult = runVmMicrocompact(toolIds, toolSizes, 150000, 200000, 32000);
+  const artifactSink = { root: "/tmp/session/tool-results", fail: true };
+  const maskedOutput = await runVmMask("B".repeat(120000), toolIds[0], artifactSink);
 
   const bigOutput = "B".repeat(120000);
   const messages = [
@@ -632,17 +569,18 @@ We identified missing CSRF validation and token leakage in URL params.
       context_window: 200000,
       max_input_tokens: null,
       max_output_tokens: 32000,
-      reason: "threshold",
+      reason: "request",
+      pipeline_order: ["microcompact"],
       native_settings: { autoCompactEnabled: true }
     },
     expect: {
       selection: {
         prefix_end: null,
-        first_kept_index: 0,
+        first_kept_index: null,
         summarize: [],
         turn_prefix: [],
         replay: [],
-        targets: [2]
+        targets: mcResult.compactedIds.map(id => messages.findIndex(m => m.tool_call_id === id))
       },
       edits: [
         {
@@ -650,7 +588,7 @@ We identified missing CSRF validation and token leakage in URL params.
           message: {
             role: "tool",
             tool_call_id: "call_read_fail",
-            content: "[Old tool result content cleared]"
+            content: maskedOutput
           }
         }
       ]
@@ -658,56 +596,31 @@ We identified missing CSRF validation and token leakage in URL params.
   });
 }
 
-// Case 11: PreCompact hook blocking discrepancy (Source-derived)
+// Warning gating still applies when full autocompaction is disabled.
 {
-  const rawSummary = "<summary>Compacted after ignoring hook block.</summary>";
-  const bridgeOut = vm_Q6(rawSummary, true, null, false);
-
+  const fallback = cases.find(c => c.case === "microcompact_persist_failure_fallback");
+  const toolIds = ["call_read_fail", "call_k1", "call_k2", "call_k3"];
+  const sizes = Object.fromEntries(toolIds.map(id => [id, 30000]));
+  const result = runVmMicrocompact(toolIds, sizes, 150000, 200000, 32000, false);
   cases.push({
-    schema: "bb.compaction_oracle_case.v1",
-    preset: "claude_code@2.1.63",
-    case: "precompact_hook_blocking_discrepancy",
-    source: {
-      ...baseSource,
-      evidence: [
-        "package/cli.js:6320 (T86 hook runner returns blocked:true for exit 2)",
-        "package/cli.js:6321-6324 (SP1 only returns {newCustomInstructions, userDisplayMessage})",
-        "package/cli.js:2207 (SG6 caller never inspects blocked)"
-      ]
-    },
+    ...fallback,
+    case: "microcompact_autocompact_disabled_warning",
+    source: { ...baseSource, evidence: ["package/cli.js:2307 (ac warning basis)", "package/cli.js:2015 (H.clear warning gate)"] },
     capture: {
-      kind: "source_derived",
+      kind: "executed",
       script: "scripts/compaction_oracles/capture_claude_code.js",
-      notes: `Source-derived observation of pinned bug in cli.js. Verbatim text in SP1 (C:6321-6324): "async function SP1(A,q,K=kj){let Y={...U$(void 0),hook_event_name:\"PreCompact\",trigger:A.trigger,custom_instructions:A.customInstructions},z=await T86({hookInput:Y,matchQuery:A.trigger,signal:q,timeoutMs:K});if(z.length===0)return{};let w=z.filter(($)=>$.succeeded&&$.output.trim().length>0).map(($)=>$.output.trim()),_=[];...return{newCustomInstructions:w.length>0?w.join(\`\\n\\n\`):void 0,userDisplayMessage:_.length>0?_.join(\`\\n\`):void 0}}". Although T86 records blocked:true for exit code 2, SP1 discards blocked and returns only newCustomInstructions and userDisplayMessage. The caller SG6 (C:2207) does not check blocking: "let j=await SP1({trigger:w?\"auto\":\"manual\",customInstructions:z??null},q.abortController.signal);if(j.newCustomInstructions)z=z?\`\${z}\\n\\n\${j.newCustomInstructions}\`:j.newCustomInstructions;". Compaction proceeds unconditionally despite hook exit 2.`
+      notes: "Executed pinned ac with Vg=false and the sliced microcompact loop. ac uses Y=Vg()?PQ6:h96; h96 is 180000 at window200000/output32000, so warning is 160000. At usage150000 the pinned gate '!ac(j,J).isAboveWarningThreshold||O<G3Y' clears H. Input records autoCompactEnabled=false; expected edits come from the executed loop."
     },
-    input: {
-      messages: [{ role: "user", content: "Work" }, { role: "assistant", content: "Progress" }],
-      usage: { input_tokens: 160000, output_tokens: 7000, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 167000 },
-      context_window: 200000,
-      max_input_tokens: null,
-      max_output_tokens: 32000,
-      reason: "threshold",
-      native_settings: {
-        autoCompactEnabled: true,
-        hooks: {
-          PreCompact: [
-            { type: "command", command: "exit 2" }
-          ]
-        }
-      },
-      summary_responses: [rawSummary]
-    },
+    input: { ...fallback.input, native_settings: { autoCompactEnabled: false } },
     expect: {
-      trigger: { fires: true, tokens: 167000, limit: 167000, severity: "soft" },
-      projected_view: [
-        {
-          role: "user",
-          content: bridgeOut
-        }
-      ]
+      edits: result.compactedIds.map(id => {
+        const index = fallback.input.messages.findIndex(m => m.tool_call_id === id);
+        return { index, message: { ...fallback.input.messages[index], content: fallback.expect.edits[0].message.content } };
+      })
     }
   });
 }
+
 
 // --- 4. Write case files and report counts ---
 
@@ -715,6 +628,15 @@ let executedCount = 0;
 let derivedCount = 0;
 const caseNames = [];
 
+// Removed: PreCompact hook blocking discrepancy. BreadBoard has no host hook
+// execution port, so hook commands cannot be represented by compaction input.
+// Removed: successful artifact persistence. There is no model-readable host
+// artifact sink in BreadBoard; only the executed cleared-placeholder fallback
+// is representable by the preset's request-time masking stage.
+const retainedNames = new Set(cases.map(c => `${c.case}.json`));
+for (const name of fs.readdirSync(OUT_DIR)) {
+  if (name.endsWith(".json") && !retainedNames.has(name)) fs.unlinkSync(path.join(OUT_DIR, name));
+}
 for (const c of cases) {
   const filePath = path.join(OUT_DIR, `${c.case}.json`);
   fs.writeFileSync(filePath, JSON.stringify(c, null, 2) + "\n");
@@ -726,3 +648,6 @@ for (const c of cases) {
 console.log(`Generated ${cases.length} oracle cases in ${OUT_DIR}`);
 console.log(`Executed: ${executedCount}, Source-derived: ${derivedCount}`);
 console.log("Cases:", caseNames);
+}
+
+capture().catch(error => { console.error(error); process.exitCode = 1; });

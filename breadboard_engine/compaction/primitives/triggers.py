@@ -68,12 +68,14 @@ class WindowFraction:
 
     def __init__(self, params: Params) -> None:
         self.percent = params.number("percent")
+        self.config_limit = params.int("config_limit", None)
         params.done()
         if not 0 < self.percent <= 100:
             raise PresetError(f"{params.where}.percent must be in (0, 100]")
 
     def tokens(self, window: int, max_output: Optional[int]) -> int:
-        return math.floor(window * self.percent / 100)
+        derived = math.floor(window * self.percent / 100)
+        return derived if self.config_limit is None else min(derived, self.config_limit)
 
 
 class OutputReservePlusBuffer:
@@ -85,11 +87,21 @@ class OutputReservePlusBuffer:
         self.output_cap = params.int("output_cap", minimum=0)
         self.default_output = params.int("default_output", minimum=0)
         self.buffer = params.int("buffer", 0, minimum=0)
+        self.pct_override = params.value("pct_override", None)
+        if self.pct_override is not None:
+            try:
+                self.pct_override = float(self.pct_override)
+            except (TypeError, ValueError):
+                self.pct_override = None
         params.done()
 
     def tokens(self, window: int, max_output: Optional[int]) -> int:
         output = max_output if max_output else self.default_output
-        return window - min(output, self.output_cap) - self.buffer
+        effective = window - min(output, self.output_cap)
+        limit = effective - self.buffer
+        if self.pct_override is not None and 0 < self.pct_override <= 100:
+            return min(math.floor(effective * self.pct_override / 100), limit)
+        return limit
 
 
 class FixedLimit:
@@ -163,9 +175,18 @@ class ThresholdTrigger:
             phase = "every_request" if params.env.settings.mid_turn_enabled else "user_turn_start"
         self.phase = phase
         self.severity = params.choice("severity", ("soft", "hard"), "soft")
+        self.enabled = params.bool("enabled", True)
+        self.requires_follow_up = params.bool("requires_follow_up", False)
+        self.needs_follow_up = params.bool("needs_follow_up", True)
+        self.sampling_phase = params.choice("sampling_phase", ("pre_turn", "mid_turn"), "pre_turn")
+        self.scope = params.choice("scope", ("total",), "total")
         params.done()
 
     def in_phase(self, history: Sequence[Mapping[str, Any]]) -> bool:
+        if not self.enabled:
+            return False
+        if self.requires_follow_up and self.sampling_phase == "mid_turn" and not self.needs_follow_up:
+            return False
         if self.phase == "every_request":
             return True
         return bool(history) and history[-1].get("role") == "user"

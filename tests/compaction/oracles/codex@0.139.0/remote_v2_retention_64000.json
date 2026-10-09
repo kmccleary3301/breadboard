@@ -12,7 +12,7 @@
   "capture": {
     "kind": "source_derived",
     "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/compact_remote_v2.rs:49 defines RETAINED_MESSAGE_TOKEN_BUDGET = 64_000. Lines 425-439 filter input messages to user/developer/system, truncate to 64,000 approx tokens newest-first, and append the single server-returned ResponseItem::Compaction item. Native compaction record."
+    "notes": "codex-rs/core/src/compact_remote_v2.rs:49 defines RETAINED_MESSAGE_TOKEN_BUDGET = 64_000. Lines 427-428 apply both retention filters; compact_remote.rs:323,331 reject developer/system messages. The retained user messages are truncated to 64,000 approx tokens newest-first, and append the single server-returned ResponseItem::Compaction item. The replacement contains no old suffix; first_kept_index therefore advances to the old history length (2). Native items use Responses projection."
   },
   "input": {
     "messages": [
@@ -41,14 +41,20 @@
         "RemoteCompactionV2"
       ]
     },
-    "summary_responses": [
-      "enc_summary_v2"
-    ]
+    "native_responses": [
+      [
+        {
+          "type": "compaction",
+          "encrypted_content": "enc_summary_v2"
+        }
+      ]
+    ],
+    "projection": "responses"
   },
   "expect": {
     "selection": {
       "prefix_end": null,
-      "first_kept_index": 0,
+      "first_kept_index": 2,
       "summarize": [],
       "turn_prefix": [],
       "replay": [
@@ -58,15 +64,18 @@
     },
     "projected_view": [
       {
+        "type": "message",
         "role": "user",
-        "content": "User prompt retained in remote v2."
+        "content": [
+          {
+            "type": "input_text",
+            "text": "User prompt retained in remote v2."
+          }
+        ]
       },
       {
-        "role": "assistant",
-        "content": "",
-        "compaction": {
-          "encrypted_content": "enc_summary_v2"
-        }
+        "type": "compaction",
+        "encrypted_content": "enc_summary_v2"
       }
     ]
   }

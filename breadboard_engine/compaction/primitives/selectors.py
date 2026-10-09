@@ -94,9 +94,10 @@ class RecentTokens:
         return Selection(first_kept_index=first, summarize=summarize, turn_prefix=turn_prefix)
 
 
-from .event_selection import PrefixSuffixEvents, WholeView
+from .event_selection import PrefixSuffixEvents
+from .budget_selectors import LatestToolOutputs, UserMessagesBudget, WholeHistory
 
-SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, PrefixSuffixEvents, WholeView)}
+SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, PrefixSuffixEvents, WholeHistory, UserMessagesBudget, LatestToolOutputs)}
 
 
 def build_selector(params: Params) -> Any:

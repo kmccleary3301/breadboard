@@ -120,6 +120,9 @@ class CompactionContext:
     max_input_tokens: Optional[int] = None
     max_output_tokens: Optional[int] = None
     severity: str = "soft"
+    last_usage: Optional[Any] = None
+    usage_fresh: bool = True
+    native_retention: Optional[Any] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

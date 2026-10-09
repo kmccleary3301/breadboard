@@ -53,7 +53,7 @@ pipeline:
     - id: hard_context_reset
       when: {severity: hard}
       accept: any
-      select: {kind: whole_view}
+      select: {kind: whole_history, view: events}
       reduce:
         kind: event_summary
         prompt: {file: summarizing_prompt.j2}

@@ -1,9 +1,12 @@
 {
   "repo": "https://github.com/openai/codex",
   "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
-  "files": {
-    "prompt.md": "codex-rs/prompts/templates/compact/prompt.md:1-10",
-    "summary_prefix.md": "codex-rs/prompts/templates/compact/summary_prefix.md:1"
+  "source_sha256": {
+    "codex-rs/prompts/templates/compact/prompt.md": "ab0c334d4faca17e3afbb9b16967c1b2fdcc7242a9a0880af57949fa236d6d07",
+    "codex-rs/prompts/templates/compact/summary_prefix.md": "e9b088e794a6bb9082ac053fcc760bd818d7e720ee4bcdc72c6e480de7b7cb0e"
   },
-  "license": "Apache-2.0"
+  "files": {
+    "prompt.md": "codex-rs/prompts/templates/compact/prompt.md:1-9",
+    "summary_prefix.md": "codex-rs/prompts/templates/compact/summary_prefix.md:1-1"
+  }
 }

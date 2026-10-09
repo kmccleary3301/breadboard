@@ -65,8 +65,9 @@ class Template:
 
 
 from .event_summary import OffsetSummary
+from .bridge import Bridge
 
-PLACEMENT_KINDS = {cls.kind: cls for cls in (Template, OffsetSummary)}
+PLACEMENT_KINDS = {cls.kind: cls for cls in (Template, OffsetSummary, Bridge)}
 
 
 def build_placement(params: Params) -> Any:

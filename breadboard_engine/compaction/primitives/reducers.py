@@ -381,8 +381,9 @@ class Summarize:
 
 
 from .event_summary import EventSummary
+from .chat_reducers import ChatSummary, MaskToolOutputs
 
-REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary)}
+REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary, ChatSummary, MaskToolOutputs)}
 
 
 def build_reducer(params: Params) -> Any:
