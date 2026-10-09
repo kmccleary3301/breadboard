@@ -261,8 +261,9 @@ def test_request_builtins_and_stage_ids_run_in_declared_order(monkeypatch):
     from breadboard_engine.compaction.state import ProjectionTarget
 
     controller = CompactionController({"compaction": {"enabled": True, "preset": "omp@18.4.5", "prune": {"enabled": True}}})
-    controller.recipe = replace(controller.recipe, request_view=("omp_inline_snapcompact", "soft", "omp_prune"))
+    controller.recipe = replace(controller.recipe, request_view=("soft", "omp_prune", "omp_inline_snapcompact"))
     calls = []
+    original_compact = controller.compact
 
     def inline(view, *args, **kwargs):
         calls.append("inline")
@@ -270,6 +271,7 @@ def test_request_builtins_and_stage_ids_run_in_declared_order(monkeypatch):
 
     def compact(state, **kwargs):
         calls.append((kwargs["reason"], kwargs["order"]))
+        return original_compact(state, **kwargs)
 
     def prune(context):
         calls.append(("prune", context.reason))
@@ -279,4 +281,88 @@ def test_request_builtins_and_stage_ids_run_in_declared_order(monkeypatch):
     monkeypatch.setattr(controller, "compact", compact)
     state = session(turns(3))
     assert controller.build_request_view(state, target=ProjectionTarget("unknown", "unknown", "test"), supports_images=True) == state.provider_messages
-    assert calls == ["inline", ("request", ["soft"]), ("prune", "threshold")]
+    assert calls == [("request", ["soft"]), ("prune", "threshold"), "inline"]
+
+
+@pytest.mark.parametrize("later", ["omp_prune", "soft", "omp_inline_snapcompact"])
+def test_inline_request_transform_must_be_last(later):
+    from breadboard_engine.compaction.presets import load_preset_document
+    from breadboard_engine.compaction.params import PresetError
+
+    config = load_compaction_config({"enabled": True, "preset": "omp@18.4.5"})
+    document = load_preset_document(config.preset)
+    document["request_view"] = ["omp_inline_snapcompact", later]
+    with pytest.raises(PresetError, match="omp_inline_snapcompact must be the final entry"):
+        build_recipe(config, document)
+
+
+def test_real_inline_render_survives_a_request_stage_noop():
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.presets import load_preset_document
+    from breadboard_engine.compaction.snapcompact.inline import SYSTEM_STUB, SYSTEM_FRAMES_NOTE
+    from breadboard_engine.compaction.state import ProjectionTarget
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "omp@18.4.5", "snapcompact": {"system_prompt": "all", "inline_min_tokens": 50}}})
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["soft", "omp_inline_snapcompact"]
+    document["pipeline"]["stages"][4]["when"] = {"reasons": ["threshold"]}
+    controller.recipe = build_recipe(controller.config, document)
+    messages = [{"role": "system", "content": "You are an autonomous engineering agent with extensive guidelines. " * 250}, {"role": "user", "content": "Please implement feature X."}]
+    state = session(messages)
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    view = controller.build_request_view(state, target=ProjectionTarget("google", "google-generative-ai", "test"), supports_images=True)
+    assert view[0]["content"] == SYSTEM_STUB
+    assert view[1]["content"][0]["text"] == SYSTEM_FRAMES_NOTE
+    assert any(part.get("type") == "image_url" for part in view[1]["content"])
+    assert state.provider_messages == messages and not state.compaction_state.records
+    finished = [payload for event, payload in events if event == "compaction_finished"]
+    assert len(finished) == 1 and finished[0]["reason"] == "request"
+    assert [stage["status"] for stage in finished[0]["stages"]] == ["noop"]
+
+
+def test_request_pass_aggregates_interleaved_stage_results_once():
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.presets import load_preset_document
+    from breadboard_engine.compaction.state import ProjectionTarget
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "omp@18.4.5", "prune": {"enabled": True}}})
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["soft", "omp_prune", "remote"]
+    for index in (0, 4):
+        document["pipeline"]["stages"][index]["when"] = {"reasons": ["threshold"]}
+    controller.recipe = build_recipe(controller.config, document)
+    state = session(turns(3))
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    view = controller.build_request_view(state, target=ProjectionTarget("unknown", "unknown", "test"))
+    finished = [payload for event, payload in events if event == "compaction_finished"]
+    assert view == state.provider_messages
+    assert len(finished) == 1 and finished[0]["reason"] == "request"
+    assert [stage["id"] for stage in finished[0]["stages"]] == ["soft", "remote"]
+    assert [stage["status"] for stage in finished[0]["stages"]] == ["noop", "noop"]
+
+
+def test_cancelled_request_pass_reports_all_stage_ids_once():
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.methods import CompactionCancelled
+    from breadboard_engine.compaction.presets import load_preset_document
+    from breadboard_engine.compaction.state import ProjectionTarget
+
+    class Cancel:
+        def complete(self, request):
+            raise CompactionCancelled("stop")
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0"}}, summary_model=Cancel())
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["hard_context_reset", "omp_prune", "balanced_summary"]
+    document["pipeline"]["stages"][1]["when"] = {"reasons": ["request"]}
+    controller.recipe = build_recipe(controller.config, document)
+    state = session(turns(3))
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    with pytest.raises(CompactionCancelled, match="stop"):
+        controller.build_request_view(state, target=ProjectionTarget("unknown", "unknown", "test"))
+    finished = [payload for event, payload in events if event == "compaction_finished"]
+    assert len(finished) == 1 and finished[0]["status"] == "cancelled"
+    assert [stage["id"] for stage in finished[0]["stages"]] == ["hard_context_reset", "balanced_summary"]

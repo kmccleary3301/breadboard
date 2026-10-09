@@ -261,6 +261,8 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
+    if "omp_inline_snapcompact" in request_view[:-1]:
+        raise PresetError("request_view: omp_inline_snapcompact must be the final entry")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)

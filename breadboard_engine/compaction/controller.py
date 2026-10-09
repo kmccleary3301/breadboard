@@ -21,7 +21,7 @@ from .methods import (
 )
 from .images import drop_images
 from .overflow import is_context_overflow
-from .pipeline import CompactionOutcome
+from .pipeline import CompactionOutcome, StageResult
 from .presets import CompactionConfig, Recipe, build_recipe, load_compaction_config
 from .primitives.accounting import OccupancyInput, normalize_usage
 from .primitives.triggers import TriggerInput
@@ -234,57 +234,75 @@ class CompactionController:
         if compaction_state is None:
             compaction_state = CompactionState()
             session_state.compaction_state = compaction_state
-        def project_view():
+
+        max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
+        steps = self.recipe.request_view if self.active else ()
+        stage_ids = [step for step in steps if step in self.recipe.pipeline.stages]
+        outcomes: List[CompactionOutcome] = []
+        tokens_before = self.recipe.count(compaction_state.project(messages, target, coalesce=False))
+        request_error = None
+        index = 0
+        try:
+            while index < len(steps):
+                step = steps[index]
+                index += 1
+                if step in self.recipe.pipeline.stages:
+                    order = [step]
+                    while index < len(steps) and steps[index] in self.recipe.pipeline.stages:
+                        order.append(steps[index])
+                        index += 1
+                    self.compact(
+                        session_state, reason="request", target=target, conductor=conductor,
+                        runtime=runtime, client=client, context_window=context_window,
+                        turn_index=turn_index, supports_images=supports_images, order=order,
+                        _request_outcomes=outcomes,
+                    )
+                elif step == "omp_prune" and self.settings.prune.enabled:
+                    context = CompactionContext(
+                        messages=messages,
+                        state=compaction_state,
+                        settings=self.settings,
+                        reason="threshold",
+                        target=target,
+                        context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
+                        tokens_before=self.recipe.count(compaction_state.project(messages, target)),
+                        max_input_tokens=max_input,
+                        max_output_tokens=max_output,
+                    )
+                    prune_record = prune_tool_results(context)
+                    if prune_record is not None:
+                        compaction_state.append(prune_record, messages)
+                        self._after_record_appended(session_state, prune_record, target, turn_index)
             view = compaction_state.project(messages, target)
             if not callable(getattr(runtime, "compaction_port", None)):
                 view = strip_native_markers(view)
-            return view
-
-        view = project_view()
-        max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
-        steps = self.recipe.request_view if self.active else ()
-        index = 0
-        while index < len(steps):
-            step = steps[index]
-            index += 1
-            if step in self.recipe.pipeline.stages:
-                order = [step]
-                while index < len(steps) and steps[index] in self.recipe.pipeline.stages:
-                    order.append(steps[index])
-                    index += 1
-                self.compact(
-                    session_state, reason="request", target=target, conductor=conductor,
-                    runtime=runtime, client=client, context_window=context_window,
-                    turn_index=turn_index, supports_images=supports_images, order=order,
-                )
-                view = project_view()
-            elif step == "omp_prune" and self.settings.prune.enabled:
-                context = CompactionContext(
-                    messages=messages,
-                    state=compaction_state,
-                    settings=self.settings,
-                    reason="threshold",
-                    target=target,
-                    context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                    tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-                    max_input_tokens=max_input,
-                    max_output_tokens=max_output,
-                )
-                prune_record = prune_tool_results(context)
-                if prune_record is not None:
-                    compaction_state.append(prune_record, messages)
-                    self._after_record_appended(session_state, prune_record, target, turn_index)
-                    view = project_view()
-            elif step == "omp_inline_snapcompact" and supports_images:
+            if supports_images and steps and steps[-1] == "omp_inline_snapcompact":
                 view = apply_inline_snapcompact(
-                    view,
-                    self.settings,
-                    supports_images=supports_images,
-                    provider=target.provider,
-                    api=target.api,
-                    model_id=target.model,
+                    view, self.settings, supports_images=supports_images,
+                    provider=target.provider, api=target.api, model_id=target.model,
                 )
-
+        except Exception as exc:
+            request_error = exc
+            raise
+        finally:
+            if stage_ids:
+                results = [stage for outcome in outcomes for stage in outcome.stages]
+                results.extend(StageResult(stage_id, "noop", "request pass interrupted")
+                               for stage_id in stage_ids[len(results):])
+                records = tuple(record for outcome in outcomes for record in outcome.records)
+                tokens_after = self.recipe.count(compaction_state.project(messages, target, coalesce=False))
+                target_tokens = self.recipe.target_tokens("request", context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW, max_output)
+                aggregate = CompactionOutcome(
+                    records=records,
+                    stages=tuple(results),
+                    tokens_before=tokens_before,
+                    tokens_after=tokens_after,
+                    target_tokens=target_tokens,
+                    reached_target=bool(records) and tokens_after <= target_tokens,
+                )
+                if request_error is not None:
+                    request_error.compaction_outcome = aggregate
+                self._record_finished(session_state, aggregate, turn_index, "request", request_error)
         return view
 
     def should_trigger_threshold(
@@ -377,6 +395,7 @@ class CompactionController:
         supports_images: bool = False,
         order: Optional[Sequence[str]] = None,
         clock: Optional[Callable[[], str]] = None,
+        _request_outcomes: Optional[List[CompactionOutcome]] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
         if reason not in self.recipe.targets:
@@ -454,42 +473,55 @@ class CompactionController:
                 order=order if order is not None else self.recipe.order,
             )
         except CompactionCancelled as exc:
-            # Records committed before the cancel stay; report and persist them.
-            for record in compaction_state.records[records_before:]:
-                self._after_record_appended(session_state, record, resolved_target, turn_index)
-            self._record_event(
-                session_state,
-                "compaction_finished",
-                {"preset": self.recipe.preset_id, "reason": reason, "status": "cancelled", "detail": str(exc) or None},
-                turn_index,
-            )
+            if _request_outcomes is not None:
+                self._finish_outcome(session_state, exc.compaction_outcome, resolved_target, turn_index, reason, _request_outcomes)
+            else:
+                for record in compaction_state.records[records_before:]:
+                    self._after_record_appended(session_state, record, resolved_target, turn_index)
+                self._record_event(
+                    session_state,
+                    "compaction_finished",
+                    {"preset": self.recipe.preset_id, "reason": reason, "status": "cancelled", "detail": str(exc) or None},
+                    turn_index,
+                )
             raise
         except Exception as exc:
             failed_outcome = getattr(exc, "compaction_outcome", None)
             if failed_outcome is not None:
-                self._finish_outcome(session_state, failed_outcome, resolved_target, turn_index, reason)
+                self._finish_outcome(session_state, failed_outcome, resolved_target, turn_index, reason, _request_outcomes)
             raise
 
-        self._finish_outcome(session_state, outcome, resolved_target, turn_index, reason)
+        self._finish_outcome(session_state, outcome, resolved_target, turn_index, reason, _request_outcomes)
         return outcome
 
     def _finish_outcome(
         self, session_state: Any, outcome: CompactionOutcome,
         target: ProjectionTarget, turn_index: Optional[int], reason: CompactionReason,
+        request_outcomes: Optional[List[CompactionOutcome]] = None,
     ) -> None:
         for record in outcome.records:
             self._after_record_appended(session_state, record, target, turn_index)
+        if request_outcomes is not None:
+            request_outcomes.append(outcome)
+            return
+        self._record_finished(session_state, outcome, turn_index, reason)
+
+    def _record_finished(
+        self, session_state: Any, outcome: CompactionOutcome, turn_index: Optional[int],
+        reason: CompactionReason, error: Optional[Exception] = None,
+    ) -> None:
         self._record_event(
             session_state, "compaction_finished",
             {
                 "preset": self.recipe.preset_id,
                 "reason": reason,
-                "status": outcome.status,
+                "status": "cancelled" if isinstance(error, CompactionCancelled) else outcome.status,
                 "tokens_before": outcome.tokens_before,
                 "tokens_after": outcome.tokens_after,
                 "target_tokens": outcome.target_tokens,
                 "reached_target": outcome.reached_target,
                 "stages": [stage.to_dict() for stage in outcome.stages],
+                **({"detail": str(error) or None} if isinstance(error, CompactionCancelled) else {}),
             },
             turn_index,
         )

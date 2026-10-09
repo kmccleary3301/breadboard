@@ -185,7 +185,16 @@ class Pipeline:
             try:
                 output = stage.step.run(context)
                 context.state.validate(output.record, context.messages)
-            except CompactionCancelled:
+            except CompactionCancelled as exc:
+                if context.reason == "request":
+                    results.append(StageResult(stage_id, "noop", "cancelled before stage completion"))
+                    remaining = (order if order is not None else self.order)[len(results):]
+                    results.extend(StageResult(item, "noop", "request pass cancelled") for item in remaining)
+                    exc.compaction_outcome = CompactionOutcome(
+                        records=tuple(records), stages=tuple(results), tokens_before=context.tokens_before,
+                        tokens_after=current, target_tokens=target_tokens,
+                        reached_target=bool(records) and current <= target_tokens,
+                    )
                 raise
             except MethodUnavailable as exc:
                 results.append(StageResult(stage_id, "unavailable", str(exc) or None))
