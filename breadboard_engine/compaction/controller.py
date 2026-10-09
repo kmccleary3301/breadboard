@@ -162,7 +162,7 @@ class CompactionController:
             conductor=conductor, session_state=session_state, model=model
         )
         supports_images = self.resolve_supports_images(conductor=conductor, model=model)
-        if self.should_trigger_threshold(
+        if (self.active and "pipeline" in self.recipe.request_view) or self.should_trigger_threshold(
             session_state,
             context_window=context_window,
             last_usage=session_state.get_provider_metadata("usage"),
@@ -177,6 +177,7 @@ class CompactionController:
                 context_window=context_window,
                 turn_index=turn_index,
                 supports_images=supports_images,
+                max_output_tokens=session_state.get_provider_metadata("max_output_tokens"),
             )
         return self.build_request_view(
             session_state,
@@ -323,6 +324,7 @@ class CompactionController:
         supports_images: bool = False,
         order: Optional[Sequence[str]] = None,
         clock: Optional[Callable[[], str]] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
         if reason not in self.recipe.targets:
@@ -370,6 +372,8 @@ class CompactionController:
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
             **kwargs,
+            last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
+            max_output_tokens=max_output_tokens,
         )
 
         target_tokens = self.recipe.target_tokens(reason, resolved_window)

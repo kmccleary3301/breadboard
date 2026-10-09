@@ -47,7 +47,7 @@ from ..snapcompact import SnapcompactCompaction
 
 PRESET_SCHEMA = "bb.compaction_preset.v1"
 DEFAULT_PRESET = "omp@18.4.5"
-REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact")
+REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact", "pipeline")
 CLAIMS = ("executed_oracle", "source_golden")
 
 ALGORITHMS: Dict[str, Callable[[], CompactionMethod]] = {

@@ -77,3 +77,12 @@ def test_overflow_with_compaction_summarizes_and_continues(
     assert retried < OVERFLOW_AT
     # The run kept going after recovery instead of ending on the first overflow.
     assert sum(1 for kind, _ in calls if kind == "model") > len(overflowed) + 1
+
+
+@pytest.mark.parametrize("preset", ["codex@0.139.0", "claude_code@2.1.63"])
+def test_terminal_preset_overflow_ends_run_without_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preset: str
+) -> None:
+    calls = _run(tmp_path, monkeypatch, f"compaction:\n  enabled: true\n  preset: {preset}\n  contextWindow: 200000\n")
+    assert all(kind == "model" for kind, _ in calls)
+    assert calls[-1] == ("model", OVERFLOW_AT)

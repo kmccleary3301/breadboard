@@ -58,7 +58,7 @@ class NativeCompactionError(CompactionError):
 class SummaryRequest:
     system: str
     messages: Tuple[Mapping[str, Any], ...]
-    max_tokens: int
+    max_tokens: Optional[int]
     purpose: SummaryPurpose
     model: Optional[str] = None
 
@@ -117,6 +117,8 @@ class CompactionContext:
     supports_images: bool = False
     custom_instructions: Optional[str] = None
     clock: Callable[[], str] = _utc_now
+    last_usage: Optional[Any] = None
+    max_output_tokens: Optional[int] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

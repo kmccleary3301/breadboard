@@ -114,14 +114,21 @@
     "max_input_tokens": null,
     "max_output_tokens": 32000,
     "reason": "threshold",
+    "pipeline_order": [
+      "microcompact"
+    ],
     "native_settings": {
       "autoCompactEnabled": true
+    },
+    "artifact_sink": {
+      "root": "/tmp/session/tool-results",
+      "fail": false
     }
   },
   "expect": {
     "selection": {
       "prefix_end": null,
-      "first_kept_index": 0,
+      "first_kept_index": null,
       "summarize": [],
       "turn_prefix": [],
       "replay": [],

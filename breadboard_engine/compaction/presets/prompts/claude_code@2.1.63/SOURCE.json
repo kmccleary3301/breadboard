@@ -1,20 +1,16 @@
 {
-  "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
   "package": "@anthropic-ai/claude-code@2.1.63",
-  "commit": null,
-  "tarball_sha256": "787ced0566b1d11a7900cb9226f77d2afe5d022b9ebba85e7fd5cd07be7cba77",
-  "cli_js_sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
-  "license": "Proprietary",
-  "files": {
-    "compact.prompt.md": "package/cli.js:2095-2195 (rJ4 template)",
-    "partial.prompt.md": "package/cli.js:2018-2095 (nJ4 template)",
-    "bridge.txt": "package/cli.js:2199-2206 ($Q6 bridge builder)",
-    "persisted-output.txt": "package/cli.js:2015-2017 (microcompact template)",
-    "cleared-placeholder.txt": "package/cli.js:1661 (zZ8 constant)",
-    "system.prompt.txt": "package/cli.js:2211 (direct summary system prompt)"
+  "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+  "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+  "source_sha256": {
+    "package/cli.js": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d"
   },
-  "comparisons": {
-    "config/e4_targets/claude_code/2.1.63/prompts/compact.prompt.md": "Compared bytes: e4 target prompt is 4938 bytes, extracted rJ4 prompt is 5145 bytes. Differ in whitespace and list indentation formatting; bundle exact prompt used.",
-    "config/e4_targets/claude_code/2.1.63/prompts/summarize-previous-conversation.prompt.md": "Compared bytes: 133 bytes; not found in cli.js compaction subsystem (used elsewhere in e4 test lanes)."
+  "files": {
+    "summary.txt": "package/cli.js:2095-2195 rJ4 default with final instruction",
+    "system.txt": "package/cli.js:2211 TD4 system",
+    "bridge_prefix.txt": "package/cli.js:2199-2201 $Q6 prefix",
+    "continuation.txt": "package/cli.js:2205-2206 $Q6 continuation",
+    "placeholder.txt": "package/cli.js:1661 zZ8",
+    "artifact.txt": "package/cli.js:2015 masking template + package/cli.js:1661 YD1,YZ8 + package/cli.js:370 n4; S.filepath renamed to {{filepath}}"
   }
 }

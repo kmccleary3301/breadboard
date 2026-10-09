@@ -29,33 +29,6 @@ CODEX_REPO = "https://github.com/openai/codex"
 CODEX_COMMIT = "a7dff904308535e965aee87680c1fc5ef1d19eec"
 PRESET_ID = "codex@0.139.0"
 
-SUMMARY_PREFIX = (
-    "Another language model started to solve this problem and produced a summary "
-    "of its thinking process. You also have access to the state of the tools that "
-    "were used by that language model. Use this to build on the work that has already "
-    "been done and avoid duplicating work. Here is the summary produced by the other "
-    "language model, use the information in this summary to assist with your own analysis:"
-)
-
-SUMMARIZATION_PROMPT = (
-    "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\n"
-    "Include:\n"
-    "- Current progress and key decisions made\n"
-    "- Important context, constraints, or user preferences\n"
-    "- What remains to be done (clear next steps)\n"
-    "- Any critical data, examples, or references needed to continue\n\n"
-    "Be concise, structured, and focused on helping the next LLM seamlessly continue the work.\n"
-)
-
-
-def approx_token_count(text: str) -> int:
-    b = len(text.encode("utf-8"))
-    return (b + 3) // 4
-
-
-def truncate_middle_chars(s: str, max_bytes: int) -> str:
-    pass
-
 
 def build_cases(target_dir: Path):
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -315,9 +288,9 @@ def build_cases(target_dir: Path):
                 "notes": (
                     "codex-rs/core/src/context_manager/history.rs:296-314 get_total_token_usage adds "
                     "last_token_usage.total_tokens plus estimated tokens of items after the last model-generated item. "
-                    "Here last usage was 51000. Trailing item is user message 'Follow-up question' (18 UTF-8 bytes). "
-                    "codex-rs/utils/string/src/truncate.rs:71-74 approx_token_count computes (18 + 3) / 4 = 5 tokens. "
-                    "Active context tokens = 51000 + 5 = 51005 tokens."
+                    "Here last usage was 51000. history.rs:519 uses serde_json::to_string(item), "
+                    "so the trailing ResponseItem includes its type, role and input_text wrapper (89 UTF-8 bytes). "
+                    "truncate.rs:71-74 computes (89 + 3) / 4 = 24 tokens. Active context tokens = 51024."
                 ),
             },
             "input": {
@@ -344,7 +317,7 @@ def build_cases(target_dir: Path):
             "expect": {
                 "trigger": {
                     "fires": False,
-                    "tokens": 51005,
+                    "tokens": 51024,
                     "limit": 90000,
                     "severity": "soft",
                 }
@@ -767,7 +740,8 @@ def build_cases(target_dir: Path):
                 "notes": (
                     "codex-rs/core/src/compact_remote_v2.rs:49 defines RETAINED_MESSAGE_TOKEN_BUDGET = 64_000. "
                     "Lines 425-439 filter input messages to user/developer/system, truncate to 64,000 approx tokens newest-first, "
-                    "and append the single server-returned ResponseItem::Compaction item. Native compaction record."
+                    "and append the single server-returned ResponseItem::Compaction item. The replacement contains no old suffix; "
+                    "first_kept_index therefore advances to the old history length (2). Native items use Responses projection."
                 ),
             },
             "input": {
@@ -789,24 +763,21 @@ def build_cases(target_dir: Path):
                 "native_settings": {
                     "features": ["RemoteCompactionV2"],
                 },
-                "summary_responses": ["enc_summary_v2"],
+                "native_responses": [[{"type": "compaction", "encrypted_content": "enc_summary_v2"}]],
+                "projection": "responses",
             },
             "expect": {
                 "selection": {
                     "prefix_end": None,
-                    "first_kept_index": 0,
+                    "first_kept_index": 2,
                     "summarize": [],
                     "turn_prefix": [],
                     "replay": [0],
                     "targets": [],
                 },
                 "projected_view": [
-                    {"role": "user", "content": "User prompt retained in remote v2."},
-                    {
-                        "role": "assistant",
-                        "content": "",
-                        "compaction": {"encrypted_content": "enc_summary_v2"},
-                    },
+                    {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "User prompt retained in remote v2."}]},
+                    {"type": "compaction", "encrypted_content": "enc_summary_v2"},
                 ],
             },
         },
@@ -816,6 +787,15 @@ def build_cases(target_dir: Path):
 
 
 def main():
+    global SUMMARY_PREFIX, SUMMARIZATION_PROMPT
+    if len(sys.argv) != 2:
+        raise SystemExit("usage: capture_codex.py <pinned Codex source checkout>")
+    source_root = Path(sys.argv[1])
+    prompts = source_root / "codex-rs/prompts/templates/compact"
+    SUMMARY_PREFIX = (prompts / "summary_prefix.md").read_text(encoding="utf-8")
+    SUMMARIZATION_PROMPT = (prompts / "prompt.md").read_text(encoding="utf-8")
+    history_source = (source_root / "codex-rs/core/src/context_manager/history.rs").read_text(encoding="utf-8")
+    assert "let raw = serde_json::to_string(item)" in history_source
     target_dir = (
         Path(__file__).resolve().parent.parent.parent
         / "tests/compaction/oracles"

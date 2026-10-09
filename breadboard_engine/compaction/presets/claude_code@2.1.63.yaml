@@ -1,0 +1,73 @@
+schema: bb.compaction_preset.v1
+id: claude_code@2.1.63
+source:
+  repo: https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz
+  package: "@anthropic-ai/claude-code@2.1.63"
+  sha256: 12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d
+  evidence:
+    - package/cli.js:2307
+    - package/cli.js:2015-2017
+    - package/cli.js:2095-2206
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    autoCompactEnabled: [triggers.0.enabled, pipeline.stages.1.trigger.enabled]
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: [triggers.0.limit.pct_override, target.threshold.pct_override, pipeline.stages.0.select.limit.pct_override, pipeline.stages.1.trigger.limit.pct_override]
+    DISABLE_MICROCOMPACT: [pipeline.stages.0.select.disabled]
+estimator: chars4_round
+triggers:
+  - kind: threshold
+    enabled: true
+    accounting: {kind: usage_plus_trailing, estimator: chars4_round, usage_total: components, trailing: all}
+    limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
+    compare: ">="
+    phase: every_request
+target:
+  threshold: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
+  manual: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000}
+  overflow: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000}
+overflow: {policy: terminal, max_attempts_per_turn: 0}
+request_view: [pipeline]
+pipeline:
+  mode: sequence
+  stages:
+    - id: microcompact
+      accept: progress
+      commit_detail: eligible tool outputs masked
+      select:
+        kind: latest_tool_outputs
+        keep_latest_calls: 3
+        residual_target: 40000
+        min_savings: 20000
+        warning_delta: 20000
+        eligible_tools: [Read, Bash, Grep, Glob, WebSearch, WebFetch, Edit, Write]
+        disabled: false
+        limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
+      reduce:
+        kind: mask_tool_outputs
+        placeholder: {file: placeholder.txt}
+        artifact_template: {file: artifact.txt}
+    - id: summary
+      accept: any
+      commit_detail: user summary bridge installed
+      trigger:
+        kind: threshold
+        enabled: true
+        accounting: {kind: usage_plus_trailing, estimator: chars4_round, usage_total: components, trailing: all}
+        limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
+        compare: ">="
+        phase: every_request
+      select: {kind: whole_history}
+      reduce:
+        kind: chat_summary
+        system: {file: system.txt}
+        prompt: {file: summary.txt}
+        max_tokens: 20000
+        normalize_tags: true
+      place:
+        kind: bridge
+        prefix: {file: bridge_prefix.txt}
+        separator: ""
+        suffix: {file: continuation.txt}
+        suffix_on: [threshold]

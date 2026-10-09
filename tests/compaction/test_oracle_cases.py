@@ -28,10 +28,12 @@ from breadboard_engine.compaction.pipeline import ComposedStep
 from breadboard_engine.compaction.presets import build_recipe
 from breadboard_engine.compaction.primitives.accounting import OccupancyInput, normalize_usage
 from breadboard_engine.compaction.primitives.triggers import TriggerInput
+from breadboard_engine.compaction.state import NATIVE_MARKER_KEY, NativeCompaction
+from breadboard_engine.compaction.primitives.byte_estimator import response_items
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
-CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details"}
+CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details", "edits", "failure"}
 
 
 def _cases() -> List[Any]:
@@ -56,6 +58,38 @@ class ScriptedSummaries:
         return SummaryResponse(self.responses.pop(0))
 
 
+class ScriptedArtifacts:
+    """An artifact port with explicitly captured success/failure input."""
+
+    def __init__(self, data: Mapping[str, Any]) -> None:
+        self.root = data["root"]
+        self.fail = data.get("fail", False)
+        self.stored: Dict[str, str] = {}
+
+    def store(self, name: str, content: str, media_type: str = "text/plain") -> str:
+        if self.fail:
+            raise OSError("captured artifact persistence failure")
+        self.stored[name] = content
+        return f"{self.root}/{name}"
+
+
+class ScriptedNative:
+    provider = TARGET.provider
+    api = TARGET.api
+
+    def __init__(self, responses: List[Any]) -> None:
+        self.responses = list(responses)
+
+    def supports(self, model: str) -> bool:
+        return model == TARGET.model
+
+    def compact(self, context: CompactionContext):
+        assert self.responses, "native model called more times than the oracle recorded"
+        return context.new_record(
+            method="scripted_native", first_kept_index=len(context.messages),
+            native=NativeCompaction(self.provider, self.api, TARGET.model, tuple(self.responses.pop(0))),
+        )
+
 def _recipe(case: Mapping[str, Any]):
     inp = case["input"]
     config = load_compaction_config({"enabled": True, "preset": case["preset"], **(inp.get("native_settings") or {})})
@@ -74,6 +108,10 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         context_window=inp["context_window"],
         tokens_before=recipe.count(state.project(messages, TARGET)),
         summarizer=summarizer,
+        last_usage=inp.get("usage"),
+        max_output_tokens=inp.get("max_output_tokens"),
+        artifacts=ScriptedArtifacts(inp["artifact_sink"]) if "artifact_sink" in inp else None,
+        remote_ports=(ScriptedNative(inp["native_responses"]),) if "native_responses" in inp else (),
     )
 
 
@@ -146,19 +184,25 @@ def test_oracle_case(case_file: Path) -> None:
     state = _state_from_ledger(case, messages)
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
-    if "selection" in expect:
-        stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
-        assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
-        selection = stage.step.selector.select(context)
-        got_selection = {
-            k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
-        }
-        assert got_selection == expect["selection"]
 
     outcome = recipe.pipeline.run(
         context,
         target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
+        order=inp.get("pipeline_order"),
     )
+    if "selection" in expect:
+        selection = next((s.selection for s in reversed(outcome.stages) if s.status == "committed"), None)
+        if selection is None:
+            selection = next((s.selection for s in outcome.stages if s.status == "edited"), None)
+        if selection is None:
+            stage = next(s for s in recipe.pipeline.stages.values() if isinstance(s.step, ComposedStep))
+            selection = stage.step.selector.select(context)
+        got_selection = {
+            k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
+        }
+        assert got_selection == expect["selection"]
+    for port in context.remote_ports:
+        assert not port.responses, "oracle recorded native calls this preset did not make"
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
 
     if "failure" in expect:
@@ -184,7 +228,13 @@ def test_oracle_case(case_file: Path) -> None:
         got_edits = [{"index": e.index, "message": dict(e.message)} for r in outcome.records for e in r.edits]
         assert got_edits == expect["edits"]
     if "projected_view" in expect:
-        assert state.project(messages, TARGET) == expect["projected_view"]
+        projected = state.project(messages, TARGET)
+        if inp.get("projection") == "responses":
+            projected = [
+                item for message in projected
+                for item in (message[NATIVE_MARKER_KEY]["items"] if NATIVE_MARKER_KEY in message else response_items(message))
+            ]
+        assert projected == expect["projected_view"]
 
 
 def context_reason(case: Mapping[str, Any]) -> str:

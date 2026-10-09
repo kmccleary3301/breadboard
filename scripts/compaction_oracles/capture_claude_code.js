@@ -149,6 +149,26 @@ runLoop();
   };
 }
 
+// Execute the pinned persistence-success/failure masking branch, not a copied template.
+const maskStart = bundleContent.indexOf("let L=zZ8,S=await lg6(v.content,v.tool_use_id);");
+const maskEnd = bundleContent.indexOf("f.push({...v,content:L})", maskStart);
+const maskSlice = bundleContent.slice(maskStart, maskEnd);
+const igStart = bundleContent.indexOf("function ig6(A){");
+const igEnd = bundleContent.indexOf("function ", igStart + 1);
+const readToolName = bundleContent.match(/n4="([^"]+)"/)[1];
+
+async function runVmMask(content, id, artifactSink) {
+  const sandbox = createVmSandbox({
+    v: { content, tool_use_id: id },
+    n4: readToolName,
+    lg6: async () => artifactSink.fail
+      ? { error: "captured persistence failure" }
+      : { filepath: `${artifactSink.root}/${id}.txt` }
+  });
+  vm.runInContext(plSlice + bundleContent.slice(igStart, igEnd), sandbox);
+  return await vm.runInContext(`(async () => { ${maskSlice} return L; })()`, sandbox);
+}
+
 // --- 3. Build Oracle Cases ---
 
 const baseSource = {
@@ -159,6 +179,7 @@ const baseSource = {
   evidence: ["package/cli.js:2307", "package/cli.js:2015-2017", "package/cli.js:2095-2211", "package/cli.js:1661"]
 };
 
+async function capture() {
 const cases = [];
 
 // Case 1: Threshold below 200k (Executed)
@@ -508,6 +529,8 @@ We identified missing CSRF validation and token leakage in URL params.
   };
 
   const mcResult = runVmMicrocompact(toolIds, toolSizes, 150000, 200000, 32000);
+  const artifactSink = { root: "/tmp/session/tool-results", fail: false };
+  const maskedOutput = await runVmMask("A".repeat(120000), toolIds[0], artifactSink);
 
   const bigOutput = "A".repeat(120000);
   const messages = [
@@ -559,16 +582,18 @@ We identified missing CSRF validation and token leakage in URL params.
       max_input_tokens: null,
       max_output_tokens: 32000,
       reason: "threshold",
-      native_settings: { autoCompactEnabled: true }
+      pipeline_order: ["microcompact"],
+      native_settings: { autoCompactEnabled: true },
+      artifact_sink: artifactSink
     },
     expect: {
       selection: {
         prefix_end: null,
-        first_kept_index: 0,
+        first_kept_index: null,
         summarize: [],
         turn_prefix: [],
         replay: [],
-        targets: [2]
+        targets: mcResult.compactedIds.map(id => messages.findIndex(m => m.tool_call_id === id))
       },
       edits: [
         {
@@ -576,7 +601,7 @@ We identified missing CSRF validation and token leakage in URL params.
           message: {
             role: "tool",
             tool_call_id: "call_read_1",
-            content: "<persisted-output>Tool result saved to: /tmp/session/tool-results/call_read_1.txt\n\nUse Read to view</persisted-output>"
+            content: maskedOutput
           }
         }
       ]
@@ -589,6 +614,8 @@ We identified missing CSRF validation and token leakage in URL params.
   const toolIds = ["call_read_fail", "call_k1", "call_k2", "call_k3"];
   const toolSizes = { call_read_fail: 30000, call_k1: 30000, call_k2: 30000, call_k3: 30000 };
   const mcResult = runVmMicrocompact(toolIds, toolSizes, 150000, 200000, 32000);
+  const artifactSink = { root: "/tmp/session/tool-results", fail: true };
+  const maskedOutput = await runVmMask("B".repeat(120000), toolIds[0], artifactSink);
 
   const bigOutput = "B".repeat(120000);
   const messages = [
@@ -633,16 +660,18 @@ We identified missing CSRF validation and token leakage in URL params.
       max_input_tokens: null,
       max_output_tokens: 32000,
       reason: "threshold",
-      native_settings: { autoCompactEnabled: true }
+      pipeline_order: ["microcompact"],
+      native_settings: { autoCompactEnabled: true },
+      artifact_sink: artifactSink
     },
     expect: {
       selection: {
         prefix_end: null,
-        first_kept_index: 0,
+        first_kept_index: null,
         summarize: [],
         turn_prefix: [],
         replay: [],
-        targets: [2]
+        targets: mcResult.compactedIds.map(id => messages.findIndex(m => m.tool_call_id === id))
       },
       edits: [
         {
@@ -650,7 +679,7 @@ We identified missing CSRF validation and token leakage in URL params.
           message: {
             role: "tool",
             tool_call_id: "call_read_fail",
-            content: "[Old tool result content cleared]"
+            content: maskedOutput
           }
         }
       ]
@@ -658,56 +687,6 @@ We identified missing CSRF validation and token leakage in URL params.
   });
 }
 
-// Case 11: PreCompact hook blocking discrepancy (Source-derived)
-{
-  const rawSummary = "<summary>Compacted after ignoring hook block.</summary>";
-  const bridgeOut = vm_Q6(rawSummary, true, null, false);
-
-  cases.push({
-    schema: "bb.compaction_oracle_case.v1",
-    preset: "claude_code@2.1.63",
-    case: "precompact_hook_blocking_discrepancy",
-    source: {
-      ...baseSource,
-      evidence: [
-        "package/cli.js:6320 (T86 hook runner returns blocked:true for exit 2)",
-        "package/cli.js:6321-6324 (SP1 only returns {newCustomInstructions, userDisplayMessage})",
-        "package/cli.js:2207 (SG6 caller never inspects blocked)"
-      ]
-    },
-    capture: {
-      kind: "source_derived",
-      script: "scripts/compaction_oracles/capture_claude_code.js",
-      notes: `Source-derived observation of pinned bug in cli.js. Verbatim text in SP1 (C:6321-6324): "async function SP1(A,q,K=kj){let Y={...U$(void 0),hook_event_name:\"PreCompact\",trigger:A.trigger,custom_instructions:A.customInstructions},z=await T86({hookInput:Y,matchQuery:A.trigger,signal:q,timeoutMs:K});if(z.length===0)return{};let w=z.filter(($)=>$.succeeded&&$.output.trim().length>0).map(($)=>$.output.trim()),_=[];...return{newCustomInstructions:w.length>0?w.join(\`\\n\\n\`):void 0,userDisplayMessage:_.length>0?_.join(\`\\n\`):void 0}}". Although T86 records blocked:true for exit code 2, SP1 discards blocked and returns only newCustomInstructions and userDisplayMessage. The caller SG6 (C:2207) does not check blocking: "let j=await SP1({trigger:w?\"auto\":\"manual\",customInstructions:z??null},q.abortController.signal);if(j.newCustomInstructions)z=z?\`\${z}\\n\\n\${j.newCustomInstructions}\`:j.newCustomInstructions;". Compaction proceeds unconditionally despite hook exit 2.`
-    },
-    input: {
-      messages: [{ role: "user", content: "Work" }, { role: "assistant", content: "Progress" }],
-      usage: { input_tokens: 160000, output_tokens: 7000, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 167000 },
-      context_window: 200000,
-      max_input_tokens: null,
-      max_output_tokens: 32000,
-      reason: "threshold",
-      native_settings: {
-        autoCompactEnabled: true,
-        hooks: {
-          PreCompact: [
-            { type: "command", command: "exit 2" }
-          ]
-        }
-      },
-      summary_responses: [rawSummary]
-    },
-    expect: {
-      trigger: { fires: true, tokens: 167000, limit: 167000, severity: "soft" },
-      projected_view: [
-        {
-          role: "user",
-          content: bridgeOut
-        }
-      ]
-    }
-  });
-}
 
 // --- 4. Write case files and report counts ---
 
@@ -715,6 +694,12 @@ let executedCount = 0;
 let derivedCount = 0;
 const caseNames = [];
 
+// Removed: PreCompact hook blocking discrepancy. BreadBoard has no host hook
+// execution port, so hook commands cannot be represented by compaction input.
+const retainedNames = new Set(cases.map(c => `${c.case}.json`));
+for (const name of fs.readdirSync(OUT_DIR)) {
+  if (name.endsWith(".json") && !retainedNames.has(name)) fs.unlinkSync(path.join(OUT_DIR, name));
+}
 for (const c of cases) {
   const filePath = path.join(OUT_DIR, `${c.case}.json`);
   fs.writeFileSync(filePath, JSON.stringify(c, null, 2) + "\n");
@@ -726,3 +711,6 @@ for (const c of cases) {
 console.log(`Generated ${cases.length} oracle cases in ${OUT_DIR}`);
 console.log(`Executed: ${executedCount}, Source-derived: ${derivedCount}`);
 console.log("Cases:", caseNames);
+}
+
+capture().catch(error => { console.error(error); process.exitCode = 1; });

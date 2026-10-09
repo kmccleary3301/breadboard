@@ -93,7 +93,9 @@ class RecentTokens:
         return Selection(first_kept_index=first, summarize=summarize, turn_prefix=turn_prefix)
 
 
-SELECTOR_KINDS = {RecentTokens.kind: RecentTokens}
+from .budget_selectors import LatestToolOutputs, UserMessagesBudget, WholeHistory
+
+SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, WholeHistory, UserMessagesBudget, LatestToolOutputs)}
 
 
 def build_selector(params: Params) -> Any:

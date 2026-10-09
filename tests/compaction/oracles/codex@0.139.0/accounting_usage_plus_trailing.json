@@ -13,7 +13,7 @@
   "capture": {
     "kind": "source_derived",
     "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/context_manager/history.rs:296-314 get_total_token_usage adds last_token_usage.total_tokens plus estimated tokens of items after the last model-generated item. Here last usage was 51000. Trailing item is user message 'Follow-up question' (18 UTF-8 bytes). codex-rs/utils/string/src/truncate.rs:71-74 approx_token_count computes (18 + 3) / 4 = 5 tokens. Active context tokens = 51000 + 5 = 51005 tokens."
+    "notes": "codex-rs/core/src/context_manager/history.rs:296-314 get_total_token_usage adds last_token_usage.total_tokens plus estimated tokens of items after the last model-generated item. Here last usage was 51000. history.rs:519 uses serde_json::to_string(item), so the trailing ResponseItem includes its type, role and input_text wrapper (89 UTF-8 bytes). truncate.rs:71-74 computes (89 + 3) / 4 = 24 tokens. Active context tokens = 51024."
   },
   "input": {
     "messages": [
@@ -48,7 +48,7 @@
   "expect": {
     "trigger": {
       "fires": false,
-      "tokens": 51005,
+      "tokens": 51024,
       "limit": 90000,
       "severity": "soft"
     }

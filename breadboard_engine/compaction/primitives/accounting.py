@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 from ..params import Params
 from ..tokens import context_tokens_from_usage, estimate_messages_tokens
+from .byte_estimator import bytes4
 
 Message = Mapping[str, Any]
 Estimator = Callable[[Sequence[Message]], int]
@@ -164,9 +165,38 @@ def pi_estimate_messages(messages: Sequence[Message]) -> int:
     return sum(pi_estimate_message(m) for m in messages if isinstance(m, Mapping))
 
 
+def rounded_text_tokens(text: str) -> int:
+    """JavaScript Math.round(String.length / 4)."""
+    return math.floor(_utf16_len(text) / 4 + 0.5)
+
+
+def _rounded_content_tokens(content: Any) -> int:
+    if isinstance(content, str):
+        return rounded_text_tokens(content)
+    if not isinstance(content, list):
+        return 0
+    tokens = 0
+    for part in content:
+        if not isinstance(part, Mapping):
+            continue
+        if part.get("type") in {"text", "input_text", "output_text"}:
+            tokens += rounded_text_tokens(part.get("text") or "")
+        elif part.get("type") in {"image", "image_url", "input_image", "document"}:
+            tokens += 2000
+        elif part.get("type") == "tool_result":
+            tokens += _rounded_content_tokens(part.get("content"))
+    return tokens
+
+
+def chars4_round(messages: Sequence[Message]) -> int:
+    return sum(_rounded_content_tokens(m.get("content")) for m in messages)
+
+
 ESTIMATORS: Dict[str, Estimator] = {
     "bb_chars4": estimate_messages_tokens,
     "pi_chars4": pi_estimate_messages,
+    "bytes4": bytes4,
+    "chars4_round": chars4_round,
 }
 
 
