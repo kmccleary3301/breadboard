@@ -162,7 +162,6 @@ def apply_inline_snapcompact(
             # Render frames
             frame_blocks: List[Dict[str, Any]] = []
             from .archive import paginate_cells, doc_pages, _uses_wide_cells
-            geo = from_geo = shape
             if shape.columns == 2:
                 pages = doc_pages(text, shape.cell_width, shape.cell_height, _uses_wide_cells(shape))
             else:
@@ -199,125 +198,83 @@ def apply_inline_snapcompact(
             out_messages[idx]["content"] = new_content
             budget -= len(frame_blocks)
 
-    # Handle system prompt
+    # Handle system prompt. Mirrors OMP selectSystemPromptImageTarget and
+    # planInlineSwaps: the selected text is replaced only when all of it fits
+    # within min(budget, MAX_SYSTEM_PROMPT_FRAMES) and passes the savings gate.
     if sys_mode in ("all", "agents-md") and budget > 0:
         first_user_idx = next(
             (i for i, m in enumerate(out_messages) if m.get("role") == "user"),
             None,
         )
         if first_user_idx is not None:
+            sys_indices = [
+                i
+                for i, m in enumerate(out_messages)
+                if m.get("role") in ("system", "developer")
+            ]
+            replacements: Dict[int, str] = {}
             if sys_mode == "all":
-                # Extract all system text
-                sys_indices = [
-                    i
-                    for i, m in enumerate(out_messages)
-                    if m.get("role") in ("system", "developer")
-                ]
                 sys_texts = [content_text(out_messages[i]) for i in sys_indices if content_text(out_messages[i])]
-                combined_sys = "\n\n".join(sys_texts)
-                sys_tokens = estimate_text_tokens(combined_sys)
-                sys_frames = min(count_frames(combined_sys, shape), min(budget, MAX_SYSTEM_PROMPT_FRAMES))
-
-                if sys_frames > 0 and sys_frames * shape.frame_token_estimate <= sys_tokens * SAVINGS_MARGIN:
-                    from .shapes import geometry
-                    from .archive import paginate_cells, _uses_wide_cells
-                    g = geometry(shape)
-                    pages = paginate_cells(combined_sys, g.capacity, g.cols, _uses_wide_cells(shape))[:sys_frames]
-                    rendered_sys_frames = []
-                    for page in pages:
-                        b64 = render_snapcompact_png(
-                            page,
-                            size=shape.frame_size,
-                            font=shape.font,
-                            cell_width=shape.cell_width,
-                            cell_height=shape.cell_height,
-                            variant=shape.variant,
-                            line_repeat=shape.line_repeat,
-                            stretch=shape.stretch,
-                            columns=shape.columns or 1,
-                        )
-                        rendered_sys_frames.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{b64}"},
-                        })
-
-                    # Replace system messages
-                    for i in sys_indices:
-                        out_messages[i]["content"] = SYSTEM_STUB
-                    # Attach frames to first user message
-                    user_msg = out_messages[first_user_idx]
-                    user_content = user_msg.get("content")
-                    if isinstance(user_content, str):
-                        original_user_parts = [{"type": "text", "text": user_content}]
-                    elif isinstance(user_content, list):
-                        original_user_parts = list(user_content)
-                    else:
-                        original_user_parts = []
-
-                    user_msg["content"] = [
-                        {"type": "text", "text": SYSTEM_FRAMES_NOTE},
-                        *rendered_sys_frames,
-                        *original_user_parts,
-                    ]
-                    budget -= len(rendered_sys_frames)
-
-            elif sys_mode == "agents-md":
+                target_text = "\n\n".join(sys_texts)
+                replacements = {i: SYSTEM_STUB for i in sys_indices}
+                frames_note = SYSTEM_FRAMES_NOTE
+            else:
                 extracted_sections: List[str] = []
-                sys_indices = [
-                    i
-                    for i, m in enumerate(out_messages)
-                    if m.get("role") in ("system", "developer")
-                ]
                 for i in sys_indices:
                     txt = content_text(out_messages[i])
                     modified = txt
                     for pat in CONTEXT_SECTION_PATTERNS:
-                        for match in pat.finditer(txt):
-                            extracted_sections.append(match.group(0).strip())
+                        extracted_sections.extend(match.group(0).strip() for match in pat.finditer(modified))
                         modified = pat.sub(CONTEXT_STUB, modified)
-                    out_messages[i]["content"] = modified
+                    if modified != txt:
+                        replacements[i] = modified
+                target_text = "\n\n".join(extracted_sections)
+                frames_note = CONTEXT_FRAMES_NOTE
 
-                combined_ctx = "\n\n".join(extracted_sections)
-                ctx_tokens = estimate_text_tokens(combined_ctx)
-                ctx_frames = min(count_frames(combined_ctx, shape), min(budget, MAX_SYSTEM_PROMPT_FRAMES))
-
-                if ctx_frames > 0 and ctx_frames * shape.frame_token_estimate <= ctx_tokens * SAVINGS_MARGIN:
-                    from .shapes import geometry
-                    from .archive import paginate_cells, _uses_wide_cells
-                    g = geometry(shape)
-                    pages = paginate_cells(combined_ctx, g.capacity, g.cols, _uses_wide_cells(shape))[:ctx_frames]
-                    rendered_ctx_frames = []
-                    for page in pages:
-                        b64 = render_snapcompact_png(
-                            page,
-                            size=shape.frame_size,
-                            font=shape.font,
-                            cell_width=shape.cell_width,
-                            cell_height=shape.cell_height,
-                            variant=shape.variant,
-                            line_repeat=shape.line_repeat,
-                            stretch=shape.stretch,
-                            columns=shape.columns or 1,
-                        )
-                        rendered_ctx_frames.append({
-                            "type": "image_url",
-                            "image_url": {"url": f"data:image/png;base64,{b64}"},
-                        })
-
-                    user_msg = out_messages[first_user_idx]
-                    user_content = user_msg.get("content")
-                    if isinstance(user_content, str):
-                        original_user_parts = [{"type": "text", "text": user_content}]
-                    elif isinstance(user_content, list):
-                        original_user_parts = list(user_content)
-                    else:
-                        original_user_parts = []
-
-                    user_msg["content"] = [
-                        {"type": "text", "text": CONTEXT_FRAMES_NOTE},
-                        *rendered_ctx_frames,
-                        *original_user_parts,
-                    ]
-                    budget -= len(rendered_ctx_frames)
+            frames = count_frames(target_text, shape) if target_text else 0
+            if (
+                0 < frames <= min(budget, MAX_SYSTEM_PROMPT_FRAMES)
+                and frames * shape.frame_token_estimate <= estimate_text_tokens(target_text) * SAVINGS_MARGIN
+            ):
+                rendered_frames = _render_text_frames(target_text, shape, frames)
+                for i, replacement in replacements.items():
+                    out_messages[i]["content"] = replacement
+                user_msg = out_messages[first_user_idx]
+                user_content = user_msg.get("content")
+                if isinstance(user_content, str):
+                    original_user_parts = [{"type": "text", "text": user_content}]
+                elif isinstance(user_content, list):
+                    original_user_parts = list(user_content)
+                else:
+                    original_user_parts = []
+                user_msg["content"] = [
+                    {"type": "text", "text": frames_note},
+                    *rendered_frames,
+                    *original_user_parts,
+                ]
+                budget -= len(rendered_frames)
 
     return out_messages
+
+
+def _render_text_frames(text: str, shape: Shape, frames: int) -> List[Dict[str, Any]]:
+    from .shapes import geometry
+    from .archive import paginate_cells, _uses_wide_cells
+
+    g = geometry(shape)
+    pages = paginate_cells(text, g.capacity, g.cols, _uses_wide_cells(shape))[:frames]
+    rendered = []
+    for page in pages:
+        b64 = render_snapcompact_png(
+            page,
+            size=shape.frame_size,
+            font=shape.font,
+            cell_width=shape.cell_width,
+            cell_height=shape.cell_height,
+            variant=shape.variant,
+            line_repeat=shape.line_repeat,
+            stretch=shape.stretch,
+            columns=shape.columns or 1,
+        )
+        rendered.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}"}})
+    return rendered

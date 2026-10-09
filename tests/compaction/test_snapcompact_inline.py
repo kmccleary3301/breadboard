@@ -172,6 +172,62 @@ def test_inline_system_prompt_agents_md():
     assert len(images) > 0
 
 
+def _default_shape():
+    from breadboard_engine.compaction.snapcompact.shapes import resolve_shape
+
+    return resolve_shape(variant="auto", api="google-generative-ai", model_id=None)
+
+
+def test_inline_agents_md_keeps_text_when_rendering_saves_nothing():
+    """A context section too small to pass the savings gate stays as text, with no stub."""
+    settings = _make_settings(system_prompt="agents-md", inline_min_tokens=50)
+    sys_content = "Base instructions.\n\n<repo-rules>\nUse tabs.\n</repo-rules>\n\nEnd."
+    messages = [
+        {"role": "system", "content": sys_content},
+        {"role": "user", "content": "Help me."},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    assert transformed == messages
+
+
+def test_inline_agents_md_keeps_text_when_section_exceeds_frame_cap():
+    """A section needing more than MAX_SYSTEM_PROMPT_FRAMES frames is never partially imaged."""
+    from breadboard_engine.compaction.snapcompact.archive import count_frames
+    from breadboard_engine.compaction.snapcompact.inline import MAX_SYSTEM_PROMPT_FRAMES
+
+    settings = _make_settings(system_prompt="agents-md", inline_min_tokens=50)
+    section = "<repo-rules>\n" + "Rule: run the full test suite before every commit. " * 4000 + "\n</repo-rules>"
+    assert count_frames(section, _default_shape()) > MAX_SYSTEM_PROMPT_FRAMES
+    messages = [
+        {"role": "system", "content": f"Base instructions.\n\n{section}"},
+        {"role": "user", "content": "Help me."},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    assert transformed == messages
+
+
+def test_inline_system_prompt_all_keeps_text_when_prompt_exceeds_frame_cap():
+    """system_prompt='all' does not stub a prompt it can only partly render."""
+    from breadboard_engine.compaction.snapcompact.archive import count_frames
+    from breadboard_engine.compaction.snapcompact.inline import MAX_SYSTEM_PROMPT_FRAMES
+
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    prompt = "Operating rule: verify every change with a focused test. " * 4000
+    assert count_frames(prompt, _default_shape()) > MAX_SYSTEM_PROMPT_FRAMES
+    messages = [
+        {"role": "system", "content": prompt},
+        {"role": "user", "content": "Help me."},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    assert transformed == messages
+
+
 def test_inline_does_not_mutate_input():
     """Input message dictionaries and lists MUST NOT be modified."""
     settings = _make_settings(tool_results="all", inline_min_tokens=50)
