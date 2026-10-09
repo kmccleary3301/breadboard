@@ -254,3 +254,29 @@ def test_soft_failure_keeps_request_view_and_reports_failed_stage():
     view = controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
     assert view == messages and not state.compaction_state.records
     assert [stage["status"] for stage in events[-1][1]["stages"]] == ["failed", "noop"]
+
+
+def test_request_builtins_and_stage_ids_run_in_declared_order(monkeypatch):
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.state import ProjectionTarget
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "omp@18.4.5", "prune": {"enabled": True}}})
+    controller.recipe = replace(controller.recipe, request_view=("omp_inline_snapcompact", "soft", "omp_prune"))
+    calls = []
+
+    def inline(view, *args, **kwargs):
+        calls.append("inline")
+        return view
+
+    def compact(state, **kwargs):
+        calls.append((kwargs["reason"], kwargs["order"]))
+
+    def prune(context):
+        calls.append(("prune", context.reason))
+
+    monkeypatch.setattr("breadboard_engine.compaction.controller.apply_inline_snapcompact", inline)
+    monkeypatch.setattr("breadboard_engine.compaction.controller.prune_tool_results", prune)
+    monkeypatch.setattr(controller, "compact", compact)
+    state = session(turns(3))
+    assert controller.build_request_view(state, target=ProjectionTarget("unknown", "unknown", "test"), supports_images=True) == state.provider_messages
+    assert calls == ["inline", ("request", ["soft"]), ("prune", "threshold")]

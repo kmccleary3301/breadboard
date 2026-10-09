@@ -234,51 +234,56 @@ class CompactionController:
         if compaction_state is None:
             compaction_state = CompactionState()
             session_state.compaction_state = compaction_state
-        if self.active:
-            order = [step for step in self.recipe.request_view if step in self.recipe.pipeline.stages]
-            if order:
+        def project_view():
+            view = compaction_state.project(messages, target)
+            if not callable(getattr(runtime, "compaction_port", None)):
+                view = strip_native_markers(view)
+            return view
+
+        view = project_view()
+        max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
+        steps = self.recipe.request_view if self.active else ()
+        index = 0
+        while index < len(steps):
+            step = steps[index]
+            index += 1
+            if step in self.recipe.pipeline.stages:
+                order = [step]
+                while index < len(steps) and steps[index] in self.recipe.pipeline.stages:
+                    order.append(steps[index])
+                    index += 1
                 self.compact(
                     session_state, reason="request", target=target, conductor=conductor,
                     runtime=runtime, client=client, context_window=context_window,
                     turn_index=turn_index, supports_images=supports_images, order=order,
                 )
-
-        # 1. Prune tool results if enabled
-        max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
-        if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
-            context = CompactionContext(
-                messages=messages,
-                state=compaction_state,
-                settings=self.settings,
-                reason="threshold",
-                target=target,
-                context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-                max_input_tokens=max_input,
-                max_output_tokens=max_output,
-            )
-            prune_record = prune_tool_results(context)
-            if prune_record is not None:
-                compaction_state.append(prune_record, messages)
-                self._after_record_appended(session_state, prune_record, target, turn_index)
-
-        # 2. Project view
-        view = compaction_state.project(messages, target)
-
-        # 3. Native markers replay only through a runtime that owns them.
-        if not callable(getattr(runtime, "compaction_port", None)):
-            view = strip_native_markers(view)
-
-        # 4. Inline snapcompact if model supports images
-        if self.active and supports_images and "omp_inline_snapcompact" in self.recipe.request_view:
-            view = apply_inline_snapcompact(
-                view,
-                self.settings,
-                supports_images=supports_images,
-                provider=target.provider,
-                api=target.api,
-                model_id=target.model,
-            )
+                view = project_view()
+            elif step == "omp_prune" and self.settings.prune.enabled:
+                context = CompactionContext(
+                    messages=messages,
+                    state=compaction_state,
+                    settings=self.settings,
+                    reason="threshold",
+                    target=target,
+                    context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
+                    tokens_before=self.recipe.count(compaction_state.project(messages, target)),
+                    max_input_tokens=max_input,
+                    max_output_tokens=max_output,
+                )
+                prune_record = prune_tool_results(context)
+                if prune_record is not None:
+                    compaction_state.append(prune_record, messages)
+                    self._after_record_appended(session_state, prune_record, target, turn_index)
+                    view = project_view()
+            elif step == "omp_inline_snapcompact" and supports_images:
+                view = apply_inline_snapcompact(
+                    view,
+                    self.settings,
+                    supports_images=supports_images,
+                    provider=target.provider,
+                    api=target.api,
+                    model_id=target.model,
+                )
 
         return view
 
