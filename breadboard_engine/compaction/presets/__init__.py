@@ -110,10 +110,8 @@ class CompactionConfig:
     """Harness-native keys as written (``paths`` adapter only)."""
     max_passes_per_turn: Optional[int]
     """Explicit BreadBoard override; ``None`` uses the preset's overflow budget."""
-
-    @property
-    def overflow_policy(self) -> str:
-        return self.settings.overflow_policy
+    overflow_policy: Optional[str]
+    """Explicit BreadBoard override; ``None`` uses the preset's ``overflow.policy``."""
 
 
 def load_compaction_config(raw: Any) -> CompactionConfig:
@@ -123,7 +121,7 @@ def load_compaction_config(raw: Any) -> CompactionConfig:
     The preset is built here, so a bad key or value fails at config load.
     """
     if raw is None or raw is False:
-        return CompactionConfig(False, DEFAULT_PRESET, CompactionSettings(), {}, None)
+        return CompactionConfig(False, DEFAULT_PRESET, CompactionSettings(), {}, None, None)
     if raw is True:
         raw = {"enabled": True}
     if not isinstance(raw, Mapping):
@@ -142,6 +140,7 @@ def load_compaction_config(raw: Any) -> CompactionConfig:
             settings,
             {},
             settings.max_passes_per_turn if _has_any(rest, "max_passes_per_turn", "maxPassesPerTurn") else None,
+            settings.overflow_policy if _has_any(rest, "overflow_policy", "overflowPolicy") else None,
         )
     elif adapter == "paths":
         config = _paths_config(preset_id, doc, rest)
@@ -176,7 +175,8 @@ def _paths_config(preset_id: str, doc: Mapping[str, Any], raw: Mapping[str, Any]
     # Only BreadBoard-level keys reach OMP's parser here; it validates their types.
     settings = settings_from_config(settings_raw)
     max_passes = bb.get("max_passes_per_turn")
-    return CompactionConfig(settings.enabled, preset_id, settings, native, max_passes)
+    policy = settings.overflow_policy if "overflow_policy" in bb else None
+    return CompactionConfig(settings.enabled, preset_id, settings, native, max_passes, policy)
 
 
 # --------------------------------------------------------------------------
@@ -196,6 +196,8 @@ class Recipe:
     order: Optional[Tuple[str, ...]]
     """Stage order override (OMP ``methodOrder``); ``None`` runs the preset order."""
     max_attempts_per_turn: int
+    overflow_policy: str
+    """``compact`` (compact and retry) or ``terminal`` (the overflow error ends the run)."""
     request_view: Tuple[str, ...]
 
     @property
@@ -249,6 +251,7 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
 
     overflow = params.child(params.mapping("overflow"), "overflow")
     preset_attempts = overflow.int("max_attempts_per_turn", minimum=0)
+    preset_policy = overflow.choice("policy", ("compact", "terminal"))
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
@@ -282,5 +285,6 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         pipeline=Pipeline(stages, mode, count),
         order=order,
         max_attempts_per_turn=attempts,
+        overflow_policy=config.overflow_policy or preset_policy,
         request_view=request_view,
     )

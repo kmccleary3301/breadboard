@@ -482,12 +482,12 @@ class CompactionController:
 
         True means a record was appended and the caller should retry the
         request once more. False (not an overflow, compaction inactive,
-        ``overflow_policy="terminal"``, pass budget spent, or no method made
+        overflow policy ``terminal``, pass budget spent, or no method made
         progress) means the caller re-raises ``exc`` unchanged.
         """
         if (
             not self.active
-            or self.settings.overflow_policy != "compact"
+            or self.recipe.overflow_policy != "compact"
             or not is_context_overflow(exc)
             or not self.can_pass(turn_index)
         ):

@@ -17,7 +17,7 @@ from breadboard_engine.compaction.tokens import estimate_messages_tokens
 
 def omp_recipe(settings: CompactionSettings) -> Recipe:
     """The ``omp@18.4.5`` recipe built from ``settings``."""
-    return build_recipe(CompactionConfig(True, "omp@18.4.5", settings, {}, None))
+    return build_recipe(CompactionConfig(True, "omp@18.4.5", settings, {}, None, None))
 
 
 def omp_target_tokens(context: CompactionContext) -> int:

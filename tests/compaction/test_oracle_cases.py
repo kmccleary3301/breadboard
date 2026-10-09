@@ -133,16 +133,21 @@ def test_oracle_case(case_file: Path) -> None:
         assert len(recipe.triggers) == 1, "trigger cases assume a single-trigger preset"
         assert recipe.triggers[0].evaluate(data, messages).to_dict() == expect["trigger"]
 
-    compaction_keys = CHECKED - {"trigger"}
+    compaction_keys = _EXPECT_KEYS - {"trigger"}
     if not compaction_keys & set(expect):
+        return
+
+    if "failure" in expect and context_reason(case) == "overflow" and recipe.overflow_policy == "terminal":
+        # The harness ends the run on overflow; BreadBoard re-raises the provider error unchanged.
+        assert set(expect) <= {"trigger", "failure"}, "a terminal-overflow case cannot expect a compaction result"
         return
 
     state = _state_from_ledger(case, messages)
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
-    stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
-    assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
     if "selection" in expect:
+        stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
+        assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
         selection = stage.step.selector.select(context)
         got_selection = {
             k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
@@ -153,10 +158,13 @@ def test_oracle_case(case_file: Path) -> None:
         context,
         target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
     )
-    assert outcome.status == "committed", outcome.stages
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
-    record = outcome.records[-1]
 
+    if "failure" in expect:
+        failure = expect["failure"]
+        assert not outcome.records, outcome.stages
+        details = [s.detail for s in outcome.stages if s.status == "failed"]
+        assert f"{failure['kind']}: {failure['message']}" in details, outcome.stages
     if "summary_requests" in expect:
         got = [
             {"system": r.system, "messages": [dict(m) for m in r.messages], "max_tokens": r.max_tokens}
@@ -164,9 +172,19 @@ def test_oracle_case(case_file: Path) -> None:
         ]
         want = [{k: r[k] for k in ("system", "messages", "max_tokens")} for r in expect["summary_requests"]]
         assert got == want
-    if "summary" in expect:
-        assert record.summary == expect["summary"]
-    if "details" in expect:
-        assert dict(record.details) == expect["details"]
+    if "summary" in expect or "details" in expect:
+        boundaries = [r for r in outcome.records if r.is_boundary]
+        assert boundaries, outcome.stages
+        if "summary" in expect:
+            assert boundaries[-1].summary == expect["summary"]
+        if "details" in expect:
+            assert dict(boundaries[-1].details) == expect["details"]
+    if "edits" in expect:
+        got_edits = [{"index": e.index, "message": dict(e.message)} for r in outcome.records for e in r.edits]
+        assert got_edits == expect["edits"]
     if "projected_view" in expect:
         assert state.project(messages, TARGET) == expect["projected_view"]
+
+
+def context_reason(case: Mapping[str, Any]) -> str:
+    return case["input"].get("reason") or "threshold"

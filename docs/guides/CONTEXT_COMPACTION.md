@@ -27,7 +27,7 @@ compaction:
 |---|---|
 | `enabled` | Off unless `true`, whatever the harness default is. |
 | `preset` | `omp@18.4.5` (default) or `pi@0.73.1`. |
-| `overflowPolicy` | `compact` retries after compacting; `terminal` lets the overflow error end the run. |
+| `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. Both shipped presets use `compact`. |
 | `contextWindow` | Optional; otherwise provider or model metadata. |
 | `summaryModel` | Optional; defaults to the turn's model. |
 | `maxPassesPerTurn` | Optional; overrides the preset's overflow attempts per turn. |

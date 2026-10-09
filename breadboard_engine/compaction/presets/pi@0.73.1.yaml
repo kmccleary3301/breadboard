@@ -42,6 +42,7 @@ target:
 overflow:
   # _overflowRecoveryAttempted: one compact-and-retry until a response succeeds.
   max_attempts_per_turn: 1
+  policy: compact
 request_view: []
 pipeline:
   mode: sequence

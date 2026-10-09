@@ -28,6 +28,7 @@ target:
   overflow: {kind: omp_settings, use: overflow_budget}
 overflow:
   max_attempts_per_turn: {setting: max_passes_per_turn}
+  policy: {setting: overflow_policy}
 request_view: [omp_prune, omp_inline_snapcompact]
 pipeline:
   mode: fallback
