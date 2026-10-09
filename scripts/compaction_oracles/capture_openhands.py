@@ -190,6 +190,7 @@ def main() -> None:
                 max_budget_per_task=None,
                 accumulated_token_usage=None,
             )
+            summary_calls.append(summary_text)
             return LLMResponse(message=resp_msg, metrics=metrics, raw_response=raw_resp)
 
         mock.completion.side_effect = _completion
@@ -212,8 +213,15 @@ def main() -> None:
         return agent_llm
 
     captured_cases: list[str] = []
+    summary_calls: list[str] = []
+    """Summary texts the mocks returned since the last saved case, in call order."""
 
     def save_case(name: str, payload: dict[str, Any]) -> None:
+        # The case input must describe what was executed: the scripted summary
+        # responses are exactly the ones the pinned code consumed.
+        recorded = payload["input"].get("summary_responses") or []
+        assert recorded == summary_calls, f"{name}: input summary_responses {recorded} != executed {summary_calls}"
+        summary_calls.clear()
         case_file = out_dir / f"{name}.json"
         with open(case_file, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
