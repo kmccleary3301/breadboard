@@ -227,8 +227,8 @@ def test_dead_end_frame_rescue():
 
 
 def test_compactor_cascade_with_snapcompact():
-    """Compactor executes snapcompact on vision models, and cascades to fallback on non-vision."""
-    from breadboard_engine.compaction.methods import Compactor
+    """Pipeline executes snapcompact on vision models, and cascades to fallback on non-vision."""
+    from .support import run_pipeline
 
     filler = "Detailed data pipeline message for compaction tests. " * 800
     messages = [
@@ -245,12 +245,12 @@ def test_compactor_cascade_with_snapcompact():
         keep_recent_tokens=100,
     )
     ctx_vision = _make_context(messages, settings=settings, supports_images=True)
-    compactor = Compactor(settings, {"snapcompact": SnapcompactCompaction()})
-    outcome = compactor.run(ctx_vision)
+    outcome = run_pipeline(ctx_vision, {"snapcompact": SnapcompactCompaction()})
     assert outcome.compacted
     assert len(outcome.records) == 1
     assert outcome.records[0].method == "snapcompact"
-    assert outcome.attempts[0].status == "applied"
+    assert outcome.stages[0].stage == "snapcompact"
+    assert outcome.stages[0].status == "committed"
 
     # 2. Non-vision target: snapcompact reports unavailable, cascades to fallback
     class MockFallback:
@@ -270,13 +270,12 @@ def test_compactor_cascade_with_snapcompact():
         keep_recent_tokens=100,
     )
     ctx_novision = _make_context(messages, settings=fallback_settings, supports_images=False)
-    compactor_novision = Compactor(fallback_settings, {"snapcompact": SnapcompactCompaction(), "fallback": MockFallback()})
-    outcome_novision = compactor_novision.run(ctx_novision)
+    outcome_novision = run_pipeline(ctx_novision, {"snapcompact": SnapcompactCompaction(), "fallback": MockFallback()})
     assert outcome_novision.compacted
-    assert outcome_novision.attempts[0].method == "snapcompact"
-    assert outcome_novision.attempts[0].status == "unavailable"
-    assert outcome_novision.attempts[1].method == "fallback"
-    assert outcome_novision.attempts[1].status == "applied"
+    assert outcome_novision.stages[0].stage == "snapcompact"
+    assert outcome_novision.stages[0].status == "unavailable"
+    assert outcome_novision.stages[1].stage == "fallback"
+    assert outcome_novision.stages[1].status == "committed"
 
 
 def test_pillow_missing_raises_method_unavailable(monkeypatch):

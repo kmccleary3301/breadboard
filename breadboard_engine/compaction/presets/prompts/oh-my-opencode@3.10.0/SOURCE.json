@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+  "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+  "files": {
+    "continuity_context.txt": "src/hooks/compaction-context-injector/hook.ts:7-57",
+    "truncation_message.txt": "src/hooks/anthropic-context-window-limit-recovery/storage-paths.ts:5-6"
+  },
+  "license": "Sustainable Use License 1.0"
+}

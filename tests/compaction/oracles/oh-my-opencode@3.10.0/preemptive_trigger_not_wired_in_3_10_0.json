@@ -1,0 +1,51 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "oh-my-opencode@3.10.0",
+  "case": "preemptive_trigger_not_wired_in_3_10_0",
+  "source": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+    "evidence": [
+      "src/index.ts:394-436",
+      "src/hooks/preemptive-compaction.ts:25-78",
+      "src/hooks/context-window-monitor.ts:1-50"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "Source verification in index.ts:394-436 proves that neither PreemptiveCompactionHook nor ContextWindowMonitor is registered in the plugin hook table for v3.10.0. Although preemptive-compaction.ts defines a 78% threshold, it is never called by the engine runner. Therefore, trigger.fires MUST evaluate to false at 80% usage."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform extensive operations"
+      },
+      {
+        "role": "assistant",
+        "content": "Working through operations..."
+      }
+    ],
+    "usage": {
+      "input_tokens": 160000,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 160000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 160000,
+      "limit": 168000
+    }
+  }
+}

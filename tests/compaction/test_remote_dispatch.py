@@ -6,13 +6,13 @@ from breadboard_engine.compaction import (
     CompactionContext,
     CompactionRecord,
     CompactionState,
-    Compactor,
     MethodUnavailable,
     NativeCompaction,
     ProjectionTarget,
     estimate_messages_tokens,
     settings_from_config,
 )
+from .support import run_pipeline
 from breadboard_engine.compaction.remote import RemoteCompaction
 
 
@@ -120,18 +120,14 @@ def test_dispatcher_cascades_on_port_error_in_compactor():
                 summary_messages=({"role": "user", "content": "<summary>Fallback</summary>"},),
             )
 
-    compactor = Compactor(
-        settings_from_config({"enabled": True, "method_order": ["remote", "soft"]}),
-        {"remote": RemoteCompaction(), "soft": FallbackSoft()},
-    )
     ctx = _make_context(messages, remote_ports=(failing_port,), window=1000)
-    outcome = compactor.run(ctx)
+    outcome = run_pipeline(ctx, {"remote": RemoteCompaction(), "soft": FallbackSoft()})
 
     assert failing_port.called
     assert len(outcome.records) == 1
     assert outcome.records[0].method == "soft"
-    attempt_statuses = [a.status for a in outcome.attempts]
-    assert attempt_statuses == ["failed", "applied"]
+    stage_statuses = [s.status for s in outcome.stages]
+    assert stage_statuses == ["failed", "committed"]
 
 
 def test_remote_endpoint_chat_completions_posting():

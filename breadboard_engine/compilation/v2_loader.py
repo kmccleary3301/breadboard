@@ -245,10 +245,10 @@ def _compat_number(
 def _validate_compaction(doc: Mapping[str, Any]) -> None:
     if "compaction" not in doc:
         return
-    from ..compaction.settings import settings_from_config
+    from ..compaction.presets import load_compaction_config
 
     try:
-        settings_from_config(doc.get("compaction"))
+        load_compaction_config(doc.get("compaction"))
     except (TypeError, ValueError) as exc:
         raise ValueError(f"invalid compaction config: {exc}") from exc
 

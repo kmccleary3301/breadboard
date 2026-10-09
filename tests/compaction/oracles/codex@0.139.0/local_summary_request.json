@@ -1,0 +1,72 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "local_summary_request",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/compact.rs:77-83,225-230",
+      "codex-rs/prompts/templates/compact/prompt.md:1-10"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_codex.py",
+    "notes": "codex-rs/core/src/compact.rs:77-83 builds prompt input containing SUMMARIZATION_PROMPT. Lines 225-230 create Prompt { input: turn_input, base_instructions, personality, ..Default::default() }. Default tools is empty ([]). Base instructions/system prompt is passed through."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful coding assistant."
+      },
+      {
+        "role": "user",
+        "content": "Fix bug in foo.py"
+      },
+      {
+        "role": "assistant",
+        "content": "I fixed the bug in foo.py"
+      }
+    ],
+    "usage": {
+      "input_tokens": 92000,
+      "output_tokens": 1000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 93000
+    },
+    "context_window": 100000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "Handoff checkpoint: bug fixed in foo.py."
+    ]
+  },
+  "expect": {
+    "summary_requests": [
+      {
+        "system": "You are a helpful coding assistant.",
+        "messages": [
+          {
+            "role": "user",
+            "content": "Fix bug in foo.py"
+          },
+          {
+            "role": "assistant",
+            "content": "I fixed the bug in foo.py"
+          },
+          {
+            "role": "user",
+            "content": "You are performing a CONTEXT CHECKPOINT COMPACTION. Create a handoff summary for another LLM that will resume the task.\n\nInclude:\n- Current progress and key decisions made\n- Important context, constraints, or user preferences\n- What remains to be done (clear next steps)\n- Any critical data, examples, or references needed to continue\n\nBe concise, structured, and focused on helping the next LLM seamlessly continue the work.\n"
+          }
+        ],
+        "max_tokens": null,
+        "tools": []
+      }
+    ]
+  }
+}

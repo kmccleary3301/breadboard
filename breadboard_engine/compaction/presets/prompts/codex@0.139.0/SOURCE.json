@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/openai/codex",
+  "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+  "files": {
+    "prompt.md": "codex-rs/prompts/templates/compact/prompt.md:1-10",
+    "summary_prefix.md": "codex-rs/prompts/templates/compact/summary_prefix.md:1"
+  },
+  "license": "Apache-2.0"
+}

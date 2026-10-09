@@ -1,0 +1,8 @@
+{
+  "repo": "https://github.com/OpenHands/software-agent-sdk",
+  "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+  "files": {
+    "summarizing_prompt.j2": "openhands-sdk/openhands/sdk/context/condenser/prompts/summarizing_prompt.j2:1-55"
+  },
+  "license": "MIT"
+}

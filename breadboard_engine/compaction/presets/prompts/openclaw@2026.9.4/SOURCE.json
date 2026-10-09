@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/openclaw/openclaw",
+  "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+  "files": {
+    "system.txt": "packages/agent-core/src/harness/compaction/compaction.ts:591-593",
+    "prompt.txt": "packages/agent-core/src/harness/compaction/compaction.ts:595-626",
+    "update_prompt.txt": "packages/agent-core/src/harness/compaction/compaction.ts:628-665",
+    "turn_prefix.txt": "packages/agent-core/src/harness/compaction/compaction.ts:1007-1020",
+    "merge_instructions.txt": "src/agents/compaction.ts:50-63"
+  },
+  "license": "MIT"
+}

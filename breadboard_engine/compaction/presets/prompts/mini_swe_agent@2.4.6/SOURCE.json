@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/SWE-agent/mini-swe-agent",
+  "commit": "a83fcae82d2a08f0ee0c688f9d137b3566c097f8",
+  "files": {
+    "observation.j2": "src/minisweagent/config/mini.yaml:112-128",
+    "format_error.j2": "src/minisweagent/config/mini.yaml:129-149"
+  },
+  "license": "MIT"
+}

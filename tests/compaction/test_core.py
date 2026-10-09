@@ -8,7 +8,6 @@ from breadboard_engine.compaction import (
     CompactionContext,
     CompactionState,
     CompactionStateError,
-    Compactor,
     MessageEdit,
     MethodUnavailable,
     NativeCompaction,
@@ -22,6 +21,7 @@ from breadboard_engine.compaction import (
     should_compact,
 )
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeError
+from .support import omp_recipe, run_pipeline
 
 TARGET = ProjectionTarget("openai", "responses", "gpt-x")
 
@@ -288,11 +288,11 @@ def test_cascade_skips_unavailable_and_failed_methods():
         "handoff": _Raises("handoff", RuntimeError("summary model failed")),
         "soft": _Boundary(10),
     }
-    outcome = Compactor(context.settings, methods).run(context)
-    assert [(a.method, a.status) for a in outcome.attempts] == [
+    outcome = run_pipeline(context, methods)
+    assert [(s.stage, s.status) for s in outcome.stages] == [
         ("remote", "unavailable"),
         ("handoff", "failed"),
-        ("soft", "applied"),
+        ("soft", "committed"),
     ]
     assert outcome.reached_target and outcome.tokens_after < outcome.tokens_before
     assert len(context.state.records) == 1
@@ -302,15 +302,16 @@ def test_cascade_discards_records_that_do_not_shrink_the_view():
     messages = _history()
     context = _context(messages, methodOrder=["handoff", "soft"])
     head_only = _Boundary(2)  # summarizes only the short task message
-    outcome = Compactor(context.settings, {"handoff": head_only, "soft": _Boundary(10)}).run(context)
-    assert [(a.method, a.status) for a in outcome.attempts] == [("handoff", "no_progress"), ("soft", "applied")]
+    outcome = run_pipeline(context, {"handoff": head_only, "soft": _Boundary(10)})
+    assert [(s.stage, s.status) for s in outcome.stages] == [("handoff", "noop"), ("soft", "committed")]
+    assert outcome.stages[0].detail == "no progress"
 
 
 def test_partial_edit_pass_stacks_with_following_boundary():
     messages = _history()
     context = _context(messages, methodOrder=["shake", "soft"])
-    outcome = Compactor(context.settings, {"shake": _ShrinkTool(11), "soft": _Boundary(10)}).run(context)
-    assert [a.status for a in outcome.attempts] == ["applied", "applied"]
+    outcome = run_pipeline(context, {"shake": _ShrinkTool(11), "soft": _Boundary(10)})
+    assert [s.status for s in outcome.stages] == ["edited", "committed"]
     view = context.state.project(messages, TARGET)
     assert [m.get("content") for m in view[2:]] == ["", "[elided]", "", messages[13]["content"]]
 
@@ -327,8 +328,12 @@ def test_cascade_stops_once_target_is_reached():
             called.append(True)
             return super().run(ctx)
 
-    Compactor(context.settings, {"soft": _Boundary(10), "shake": _Recorder(11)}).run(context)
+    outcome = run_pipeline(context, {"soft": _Boundary(10), "shake": _Recorder(11)})
     assert called == []
+    assert [(s.stage, s.status, s.detail) for s in outcome.stages] == [
+        ("soft", "committed", None),
+        ("shake", "noop", "target reached"),
+    ]
 
 
 def test_cancellation_stops_the_cascade():
@@ -336,11 +341,12 @@ def test_cancellation_stops_the_cascade():
     context = _context(messages, methodOrder=["remote", "soft"])
     methods = {"remote": _Raises("remote", CompactionCancelled()), "soft": _Boundary(10)}
     with pytest.raises(CompactionCancelled):
-        Compactor(context.settings, methods).run(context)
+        run_pipeline(context, methods)
     assert context.state.records == ()
 
 
 def test_overflow_target_is_window_minus_reserve():
     messages = _history()
     context = _context(messages, reason="overflow", window=4000, keepRecentTokens=2500)
-    assert context.target_tokens == 4000 - 600
+    recipe = omp_recipe(context.settings)
+    assert recipe.target_tokens("overflow", 4000) == 4000 - 600

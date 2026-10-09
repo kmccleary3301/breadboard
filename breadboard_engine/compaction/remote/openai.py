@@ -19,11 +19,11 @@ from ..methods import (
     MethodUnavailable,
     RemoteCompactionPort,
 )
+from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
 from ..transcript import is_tool_result, leading_system_count, role_of, tool_call_ids
 
 OPENAI_REMOTE_COMPACTION_PRESERVE_KEY = "openaiRemoteCompaction"
-V2_RETAINED_MESSAGE_TOKEN_BUDGET = 64_000
 CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE = "Output: exceeded available model context → truncated."
 COMPACTION_TRIGGER_ITEM: Dict[str, Any] = {"type": "compaction_trigger"}
 IMAGE_TOKEN_ESTIMATE = 765

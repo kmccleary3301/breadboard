@@ -5,7 +5,6 @@ from typing import Any, Mapping, Optional, Sequence
 import pytest
 
 from breadboard_engine.compaction.methods import (
-    Compactor,
     CompactionContext,
     CompactionRecord,
     MethodUnavailable,
@@ -14,8 +13,8 @@ from breadboard_engine.compaction.methods import (
     SummaryResponse,
 )
 from breadboard_engine.compaction.settings import CompactionSettings
-from breadboard_engine.compaction.soft import SoftCompaction
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
+from .support import omp_recipe, run_pipeline
 
 
 @dataclass
@@ -62,10 +61,9 @@ def test_soft_compaction_raises_when_no_summarizer():
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "hi"},
     ]
-    ctx = _make_context(messages, summarizer=None)
-    soft = SoftCompaction()
+    ctx = _make_context(messages, summarizer=None, settings=CompactionSettings(keep_recent_tokens=0))
     with pytest.raises(MethodUnavailable, match="No summarizer"):
-        soft.run(ctx)
+        omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
 
 
 def test_soft_compaction_raises_when_nothing_to_summarize():
@@ -73,9 +71,8 @@ def test_soft_compaction_raises_when_nothing_to_summarize():
         {"role": "user", "content": "hello"},
     ]
     ctx = _make_context(messages, summarizer=FakeSummaryModel(), settings=CompactionSettings(keep_recent_tokens=100_000))
-    soft = SoftCompaction()
     with pytest.raises(MethodUnavailable, match="Nothing to summarize"):
-        soft.run(ctx)
+        omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
 
 
 def test_soft_compaction_basic_run():
@@ -102,8 +99,7 @@ def test_soft_compaction_basic_run():
     summarizer = FakeSummaryModel(responses=["Summary of work done", "Short summary"])
     ctx = _make_context(messages, summarizer=summarizer, settings=settings)
 
-    soft = SoftCompaction()
-    record = soft.run(ctx)
+    record = omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx).record
 
     assert record.method == "soft"
     assert record.is_boundary
@@ -136,14 +132,13 @@ def test_soft_compaction_second_pass_update_summary():
     ]
     summarizer1 = FakeSummaryModel(responses=["Initial summary", "Short 1"])
     ctx1 = _make_context(messages[:4], summarizer=summarizer1, settings=CompactionSettings(keep_recent_tokens=30))
-    soft = SoftCompaction()
-    rec1 = soft.run(ctx1)
+    rec1 = omp_recipe(ctx1.settings).pipeline.stages["soft"].step.run(ctx1).record
 
     state = CompactionState([rec1])
 
     summarizer2 = FakeSummaryModel(responses=["Updated summary", "Short 2"])
     ctx2 = _make_context(messages, summarizer=summarizer2, state=state, settings=CompactionSettings(keep_recent_tokens=30))
-    rec2 = soft.run(ctx2)
+    rec2 = omp_recipe(ctx2.settings).pipeline.stages["soft"].step.run(ctx2).record
 
     assert rec2.sequence == 1
     requests = summarizer2.requests
@@ -175,8 +170,7 @@ def test_soft_compaction_split_turn_handling():
     summarizer = FakeSummaryModel(responses=["Prefix summary", "Turn context summary", "Short summary"])
     ctx = _make_context(messages, summarizer=summarizer, settings=settings)
 
-    soft = SoftCompaction()
-    record = soft.run(ctx)
+    record = omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx).record
 
     assert "**Turn Context (split turn):**" in record.summary
     purposes = [r.purpose for r in summarizer.requests]
@@ -193,8 +187,7 @@ def test_soft_compaction_oversized_folding():
     summarizer = FakeSummaryModel(responses=[f"Folded summary {i}" for i in range(10)])
     ctx = _make_context(messages, summarizer=summarizer, context_window=context_window, settings=CompactionSettings(keep_recent_tokens=500))
 
-    soft = SoftCompaction()
-    record = soft.run(ctx)
+    record = omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx).record
 
     assert record.is_boundary
     summary_calls = [r for r in summarizer.requests if r.purpose in ("summary", "update_summary")]
@@ -224,8 +217,7 @@ def test_soft_compaction_context_overflow_halving():
 
     summarizer = OverflowOnceSummarizer()
     ctx = _make_context(messages, summarizer=summarizer, context_window=40_000, settings=CompactionSettings(keep_recent_tokens=50))
-    soft = SoftCompaction()
-    record = soft.run(ctx)
+    record = omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx).record
 
     assert record.is_boundary
     assert summarizer.calls > 1
@@ -248,8 +240,7 @@ def test_compactor_integration_with_soft():
     summarizer = FakeSummaryModel(responses=["Compacted summary of log errors", "Short summary"])
     ctx = _make_context(messages, summarizer=summarizer, settings=settings)
 
-    compactor = Compactor(settings, {"soft": SoftCompaction()})
-    outcome = compactor.run(ctx)
+    outcome = run_pipeline(ctx, {"soft": omp_recipe(settings).pipeline.stages["soft"].step})
 
     assert outcome.compacted
     assert len(outcome.records) == 1

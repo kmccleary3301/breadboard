@@ -6,7 +6,6 @@ import pytest
 
 from breadboard_engine.compaction.handoff import HandoffCompaction, generate_handoff
 from breadboard_engine.compaction.methods import (
-    Compactor,
     CompactionContext,
     CompactionRecord,
     MethodUnavailable,
@@ -15,8 +14,8 @@ from breadboard_engine.compaction.methods import (
     SummaryResponse,
 )
 from breadboard_engine.compaction.settings import CompactionSettings
-from breadboard_engine.compaction.soft import SoftCompaction
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
+from .support import omp_recipe, run_pipeline
 
 
 @dataclass
@@ -182,13 +181,17 @@ def test_compactor_with_both_soft_and_handoff():
     summarizer = FakeSummaryModel(responses=["## Goal\nHandoff doc summarizing tree"])
     ctx = _make_context(messages, summarizer=summarizer, settings=settings)
 
-    compactor = Compactor(settings, {
-        "soft": SoftCompaction(),
+    recipe = omp_recipe(settings)
+    outcome = run_pipeline(ctx, {
         "handoff": HandoffCompaction(),
+        "soft": recipe.pipeline.stages["soft"].step,
     })
-    outcome = compactor.run(ctx)
 
     assert outcome.compacted
     assert len(outcome.records) == 1
     assert outcome.records[0].method == "handoff"
     assert outcome.tokens_after < outcome.tokens_before
+    assert [(s.stage, s.status, s.detail) for s in outcome.stages] == [
+        ("handoff", "committed", None),
+        ("soft", "noop", "target reached"),
+    ]

@@ -99,6 +99,38 @@ def find_cut_point(
     return CutPoint(cut_index, turn_start, not is_turn_start(messages[cut_index]) and turn_start != -1)
 
 
+def find_cut_point_crossing(
+    messages: Sequence[Message],
+    start: int,
+    end: int,
+    keep_recent_tokens: int,
+    *,
+    count_tokens: Callable[[Message], int] = estimate_message_tokens,
+) -> CutPoint:
+    """Pi 0.73.1 ``findCutPoint`` (``core/compaction/compaction.js:304-354``).
+
+    Walks back per message; at the first message where the running total is
+    ``>= keep_recent_tokens`` it cuts at the nearest valid cut point at or
+    after that message. If the budget is never reached, or no cut point
+    follows the crossing message, everything from the first cut point is kept.
+    """
+    cut_points = [i for i in range(start, end) if is_valid_cut_point(messages[i])]
+    if not cut_points:
+        return CutPoint(start, -1, False)
+    accumulated = 0
+    cut_index = cut_points[0]
+    for i in range(end - 1, start - 1, -1):
+        accumulated += count_tokens(messages[i])
+        if accumulated >= keep_recent_tokens:
+            for candidate in cut_points:
+                if candidate >= i:
+                    cut_index = candidate
+                    break
+            break
+    turn_start = -1 if is_turn_start(messages[cut_index]) else find_turn_start_index(messages, cut_index, start)
+    return CutPoint(cut_index, turn_start, not is_turn_start(messages[cut_index]) and turn_start != -1)
+
+
 def check_tool_pairing(messages: Sequence[Message]) -> Optional[str]:
     """Return a description of the first orphaned tool result, else ``None``.
 

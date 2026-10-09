@@ -22,7 +22,8 @@ DEFAULT_METHOD_ORDER: Tuple[str, ...] = ("remote", "snapcompact", "handoff", "sh
 DEFAULT_RESERVE_TOKENS = 16384
 MAX_SUMMARY_TOKENS = DEFAULT_RESERVE_TOKENS
 DEFAULT_KEEP_RECENT_TOKENS = 20000
-V2_RETAINED_MESSAGE_TOKEN_BUDGET = 20000
+V2_RETAINED_MESSAGE_TOKEN_BUDGET = 64_000
+"""OMP ``compaction-v2-streaming.ts:45``; also the cap applied to configured values."""
 
 LEGACY_STRATEGIES = ("context-full", "handoff", "shake", "snapcompact", "off")
 

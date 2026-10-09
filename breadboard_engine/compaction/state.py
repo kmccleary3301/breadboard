@@ -6,10 +6,13 @@ plus records, the way OMP rebuilds context from ``CompactionEntry``
 (``firstKeptEntryId``) entries. Indices refer to positions in the full,
 append-only message list.
 
-A *boundary* record replaces ``messages[head:first_kept_index]`` with its
-``summary_messages`` (or a provider-native replay marker). An *edit* record
-replaces individual messages at or after the active boundary (shake, prune,
-image dropping) without moving the boundary.
+A *boundary* record replaces ``messages[prefix_end:first_kept_index]`` with
+its ``summary_messages`` (or a provider-native replay marker). Without
+``prefix_end`` the replaced range starts at the system head. Messages in
+``[head, prefix_end)`` stay verbatim before the summary: a protected prefix,
+as in OpenHands ``keep_first`` or Hermes protected head messages. An *edit*
+record replaces individual visible messages (shake, prune, image dropping)
+without moving the boundary.
 """
 
 from __future__ import annotations
@@ -115,6 +118,8 @@ class CompactionRecord:
     details: Mapping[str, Any] = field(default_factory=dict)
     tokens_after: Optional[int] = None
     warning: Optional[str] = None
+    prefix_end: Optional[int] = None
+    """End of the verbatim protected prefix; ``None`` means no prefix."""
 
     @property
     def is_boundary(self) -> bool:
@@ -125,7 +130,7 @@ class CompactionRecord:
         return self.is_boundary and bool(self.summary_messages)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "schema_version": RECORD_SCHEMA,
             "record_id": self.record_id,
             "sequence": self.sequence,
@@ -144,6 +149,10 @@ class CompactionRecord:
             "tokens_after": self.tokens_after,
             "warning": self.warning,
         }
+        # Omitted when unset, so records without a prefix keep their v1 bytes and ids.
+        if self.prefix_end is not None:
+            payload["prefix_end"] = self.prefix_end
+        return payload
 
     @classmethod
     def from_dict(cls, raw: Mapping[str, Any]) -> "CompactionRecord":
@@ -168,6 +177,7 @@ class CompactionRecord:
             details=_freeze(dict(raw.get("details") or {})),
             tokens_after=raw.get("tokens_after"),
             warning=raw.get("warning"),
+            prefix_end=raw.get("prefix_end"),
         )
 
 
@@ -209,10 +219,26 @@ class CompactionState:
         return None
 
     def kept_start(self, messages: Sequence[Mapping[str, Any]]) -> int:
+        """First message after the latest boundary (the system head if none)."""
         boundary = self.latest_boundary()
         if boundary is None:
             return leading_system_count(messages)
         return int(boundary.first_kept_index)
+
+    def prefix_end(self, messages: Sequence[Mapping[str, Any]]) -> int:
+        """End of the verbatim prefix kept by the latest boundary (the head if none)."""
+        boundary = self.latest_boundary()
+        head = leading_system_count(messages)
+        if boundary is None:
+            return head
+        return head if boundary.prefix_end is None else int(boundary.prefix_end)
+
+    def _visible(self, index: int, messages: Sequence[Mapping[str, Any]], boundary: Optional[CompactionRecord]) -> bool:
+        head = leading_system_count(messages)
+        if boundary is None:
+            return head <= index < len(messages)
+        prefix_end = head if boundary.prefix_end is None else int(boundary.prefix_end)
+        return head <= index < prefix_end or int(boundary.first_kept_index) <= index < len(messages)
 
     def validate(self, record: CompactionRecord, messages: Sequence[Mapping[str, Any]]) -> None:
         if record.sequence != self.next_sequence:
@@ -231,12 +257,16 @@ class CompactionState:
                 raise CompactionStateError("compaction boundary orphans a tool result")
             if not record.summary_messages and record.native is None:
                 raise CompactionStateError("boundary record has neither summary nor native payload")
+            if record.prefix_end is not None:
+                self._validate_prefix(int(record.prefix_end), first, head, previous, messages)
         elif not record.edits:
             raise CompactionStateError("edit record has no edits")
-        floor = int(record.first_kept_index) if record.is_boundary else self.kept_start(messages)
+        elif record.prefix_end is not None:
+            raise CompactionStateError("edit record cannot set prefix_end")
+        boundary = record if record.is_boundary else previous
         for edit in record.edits:
-            if edit.index < floor or edit.index >= len(messages):
-                raise CompactionStateError("edit index is outside the kept history")
+            if not self._visible(edit.index, messages, boundary):
+                raise CompactionStateError("edit index is outside the visible history")
             original = messages[edit.index]
             if role_of(edit.message) != role_of(original):
                 raise CompactionStateError("edit changes message role")
@@ -244,6 +274,34 @@ class CompactionState:
                 raise CompactionStateError("edit changes tool_call_id")
             if tool_call_ids(edit.message) != tool_call_ids(original):
                 raise CompactionStateError("edit changes tool calls")
+
+    def _validate_prefix(
+        self,
+        prefix_end: int,
+        first: int,
+        head: int,
+        previous: Optional[CompactionRecord],
+        messages: Sequence[Mapping[str, Any]],
+    ) -> None:
+        if prefix_end < head or prefix_end > first:
+            raise CompactionStateError("prefix_end is outside [head, first_kept_index]")
+        # A prefix may shrink but never revive messages an earlier boundary summarized.
+        if previous is not None:
+            ceiling = head if previous.prefix_end is None else int(previous.prefix_end)
+            if prefix_end > ceiling:
+                raise CompactionStateError("prefix_end revives summarized messages")
+        if prefix_end < first:
+            if is_tool_result(messages[prefix_end]):
+                raise CompactionStateError("prefix_end orphans a tool result")
+            open_calls: set[str] = set()
+            for message in messages[head:prefix_end]:
+                open_calls.update(tool_call_ids(message))
+                call_id = message.get("tool_call_id")
+                if isinstance(call_id, str):
+                    open_calls.discard(call_id)
+            for message in messages[prefix_end:first]:
+                if message.get("tool_call_id") in open_calls:
+                    raise CompactionStateError("prefix_end splits a tool call from its result")
 
     def append(self, record: CompactionRecord, messages: Sequence[Mapping[str, Any]]) -> None:
         self.validate(record, messages)
@@ -268,11 +326,14 @@ class CompactionState:
         head = leading_system_count(messages)
         boundary = self._active_boundary(target)
         start = int(boundary.first_kept_index) if boundary is not None else head
+        prefix_end = head if boundary is None or boundary.prefix_end is None else int(boundary.prefix_end)
         edits: Dict[int, Mapping[str, Any]] = {}
         for record in self._records:
             for edit in record.edits:
                 edits[edit.index] = edit.message
         view: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in messages[:head]]
+        for index in range(head, prefix_end):
+            view.append(copy.deepcopy(dict(edits.get(index, messages[index]))))
         if boundary is not None:
             if boundary.native is not None and boundary.native.usable_for(target):
                 view.append(

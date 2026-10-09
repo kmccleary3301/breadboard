@@ -57,14 +57,18 @@ def test_overflow_without_compaction_ends_the_run(tmp_path: Path, monkeypatch: p
     assert calls[-1] == ("model", OVERFLOW_AT)
 
 
-def test_overflow_with_compaction_summarizes_and_continues(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    calls = _run(
-        tmp_path,
-        monkeypatch,
+@pytest.mark.parametrize(
+    "compaction",
+    [
         "compaction:\n  enabled: true\n  contextWindow: 200000\n  keepRecentTokens: 50\n  methodOrder: [soft]\n",
-    )
+        "compaction:\n  enabled: true\n  preset: pi@0.73.1\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
+    ],
+    ids=["omp", "pi"],
+)
+def test_overflow_with_compaction_summarizes_and_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compaction: str
+) -> None:
+    calls = _run(tmp_path, monkeypatch, compaction)
 
     first_summary = next(index for index, (kind, _) in enumerate(calls) if kind == "summary")
     overflowed = [size for kind, size in calls[:first_summary] if kind == "model"]

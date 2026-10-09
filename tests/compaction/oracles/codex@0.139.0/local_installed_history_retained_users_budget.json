@@ -1,0 +1,69 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "local_installed_history_retained_users_budget",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/compact.rs:49,512-575",
+      "codex-rs/core/src/compact_tests.rs:155-216"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_codex.py",
+    "notes": "codex-rs/core/src/compact.rs:49 defines COMPACT_USER_MESSAGE_MAX_TOKENS = 20_000. Lines 525-549 build_compacted_history_with_limit iterates user messages in reverse, fitting whole messages into 20,000 approx tokens, middle-truncating the first over-budget message, restores chronological order, and appends the user summary message with SUMMARY_PREFIX (lines 568-573)."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Older user request: set up test environment."
+      },
+      {
+        "role": "assistant",
+        "content": "Environment is set up."
+      },
+      {
+        "role": "user",
+        "content": "Recent user request: run the tests."
+      },
+      {
+        "role": "assistant",
+        "content": "Running test suite now."
+      }
+    ],
+    "usage": {
+      "input_tokens": 92000,
+      "output_tokens": 1000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 93000
+    },
+    "context_window": 100000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "Checkpoint: environment configured, tests running."
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "Older user request: set up test environment."
+      },
+      {
+        "role": "user",
+        "content": "Recent user request: run the tests."
+      },
+      {
+        "role": "user",
+        "content": "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\nCheckpoint: environment configured, tests running."
+      }
+    ]
+  }
+}

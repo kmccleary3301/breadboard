@@ -1,0 +1,73 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "remote_v2_retention_64000",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/compact_remote_v2.rs:49,421-484,586-640"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_codex.py",
+    "notes": "codex-rs/core/src/compact_remote_v2.rs:49 defines RETAINED_MESSAGE_TOKEN_BUDGET = 64_000. Lines 425-439 filter input messages to user/developer/system, truncate to 64,000 approx tokens newest-first, and append the single server-returned ResponseItem::Compaction item. Native compaction record."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "User prompt retained in remote v2."
+      },
+      {
+        "role": "assistant",
+        "content": "Assistant turn omitted from retained."
+      }
+    ],
+    "usage": {
+      "input_tokens": 180000,
+      "output_tokens": 5000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 185000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "features": [
+        "RemoteCompactionV2"
+      ]
+    },
+    "summary_responses": [
+      "enc_summary_v2"
+    ]
+  },
+  "expect": {
+    "selection": {
+      "prefix_end": null,
+      "first_kept_index": 0,
+      "summarize": [],
+      "turn_prefix": [],
+      "replay": [
+        0
+      ],
+      "targets": []
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "User prompt retained in remote v2."
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "compaction": {
+          "encrypted_content": "enc_summary_v2"
+        }
+      }
+    ]
+  }
+}

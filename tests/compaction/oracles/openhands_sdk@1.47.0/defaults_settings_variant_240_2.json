@@ -1,0 +1,39 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openhands_sdk@1.47.0",
+  "case": "defaults_settings_variant_240_2",
+  "source": {
+    "repo": "https://github.com/OpenHands/software-agent-sdk",
+    "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+    "evidence": [
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:48-51",
+      "openhands-sdk/openhands/sdk/settings/model.py:150-227"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openhands.py",
+    "notes": "Executed against pinned openhands-sdk v1.47.0 (commit 50080b58d35b4824fda25fca2345d80bcd08aeff, dist sha256 350edf01b0ab2047941fa338995187e98605ccf946f49c432802fa25b2070cee) loaded from /privateopenhands-sdk/openhands/sdk/__init__.py. Instantiated LLMSummarizingCondenser with default parameters confirms max_size=240, keep_first=2."
+  },
+  "input": {
+    "messages": [],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "events",
+    "native_settings": {
+      "max_size": 240,
+      "keep_first": 2
+    },
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 0,
+      "limit": 240,
+      "severity": null
+    }
+  }
+}

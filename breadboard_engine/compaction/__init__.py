@@ -1,8 +1,10 @@
 """Context compaction for BreadBoard model histories.
 
-Core primitives (settings, token accounting, overflow classification,
-cut points, append-only records, projection, and the method cascade) live
-here; methods and provider adapters live in sibling modules.
+Core types (settings, token accounting, overflow classification, cut points,
+append-only records, projection, the stage pipeline and preset loading) are
+exported here. Primitive kinds live in ``primitives/``; whole-method
+algorithms and provider adapters live in sibling modules; harness presets
+live in ``presets/``.
 """
 
 from .methods import (
@@ -11,9 +13,6 @@ from .methods import (
     CompactionContext,
     CompactionError,
     CompactionMethod,
-    CompactionOutcome,
-    Compactor,
-    MethodAttempt,
     MethodUnavailable,
     NativeCompactionError,
     RemoteCompactionPort,
@@ -28,6 +27,9 @@ from .overflow import (
     provider_overflow_details,
     text_indicates_context_overflow,
 )
+from .params import PresetError
+from .pipeline import CompactionOutcome, Pipeline, Stage, StageResult
+from .presets import CompactionConfig, available_presets, load_compaction_config
 from .settings import (
     COMPACTION_METHODS,
     DEFAULT_METHOD_ORDER,
@@ -62,6 +64,7 @@ __all__ = [
     "ArtifactSink",
     "COMPACTION_METHODS",
     "CompactionCancelled",
+    "CompactionConfig",
     "CompactionContext",
     "CompactionError",
     "CompactionMethod",
@@ -70,14 +73,14 @@ __all__ = [
     "CompactionSettings",
     "CompactionState",
     "CompactionStateError",
-    "Compactor",
     "CutPoint",
     "DEFAULT_METHOD_ORDER",
     "MessageEdit",
-    "MethodAttempt",
     "MethodUnavailable",
     "NATIVE_MARKER_KEY",
     "OVERFLOW_ERROR_CODE",
+    "Pipeline",
+    "PresetError",
     "NativeCompaction",
     "NativeCompactionError",
     "ProjectionTarget",
@@ -85,9 +88,12 @@ __all__ = [
     "RemoteCompactionPort",
     "ShakeSettings",
     "SnapcompactSettings",
+    "Stage",
+    "StageResult",
     "SummaryModel",
     "SummaryRequest",
     "SummaryResponse",
+    "available_presets",
     "check_tool_pairing",
     "compaction_context_tokens",
     "context_tokens_from_usage",
@@ -95,6 +101,7 @@ __all__ = [
     "estimate_messages_tokens",
     "find_cut_point",
     "is_context_overflow",
+    "load_compaction_config",
     "overflow_http_details",
     "provider_overflow_details",
     "resolve_threshold_tokens",

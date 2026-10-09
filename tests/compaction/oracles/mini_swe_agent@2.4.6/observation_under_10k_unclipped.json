@@ -1,0 +1,78 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "mini_swe_agent@2.4.6",
+  "case": "observation_under_10k_unclipped",
+  "source": {
+    "repo": "https://github.com/SWE-agent/mini-swe-agent",
+    "commit": "a83fcae82d2a08f0ee0c688f9d137b3566c097f8",
+    "evidence": [
+      "src/minisweagent/config/mini.yaml:112-128",
+      "src/minisweagent/models/utils/actions_toolcall.py:95-108"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_mini_swe_agent.py",
+    "notes": "Executed observation_template loaded directly from <source_checkout>/src/minisweagent/config/mini.yaml:112-128 via Jinja2.\nVerbatim threshold in template (line 113): `{%- if output.output | length < 10000 -%}`.\nOutput has length 67 (< 10000), rendering full output unclipped in JSON envelope."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Run tests"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "t1",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"pytest\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "t1",
+        "content": "{\n  \"returncode\": 0,\n  \"output\": \"Line 1: build succeeded\\nLine 2: tests passed (42 tests, 0 failures)\"\n}"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 2048,
+    "reason": "manual",
+    "native_settings": {}
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "Run tests"
+      },
+      {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+          {
+            "id": "t1",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"command\":\"pytest\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "t1",
+        "content": "{\n  \"returncode\": 0,\n  \"output\": \"Line 1: build succeeded\\nLine 2: tests passed (42 tests, 0 failures)\"\n}"
+      }
+    ]
+  }
+}

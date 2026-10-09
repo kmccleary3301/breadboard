@@ -1,0 +1,79 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "full_compaction_placement",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2207 (function ne)",
+      "package/cli.js:2209 (function SG6)",
+      "package/cli.js:6077 (boundary and projection structure)"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Source-derived from SG6 and ne (C:2207, C:2209). Verbatim ne ordering: \"boundaryMarker, summaryMessages, optional messagesToKeep, attachments, hookResults\". Full compaction SG6 sets messagesToKeep empty. Synthesis uses K8({content:$Q6(...),isCompactSummary:true}) which sets type:\"user\", message.role:\"user\". The entire old transcript is replaced by the single synthesized user bridge message."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Step 1"
+      },
+      {
+        "role": "assistant",
+        "content": "Executed step 1"
+      },
+      {
+        "role": "user",
+        "content": "Step 2"
+      },
+      {
+        "role": "assistant",
+        "content": "Executed step 2"
+      }
+    ],
+    "usage": {
+      "input_tokens": 160000,
+      "output_tokens": 7000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 167000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {
+      "autoCompactEnabled": true
+    },
+    "summary_responses": [
+      "<summary>Refactored user service.</summary>"
+    ]
+  },
+  "expect": {
+    "selection": {
+      "prefix_end": null,
+      "first_kept_index": 4,
+      "summarize": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\nRefactored user service.\nPlease continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on."
+      }
+    ]
+  }
+}

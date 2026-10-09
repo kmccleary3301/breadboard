@@ -1,0 +1,78 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "opencode@1.2.17",
+  "case": "placement_overflow_single_user_media_explanation",
+  "source": {
+    "repo": "https://github.com/anomalyco/opencode",
+    "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
+    "evidence": [
+      "packages/opencode/src/session/compaction.ts:160-165",
+      "packages/opencode/src/session/compaction.ts:272-277"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "When overflow occurs on the very first user message (userCount === 1), no user message can be excluded or replayed. Instead, compaction prepends the media explanation paragraph to the continuation message."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Here is massive data dump..."
+      }
+    ],
+    "usage": {
+      "input_tokens": 198000,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 198000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "overflow",
+    "native_settings": {},
+    "summary_responses": [
+      "Summary of initial massive data attempt."
+    ]
+  },
+  "expect": {
+    "selection": {
+      "summarize": [
+        0
+      ]
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Provide a detailed prompt for continuing our conversation above.\nFocus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.\nThe summary that you construct will be used so that another agent can read it and continue the work.\n\nWhen constructing the summary, try to stick to this template:\n---\n## Goal\n\n[What goal(s) is the user trying to accomplish?]\n\n## Instructions\n\n- [What important instructions did the user give you that are relevant]\n- [If there is a plan or spec, include information about it so next agent can continue using it]\n\n## Discoveries\n\n[What notable things were learned during this conversation that would be useful for the next agent to know when continuing the work]\n\n## Accomplished\n\n[What work has been completed, what work is still in progress, and what work is left?]\n\n## Relevant files / directories\n\n[Construct a structured list of relevant files that have been read, edited, or created that pertain to the task at hand. If all the files in a directory are relevant, include the path to the directory.]\n---"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "summary": true,
+        "content": [
+          {
+            "type": "text",
+            "text": "Summary of initial massive data attempt."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "An earlier message in this conversation was omitted because it exceeded the context window. The user was asking about attached images or files, explain that the attachments were too large to process and suggest they try again with smaller or fewer files.\n\nContinue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+          }
+        ]
+      }
+    ]
+  }
+}

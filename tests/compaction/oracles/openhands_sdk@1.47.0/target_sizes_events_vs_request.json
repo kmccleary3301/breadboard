@@ -1,0 +1,237 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openhands_sdk@1.47.0",
+  "case": "target_sizes_events_vs_request",
+  "source": {
+    "repo": "https://github.com/OpenHands/software-agent-sdk",
+    "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+    "evidence": [
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:275-282",
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:305"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openhands.py",
+    "notes": "Executed against pinned openhands-sdk v1.47.0 (commit 50080b58d35b4824fda25fca2345d80bcd08aeff, dist sha256 350edf01b0ab2047941fa338995187e98605ccf946f49c432802fa25b2070cee) loaded from /privateopenhands-sdk/openhands/sdk/__init__.py. REQUEST proposes target 20 (suffix 17), EVENTS proposes target 15 (suffix 12). min(17, 12)=12 selects the strictest suffix."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Turn 0"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 1"
+      },
+      {
+        "role": "user",
+        "content": "Turn 2"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 3"
+      },
+      {
+        "role": "user",
+        "content": "Turn 4"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 5"
+      },
+      {
+        "role": "user",
+        "content": "Turn 6"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 7"
+      },
+      {
+        "role": "user",
+        "content": "Turn 8"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 9"
+      },
+      {
+        "role": "user",
+        "content": "Turn 10"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 11"
+      },
+      {
+        "role": "user",
+        "content": "Turn 12"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 13"
+      },
+      {
+        "role": "user",
+        "content": "Turn 14"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 15"
+      },
+      {
+        "role": "user",
+        "content": "Turn 16"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 17"
+      },
+      {
+        "role": "user",
+        "content": "Turn 18"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 19"
+      },
+      {
+        "role": "user",
+        "content": "Turn 20"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 21"
+      },
+      {
+        "role": "user",
+        "content": "Turn 22"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 23"
+      },
+      {
+        "role": "user",
+        "content": "Turn 24"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 25"
+      },
+      {
+        "role": "user",
+        "content": "Turn 26"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 27"
+      },
+      {
+        "role": "user",
+        "content": "Turn 28"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 29"
+      },
+      {
+        "role": "user",
+        "content": "Turn 30"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 31"
+      },
+      {
+        "role": "user",
+        "content": "Turn 32"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 33"
+      },
+      {
+        "role": "user",
+        "content": "Turn 34"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 35"
+      },
+      {
+        "role": "user",
+        "content": "Turn 36"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 37"
+      },
+      {
+        "role": "user",
+        "content": "Turn 38"
+      },
+      {
+        "role": "assistant",
+        "content": "Turn 39"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "events",
+    "native_settings": {
+      "max_size": 30,
+      "keep_first": 2
+    },
+    "summary_responses": [
+      "Strictest reduction summary"
+    ]
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 40,
+      "limit": 30,
+      "severity": "hard"
+    },
+    "selection": {
+      "prefix_end": 2,
+      "first_kept_index": 28,
+      "summarize": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    }
+  }
+}

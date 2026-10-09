@@ -1,0 +1,102 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openhands_sdk@1.47.0",
+  "case": "hard_failure_triggers_hard_context_reset",
+  "source": {
+    "repo": "https://github.com/OpenHands/software-agent-sdk",
+    "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+    "evidence": [
+      "openhands-sdk/openhands/sdk/context/condenser/base.py:176-187",
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:323-365"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openhands.py",
+    "notes": "Executed against pinned openhands-sdk v1.47.0 (commit 50080b58d35b4824fda25fca2345d80bcd08aeff, dist sha256 350edf01b0ab2047941fa338995187e98605ccf946f49c432802fa25b2070cee) loaded from /privateopenhands-sdk/openhands/sdk/__init__.py. hard_context_reset (lines 323-365) summarizes the entire view at offset 0, scaling event strings by 0.8 on retry failures (line 353)."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Msg 0"
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 1"
+      },
+      {
+        "role": "user",
+        "content": "Msg 2"
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 3"
+      },
+      {
+        "role": "user",
+        "content": "Msg 4"
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 5"
+      },
+      {
+        "role": "user",
+        "content": "Msg 6"
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 7"
+      },
+      {
+        "role": "user",
+        "content": "Msg 8"
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 9"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "manual",
+    "native_settings": {
+      "max_size": 8,
+      "keep_first": 2,
+      "hard_context_reset_max_retries": 5
+    },
+    "summary_responses": [
+      "Hard reset recovered summary"
+    ]
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 10,
+      "limit": 8,
+      "severity": "hard"
+    },
+    "selection": {
+      "prefix_end": 0,
+      "first_kept_index": 10,
+      "summarize": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    }
+  }
+}

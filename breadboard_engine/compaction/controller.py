@@ -1,8 +1,9 @@
-"""Compaction controller coordinating request projection, triggers, and recovery.
+"""Compaction controller: request projection, triggers, overflow recovery.
 
-Owns CompactionSettings, the Compactor cascade, per-turn pass counting,
-request view projection, threshold triggers, overflow recovery retries,
-and snapshot persistence.
+The agent config's ``compaction`` block selects a preset (``presets/``); the
+preset's recipe supplies the triggers, per-reason targets, overflow budget,
+request-view steps and the stage pipeline. The controller owns when those
+run, per-turn pass counting, lifecycle events and snapshot persistence.
 """
 
 from __future__ import annotations
@@ -12,31 +13,22 @@ import logging
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from .methods import (
+    CompactionCancelled,
     CompactionContext,
-    CompactionOutcome,
     CompactionReason,
-    Compactor,
     RemoteCompactionPort,
     SummaryModel as SummaryModelProtocol,
 )
 from .images import drop_images
 from .overflow import is_context_overflow
+from .pipeline import CompactionOutcome
+from .presets import CompactionConfig, Recipe, build_recipe, load_compaction_config
+from .primitives.accounting import OccupancyInput, normalize_usage
+from .primitives.triggers import TriggerInput
 from .pruning import prune_tool_results
-from .registry import build_compactor
-from .settings import (
-    CompactionSettings,
-    resolve_threshold_tokens,
-    settings_from_config,
-)
 from .snapcompact.inline import apply_inline_snapcompact
 from .state import CompactionRecord, CompactionState, ProjectionTarget, strip_native_markers
 from .summary_model import ConductorSummaryModel
-from .tokens import (
-    compaction_context_tokens,
-    context_tokens_from_usage,
-    estimate_messages_tokens,
-)
-from .transcript import role_of
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +43,11 @@ class CompactionController:
         self,
         config: Optional[Mapping[str, Any]] = None,
         *,
-        settings: Optional[CompactionSettings] = None,
-        compactor: Optional[Compactor] = None,
         summary_model: Optional[SummaryModelProtocol] = None,
-        methods: Optional[Mapping[str, Any]] = None,
     ) -> None:
-        if settings is not None:
-            self.settings = settings
-        elif config is not None:
-            raw_compaction = config.get("compaction")
-            self.settings = settings_from_config(raw_compaction)
-        else:
-            self.settings = CompactionSettings()
-
-        self.compactor = compactor or build_compactor(self.settings, methods=methods)
+        self.config: CompactionConfig = load_compaction_config((config or {}).get("compaction"))
+        self.settings = self.config.settings
+        self.recipe: Recipe = build_recipe(self.config)
         self.summary_model = summary_model
         self._turn_passes: Dict[int, int] = {}
         # Provider attempt number for the request being built; bumped after
@@ -72,6 +55,10 @@ class CompactionController:
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
         self._messages_len_at_last_record: Optional[int] = None
+
+    @property
+    def active(self) -> bool:
+        return self.recipe.active
 
     def begin_request(self) -> None:
         self.request_attempt = 0
@@ -83,7 +70,7 @@ class CompactionController:
         self._turn_passes[turn_index] = self.passes_this_turn(turn_index) + 1
 
     def can_pass(self, turn_index: int) -> bool:
-        return self.passes_this_turn(turn_index) < self.settings.max_passes_per_turn
+        return self.passes_this_turn(turn_index) < self.recipe.max_attempts_per_turn
 
     def resolve_context_window(
         self,
@@ -213,12 +200,12 @@ class CompactionController:
         """Build request view with optional pruning, projection, and inline imaging."""
         messages = session_state.provider_messages
         compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
-        if compaction_state is None or (not self.settings.active and not compaction_state.records):
+        if compaction_state is None or (not self.active and not compaction_state.records):
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
 
         # 1. Prune tool results if enabled
-        if self.settings.active and self.settings.prune.enabled:
+        if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
             context = CompactionContext(
                 messages=messages,
                 state=compaction_state,
@@ -226,7 +213,7 @@ class CompactionController:
                 reason="threshold",
                 target=target,
                 context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=estimate_messages_tokens(compaction_state.project(messages, target)),
+                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
             )
             prune_record = prune_tool_results(context)
             if prune_record is not None:
@@ -241,7 +228,7 @@ class CompactionController:
             view = strip_native_markers(view)
 
         # 4. Inline snapcompact if model supports images
-        if self.settings.active and supports_images:
+        if self.active and supports_images and "omp_inline_snapcompact" in self.recipe.request_view:
             view = apply_inline_snapcompact(
                 view,
                 self.settings,
@@ -260,38 +247,32 @@ class CompactionController:
         context_window: Optional[int],
         last_usage: Optional[Any] = None,
     ) -> bool:
-        """Check if history size exceeds the threshold tokens limit."""
-        if not self.settings.active or context_window is None or context_window <= 0:
+        """Whether any preset trigger fires for the current history and last usage."""
+        if not self.active or context_window is None or context_window <= 0:
             return False
 
         messages = getattr(session_state, "provider_messages", None) or []
         if not messages:
             return False
 
-        # Mid-turn gating: gate calls where the last message isn't a user message
-        if not self.settings.mid_turn_enabled:
-            last_msg = messages[-1]
-            if role_of(last_msg) != "user":
-                return False
-
-        compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
-        if compaction_state is not None:
-            # Estimate of active projected view
-            stored_estimate = estimate_messages_tokens(
-                compaction_state.project(messages, None)
-            )
-        else:
-            stored_estimate = estimate_messages_tokens(messages)
-
+        compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
+        view = compaction_state.project(messages, None) if compaction_state is not None else messages
         # Provider usage describes the last request sent. If a record was
         # appended since (no new message arrived), that request predates the
         # compaction and its usage would retrigger it.
-        usage_stale = len(messages) == self._messages_len_at_last_record
-        provider_tokens = None if usage_stale else context_tokens_from_usage(last_usage)
-        current_tokens = compaction_context_tokens(provider_tokens, stored_estimate)
+        usage_fresh = len(messages) != self._messages_len_at_last_record
+        data = TriggerInput(OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window)
+        return any(trigger.evaluate(data, messages).fires for trigger in self.recipe.triggers)
 
-        threshold = resolve_threshold_tokens(context_window, self.settings)
-        return current_tokens > threshold
+    @staticmethod
+    def _record_event(session_state: Any, event_type: str, payload: Dict[str, Any], turn_index: Optional[int]) -> None:
+        recorder = getattr(session_state, "record_lifecycle_event", None)
+        if not callable(recorder):
+            return
+        try:
+            recorder(event_type, payload, turn=turn_index)
+        except Exception:  # events are observability; a recorder failure never fails compaction
+            logger.debug("lifecycle event %s not recorded", event_type, exc_info=True)
 
     def _after_record_appended(
         self,
@@ -302,21 +283,19 @@ class CompactionController:
     ) -> None:
         """Record lifecycle event and persist Product snapshot."""
         self._messages_len_at_last_record = len(session_state.provider_messages)
-        try:
-            session_state.record_lifecycle_event(
-                "compaction_record_appended",
-                {
-                    "record_id": record.record_id,
-                    "method": record.method,
-                    "reason": record.reason,
-                    "tokens_before": record.tokens_before,
-                    "tokens_after": record.tokens_after,
-                    "first_kept_index": record.first_kept_index,
-                },
-                turn=turn_index,
-            )
-        except Exception:
-            pass
+        self._record_event(
+            session_state,
+            "compaction_record_appended",
+            {
+                "record_id": record.record_id,
+                "method": record.method,
+                "reason": record.reason,
+                "tokens_before": record.tokens_before,
+                "tokens_after": record.tokens_after,
+                "first_kept_index": record.first_kept_index,
+            },
+            turn_index,
+        )
 
         if hasattr(session_state, "can_persist_compaction") and session_state.can_persist_compaction():
             try:
@@ -344,7 +323,9 @@ class CompactionController:
         order: Optional[Sequence[str]] = None,
         clock: Optional[Callable[[], str]] = None,
     ) -> CompactionOutcome:
-        """Run the compaction cascade and handle persistence."""
+        """Run the preset pipeline for ``reason``; record events and persist."""
+        if reason not in self.recipe.targets:
+            raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
         messages = session_state.provider_messages
         compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
         if compaction_state is None:
@@ -357,7 +338,7 @@ class CompactionController:
             remote_ports = self.remote_ports_for(runtime, client, resolved_target.model)
 
         projected = compaction_state.project(messages, resolved_target)
-        tokens_before = estimate_messages_tokens(projected)
+        tokens_before = self.recipe.count(projected)
 
         summarizer = self.summary_model
         if summarizer is None and callable(getattr(runtime, "invoke", None)):
@@ -390,11 +371,54 @@ class CompactionController:
             **kwargs,
         )
 
-        outcome = self.compactor.run(context, order=order)
+        target_tokens = self.recipe.target_tokens(reason, resolved_window)
+        self._record_event(
+            session_state,
+            "compaction_started",
+            {
+                "preset": self.recipe.preset_id,
+                "reason": reason,
+                "tokens_before": tokens_before,
+                "target_tokens": target_tokens,
+            },
+            turn_index,
+        )
+        records_before = len(compaction_state.records)
+        try:
+            outcome = self.recipe.pipeline.run(
+                context,
+                target_tokens=target_tokens,
+                order=order if order is not None else self.recipe.order,
+            )
+        except CompactionCancelled as exc:
+            # Records committed before the cancel stay; report and persist them.
+            for record in compaction_state.records[records_before:]:
+                self._after_record_appended(session_state, record, resolved_target, turn_index)
+            self._record_event(
+                session_state,
+                "compaction_finished",
+                {"preset": self.recipe.preset_id, "reason": reason, "status": "cancelled", "detail": str(exc) or None},
+                turn_index,
+            )
+            raise
 
         for record in outcome.records:
             self._after_record_appended(session_state, record, resolved_target, turn_index)
-
+        self._record_event(
+            session_state,
+            "compaction_finished",
+            {
+                "preset": self.recipe.preset_id,
+                "reason": reason,
+                "status": outcome.status,
+                "tokens_before": outcome.tokens_before,
+                "tokens_after": outcome.tokens_after,
+                "target_tokens": outcome.target_tokens,
+                "reached_target": outcome.reached_target,
+                "stages": [stage.to_dict() for stage in outcome.stages],
+            },
+            turn_index,
+        )
         return outcome
 
     def compact_now(
@@ -434,7 +458,7 @@ class CompactionController:
             reason="manual",
             target=target,
             context_window=self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-            tokens_before=estimate_messages_tokens(state.project(messages, target)),
+            tokens_before=self.recipe.count(state.project(messages, target)),
         )
         record = drop_images(context)
         if record is None:
@@ -462,7 +486,7 @@ class CompactionController:
         progress) means the caller re-raises ``exc`` unchanged.
         """
         if (
-            not self.settings.active
+            not self.active
             or self.settings.overflow_policy != "compact"
             or not is_context_overflow(exc)
             or not self.can_pass(turn_index)

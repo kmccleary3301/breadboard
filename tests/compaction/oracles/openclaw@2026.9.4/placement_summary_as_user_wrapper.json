@@ -1,0 +1,54 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "placement_summary_as_user_wrapper",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "packages/agent-core/src/harness/messages.ts:45-51,178-189"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slice packages/agent-core/src/harness/messages.ts:45-51,178-189.\nVerbatim constants from lines 45-51:\n  export const COMPACTION_SUMMARY_PREFIX = \"The conversation history before this point was compacted into the following summary:\\n\\n<summary>\\n\";\n  export const COMPACTION_SUMMARY_SUFFIX = \"\\n</summary>\";\nLines 178-188: converts compactionSummary to role user with text: COMPACTION_SUMMARY_PREFIX + message.summary + COMPACTION_SUMMARY_SUFFIX."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Prior task instruction"
+      },
+      {
+        "role": "assistant",
+        "content": "Prior task response"
+      },
+      {
+        "role": "user",
+        "content": "Latest instruction"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "Summary text from LLM"
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "The conversation history before this point was compacted into the following summary:\n\n<summary>\nSummary text from LLM\n</summary>"
+      },
+      {
+        "role": "user",
+        "content": "Latest instruction"
+      }
+    ]
+  }
+}

@@ -1,12 +1,15 @@
 """Message serialization for LLM summarization inputs.
 
-Ports OMP ``utils.ts`` (lines 205-350): converts chat-format transcript messages
-to plain text for summary prompts, truncates oversized tool outputs, and escapes
-harness boundary tags.
+Ports OMP ``utils.ts`` (lines 205-350) and Pi 0.73.1 ``core/compaction/utils.js``
+(``serializeConversation``): converts chat-format transcript messages to plain
+text for summary prompts, truncates oversized tool outputs, and escapes harness
+boundary tags. The two harnesses differ only in labels and in OMP's filtering
+of tool calls marked ``useless``; :class:`TranscriptStyle` carries both.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import json
 import re
 from typing import Any, Mapping, Optional, Sequence
@@ -19,12 +22,40 @@ _SUMMARY_BOUNDARY_TAG_RE = re.compile(
 )
 
 
-def truncate_tool_result_for_summary(text: str) -> str:
-    """Truncate tool results to the representation used in summarization prompts."""
-    if len(text) <= TOOL_RESULT_MAX_CHARS:
+@dataclass(frozen=True)
+class TranscriptStyle:
+    user: str = "[User]"
+    thinking: str = "[Think]"
+    assistant: str = "[Assistant]"
+    tool_calls: str = "[Tool Call]"
+    tool_result: str = "[Tool Result]"
+    skip_useless: bool = True
+    tool_result_max_chars: int = TOOL_RESULT_MAX_CHARS
+
+
+OMP_TRANSCRIPT = TranscriptStyle()
+PI_TRANSCRIPT = TranscriptStyle(
+    thinking="[Assistant thinking]",
+    tool_calls="[Assistant tool calls]",
+    tool_result="[Tool result]",
+    skip_useless=False,
+)
+
+
+def _utf16_len(text: str) -> int:
+    return len(text.encode("utf-16-le", "surrogatepass")) // 2
+
+
+def truncate_tool_result_for_summary(text: str, max_chars: int = TOOL_RESULT_MAX_CHARS) -> str:
+    """Truncate tool results to the representation used in summarization prompts.
+
+    Lengths are JavaScript ``String.length`` (UTF-16 code units), as in both ports.
+    """
+    length = _utf16_len(text)
+    if length <= max_chars:
         return text
-    truncated_chars = len(text) - TOOL_RESULT_MAX_CHARS
-    return f"{text[:TOOL_RESULT_MAX_CHARS]}\n\n[... {truncated_chars} more characters truncated]"
+    head = text.encode("utf-16-le", "surrogatepass")[: 2 * max_chars].decode("utf-16-le", "surrogatepass")
+    return f"{head}\n\n[... {length - max_chars} more characters truncated]"
 
 
 truncateToolResultForSummary = truncate_tool_result_for_summary
@@ -67,10 +98,13 @@ def _render_tool_calls(calls: Sequence[Mapping[str, Any]]) -> str:
     return "; ".join(rendered)
 
 
-def serialize_conversation(messages: Sequence[Mapping[str, Any]]) -> str:
+def serialize_conversation(
+    messages: Sequence[Mapping[str, Any]],
+    style: TranscriptStyle = OMP_TRANSCRIPT,
+) -> str:
     """Serialize chat-format messages to transcript text."""
     useless_call_ids: set[str] = set()
-    for msg in messages:
+    for msg in messages if style.skip_useless else ():
         role = msg.get("role")
         if role in ("tool", "toolResult", "function"):
             is_error = bool(msg.get("is_error") or msg.get("isError"))
@@ -78,7 +112,6 @@ def serialize_conversation(messages: Sequence[Mapping[str, Any]]) -> str:
                 call_id = msg.get("tool_call_id") or msg.get("toolCallId")
                 if isinstance(call_id, str):
                     useless_call_ids.add(call_id)
-
     parts: list[str] = []
     for msg in messages:
         role = msg.get("role")
@@ -96,7 +129,7 @@ def serialize_conversation(messages: Sequence[Mapping[str, Any]]) -> str:
             else:
                 text = ""
             if text:
-                parts.append(f"[User]: {text}")
+                parts.append(f"{style.user}: {text}")
 
         elif role == "assistant":
             text_parts: list[str] = []
@@ -144,11 +177,11 @@ def serialize_conversation(messages: Sequence[Mapping[str, Any]]) -> str:
                     valid_tool_calls.append(call)
 
             if thinking_parts:
-                parts.append(f"[Think]: {'\n'.join(thinking_parts)}")
+                parts.append(f"{style.thinking}: {'\n'.join(thinking_parts)}")
             if text_parts:
-                parts.append(f"[Assistant]: {'\n'.join(text_parts)}")
+                parts.append(f"{style.assistant}: {'\n'.join(text_parts)}")
             if valid_tool_calls:
-                parts.append(f"[Tool Call]: {_render_tool_calls(valid_tool_calls)}")
+                parts.append(f"{style.tool_calls}: {_render_tool_calls(valid_tool_calls)}")
 
         elif role in ("tool", "toolResult", "function"):
             call_id = msg.get("tool_call_id") or msg.get("toolCallId")
@@ -167,7 +200,7 @@ def serialize_conversation(messages: Sequence[Mapping[str, Any]]) -> str:
             else:
                 text = ""
             if text:
-                parts.append(f"[Tool Result]: {truncate_tool_result_for_summary(text)}")
+                parts.append(f"{style.tool_result}: {truncate_tool_result_for_summary(text, style.tool_result_max_chars)}")
 
     return "\n\n".join(parts)
 

@@ -8,13 +8,13 @@ from breadboard_engine.compaction import (
     CompactionContext,
     CompactionRecord,
     CompactionState,
-    Compactor,
     MethodUnavailable,
     NativeCompaction,
     ProjectionTarget,
     estimate_messages_tokens,
     settings_from_config,
 )
+from .support import run_pipeline
 from breadboard_engine.compaction.remote import RemoteCompaction
 from breadboard_engine.compaction.remote.openai import (
     COMPACTION_TRIGGER_ITEM,
@@ -260,7 +260,7 @@ def test_v2_fallback_to_v1_on_stream_failure():
 def test_end_to_end_compaction_and_responses_runtime_replay():
     """
     Acceptance test:
-    With a fake transport, Compactor with RemoteCompaction + an OpenAI port compacts
+    With a fake transport, Pipeline with RemoteCompaction + an OpenAI port compacts
     and the Responses runtime request body for the next turn contains the native items
     in place of the summarized history; non-matching targets get no native items;
     existing Responses tests still pass.
@@ -274,7 +274,6 @@ def test_end_to_end_compaction_and_responses_runtime_replay():
 
     port = OpenAIResponsesCompactionPort(http_poster=fake_v1_poster)
     settings = settings_from_config({"enabled": True, "method_order": ["remote", "soft"]})
-    compactor = Compactor(settings, {"remote": RemoteCompaction()})
 
     initial_messages = [
         {"role": "system", "content": "System setup"},
@@ -295,8 +294,7 @@ def test_end_to_end_compaction_and_responses_runtime_replay():
         tokens_before=estimate_messages_tokens(initial_messages),
         remote_ports=(port,),
     )
-
-    outcome = compactor.run(ctx)
+    outcome = run_pipeline(ctx, {"remote": RemoteCompaction()})
     assert outcome.compacted
     assert len(state.records) == 1
     record = state.records[0]

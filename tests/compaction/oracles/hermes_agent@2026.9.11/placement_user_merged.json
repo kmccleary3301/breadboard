@@ -1,0 +1,69 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "placement_user_merged",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:4528-4546",
+      "agent/context_compressor.py:4548-4567"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._summary_placement at agent/context_compressor.py:4528-4546 and _merge_summary_into_tail_row at agent/context_compressor.py:4548-4567. System-only head forces user summary. Tail starts with user, creating collision that merges summary into first tail user message."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "old_u"
+      },
+      {
+        "role": "assistant",
+        "content": "old_a"
+      },
+      {
+        "role": "user",
+        "content": "U2"
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 16000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "Compact summary"
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "Compact summary\n\n--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---\n\nU2",
+        "_compressed_summary": true,
+        "_compressed_summary_has_user_turn": false
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      }
+    ]
+  }
+}

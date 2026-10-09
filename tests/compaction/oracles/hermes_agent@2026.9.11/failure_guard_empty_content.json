@@ -1,0 +1,56 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "failure_guard_empty_content",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:3276-3277"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._call_summary_llm at agent/context_compressor.py:3220-3277. Scripted mock response returning whitespace raises verified upstream RuntimeError: 'Context compression LLM returned empty content (provider=auto model=hermes-3)'."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "u1"
+      },
+      {
+        "role": "assistant",
+        "content": "a1"
+      },
+      {
+        "role": "user",
+        "content": "u2"
+      },
+      {
+        "role": "assistant",
+        "content": "a2"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 16000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "   "
+    ]
+  },
+  "expect": {
+    "failure": {
+      "kind": "empty_content",
+      "message": "Context compression LLM returned empty content (provider=auto model=hermes-3)"
+    }
+  }
+}

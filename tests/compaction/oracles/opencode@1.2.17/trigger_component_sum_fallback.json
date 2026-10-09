@@ -1,0 +1,50 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "opencode@1.2.17",
+  "case": "trigger_component_sum_fallback",
+  "source": {
+    "repo": "https://github.com/anomalyco/opencode",
+    "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
+    "evidence": [
+      "packages/opencode/src/session/compaction.ts:30-48"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "Executed via runtime code sliced from compaction.ts:30-48 (isOverflow). Evaluated: count=135000, usable=130000, auto=true. When total is 0, count falls back to input+output+cache.read+cache.write = 135000 >= usable (130000)."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello"
+      },
+      {
+        "role": "assistant",
+        "content": "Hi"
+      }
+    ],
+    "usage": {
+      "input_tokens": 70000,
+      "output_tokens": 20000,
+      "cache_read_tokens": 30000,
+      "cache_write_tokens": 15000,
+      "total_tokens": 135000
+    },
+    "context_window": 200000,
+    "max_input_tokens": 150000,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 135000,
+      "limit": 130000,
+      "severity": "soft"
+    }
+  }
+}

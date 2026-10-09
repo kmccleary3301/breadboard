@@ -1,0 +1,15 @@
+{
+  "repo": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+  "files": {
+    "summary_prefix.txt": "agent/context_compressor.py:180-220",
+    "summary_end_marker.txt": "agent/context_compressor.py:356",
+    "merged_prior_context_header.txt": "agent/context_compressor.py:360",
+    "merged_summary_delimiter.txt": "agent/context_compressor.py:361",
+    "inflight_task_replay_header.txt": "agent/context_compressor.py:373-376",
+    "lean_session_log_section.txt": "agent/context_compressor.py:852-862",
+    "micro_summary_user_prompt.txt": "agent/micro_compaction.py:95-110",
+    "micro_summary_system_prompt.txt": "agent/micro_compaction.py:112"
+  },
+  "license": "MIT"
+}

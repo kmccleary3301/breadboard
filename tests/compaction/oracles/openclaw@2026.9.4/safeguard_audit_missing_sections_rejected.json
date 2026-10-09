@@ -1,0 +1,42 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "safeguard_audit_missing_sections_rejected",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "src/agents/agent-hooks/compaction-safeguard-quality.ts:15-21,481-494"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slice src/agents/agent-hooks/compaction-safeguard-quality.ts:481-494 (`auditSummaryQuality`).\nLines 483-486: `for (const section of REQUIRED_SUMMARY_SECTIONS) { if (!lines.has(section)) { reasons.push(\"missing_section:\" + section); } }`\nAudit execution result: ok=false, reasons=[\"missing_section:## Open TODOs\",\"missing_section:## Pending user asks\",\"missing_section:## Exact identifiers\"]."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Do task"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "mode": "safeguard"
+    },
+    "summary_responses": [
+      "## Decisions\n- Chose sqlite\n\n## Constraints/Rules\n- Memory limit 512MB"
+    ]
+  },
+  "expect": {
+    "failure": {
+      "kind": "quality_audit_failed",
+      "message": "missing_section:## Open TODOs, missing_section:## Pending user asks, missing_section:## Exact identifiers"
+    }
+  }
+}

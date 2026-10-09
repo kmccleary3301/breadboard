@@ -1,0 +1,72 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "precompact_hook_blocking_discrepancy",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:6320 (T86 hook runner returns blocked:true for exit 2)",
+      "package/cli.js:6321-6324 (SP1 only returns {newCustomInstructions, userDisplayMessage})",
+      "package/cli.js:2207 (SG6 caller never inspects blocked)"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Source-derived observation of pinned bug in cli.js. Verbatim text in SP1 (C:6321-6324): \"async function SP1(A,q,K=kj){let Y={...U$(void 0),hook_event_name:\"PreCompact\",trigger:A.trigger,custom_instructions:A.customInstructions},z=await T86({hookInput:Y,matchQuery:A.trigger,signal:q,timeoutMs:K});if(z.length===0)return{};let w=z.filter(($)=>$.succeeded&&$.output.trim().length>0).map(($)=>$.output.trim()),_=[];...return{newCustomInstructions:w.length>0?w.join(`\\n\\n`):void 0,userDisplayMessage:_.length>0?_.join(`\\n`):void 0}}\". Although T86 records blocked:true for exit code 2, SP1 discards blocked and returns only newCustomInstructions and userDisplayMessage. The caller SG6 (C:2207) does not check blocking: \"let j=await SP1({trigger:w?\"auto\":\"manual\",customInstructions:z??null},q.abortController.signal);if(j.newCustomInstructions)z=z?`${z}\\n\\n${j.newCustomInstructions}`:j.newCustomInstructions;\". Compaction proceeds unconditionally despite hook exit 2."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Work"
+      },
+      {
+        "role": "assistant",
+        "content": "Progress"
+      }
+    ],
+    "usage": {
+      "input_tokens": 160000,
+      "output_tokens": 7000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 167000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {
+      "autoCompactEnabled": true,
+      "hooks": {
+        "PreCompact": [
+          {
+            "type": "command",
+            "command": "exit 2"
+          }
+        ]
+      }
+    },
+    "summary_responses": [
+      "<summary>Compacted after ignoring hook block.</summary>"
+    ]
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 167000,
+      "limit": 167000,
+      "severity": "soft"
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\nCompacted after ignoring hook block.\nPlease continue the conversation from where we left off without asking the user any further questions. Continue with the last task that you were asked to work on."
+      }
+    ]
+  }
+}

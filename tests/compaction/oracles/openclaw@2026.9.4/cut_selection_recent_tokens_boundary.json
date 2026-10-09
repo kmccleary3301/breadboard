@@ -1,0 +1,95 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "cut_selection_recent_tokens_boundary",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "packages/agent-core/src/harness/compaction/compaction.ts:410-447,491-589"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slice packages/agent-core/src/harness/compaction/compaction.ts:410-589 (`findCutPoint`, `isCutPointMessage`, `isTurnStartMessage`, `isTurnStartEntry`).\nBackward token accumulation breaks at accumulated >= keepRecentTokens (1400).\nVerified cut index snaps to turn start at entry index 3 (role: user), preserving earlier toolResult pairing atomically in the summarized region."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Run bash ls"
+      },
+      {
+        "role": "assistant",
+        "content": "calling bash",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"cmd\":\"ls\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "toolResult",
+        "content": "file1.txt file2.txt",
+        "tool_call_id": "c1"
+      },
+      {
+        "role": "user",
+        "content": "Next command: grep foo file1.txt"
+      },
+      {
+        "role": "assistant",
+        "content": "calling grep",
+        "tool_calls": [
+          {
+            "id": "c2",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{\"cmd\":\"grep foo\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "toolResult",
+        "content": "match found",
+        "tool_call_id": "c2"
+      }
+    ],
+    "usage": {
+      "input_tokens": 4000,
+      "output_tokens": 500,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 4500
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "keepRecentTokens": 1400
+    }
+  },
+  "expect": {
+    "selection": {
+      "prefix_end": null,
+      "first_kept_index": 3,
+      "summarize": [
+        0,
+        1,
+        2
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    }
+  }
+}

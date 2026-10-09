@@ -1,0 +1,65 @@
+schema: bb.compaction_preset.v1
+id: omp@18.4.5
+source:
+  repo: https://github.com/can1357/oh-my-pi
+  version: 18.4.5
+  commit: 79808c3bf8f8cd9826decc63e3e18b13035f64f8   # tag v18.4.5
+  evidence:
+    - packages/agent/src/compaction/compaction.ts
+    - packages/agent/src/compaction/compaction-v2-streaming.ts:44-65
+    - packages/coding-agent/src/config/settings.ts
+# The v1 regression tests (tests/compaction/test_*.py) are this preset's oracle;
+# OMP_ORACLE_ROOT cases are not captured yet.
+claim: source_golden
+native_settings:
+  # OMP's own parser reads the whole block: camelCase or snake_case keys,
+  # strategy/remoteEnabled migration, prune/shake/snapcompact sub-blocks.
+  adapter: omp_settings
+estimator: bb_chars4
+triggers:
+  - kind: threshold
+    accounting: {kind: max_usage_estimate, estimator: bb_chars4}
+    limit: {kind: omp_settings, use: threshold}
+    compare: ">"
+    phase: omp_mid_turn_setting
+target:
+  threshold: {kind: omp_settings, use: threshold}
+  manual: {kind: omp_settings, use: threshold}
+  overflow: {kind: omp_settings, use: overflow_budget}
+overflow:
+  max_attempts_per_turn: {setting: max_passes_per_turn}
+request_view: [omp_prune, omp_inline_snapcompact]
+pipeline:
+  mode: fallback
+  order: omp_method_order   # methodOrder / strategy pick and order these stages
+  stages:
+    - {id: remote, algorithm: omp_remote}
+    - {id: snapcompact, algorithm: omp_snapcompact}
+    - {id: handoff, algorithm: omp_handoff}
+    - {id: shake, algorithm: omp_shake}
+    - id: soft
+      select:
+        kind: recent_tokens
+        budget: {setting: keep_recent_tokens}
+        walk: group_gt
+        estimator: bb_chars4
+      reduce:
+        kind: summarize
+        transcript: omp
+        escape_boundary_tags: true
+        windowing: fold
+        prompts:
+          system: {builtin: summarization-system}
+          initial: {builtin: compaction-summary}
+          update: {builtin: compaction-update-summary}
+          turn_prefix: {builtin: compaction-turn-prefix}
+          short_summary: {builtin: compaction-short-summary}
+        max_tokens: {kind: omp_settings, use: summary}
+        turn_prefix_max_tokens: {kind: omp_settings, use: turn_prefix}
+        short_summary_max_tokens: {kind: omp_settings, use: short_summary}
+        file_ops: omp_files_block
+      place:
+        kind: template
+        engine: handlebars
+        messages:
+          - {role: user, content: {builtin: compaction-summary-context}}
