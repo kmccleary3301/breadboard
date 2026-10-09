@@ -108,7 +108,7 @@ class CompactionController:
             models = providers.get("models") or []
             target_model = model or getattr(conductor, "model", None)
             for m in models:
-                if isinstance(m, Mapping) and m.get("model_id") == target_model:
+                if isinstance(m, Mapping) and m.get("id") == target_model:
                     cw = m.get("context_window") or m.get("context_length")
                     if isinstance(cw, int) and cw > 0:
                         return cw
@@ -151,7 +151,7 @@ class CompactionController:
         models = providers.get("models") or [] if isinstance(providers, Mapping) else []
         target_model = model or getattr(conductor, "model", None)
         for entry in models:
-            if not isinstance(entry, Mapping) or entry.get("model_id") != target_model:
+            if not isinstance(entry, Mapping) or entry.get("id") != target_model:
                 continue
             if entry.get("supports_images") is True:
                 return True

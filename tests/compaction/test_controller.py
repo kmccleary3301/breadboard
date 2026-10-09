@@ -219,7 +219,22 @@ def _target() -> ProjectionTarget:
 def test_image_capability_comes_from_model_config(entry: Dict[str, Any]) -> None:
     controller = _controller()
     conductor = SimpleNamespace(
-        config={"providers": {"models": [{"model_id": "vision-model", **entry}]}}, model="vision-model"
+        config={"providers": {"models": [{"id": "vision-model", **entry}]}}, model="vision-model"
     )
     assert controller.resolve_supports_images(conductor=conductor, model="vision-model")
     assert not controller.resolve_supports_images(conductor=conductor, model="other-model")
+
+
+def test_context_window_resolves_from_id_shaped_model_entry() -> None:
+    controller = CompactionController({})
+    conductor = SimpleNamespace(
+        config={
+            "providers": {
+                "models": [
+                    {"id": "test-model", "context_length": 65536},
+                ]
+            }
+        },
+        model="test-model",
+    )
+    assert controller.resolve_context_window(conductor=conductor, model="test-model") == 65536
