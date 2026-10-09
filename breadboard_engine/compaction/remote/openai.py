@@ -505,16 +505,20 @@ class OpenAIResponsesCompactionPort:
 
     def compact(self, context: CompactionContext) -> CompactionRecord:
         head = leading_system_count(context.messages)
-        remote_messages = context.projected()[head:] if context.native_retention is not None else context.messages[head:]
-        if not remote_messages:
-            raise MethodUnavailable("No messages to compact")
-
-        # Check if previous boundary has usable native items to reuse
         prev_replacement: Optional[Sequence[Mapping[str, Any]]] = None
         latest_boundary = context.state.latest_boundary()
         if context.native_retention is None and latest_boundary and latest_boundary.native and latest_boundary.native.usable_for(context.target):
             prev_replacement = latest_boundary.native.items
 
+        if prev_replacement is not None and latest_boundary is not None and latest_boundary.first_kept_index is not None:
+            remote_messages = context.messages[latest_boundary.first_kept_index:]
+        elif context.native_retention is not None:
+            remote_messages = context.projected()[head:]
+        else:
+            remote_messages = context.messages[head:]
+
+        if not remote_messages:
+            raise MethodUnavailable("No messages to compact")
         model = context.target.model
         native_history = build_openai_native_history(
             remote_messages, model, previous_replacement_history=prev_replacement

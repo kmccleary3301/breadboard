@@ -370,3 +370,69 @@ def test_runtime_compaction_port_factory():
     assert port.provider == "openai"
     assert port.api == "responses"
     assert port.supports("gpt-5")
+
+
+def test_two_successive_remote_compactions_slice_from_latest_boundary():
+    posted_calls = []
+
+    def fake_poster(url, payload, headers):
+        posted_calls.append({"url": url, "payload": payload})
+        idx = len(posted_calls)
+        return {
+            "output": [
+                {"type": "compaction", "encrypted_content": f"enc_token_{idx}"},
+            ]
+        }
+
+    port = OpenAIResponsesCompactionPort(http_poster=fake_poster)
+    state = CompactionState()
+    target = ProjectionTarget("openai", "responses", "gpt-5")
+    settings = settings_from_config({"enabled": True, "remote_streaming_v2_enabled": False})
+
+    messages = [
+        {"role": "system", "content": "System instructions"},
+        {"role": "user", "content": "Turn 1 question"},
+        {"role": "assistant", "content": "Turn 1 answer"},
+    ]
+    ctx1 = CompactionContext(
+        messages=messages,
+        state=state,
+        settings=settings,
+        reason="threshold",
+        target=target,
+        context_window=8000,
+        tokens_before=100,
+    )
+    rec1 = port.compact(ctx1)
+    state.append(rec1, messages)
+
+    assert rec1.first_kept_index == 3
+    assert len(posted_calls) == 1
+
+    messages = [
+        *messages,
+        {"role": "user", "content": "Turn 2 question"},
+        {"role": "assistant", "content": "Turn 2 answer"},
+    ]
+    ctx2 = CompactionContext(
+        messages=messages,
+        state=state,
+        settings=settings,
+        reason="threshold",
+        target=target,
+        context_window=8000,
+        tokens_before=200,
+    )
+    rec2 = port.compact(ctx2)
+    state.append(rec2, messages)
+
+    assert len(posted_calls) == 2
+    second_input = posted_calls[1]["payload"]["input"]
+
+    compaction_items = [it for it in second_input if it.get("type") == "compaction"]
+    assert len(compaction_items) == 1
+    assert compaction_items[0]["encrypted_content"] == "enc_token_1"
+
+    assert not any(it.get("content", [{}])[0].get("text") == "Turn 1 question" for it in second_input if it.get("role") == "user")
+    assert not any(it.get("content", [{}])[0].get("text") == "Turn 1 answer" for it in second_input if it.get("role") == "assistant")
+    assert any(it.get("content", [{}])[0].get("text") == "Turn 2 question" for it in second_input if it.get("role") == "user")
