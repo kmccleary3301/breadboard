@@ -6,6 +6,8 @@
     "repo": "https://github.com/code-yeongyu/oh-my-openagent",
     "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
     "evidence": [
+      "src/hooks/anthropic-context-window-limit-recovery/parser.ts:12-18,48-58,76-209",
+      "src/hooks/anthropic-context-window-limit-recovery/executor.ts:46-63",
       "src/hooks/anthropic-context-window-limit-recovery/target-token-truncation.ts:26-196",
       "src/hooks/anthropic-context-window-limit-recovery/tool-result-storage-sdk.ts:61-93",
       "packages/opencode/src/session/message-v2.ts:636-638"
@@ -14,7 +16,7 @@
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "Executed pinned truncateUntilTargetTokens SQLite branch and truncateToolResultAsync with an in-memory PATCH port; expected edits are native model-visible outputs from pinned MessageV2.toModelMessages and AI SDK 5.0.124."
+    "notes": "Executed pinned error parser, truncateUntilTargetTokens SQLite branch and truncateToolResultAsync with an in-memory PATCH port; expected edits are native model-visible outputs from pinned MessageV2.toModelMessages and AI SDK 5.0.124. Recorded bounds come from the failing request's error, not deliberately stale usage or the configured context window."
   },
   "input": {
     "messages": [
@@ -24,7 +26,17 @@
       },
       {
         "role": "assistant",
-        "content": "Running tools"
+        "content": "Running tools",
+        "tool_calls": [
+          {
+            "id": "call_a",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{}"
+            }
+          }
+        ]
       },
       {
         "role": "tool",
@@ -34,7 +46,17 @@
       },
       {
         "role": "assistant",
-        "content": "More tools"
+        "content": "More tools",
+        "tool_calls": [
+          {
+            "id": "call_b",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{}"
+            }
+          }
+        ]
       },
       {
         "role": "tool",
@@ -44,7 +66,17 @@
       },
       {
         "role": "assistant",
-        "content": "Final tool"
+        "content": "Final tool",
+        "tool_calls": [
+          {
+            "id": "call_c",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{}"
+            }
+          }
+        ]
       },
       {
         "role": "tool",
@@ -58,20 +90,24 @@
       "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,
-      "total_tokens": 210000
+      "total_tokens": 1
     },
     "context_window": 200000,
     "max_input_tokens": null,
     "max_output_tokens": 32000,
     "reason": "overflow",
     "native_settings": {},
-    "summary_responses": []
+    "summary_responses": [],
+    "overflow_error": "prompt is too long: 210000 tokens > 160000 maximum",
+    "overflow_tokens": 210000,
+    "overflow_limit": 160000
   },
   "expect": {
     "selection": {
       "targets": [
         2,
-        4
+        4,
+        6
       ]
     },
     "edits": [
@@ -89,6 +125,15 @@
         "message": {
           "role": "tool",
           "tool_call_id": "call_b",
+          "name": "bash",
+          "content": "[Old tool result content cleared]"
+        }
+      },
+      {
+        "index": 6,
+        "message": {
+          "role": "tool",
+          "tool_call_id": "call_c",
           "name": "bash",
           "content": "[Old tool result content cleared]"
         }

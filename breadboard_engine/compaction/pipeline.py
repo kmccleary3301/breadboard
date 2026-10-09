@@ -26,11 +26,13 @@ from .primitives.placement import build_placement
 from .primitives.reducers import build_reducer
 from .primitives.selectors import Selection, build_selector
 from .params import Params
+from .primitives.triggers import PHASES
 from .state import CompactionRecord, CompactionState
 
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
 MODES = ("fallback", "sequence", "until_boundary")
 REASONS = ("threshold", "overflow", "manual")
+STAGE_REASONS = (*REASONS, "request")
 
 
 @dataclass(frozen=True)
@@ -130,7 +132,7 @@ class Stage:
     """``when.reasons``: compaction reasons the stage runs for (all if ``None``)."""
     accept: Literal["progress", "any"] = "progress"
     stop_on_detail: Optional[str] = None
-    report_detail: bool = False
+    phase: str = "every_request"
 
 
 class Pipeline:
@@ -171,6 +173,11 @@ class Pipeline:
             if stage.reasons is not None and context.reason not in stage.reasons:
                 results.append(StageResult(stage_id, "noop", f"reason {context.reason!r} not in when.reasons"))
                 continue
+            if stage.phase == "user_turn_start" and (
+                not context.messages or context.messages[-1].get("role") != "user"
+            ):
+                results.append(StageResult(stage_id, "noop", "phase user_turn_start not active"))
+                continue
             try:
                 output = stage.step.run(context)
                 context.state.validate(output.record, context.messages)
@@ -194,8 +201,7 @@ class Pipeline:
             records.append(record)
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
-            detail = f"{stage_id} {status}" if stage.report_detail else None
-            results.append(StageResult(stage_id, status, detail, after, record.record_id))
+            results.append(StageResult(stage_id, status, None, after, record.record_id))
             if stage.stop_on_detail is not None and record.details.get(stage.stop_on_detail):
                 stopped = f"stopped after {stage_id} {stage.stop_on_detail}"
             if status == "committed" and self.mode == "until_boundary":
@@ -217,23 +223,23 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
     if when is not None:
         when_params = params.child(when, "when")
         raw_reasons = when_params.list("reasons")
-        bad = [r for r in raw_reasons if r not in REASONS]
+        bad = [r for r in raw_reasons if r not in STAGE_REASONS]
         if bad:
-            raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(REASONS)}")
+            raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(STAGE_REASONS)}")
         reasons = frozenset(raw_reasons)
         when_params.done()
     accept = params.choice("accept", ("progress", "any"), "progress")
     stop_on_detail = params.str("stop_on_detail", None)
-    report_detail = params.bool("report_detail", False)
+    phase = params.choice("phase", PHASES, "every_request")
     algorithm = params.str("algorithm", None)
     if algorithm is not None:
         if algorithm not in algorithms:
             raise ValueError(f"{params.where}.algorithm {algorithm!r} is unknown; expected one of {sorted(algorithms)}")
         params.done()
-        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, stop_on_detail, report_detail)
+        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, stop_on_detail, phase)
     selector = build_selector(params.child(params.mapping("select"), "select"))
     reducer = build_reducer(params.child(params.mapping("reduce"), "reduce"))
     raw_place = params.mapping("place", None)
     placement = None if raw_place is None else build_placement(params.child(raw_place, "place"))
     params.done()
-    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, stop_on_detail, report_detail)
+    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, stop_on_detail, phase)

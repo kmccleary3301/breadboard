@@ -125,10 +125,10 @@ class LargestFirstMasking:
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
-        current = context.provider_tokens
-        if current is None or current <= context.context_window:
+        current, limit = context.overflow_tokens, context.overflow_limit
+        if current is None or limit is None or current <= limit or limit <= 0:
             return Selection(details={"noop": "provider overflow bounds unavailable"})
-        target = math.floor(context.context_window * self.target_ratio)
+        target = math.floor(limit * self.target_ratio)
         required = (current - target) * self.chars_per_token
         messages = edited_history(context)
         candidates = []

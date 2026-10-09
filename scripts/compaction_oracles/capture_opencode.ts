@@ -17,7 +17,8 @@ type Config = { compaction?: { auto?: boolean; prune?: boolean; reserved?: numbe
 type Case = RecaptureCase & { schema: string; case: string; source: { repo: string; commit: string; evidence: string[] };
   capture: { kind: "executed" | "source_derived"; script: string; notes: string };
   input: { messages: ChatMessage[]; usage: { input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_tokens: number; total_tokens: number };
-    context_window: number; max_input_tokens: number | null; max_output_tokens: number; reason: string; native_settings: Config; summary_responses: string[]; stage_ids?: string[] } };
+    context_window: number; max_input_tokens: number | null; max_output_tokens: number; reason: string; native_settings: Config; summary_responses: string[]; stage_ids?: string[];
+    overflow_error?: string; overflow_tokens?: number; overflow_limit?: number } };
 const [opencodeArg, pluginArg] = process.argv.slice(2);
 if (!opencodeArg || !pluginArg) throw new Error("Expected pinned OpenCode and plugin source directories");
 const opencode = resolve(opencodeArg);
@@ -105,6 +106,8 @@ const pruneFixtures: Array<[string, ChatMessage[]]> = [
 ];
 for (const [name, messages] of pruneFixtures) {
   const c = fixture(name);
+  // Request-stage coverage uses the queued user-turn ingress, not a stale assistant tail.
+  if (messages.at(-1)?.role === "assistant") messages.pop();
   c.input.messages = messages;
   c.input.usage.total_tokens = 100000;
   c.input.stage_ids = ["prune"];
@@ -134,7 +137,7 @@ for (const [name, messages] of pruneFixtures) {
 }
 const summaryFixtures: Array<[string, ChatMessage[], string, string]> = [
   ["summary_request_media_stripped_placeholders", [{ role: "user", content: [{ type: "text", text: "Look at this architecture diagram" }, { type: "image_url", image_url: { url: "data:image/png;base64,AA==" } }] }, assistant("I see components A and B.")], "threshold", "Summary of conversation so far"],
-  ["placement_auto_continuation", [user("Refactor engine"), assistant("Started refactoring.")], "threshold", "Refactoring engine in progress."],
+  ["placement_auto_continuation", [user("Refactor engine"), { ...assistant("Started refactoring."), tool_calls: [{ id: "c_newly_eligible", type: "function", function: { name: "bash", arguments: "{}" } }] }, tool("c_newly_eligible", 240004), user("Second turn"), assistant("Continued refactoring."), user("Third turn")], "threshold", "Refactoring engine in progress."],
   ["placement_manual_no_continuation", [user("Optimize database queries"), assistant("Indexing complete.")], "manual", "Database indexing complete."],
   ["placement_overflow_exclude_and_replay", [user("First task: inspect code"), assistant("Inspected files."), user("Second task: fix bug in auth.ts")], "overflow", "Summary of first task: code inspected."],
   ["placement_overflow_single_user_media_explanation", [user("Here is massive data dump...")], "overflow", "Summary of initial massive data attempt."],
@@ -152,9 +155,16 @@ for (const [name, messages, reason, response] of summaryFixtures) {
 }
 const recovery = fixture("recovery_largest_first_masking", "oh-my-opencode@3.10.0");
 recovery.input.messages = [user("Run tasks"), assistant("Running tools"), tool("call_a", 300000), assistant("More tools"), tool("call_b", 200000), assistant("Final tool"), tool("call_c", 50000)];
-recovery.input.usage.total_tokens = 210000;
+for (const [index, message] of recovery.input.messages.entries()) {
+  if (message.role !== "tool") continue;
+  const owner = recovery.input.messages[index - 1];
+  if (owner.role !== "assistant") throw new Error("Missing recorded recovery tool owner");
+  owner.tool_calls = [{ id: message.tool_call_id!, type: "function", function: { name: message.name!, arguments: "{}" } }];
+}
+recovery.input.usage.total_tokens = 1;
+recovery.input.overflow_error = "prompt is too long: 210000 tokens > 160000 maximum";
 recovery.input.reason = "overflow";
-recovery.source.evidence = ["src/hooks/anthropic-context-window-limit-recovery/target-token-truncation.ts:26-196", "src/hooks/anthropic-context-window-limit-recovery/tool-result-storage-sdk.ts:61-93", "packages/opencode/src/session/message-v2.ts:636-638"];
+recovery.source.evidence = ["src/hooks/anthropic-context-window-limit-recovery/parser.ts:12-18,48-58,76-209", "src/hooks/anthropic-context-window-limit-recovery/executor.ts:46-63", "src/hooks/anthropic-context-window-limit-recovery/target-token-truncation.ts:26-196", "src/hooks/anthropic-context-window-limit-recovery/tool-result-storage-sdk.ts:61-93", "packages/opencode/src/session/message-v2.ts:636-638"];
 await runner.recover(recovery);
 cases.push(recovery);
 const contributor = fixture("todo_preservation_summary_contributor", "oh-my-opencode@3.10.0");

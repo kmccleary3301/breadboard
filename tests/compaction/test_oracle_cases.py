@@ -65,20 +65,21 @@ def _recipe(case: Mapping[str, Any]):
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
-    usage = normalize_usage(inp.get("usage"))
-    provider_tokens = (usage.total or usage.input + usage.output + usage.cache_read + usage.cache_write) if usage else None
+    stage_ids = inp.get("stage_ids") or []
+    request_pass = bool(stage_ids) and all(stage_id in recipe.request_view for stage_id in stage_ids)
     return CompactionContext(
         messages=messages,
         state=state,
         settings=recipe.settings,
-        reason=inp.get("reason") or "threshold",
+        reason="request" if request_pass else inp.get("reason") or "threshold",
         target=TARGET,
         context_window=inp["context_window"],
         tokens_before=recipe.count(state.project(messages, TARGET)),
         summarizer=summarizer,
         max_output_tokens=inp.get("max_output_tokens"),
         max_input_tokens=inp.get("max_input_tokens"),
-        provider_tokens=provider_tokens,
+        overflow_tokens=inp.get("overflow_tokens"),
+        overflow_limit=inp.get("overflow_limit"),
     )
 
 
@@ -156,7 +157,7 @@ def test_oracle_case(case_file: Path) -> None:
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
     if "selection" in expect:
-        order = inp.get("stage_ids") or recipe.pipeline.order
+        order = inp.get("stage_ids") or recipe.order or recipe.pipeline.order
         boundary_selection = bool(set(expect["selection"]) - {"targets"})
         stage = next(recipe.pipeline.stages[name] for name in order
                      if isinstance(recipe.pipeline.stages[name].step, ComposedStep)
@@ -169,9 +170,9 @@ def test_oracle_case(case_file: Path) -> None:
 
     outcome = recipe.pipeline.run(
         context,
-        target_tokens=recipe.target_tokens(context.reason, inp["context_window"],
+        target_tokens=recipe.target_tokens("threshold" if context.reason == "request" else context.reason, inp["context_window"],
                                           inp.get("max_output_tokens"), inp.get("max_input_tokens")),
-        order=inp.get("stage_ids"),
+        order=inp.get("stage_ids") or recipe.order,
     )
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
 

@@ -48,10 +48,6 @@
       {
         "role": "user",
         "content": "Turn 2"
-      },
-      {
-        "role": "assistant",
-        "content": "Done"
       }
     ],
     "usage": {

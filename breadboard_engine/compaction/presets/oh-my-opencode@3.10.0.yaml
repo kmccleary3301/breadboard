@@ -62,7 +62,6 @@ pipeline:
   mode: sequence
   stages:
   - id: recovery
-    report_detail: true
     when:
       reasons:
       - overflow
@@ -76,7 +75,8 @@ pipeline:
       kind: mask_outputs
       placeholder: '[Old tool result content cleared]'
   - id: prune
-    report_detail: true
+    phase: user_turn_start
+    when: {reasons: [request]}
     select:
       kind: protected_tool_outputs
       enabled: true
@@ -91,7 +91,6 @@ pipeline:
       kind: mask_outputs
       placeholder: '[Old tool result content cleared]'
   - id: summary
-    report_detail: true
     accept: any
     select:
       kind: whole_history_replay

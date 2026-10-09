@@ -34,7 +34,7 @@ from .state import (
     record_id_for,
 )
 
-CompactionReason = Literal["threshold", "overflow", "manual", "mid_turn", "idle"]
+CompactionReason = Literal["threshold", "overflow", "manual", "request", "mid_turn", "idle"]
 SummaryPurpose = Literal["summary", "update_summary", "short_summary", "turn_prefix", "handoff", "branch_summary"]
 
 
@@ -120,7 +120,8 @@ class CompactionContext:
     clock: Callable[[], str] = _utc_now
     max_output_tokens: Optional[int] = None
     max_input_tokens: Optional[int] = None
-    provider_tokens: Optional[int] = None
+    overflow_tokens: Optional[int] = None
+    overflow_limit: Optional[int] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

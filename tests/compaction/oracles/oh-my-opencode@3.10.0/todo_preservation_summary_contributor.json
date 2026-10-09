@@ -15,7 +15,7 @@
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "Executed pinned SessionCompaction.process and MessageV2.toModelMessages with AI SDK 5.0.124, scripted LLM and in-memory session persistence. Plugin context comes from the pinned injector. Selection excludes the synthetic marker, whose rendered text remains in the request and projection. This proves the continuity summary contributor, not the separate Todo.update persistence hook."
+    "notes": "Executed pinned SessionCompaction.process and MessageV2.toModelMessages with AI SDK 5.0.124, scripted LLM and in-memory session persistence. Native tool messages are translated losslessly to BreadBoard's accepted call/result wire representation; native summary flags are ledger facts, not wire fields. Plugin context comes from the pinned injector. Selection excludes the synthetic marker, whose rendered text remains in the request and projection. The three-turn tool history verifies summary input before lifecycle pruning. This proves the continuity summary contributor, not the separate Todo.update persistence hook."
   },
   "input": {
     "messages": [
@@ -112,8 +112,7 @@
             "type": "text",
             "text": "Summary including todo state and active files."
           }
-        ],
-        "summary": true
+        ]
       },
       {
         "role": "user",

@@ -18,7 +18,8 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
     result = copy.deepcopy(dict(message))
     content = result.get("content")
     if isinstance(content, str):
-        result["content"] = [{"type": "text", "text": content}]
+        if result.get("role") not in {"tool", "tool_result"}:
+            result["content"] = [{"type": "text", "text": content}]
         return result
     if not isinstance(content, list):
         return result
@@ -34,8 +35,11 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
             match = re.match(r"data:([^;,]+)", url)
             mime = match.group(1) if match else "image/png"
         media = isinstance(mime, str) and (mime.startswith("image/") or mime == "application/pdf")
-        if strip_media and result.get("role") == "tool" and kind != "text":
-            continue
+        if strip_media and result.get("role") in {"tool", "tool_result"}:
+            if kind not in {"text", "tool_result"}:
+                continue
+            if kind == "tool_result":
+                part = {key: value for key, value in part.items() if key != "attachments"}
         if strip_media and result.get("role") == "user" and media:
             parts.append({"type": "text", "text": f"[Attached {mime}: {part.get('filename') or 'file'}]"})
         else:
@@ -93,7 +97,7 @@ class MessageSummary:
             system=self.system, messages=tuple(request_messages), max_tokens=self.max_tokens,
             purpose="summary", model=context.settings.summary_model or context.target.model,
         )).text
-        return Reduction(summary=summary)
+        return Reduction(summary=summary, details={"summary": True})
 
 
 class SummaryReplay:
@@ -111,7 +115,7 @@ class SummaryReplay:
     def place(self, context: CompactionContext, selection: Selection, reduction: Reduction) -> list[dict[str, Any]]:
         result = [
             {"role": "user", "content": [{"type": "text", "text": self.marker}]},
-            {"role": "assistant", "summary": True, "content": [{"type": "text", "text": reduction.summary or ""}]},
+            {"role": "assistant", "content": [{"type": "text", "text": reduction.summary or ""}]},
         ]
         if context.reason not in self.auto_reasons:
             return result

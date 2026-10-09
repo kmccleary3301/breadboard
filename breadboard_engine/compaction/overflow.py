@@ -54,6 +54,15 @@ _EVIDENCE_PATTERNS = tuple(
 _GENERIC_LIMIT_PATTERN = re.compile(r"exceeds the limit of \d+", re.IGNORECASE)
 _NO_BODY_PATTERN = re.compile(r"\b4(00|13)\s*(status code)?\s*\(no body\)", re.IGNORECASE)
 
+# Providers report both numbers in either order; return current > limit.
+_TOKEN_BOUND_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"([\d,]+)\s*tokens?\s*>\s*([\d,]+)\s*maximum",
+    r"prompt.*?([\d,]+).*?tokens.*?exceeds.*?([\d,]+)",
+    r"([\d,]+).*?tokens.*?limit.*?([\d,]+)",
+    r"context.*?length.*?([\d,]+).*?maximum.*?([\d,]+)",
+    r"max.*?context.*?([\d,]+).*?(?:but|requested).*?([\d,]+)",
+))
+
 
 def text_indicates_context_overflow(text: str) -> bool:
     if not text:
@@ -130,6 +139,38 @@ def is_context_overflow(error: Any) -> bool:
     return False
 
 
+def overflow_token_bounds(error: Any) -> tuple[int | None, int | None]:
+    """Extract only numeric bounds, including before runtimes redact SDK text."""
+    pending = [error]
+    seen: set[int] = set()
+    while pending:
+        value = pending.pop()
+        if value is None or id(value) in seen:
+            continue
+        seen.add(id(value))
+        if isinstance(value, Mapping):
+            current, limit = value.get("overflow_tokens"), value.get("overflow_limit")
+            if type(current) is int and type(limit) is int and current > limit > 0:
+                return current, limit
+            pending.extend(value.get(key) for key in (
+                "description", "reason", "text", "response_body_text", "responseBody",
+                "message", "data", "error", "body", "details",
+            ))
+        elif isinstance(value, str):
+            for pattern in _TOKEN_BOUND_PATTERNS:
+                match = pattern.search(value)
+                if match:
+                    first, second = (int(n.replace(",", "")) for n in match.groups())
+                    current, limit = max(first, second), min(first, second)
+                    if current > limit > 0:
+                        return current, limit
+        elif isinstance(value, BaseException):
+            pending.extend((value.__cause__ or value.__context__, str(value),
+                            getattr(value, "message", None), getattr(value, "body", None),
+                            getattr(value, "details", None)))
+    return None, None
+
+
 OVERFLOW_ERROR_CODE = "context_length_exceeded"
 
 
@@ -137,9 +178,8 @@ def provider_overflow_details(exc: BaseException) -> dict[str, Any] | None:
     """Safe ``ProviderRuntimeError.details`` for an SDK/HTTP overflow error.
 
     Runtimes do not copy provider text into their errors (credential
-    redaction), so overflow evidence must be classified where the SDK
-    exception is caught. The returned mapping carries only a stable code and
-    the HTTP status; callers merge it into the details they raise with.
+    redaction), so evidence and bounds are extracted where the SDK exception
+    is caught. Only a stable code, HTTP status and numeric bounds are returned.
     """
     status = getattr(exc, "status_code", None)
     if status is None:
@@ -157,6 +197,11 @@ def provider_overflow_details(exc: BaseException) -> dict[str, Any] | None:
     if not any(is_context_overflow(candidate) for candidate in candidates):
         return None
     details: dict[str, Any] = {"code": OVERFLOW_ERROR_CODE, "classification": "context_overflow"}
+    for candidate in candidates:
+        current, limit = overflow_token_bounds(candidate)
+        if current is not None:
+            details.update(overflow_tokens=current, overflow_limit=limit)
+            break
     if isinstance(status, int):
         details["status_code"] = status
     return details
@@ -177,6 +222,9 @@ def overflow_http_details(status_code: Any, body: Any) -> dict[str, Any] | None:
     if not is_context_overflow(parsed):
         return None
     details: dict[str, Any] = {"code": OVERFLOW_ERROR_CODE, "classification": "context_overflow"}
+    current, limit = overflow_token_bounds(parsed)
+    if current is not None:
+        details.update(overflow_tokens=current, overflow_limit=limit)
     if isinstance(status_code, int):
         details["status_code"] = status_code
     return details

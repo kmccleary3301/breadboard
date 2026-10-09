@@ -273,6 +273,8 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
+    if "omp_inline_snapcompact" in request_view[:-1]:
+        raise PresetError(f"preset {config.preset}: omp_inline_snapcompact must be the final request_view entry")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)
@@ -289,7 +291,8 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     if unknown_steps:
         raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
-    order = None
+    # Request-only stages remain addressable, but are not compaction stages.
+    order = tuple(stage_id for stage_id in ids if stage_id not in request_view)
     if order_source == "omp_method_order":
         order = config.settings.method_order
     attempts = config.max_passes_per_turn if config.max_passes_per_turn is not None else preset_attempts

@@ -9,6 +9,7 @@ run, per-turn pass counting, lifecycle events and snapshot persistence.
 from __future__ import annotations
 
 import copy
+from dataclasses import replace
 import logging
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
@@ -20,7 +21,7 @@ from .methods import (
     SummaryModel as SummaryModelProtocol,
 )
 from .images import drop_images
-from .overflow import is_context_overflow
+from .overflow import is_context_overflow, overflow_token_bounds
 from .pipeline import CompactionOutcome
 from .presets import CompactionConfig, Recipe, build_recipe, load_compaction_config
 from .primitives.accounting import OccupancyInput, normalize_usage
@@ -205,6 +206,8 @@ class CompactionController:
             supports_images=supports_images,
             turn_index=turn_index,
             context_window=context_window,
+            conductor=conductor,
+            client=client,
         )
 
     def build_request_view(
@@ -216,6 +219,8 @@ class CompactionController:
         supports_images: bool = False,
         turn_index: Optional[int] = None,
         context_window: Optional[int] = None,
+        conductor: Optional[Any] = None,
+        client: Optional[Any] = None,
     ) -> List[Dict[str, Any]]:
         """Build request view with optional pruning, projection, and inline imaging."""
         messages = session_state.provider_messages
@@ -224,59 +229,67 @@ class CompactionController:
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
 
-        # 1. Prune tool results if enabled
-        if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
+        # Run request steps in recipe order, separately from compaction.
+        records = []
+        stages = []
+        if self.active and self.recipe.request_view:
+            token_limits = self.resolve_token_limits(session_state, conductor, target.model)
+            summarizer = self.summary_model
+            if summarizer is None and callable(getattr(runtime, "invoke", None)):
+                summarizer = ConductorSummaryModel(
+                    runtime=runtime, client=client, model=self.settings.summary_model or target.model,
+                    session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
+                    turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
+                )
             context = CompactionContext(
-                **self.resolve_token_limits(session_state),
-                messages=messages,
-                state=compaction_state,
-                settings=self.settings,
-                reason="threshold",
-                target=target,
+                messages=messages, state=compaction_state, settings=self.settings, reason="request", target=target,
                 context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
                 tokens_before=self.recipe.count(compaction_state.project(messages, target)),
+                summarizer=summarizer, supports_images=supports_images,
+                **token_limits,
             )
-            prune_record = prune_tool_results(context)
-            if prune_record is not None:
-                compaction_state.append(prune_record, messages)
-                self._after_record_appended(session_state, prune_record, target, turn_index)
-
-        view_stages = [step for step in self.recipe.request_view if step in self.recipe.pipeline.stages]
-        if self.active and view_stages:
-            context = CompactionContext(
-                messages=messages, state=compaction_state, settings=self.settings, reason="threshold", target=target,
-                context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
-                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
-                **self.resolve_token_limits(session_state),
+            target_tokens = self.recipe.target_tokens(
+                "threshold", context.context_window, context.max_output_tokens, context.max_input_tokens,
             )
-            outcome = self.recipe.pipeline.run(
-                context, target_tokens=self.recipe.target_tokens("threshold", context.context_window), order=view_stages,
-            )
-            for record in outcome.records:
-                self._after_record_appended(session_state, record, target, turn_index)
-            self._record_event(session_state, "compaction_finished",
-                               {"preset": self.recipe.preset_id, "reason": "request_view", "status": outcome.status,
-                                "stages": [stage.to_dict() for stage in outcome.stages]}, turn_index)
-        # 2. Project view
+            initial_tokens = context.tokens_before
+            for step in self.recipe.request_view:
+                if step == "omp_inline_snapcompact":
+                    continue
+                context.tokens_before = self.recipe.count(context.projected())
+                if step == "omp_prune":
+                    record = prune_tool_results(replace(context, reason="threshold")) if self.settings.prune.enabled else None
+                    if record is not None:
+                        compaction_state.append(record, messages)
+                        self._after_record_appended(session_state, record, target, turn_index)
+                else:
+                    outcome = self.recipe.pipeline.run(context, target_tokens=target_tokens, order=[step])
+                    records.extend(outcome.records)
+                    stages.extend(outcome.stages)
+                    for record in outcome.records:
+                        self._after_record_appended(session_state, record, target, turn_index)
+        # Project once after the ledger-producing request steps.
         view = compaction_state.project(messages, target)
-        # Summary flags belong to the ledger, not the provider wire contract.
-        for message in view:
-            message.pop("summary", None)
+        if stages:
+            final_tokens = self.recipe.count(view)
+            outcome = CompactionOutcome(
+                tuple(records), tuple(stages), initial_tokens, final_tokens, target_tokens,
+                bool(records) and final_tokens <= target_tokens,
+            )
+            self._record_event(
+                session_state, "compaction_finished",
+                {"preset": self.recipe.preset_id, "reason": "request", "status": outcome.status,
+                 "stages": [stage.to_dict() for stage in stages]}, turn_index,
+            )
 
         # 3. Native markers replay only through a runtime that owns them.
         if not callable(getattr(runtime, "compaction_port", None)):
             view = strip_native_markers(view)
-
-        # 4. Inline snapcompact if model supports images
         if self.active and supports_images and "omp_inline_snapcompact" in self.recipe.request_view:
             view = apply_inline_snapcompact(
-                view,
-                self.settings,
-                supports_images=supports_images,
-                provider=target.provider,
-                api=target.api,
-                model_id=target.model,
+                view, self.settings, supports_images=True, provider=target.provider,
+                api=target.api, model_id=target.model,
             )
+
 
         return view
 
@@ -366,6 +379,8 @@ class CompactionController:
         supports_images: bool = False,
         order: Optional[Sequence[str]] = None,
         clock: Optional[Callable[[], str]] = None,
+        overflow_tokens: Optional[int] = None,
+        overflow_limit: Optional[int] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
         if reason not in self.recipe.targets:
@@ -401,8 +416,6 @@ class CompactionController:
             kwargs["clock"] = clock
 
         token_limits = self.resolve_token_limits(session_state, conductor, resolved_target.model)
-        usage = normalize_usage(session_state.get_provider_metadata("usage"))
-        provider_tokens = (usage.total or usage.input + usage.output + usage.cache_read + usage.cache_write) if usage else None
         context = CompactionContext(
             messages=messages,
             state=compaction_state,
@@ -415,7 +428,8 @@ class CompactionController:
             remote_ports=remote_ports,
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
-            provider_tokens=provider_tokens,
+            overflow_tokens=overflow_tokens,
+            overflow_limit=overflow_limit,
             **token_limits,
             **kwargs,
         )
@@ -543,6 +557,7 @@ class CompactionController:
         ):
             return False
         self.record_pass(turn_index)
+        overflow_tokens, overflow_limit = overflow_token_bounds(exc)
         outcome = self.compact(
             session_state,
             reason="overflow",
@@ -555,6 +570,8 @@ class CompactionController:
             ),
             turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
+            overflow_tokens=overflow_tokens,
+            overflow_limit=overflow_limit,
         )
         if not outcome.compacted:
             return False
