@@ -158,8 +158,20 @@ def _paths_config(preset_id: str, doc: Mapping[str, Any], raw: Mapping[str, Any]
     keys = (doc.get("native_settings") or {}).get("keys") or {}
     bb: Dict[str, Any] = {}
     native: Dict[str, Any] = {}
-    seen: Dict[str, str] = {}
+    # Accept nested spelling only when the preset declares the dotted leaf keys.
+    expanded: Dict[str, Any] = {}
+    def expand(key: str, value: Any) -> None:
+        if key not in keys and isinstance(value, Mapping) and any(k.startswith(key + ".") for k in keys):
+            for child, child_value in value.items():
+                expand(f"{key}.{child}", child_value)
+        else:
+            if key in expanded:
+                raise ValueError(f"duplicate compaction key {key!r}")
+            expanded[key] = value
     for key, value in raw.items():
+        expand(key, value)
+    seen: Dict[str, str] = {}
+    for key, value in expanded.items():
         if key in _BB_KEYS:
             attr = _BB_KEYS[key]
             if attr in seen:
@@ -205,8 +217,9 @@ class Recipe:
         stage_order = self.order if self.order is not None else self.pipeline.order
         return self.settings.enabled and bool(stage_order)
 
-    def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None) -> int:
-        return self.targets[reason].tokens(context_window, max_output)
+    def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None,
+                      max_input: Optional[int] = None) -> int:
+        return self.targets[reason].tokens(context_window, max_output, max_input)
 
     def pressure(self, data: TriggerInput, history: Any) -> Optional[Pressure]:
         """The first firing trigger's decision; else the first trigger's; ``None`` without triggers."""
@@ -260,9 +273,6 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
-    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS]
-    if unknown_steps:
-        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)
@@ -275,6 +285,9 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     ids = [s.id for s in stages]
     if len(set(ids)) != len(ids):
         raise PresetError(f"preset {config.preset} has duplicate stage ids {ids}")
+    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS and s not in ids]
+    if unknown_steps:
+        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
     order = None
     if order_source == "omp_method_order":

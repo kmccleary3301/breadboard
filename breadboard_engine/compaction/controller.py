@@ -114,6 +114,24 @@ class CompactionController:
 
         return None
 
+    def resolve_token_limits(self, session_state: Any, conductor: Optional[Any] = None,
+                             model: Optional[str] = None) -> Dict[str, Optional[int]]:
+        """Model input/output caps, from the same metadata sources as the window."""
+        profile = getattr(session_state, "_episode_provider_profile", None)
+        limits: Dict[str, Optional[int]] = {}
+        config = getattr(conductor, "config", None) or {}
+        target_model = model or getattr(conductor, "model", None)
+        entry = next((m for m in (config.get("providers") or {}).get("models") or []
+                      if isinstance(m, Mapping) and m.get("model_id") == target_model), {})
+        for key in ("max_input_tokens", "max_output_tokens"):
+            value = getattr(profile, key, None)
+            if value is None:
+                value = session_state.get_provider_metadata(key)
+            if value is None:
+                value = entry.get(key)
+            limits[key] = value if type(value) is int and value > 0 else None
+        return limits
+
     def resolve_supports_images(self, *, conductor: Optional[Any] = None, model: Optional[str] = None) -> bool:
         """Image input capability from the model's provider config entry.
 
@@ -162,10 +180,12 @@ class CompactionController:
             conductor=conductor, session_state=session_state, model=model
         )
         supports_images = self.resolve_supports_images(conductor=conductor, model=model)
+        token_limits = self.resolve_token_limits(session_state, conductor, model)
         if self.should_trigger_threshold(
             session_state,
             context_window=context_window,
             last_usage=session_state.get_provider_metadata("usage"),
+            **token_limits,
         ):
             self.compact(
                 session_state,
@@ -207,6 +227,7 @@ class CompactionController:
         # 1. Prune tool results if enabled
         if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
             context = CompactionContext(
+                **self.resolve_token_limits(session_state),
                 messages=messages,
                 state=compaction_state,
                 settings=self.settings,
@@ -220,8 +241,27 @@ class CompactionController:
                 compaction_state.append(prune_record, messages)
                 self._after_record_appended(session_state, prune_record, target, turn_index)
 
+        view_stages = [step for step in self.recipe.request_view if step in self.recipe.pipeline.stages]
+        if self.active and view_stages:
+            context = CompactionContext(
+                messages=messages, state=compaction_state, settings=self.settings, reason="threshold", target=target,
+                context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
+                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
+                **self.resolve_token_limits(session_state),
+            )
+            outcome = self.recipe.pipeline.run(
+                context, target_tokens=self.recipe.target_tokens("threshold", context.context_window), order=view_stages,
+            )
+            for record in outcome.records:
+                self._after_record_appended(session_state, record, target, turn_index)
+            self._record_event(session_state, "compaction_finished",
+                               {"preset": self.recipe.preset_id, "reason": "request_view", "status": outcome.status,
+                                "stages": [stage.to_dict() for stage in outcome.stages]}, turn_index)
         # 2. Project view
         view = compaction_state.project(messages, target)
+        # Summary flags belong to the ledger, not the provider wire contract.
+        for message in view:
+            message.pop("summary", None)
 
         # 3. Native markers replay only through a runtime that owns them.
         if not callable(getattr(runtime, "compaction_port", None)):
@@ -246,6 +286,8 @@ class CompactionController:
         *,
         context_window: Optional[int],
         last_usage: Optional[Any] = None,
+        max_input_tokens: Optional[int] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> bool:
         """Whether any preset trigger fires for the current history and last usage."""
         if not self.active or context_window is None or context_window <= 0:
@@ -261,7 +303,8 @@ class CompactionController:
         # appended since (no new message arrived), that request predates the
         # compaction and its usage would retrigger it.
         usage_fresh = len(messages) != self._messages_len_at_last_record
-        data = TriggerInput(OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window)
+        data = TriggerInput(OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window,
+                            max_output_tokens, max_input_tokens)
         pressure = self.recipe.pressure(data, messages)
         return pressure is not None and pressure.fires
 
@@ -357,6 +400,9 @@ class CompactionController:
         if clock is not None:
             kwargs["clock"] = clock
 
+        token_limits = self.resolve_token_limits(session_state, conductor, resolved_target.model)
+        usage = normalize_usage(session_state.get_provider_metadata("usage"))
+        provider_tokens = (usage.total or usage.input + usage.output + usage.cache_read + usage.cache_write) if usage else None
         context = CompactionContext(
             messages=messages,
             state=compaction_state,
@@ -369,10 +415,13 @@ class CompactionController:
             remote_ports=remote_ports,
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
+            provider_tokens=provider_tokens,
+            **token_limits,
             **kwargs,
         )
 
-        target_tokens = self.recipe.target_tokens(reason, resolved_window)
+        target_tokens = self.recipe.target_tokens(reason, resolved_window, token_limits["max_output_tokens"],
+                                                 token_limits["max_input_tokens"])
         self._record_event(
             session_state,
             "compaction_started",

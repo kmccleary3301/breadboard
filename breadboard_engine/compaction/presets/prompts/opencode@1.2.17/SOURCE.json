@@ -1,12 +1,17 @@
 {
   "repo": "https://github.com/anomalyco/opencode",
   "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
-  "files": {
-    "compaction.txt": "packages/opencode/src/agent/prompt/compaction.txt:1-14",
-    "user_template.txt": "packages/opencode/src/session/compaction.ts:173-199",
-    "continuation.txt": "packages/opencode/src/session/compaction.ts:276",
-    "overflow_media_explanation.txt": "packages/opencode/src/session/compaction.ts:272-275",
-    "prune_placeholder.txt": "packages/opencode/src/session/message-v2.ts:636"
+  "license": "MIT",
+  "source_sha256": {
+    "packages/opencode/src/session/compaction.ts": "cd0ed98c7f93e09a84767e072564a690cf816f701ea7305314daf0fb6ce466de",
+    "packages/opencode/src/session/message-v2.ts": "f796a51c9dbaee650295bea267c662197ad413ac6f5f678621c5b5c3eca43d22",
+    "packages/opencode/src/agent/prompt/compaction.txt": "21b9a0328c7ddd50d90d9504e4d3c5d9cf721ebfed6cf5a75ffdec18cd26a814"
   },
-  "license": "MIT"
+  "files": {
+    "system.txt": "packages/opencode/src/agent/prompt/compaction.txt:1-14",
+    "summary.txt": "packages/opencode/src/session/compaction.ts:173-199",
+    "marker.txt": "packages/opencode/src/session/message-v2.ts:590-595",
+    "overflow-prefix.txt": "packages/opencode/src/session/compaction.ts:272-274",
+    "continue.txt": "packages/opencode/src/session/compaction.ts:276"
+  }
 }

@@ -62,8 +62,10 @@ def test_overflow_without_compaction_ends_the_run(tmp_path: Path, monkeypatch: p
     [
         "compaction:\n  enabled: true\n  contextWindow: 200000\n  keepRecentTokens: 50\n  methodOrder: [soft]\n",
         "compaction:\n  enabled: true\n  preset: pi@0.73.1\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
+        "compaction:\n  enabled: true\n  preset: opencode@1.2.17\n  contextWindow: 200000\n",
+        "compaction:\n  enabled: true\n  preset: oh-my-opencode@3.10.0\n  contextWindow: 200000\n",
     ],
-    ids=["omp", "pi"],
+    ids=["omp", "pi", "opencode", "oh-my-opencode"],
 )
 def test_overflow_with_compaction_summarizes_and_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compaction: str

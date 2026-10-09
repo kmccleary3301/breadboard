@@ -129,6 +129,8 @@ class Stage:
     reasons: Optional[FrozenSet[str]] = None
     """``when.reasons``: compaction reasons the stage runs for (all if ``None``)."""
     accept: Literal["progress", "any"] = "progress"
+    stop_on_detail: Optional[str] = None
+    report_detail: bool = False
 
 
 class Pipeline:
@@ -192,7 +194,10 @@ class Pipeline:
             records.append(record)
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
-            results.append(StageResult(stage_id, status, None, after, record.record_id))
+            detail = f"{stage_id} {status}" if stage.report_detail else None
+            results.append(StageResult(stage_id, status, detail, after, record.record_id))
+            if stage.stop_on_detail is not None and record.details.get(stage.stop_on_detail):
+                stopped = f"stopped after {stage_id} {stage.stop_on_detail}"
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
         return CompactionOutcome(
@@ -218,15 +223,17 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
         reasons = frozenset(raw_reasons)
         when_params.done()
     accept = params.choice("accept", ("progress", "any"), "progress")
+    stop_on_detail = params.str("stop_on_detail", None)
+    report_detail = params.bool("report_detail", False)
     algorithm = params.str("algorithm", None)
     if algorithm is not None:
         if algorithm not in algorithms:
             raise ValueError(f"{params.where}.algorithm {algorithm!r} is unknown; expected one of {sorted(algorithms)}")
         params.done()
-        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept)
+        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, stop_on_detail, report_detail)
     selector = build_selector(params.child(params.mapping("select"), "select"))
     reducer = build_reducer(params.child(params.mapping("reduce"), "reduce"))
     raw_place = params.mapping("place", None)
     placement = None if raw_place is None else build_placement(params.child(raw_place, "place"))
     params.done()
-    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept)
+    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, stop_on_detail, report_detail)

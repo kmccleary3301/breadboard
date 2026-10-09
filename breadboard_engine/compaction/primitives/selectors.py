@@ -93,7 +93,11 @@ class RecentTokens:
         return Selection(first_kept_index=first, summarize=summarize, turn_prefix=turn_prefix)
 
 
-SELECTOR_KINDS = {RecentTokens.kind: RecentTokens}
+from .history_selection import LargestFirstMasking, ProtectedToolOutputs, WholeHistoryReplay
+
+
+SELECTOR_KINDS = {cls.kind: cls for cls in
+                  (RecentTokens, WholeHistoryReplay, ProtectedToolOutputs, LargestFirstMasking)}
 
 
 def build_selector(params: Params) -> Any:

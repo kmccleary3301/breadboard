@@ -1,0 +1,107 @@
+schema: bb.compaction_preset.v1
+id: opencode@1.2.17
+source:
+  repo: https://github.com/anomalyco/opencode
+  commit: 715b844c2a88810b6178d7a2467c7d36ea8fb764
+  evidence:
+  - packages/opencode/src/session/compaction.ts:30-294
+  - packages/opencode/src/session/message-v2.ts:496-729
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    compaction.auto:
+    - triggers.0.enabled
+    compaction.prune:
+    - pipeline.stages.0.select.enabled
+    compaction.reserved:
+    - triggers.0.limit.reserved
+    - target.threshold.reserved
+    - target.manual.reserved
+    - target.overflow.reserved
+estimator: bb_chars4
+triggers:
+- kind: threshold
+  accounting:
+    kind: provider_total
+    usage_total: total_or_components
+    without_usage: skip
+  limit:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  compare: '>='
+  phase: every_request
+  severity: soft
+  enabled: true
+  disable_zero_window: true
+  provider_overflow: true
+target:
+  threshold:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  manual:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  overflow:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+overflow:
+  max_attempts_per_turn: 1
+  policy: compact
+request_view:
+- prune
+pipeline:
+  mode: sequence
+  stages:
+  - id: prune
+    report_detail: true
+    select:
+      kind: protected_tool_outputs
+      enabled: true
+      protect_tokens: 40000
+      protect_user_turns: 2
+      min_savings: 20000
+      exempt_tools:
+      - skill
+      stop_at_summary: true
+      placeholder: '[Old tool result content cleared]'
+    reduce:
+      kind: mask_outputs
+      placeholder: '[Old tool result content cleared]'
+  - id: summary
+    report_detail: true
+    accept: any
+    select:
+      kind: whole_history_replay
+      exclude_latest_user_on:
+      - overflow
+    reduce:
+      kind: message_summary
+      system:
+        file: system.txt
+      prompt:
+        file: summary.txt
+      marker:
+        file: marker.txt
+      strip_media: true
+      max_tokens: null
+      contributors: []
+    place:
+      kind: summary_replay
+      marker:
+        file: marker.txt
+      continuation:
+        file: continue.txt
+      overflow_prefix:
+        file: overflow-prefix.txt
+      auto_reasons:
+      - threshold
+      - overflow

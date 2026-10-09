@@ -31,7 +31,7 @@ from breadboard_engine.compaction.primitives.triggers import TriggerInput
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
-CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details"}
+CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details", "edits", "failure"}
 
 
 def _cases() -> List[Any]:
@@ -65,6 +65,8 @@ def _recipe(case: Mapping[str, Any]):
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
+    usage = normalize_usage(inp.get("usage"))
+    provider_tokens = (usage.total or usage.input + usage.output + usage.cache_read + usage.cache_write) if usage else None
     return CompactionContext(
         messages=messages,
         state=state,
@@ -74,6 +76,9 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         context_window=inp["context_window"],
         tokens_before=recipe.count(state.project(messages, TARGET)),
         summarizer=summarizer,
+        max_output_tokens=inp.get("max_output_tokens"),
+        max_input_tokens=inp.get("max_input_tokens"),
+        provider_tokens=provider_tokens,
     )
 
 
@@ -129,10 +134,14 @@ def test_oracle_case(case_file: Path) -> None:
             OccupancyInput(messages, normalize_usage(inp.get("usage")), usage_fresh=True),
             inp["context_window"],
             inp.get("max_output_tokens"),
+            inp.get("max_input_tokens"),
+            inp.get("reason") or "threshold",
         )
         pressure = recipe.pressure(data, messages)
         assert pressure is not None, "trigger case for a preset without triggers"
-        assert pressure.to_dict() == expect["trigger"]
+        actual_pressure = pressure.to_dict()
+        assert set(expect["trigger"]) <= set(actual_pressure), "unknown trigger expectation keys"
+        assert {key: actual_pressure[key] for key in expect["trigger"]} == expect["trigger"]
 
     compaction_keys = _EXPECT_KEYS - {"trigger"}
     if not compaction_keys & set(expect):
@@ -147,8 +156,11 @@ def test_oracle_case(case_file: Path) -> None:
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
     if "selection" in expect:
-        stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
-        assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
+        order = inp.get("stage_ids") or recipe.pipeline.order
+        boundary_selection = bool(set(expect["selection"]) - {"targets"})
+        stage = next(recipe.pipeline.stages[name] for name in order
+                     if isinstance(recipe.pipeline.stages[name].step, ComposedStep)
+                     and (recipe.pipeline.stages[name].step.placement is not None) == boundary_selection)
         selection = stage.step.selector.select(context)
         got_selection = {
             k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
@@ -157,7 +169,9 @@ def test_oracle_case(case_file: Path) -> None:
 
     outcome = recipe.pipeline.run(
         context,
-        target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
+        target_tokens=recipe.target_tokens(context.reason, inp["context_window"],
+                                          inp.get("max_output_tokens"), inp.get("max_input_tokens")),
+        order=inp.get("stage_ids"),
     )
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
 
@@ -167,12 +181,13 @@ def test_oracle_case(case_file: Path) -> None:
         details = [s.detail for s in outcome.stages if s.status == "failed"]
         assert f"{failure['kind']}: {failure['message']}" in details, outcome.stages
     if "summary_requests" in expect:
-        got = [
-            {"system": r.system, "messages": [dict(m) for m in r.messages], "max_tokens": r.max_tokens}
-            for r in summaries.requests
-        ]
-        want = [{k: r[k] for k in ("system", "messages", "max_tokens")} for r in expect["summary_requests"]]
-        assert got == want
+        fields = {"system", "messages", "max_tokens", "tools"}
+        assert len(summaries.requests) == len(expect["summary_requests"])
+        for request, expected in zip(summaries.requests, expect["summary_requests"]):
+            assert set(expected) <= fields, f"unchecked summary request keys {set(expected) - fields}"
+            actual = {"system": request.system, "messages": [dict(m) for m in request.messages],
+                      "max_tokens": request.max_tokens, "tools": list(request.tools)}
+            assert {key: actual[key] for key in expected} == expected
     if "summary" in expect or "details" in expect:
         boundaries = [r for r in outcome.records if r.is_boundary]
         assert boundaries, outcome.stages

@@ -6,16 +6,14 @@
     "repo": "https://github.com/anomalyco/opencode",
     "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
     "evidence": [
-      "packages/opencode/src/session/message-v2.ts:571-576",
-      "packages/opencode/src/session/compaction.ts:168-176",
-      "packages/opencode/src/session/compaction.ts:192-205",
-      "packages/opencode/src/agent/prompt/compaction.txt:1"
+      "packages/opencode/src/session/compaction.ts:101-294",
+      "packages/opencode/src/session/message-v2.ts:490-729"
     ]
   },
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "Verbatim system prompt from compaction.txt:1 and defaultPrompt template from compaction.ts:173-199. Media stripping from message-v2.ts:571-576 replaces image/pdf parts with `[Attached ${part.mime}: ${part.filename ?? 'file'}]`."
+    "notes": "Executed pinned SessionCompaction.process and MessageV2.toModelMessages with AI SDK 5.0.124, scripted LLM and in-memory session persistence. Plugin context comes from the pinned injector. Selection excludes the synthetic marker, whose rendered text remains in the request and projection."
   },
   "input": {
     "messages": [
@@ -29,18 +27,18 @@
           {
             "type": "image_url",
             "image_url": {
-              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+              "url": "data:image/png;base64,AA=="
             }
           }
         ]
       },
       {
         "role": "assistant",
-        "content": "I see the diagram showing components A and B."
+        "content": "I see components A and B."
       }
     ],
     "usage": {
-      "input_tokens": 150000,
+      "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,
@@ -78,7 +76,16 @@
             "content": [
               {
                 "type": "text",
-                "text": "I see the diagram showing components A and B."
+                "text": "I see components A and B."
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What did we do so far?"
               }
             ]
           },
@@ -93,6 +100,42 @@
           }
         ],
         "tools": []
+      }
+    ],
+    "selection": {
+      "summarize": [
+        0,
+        1
+      ]
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What did we do so far?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Summary of conversation so far"
+          }
+        ],
+        "summary": true
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+          }
+        ]
       }
     ]
   }

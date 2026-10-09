@@ -54,6 +54,7 @@ class ConductorSummaryModel:
 
     def complete(self, request: SummaryRequest) -> SummaryResponse:
         model = request.model or self.model
+        budget = {} if request.max_tokens is None else {"max_tokens": request.max_tokens}
         messages: List[Dict[str, Any]] = []
         if request.system:
             messages.append({"role": "system", "content": request.system})
@@ -70,7 +71,7 @@ class ConductorSummaryModel:
                 runtime_id=getattr(descriptor, "runtime_id", "unknown"),
                 model=model,
                 request_headers={},
-                request_body={"messages": messages, "max_tokens": request.max_tokens},
+                request_body={"messages": messages, **budget},
                 stream=False,
                 tool_count=0,
                 endpoint="compaction/summary",
@@ -90,7 +91,7 @@ class ConductorSummaryModel:
                 "stream": False,
                 "compaction_summary": True,
                 "summary_purpose": request.purpose,
-                "max_tokens": request.max_tokens,
+                **budget,
             },
             session_id=(get_meta("session_id") if callable(get_meta) else None)
             or getattr(state, "session_id", None),
