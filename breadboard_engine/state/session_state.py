@@ -26,6 +26,7 @@ from ..provider.ir import (
 )
 from ..orchestration.coordination import build_coordination_inspection_snapshot
 from ..todo.projection import project_store_snapshot_to_tui_envelope
+from ..compaction.state import CompactionState
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
@@ -198,6 +199,23 @@ class SessionState:
         self._provider_messages_before_last_send: Optional[
             List[Dict[str, Any]]
         ] = None
+        self._compaction_state = CompactionState()
+
+    @property
+    def compaction_state(self) -> CompactionState:
+        with self._compaction_lock:
+            return self._compaction_state
+
+    @compaction_state.setter
+    def compaction_state(self, state: CompactionState) -> None:
+        with self._compaction_lock:
+            if not isinstance(state, CompactionState):
+                raise TypeError("compaction_state must be a CompactionState")
+            self._compaction_state = state
+
+    def reset_compaction_state(self) -> None:
+        with self._compaction_lock:
+            self._compaction_state = CompactionState()
 
     def set_event_emitter(
         self,
@@ -1233,6 +1251,11 @@ class SessionState:
                 "model": model,
                 "messages": copy.deepcopy(self.messages),
                 "provider_messages": copy.deepcopy(self.provider_messages),
+                **(
+                    {"compaction_state": self.compaction_state.to_list()}
+                    if self.compaction_state.records
+                    else {}
+                ),
                 "transcript": copy.deepcopy(self.transcript),
                 "diff": copy.deepcopy(diff or {"ok": False, "data": {"diff": ""}}),
                 "debug_info": copy.deepcopy(self.get_debug_info()),

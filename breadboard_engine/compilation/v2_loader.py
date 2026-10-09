@@ -242,9 +242,21 @@ def _compat_number(
         raise ValueError(f"{path} must be numeric {comparison} when provided")
 
 
+def _validate_compaction(doc: Mapping[str, Any]) -> None:
+    if "compaction" not in doc:
+        return
+    from ..compaction.settings import settings_from_config
+
+    try:
+        settings_from_config(doc.get("compaction"))
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"invalid compaction config: {exc}") from exc
+
+
 def _validate_schema_less_v2_compatibility(doc: Dict[str, Any]) -> None:
     """Validate historical typed-v2 fields while retaining its open legacy surface."""
     _validate_agent_config_surface(doc, "bb.agent_config_surface.v1")
+    _validate_compaction(doc)
 
     features = _compat_mapping(doc, "features", "features")
     rlm = _compat_mapping(features, "rlm", "features.rlm") if features is not None else None
@@ -448,6 +460,7 @@ def _validate_v2(doc: Dict[str, Any]) -> None:
     # These mixed compatibility rules remain hand-validated: policy-profile
     # normalization and budget-alias precedence are not equivalent to the
     # explicit-v2 schema's per-field checks.
+    _validate_compaction(doc)
     long_running = doc.get("long_running")
     if long_running is not None:
         if not isinstance(long_running, dict):

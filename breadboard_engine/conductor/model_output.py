@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ..compaction.overflow import is_context_overflow
 from ..core.core import ToolDefinition
 from .context import ConductorContext
 from ..messaging.markdown_logger import MarkdownLogger
@@ -1236,7 +1237,9 @@ def retry_with_fallback(
         except Exception:
             pass
 
-    if last_error and not attempted:
+    # Oversized requests are not route-health failures; counting them would
+    # open the route circuit before compaction gets to retry.
+    if last_error and not attempted and not is_context_overflow(last_error):
         conductor.route_health.record_failure(
             model, _safe_failure_reason(last_error)
         )
@@ -1277,8 +1280,9 @@ def retry_with_fallback(
             retry_reason = _safe_failure_reason(retry_error)
             attempted.append((model, stream_responses, retry_reason))
             last_error = retry_error
-            conductor.route_health.record_failure(model, retry_reason)
-            conductor._update_health_metadata(session_state)
+            if not is_context_overflow(retry_error):
+                conductor.route_health.record_failure(model, retry_reason)
+                conductor._update_health_metadata(session_state)
 
     route_id = None
     if runtime_context and isinstance(runtime_context.extra, dict):
@@ -1539,10 +1543,11 @@ def retry_with_fallback(
             except Exception:
                 pass
             attempted.append((fallback_model, False, failure_reason))
-            conductor.route_health.record_failure(
-                fallback_model, failure_reason
-            )
-            conductor._update_health_metadata(session_state)
+            if not is_context_overflow(exc):
+                conductor.route_health.record_failure(
+                    fallback_model, failure_reason
+                )
+                conductor._update_health_metadata(session_state)
             fallback_recorder = getattr(
                 runtime_context, "exchange_recorder", None
             )
