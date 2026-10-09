@@ -1,0 +1,106 @@
+"""Context compaction for BreadBoard model histories.
+
+Core primitives (settings, token accounting, overflow classification,
+cut points, append-only records, projection, and the method cascade) live
+here; methods and provider adapters live in sibling modules.
+"""
+
+from .methods import (
+    ArtifactSink,
+    CompactionCancelled,
+    CompactionContext,
+    CompactionError,
+    CompactionMethod,
+    CompactionOutcome,
+    Compactor,
+    MethodAttempt,
+    MethodUnavailable,
+    NativeCompactionError,
+    RemoteCompactionPort,
+    SummaryModel,
+    SummaryRequest,
+    SummaryResponse,
+)
+from .overflow import (
+    OVERFLOW_ERROR_CODE,
+    is_context_overflow,
+    overflow_http_details,
+    provider_overflow_details,
+    text_indicates_context_overflow,
+)
+from .settings import (
+    COMPACTION_METHODS,
+    DEFAULT_METHOD_ORDER,
+    CompactionSettings,
+    PruneSettings,
+    ShakeSettings,
+    SnapcompactSettings,
+    resolve_threshold_tokens,
+    settings_from_config,
+    should_compact,
+    summary_max_tokens,
+)
+from .state import (
+    NATIVE_MARKER_KEY,
+    CompactionRecord,
+    CompactionState,
+    CompactionStateError,
+    MessageEdit,
+    NativeCompaction,
+    ProjectionTarget,
+    strip_native_markers,
+)
+from .tokens import (
+    compaction_context_tokens,
+    context_tokens_from_usage,
+    estimate_message_tokens,
+    estimate_messages_tokens,
+)
+from .transcript import CutPoint, check_tool_pairing, find_cut_point
+
+__all__ = [
+    "ArtifactSink",
+    "COMPACTION_METHODS",
+    "CompactionCancelled",
+    "CompactionContext",
+    "CompactionError",
+    "CompactionMethod",
+    "CompactionOutcome",
+    "CompactionRecord",
+    "CompactionSettings",
+    "CompactionState",
+    "CompactionStateError",
+    "Compactor",
+    "CutPoint",
+    "DEFAULT_METHOD_ORDER",
+    "MessageEdit",
+    "MethodAttempt",
+    "MethodUnavailable",
+    "NATIVE_MARKER_KEY",
+    "OVERFLOW_ERROR_CODE",
+    "NativeCompaction",
+    "NativeCompactionError",
+    "ProjectionTarget",
+    "PruneSettings",
+    "RemoteCompactionPort",
+    "ShakeSettings",
+    "SnapcompactSettings",
+    "SummaryModel",
+    "SummaryRequest",
+    "SummaryResponse",
+    "check_tool_pairing",
+    "compaction_context_tokens",
+    "context_tokens_from_usage",
+    "estimate_message_tokens",
+    "estimate_messages_tokens",
+    "find_cut_point",
+    "is_context_overflow",
+    "overflow_http_details",
+    "provider_overflow_details",
+    "resolve_threshold_tokens",
+    "settings_from_config",
+    "should_compact",
+    "strip_native_markers",
+    "summary_max_tokens",
+    "text_indicates_context_overflow",
+]

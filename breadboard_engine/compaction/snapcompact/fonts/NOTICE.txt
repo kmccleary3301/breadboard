@@ -1,0 +1,17 @@
+Snapcompact Bundled Fonts Notice
+================================
+
+This directory contains pixel and bitmap fonts used by the Snapcompact renderer:
+
+1. 5x8.bdf, 6x12.bdf, 8x13.bdf:
+   Origin: X.Org distribution / misc-fixed fonts.
+   License: Public domain / MIT X11-style notice.
+
+2. unscii-8.hex:
+   Origin: Unscii pixel font by Ville-Matias Heikkilä (Latin-1 subset).
+   License: Public domain / CC0.
+
+3. Silver.ttf:
+   Origin: Silver pixel font by Poppy Works, Wolfgang Wozniak (https://poppyworks.itch.io/silver)
+   License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+   See Silver.LICENSE in this directory for full details and attribution.
