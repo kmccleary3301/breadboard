@@ -114,6 +114,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     "document",
                     "thinking",
                     "redacted_thinking",
+                    "compaction",
                 }:
                     blocks.append(dict(block))
                 elif block_type in {"tool_call", "tool_result"}:
@@ -167,6 +168,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return call
 
         for message in messages:
+            native_info = message.get("bb_native_compaction")
+            if (
+                isinstance(native_info, dict)
+                and native_info.get("provider") == "anthropic"
+                and native_info.get("api") == "messages"
+            ):
+                items = native_info.get("items") or []
+                converted.append({
+                    "role": "assistant",
+                    "content": [dict(it) for it in items],
+                })
+                continue
             role = message.get("role")
             content = message.get("content")
             if role in {"system", "developer"}:
@@ -306,6 +319,26 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             if blocks:
                 converted.append({"role": role, "content": blocks})
 
+        # Fold replayed compaction blocks into immediately following assistant turns per OMP
+        for i in range(len(converted) - 2, -1, -1):
+            curr = converted[i]
+            nxt = converted[i + 1]
+            if (
+                curr.get("role") == "assistant"
+                and nxt.get("role") == "assistant"
+                and isinstance(curr.get("content"), list)
+                and len(curr["content"]) == 1
+                and isinstance(curr["content"][0], dict)
+                and curr["content"][0].get("type") == "compaction"
+                and isinstance(nxt.get("content"), list)
+            ):
+                converted[i : i + 2] = [
+                    {
+                        **nxt,
+                        "content": [curr["content"][0], *nxt["content"]],
+                    }
+                ]
+
         return (
             "\n\n".join(system_parts) if system_parts else None,
             converted,
@@ -367,6 +400,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             "pause_turn",
             "refusal",
             "model_context_window_exceeded",
+            "compaction",
         }:
             raise ProviderRuntimeError(
                 "Unknown Anthropic stop reason",
@@ -460,6 +494,28 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 }
                 reasoning_blocks.append({"type": "provider_replay", **replay})
                 provider_replay.append(replay)
+            elif block_type == "compaction":
+                compaction_text = self._get_attr(block, "content") or ""
+                sig = self._get_attr(block, "signature")
+                enc = self._get_attr(block, "encrypted_content")
+                payload = {
+                    "type": "anthropicCompaction",
+                    "content": compaction_text,
+                }
+                if sig:
+                    payload["signature"] = sig
+                if enc:
+                    payload["encrypted_content"] = enc
+                replay = {
+                    "provider_id": "anthropic",
+                    "schema_version": "anthropic.messages.v1",
+                    "replay_scope": "same_provider",
+                    "payload": payload,
+                }
+                reasoning_blocks.append({"type": "compaction", **payload})
+                provider_replay.append(replay)
+                if compaction_text and not text_parts:
+                    text_parts.append(compaction_text)
             else:
                 raise ProviderRuntimeError(
                     "Unknown Anthropic response content",
@@ -471,7 +527,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             role="assistant",
             content="".join(text_parts) if text_parts else None,
             tool_calls=tool_calls,
-            finish_reason=stop_reason,
+            finish_reason="stop" if stop_reason == "compaction" else stop_reason,
             index=0,
             raw_message=response,
             annotations={
@@ -1041,6 +1097,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         "pause_turn",
                         "refusal",
                         "model_context_window_exceeded",
+                        "compaction",
                     }:
                         raise ProviderRuntimeError(
                             "Unknown Anthropic message stop reason",
@@ -1068,6 +1125,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     message_stopped = True
                 elif event_type == "ping":
                     continue
+                elif event_type == "error":
+                    err_obj = self._get_attr(event, "error")
+                    from ...compaction.overflow import overflow_http_details
+                    details: Dict[str, Any] = {"code": "anthropic_stream_error"}
+                    ovf = overflow_http_details(400, err_obj)
+                    if ovf:
+                        details.update(ovf)
+                    raise ProviderRuntimeError(
+                        "Anthropic stream reported an error",
+                        kind="provider",
+                        details=details,
+                    )
                 else:
                     raise ProviderRuntimeError(
                         "Unknown Anthropic stream event",
@@ -1154,6 +1223,39 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         beta_header = prompt_cache_cfg.get("beta_header")
         if beta_header:
             extra_headers.setdefault("anthropic-beta", beta_header)
+
+        # Check if converted_messages carries signed compaction or legacy compaction
+        has_signed_compaction = False
+        has_legacy_compaction = False
+        for m in converted_messages:
+            c = m.get("content")
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "compaction":
+                        if b.get("signature"):
+                            has_signed_compaction = True
+                        elif b.get("encrypted_content"):
+                            has_legacy_compaction = True
+
+        from ...compaction.remote.anthropic import (
+            COMPACTION_BETA,
+            LEGACY_COMPACTION_BETA,
+        )
+
+        def add_beta(header_val: str, new_beta: str) -> str:
+            betas = [b.strip() for b in header_val.split(",") if b.strip()]
+            if new_beta not in betas:
+                betas.append(new_beta)
+            return ",".join(betas)
+
+        if has_signed_compaction:
+            extra_headers["anthropic-beta"] = add_beta(
+                extra_headers.get("anthropic-beta", ""), COMPACTION_BETA
+            )
+        elif has_legacy_compaction:
+            extra_headers["anthropic-beta"] = add_beta(
+                extra_headers.get("anthropic-beta", ""), LEGACY_COMPACTION_BETA
+            )
 
         delay_seconds = 0.0
         try:
@@ -1296,16 +1398,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 is_overloaded = (
                     False if is_rate_limit else self._is_overloaded_error(exc)
                 )
-                headers: Dict[str, str] = {}
-                status_code = None
-                body_text = None
-                if is_rate_limit or is_overloaded:
-                    response_obj = getattr(exc, "response", None)
+                response_obj = getattr(exc, "response", None)
+                if response_obj is not None:
                     headers = self._normalize_headers(
                         getattr(response_obj, "headers", {}) or {}
                     )
+                    status_code = getattr(response_obj, "status_code", getattr(exc, "status_code", None))
+                    body_text = self._safe_http_text(response_obj) or getattr(exc, "body", None)
+                else:
+                    headers = self._normalize_headers(getattr(exc, "headers", {}) or {})
                     status_code = getattr(exc, "status_code", None)
-                    body_text = self._safe_http_text(response_obj) or str(exc)
+                    body_text = getattr(exc, "body", None)
+                if is_rate_limit or is_overloaded:
                     if is_rate_limit:
                         self._capture_rate_limit_headers(context, headers)
                     metadata = {
@@ -1339,6 +1443,12 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             retry_after = headers.get("retry-after")
                             if retry_after is not None:
                                 details["retry_after"] = retry_after
+                        from ...compaction.overflow import provider_overflow_details, overflow_http_details
+                        ovf = provider_overflow_details(exc)
+                        if not ovf and (status_code is not None or body_text is not None):
+                            ovf = overflow_http_details(status_code, body_text)
+                        if ovf:
+                            details = {**(details or {}), **ovf}
                         raise ProviderRuntimeError(
                             redaction.safe_exception_message(exc),
                             details=details,
@@ -1408,19 +1518,49 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     model=model,
                     request_id=request_id,
                     status_code=status_code,
-                    headers=None,
-                    content_type=None,
-                    body_text=None,
+                    headers=headers or None,
+                    content_type=(headers or {}).get("content-type"),
+                    body_text=body_text if isinstance(body_text, str) else None,
                     body_base64=None,
                     context=context,
                     metadata=metadata,
                 )
+                from ...compaction.overflow import provider_overflow_details, overflow_http_details
+                details: Dict[str, Any] | None = None
+                ovf = provider_overflow_details(exc)
+                if not ovf and (status_code is not None or body_text is not None):
+                    ovf = overflow_http_details(status_code, body_text)
+                if ovf:
+                    details = {**(details or {}), **ovf}
                 raise ProviderRuntimeError(
                     redaction.safe_exception_message(exc),
+                    details=details,
                     output_emitted=bool(
                         exchange_recorder and exchange_recorder.output_emitted
                     ),
                 ) from None
+
+    def compaction_port(
+        self,
+        *,
+        client: Any,
+        model: str,
+        context: Optional[Any] = None,
+    ) -> Optional[Any]:
+        """Return an AnthropicCompactionPort if model is supported, else None."""
+        from ...compaction.remote.anthropic import (
+            AnthropicCompactionPort,
+            supports_anthropic_compaction,
+        )
+
+        if not supports_anthropic_compaction(model):
+            return None
+        return AnthropicCompactionPort(
+            client=client,
+            model=model,
+            runtime=self,
+            context=context,
+        )
 
 
 provider_registry.register_runtime("anthropic_messages", AnthropicMessagesRuntime)

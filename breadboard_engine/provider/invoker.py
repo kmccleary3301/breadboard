@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, 
 if TYPE_CHECKING:
     from ..state.session_state import SessionState
 
+from ..compaction.overflow import is_context_overflow
 from ..messaging.markdown_logger import MarkdownLogger
 from .contracts import (
     ProviderContractError,
@@ -578,6 +579,9 @@ class ProviderInvoker:
             if (
                 exc.kind in {"adapter", "configuration"}
                 or details.get("cancelled") is True
+                # An oversized request says nothing about route health; counting
+                # it would open the circuit before compaction can retry.
+                or is_context_overflow(exc)
             ):
                 return
             self.route_health.record_failure(model, reason)
