@@ -739,7 +739,8 @@ def build_cases(target_dir: Path):
                 "script": "scripts/compaction_oracles/capture_codex.py",
                 "notes": (
                     "codex-rs/core/src/compact_remote_v2.rs:49 defines RETAINED_MESSAGE_TOKEN_BUDGET = 64_000. "
-                    "Lines 425-439 filter input messages to user/developer/system, truncate to 64,000 approx tokens newest-first, "
+                    "Lines 427-428 apply both retention filters; compact_remote.rs:323,331 reject developer/system messages. "
+                    "The retained user messages are truncated to 64,000 approx tokens newest-first, "
                     "and append the single server-returned ResponseItem::Compaction item. The replacement contains no old suffix; "
                     "first_kept_index therefore advances to the old history length (2). Native items use Responses projection."
                 ),

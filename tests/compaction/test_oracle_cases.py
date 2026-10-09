@@ -28,7 +28,8 @@ from breadboard_engine.compaction.pipeline import ComposedStep
 from breadboard_engine.compaction.presets import build_recipe
 from breadboard_engine.compaction.primitives.accounting import OccupancyInput, normalize_usage
 from breadboard_engine.compaction.primitives.triggers import TriggerInput
-from breadboard_engine.compaction.state import NATIVE_MARKER_KEY, NativeCompaction
+from breadboard_engine.compaction.state import NATIVE_MARKER_KEY
+from breadboard_engine.compaction.remote.openai import OpenAIResponsesCompactionPort
 from breadboard_engine.compaction.primitives.byte_estimator import response_items
 
 ORACLES = Path(__file__).parent / "oracles"
@@ -58,37 +59,21 @@ class ScriptedSummaries:
         return SummaryResponse(self.responses.pop(0))
 
 
-class ScriptedArtifacts:
-    """An artifact port with explicitly captured success/failure input."""
-
-    def __init__(self, data: Mapping[str, Any]) -> None:
-        self.root = data["root"]
-        self.fail = data.get("fail", False)
-        self.stored: Dict[str, str] = {}
-
-    def store(self, name: str, content: str, media_type: str = "text/plain") -> str:
-        if self.fail:
-            raise OSError("captured artifact persistence failure")
-        self.stored[name] = content
-        return f"{self.root}/{name}"
-
-
-class ScriptedNative:
-    provider = TARGET.provider
-    api = TARGET.api
+class ScriptedNative(OpenAIResponsesCompactionPort):
+    """Exercise the real native replacement port with captured transport output."""
 
     def __init__(self, responses: List[Any]) -> None:
         self.responses = list(responses)
+        super().__init__(model=TARGET.model, http_poster=self._scripted_post)
 
-    def supports(self, model: str) -> bool:
-        return model == TARGET.model
-
-    def compact(self, context: CompactionContext):
+    def _scripted_post(self, url, payload, headers):
+        assert url.endswith("/responses"), "captured native response requires the streaming route"
+        assert payload["input"][-1] == {"type": "compaction_trigger"}
         assert self.responses, "native model called more times than the oracle recorded"
-        return context.new_record(
-            method="scripted_native", first_kept_index=len(context.messages),
-            native=NativeCompaction(self.provider, self.api, TARGET.model, tuple(self.responses.pop(0))),
-        )
+        return [
+            *({"type": "response.output_item.done", "item": item} for item in self.responses.pop(0)),
+            {"type": "response.completed", "response": {"usage": {}}},
+        ]
 
 def _recipe(case: Mapping[str, Any]):
     inp = case["input"]
@@ -99,18 +84,19 @@ def _recipe(case: Mapping[str, Any]):
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
+    target = ProjectionTarget("openai", "responses", TARGET.model) if "native_responses" in inp else TARGET
     return CompactionContext(
         messages=messages,
         state=state,
         settings=recipe.settings,
         reason=inp.get("reason") or "threshold",
-        target=TARGET,
+        target=target,
         context_window=inp["context_window"],
-        tokens_before=recipe.count(state.project(messages, TARGET)),
+        tokens_before=recipe.count(state.project(messages, target)),
         summarizer=summarizer,
         last_usage=inp.get("usage"),
         max_output_tokens=inp.get("max_output_tokens"),
-        artifacts=ScriptedArtifacts(inp["artifact_sink"]) if "artifact_sink" in inp else None,
+        native_retention=recipe.native_retention,
         remote_ports=(ScriptedNative(inp["native_responses"]),) if "native_responses" in inp else (),
     )
 
@@ -187,7 +173,7 @@ def test_oracle_case(case_file: Path) -> None:
 
     outcome = recipe.pipeline.run(
         context,
-        target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
+        target_tokens=recipe.target_tokens("threshold" if context.reason == "request" else context.reason, inp["context_window"]),
         order=inp.get("pipeline_order"),
     )
     if "selection" in expect:
@@ -228,7 +214,7 @@ def test_oracle_case(case_file: Path) -> None:
         got_edits = [{"index": e.index, "message": dict(e.message)} for r in outcome.records for e in r.edits]
         assert got_edits == expect["edits"]
     if "projected_view" in expect:
-        projected = state.project(messages, TARGET)
+        projected = state.project(messages, context.target)
         if inp.get("projection") == "responses":
             projected = [
                 item for message in projected

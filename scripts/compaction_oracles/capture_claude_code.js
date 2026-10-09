@@ -518,96 +518,6 @@ We identified missing CSRF validation and token leakage in URL params.
   });
 }
 
-// Case 9: Microcompact masking with placeholders & keep-latest (Executed)
-{
-  const toolIds = ["call_read_1", "call_bash_2", "call_grep_3", "call_edit_4"];
-  const toolSizes = {
-    call_read_1: 30000,
-    call_bash_2: 30000,
-    call_grep_3: 30000,
-    call_edit_4: 30000
-  };
-
-  const mcResult = runVmMicrocompact(toolIds, toolSizes, 150000, 200000, 32000);
-  const artifactSink = { root: "/tmp/session/tool-results", fail: false };
-  const maskedOutput = await runVmMask("A".repeat(120000), toolIds[0], artifactSink);
-
-  const bigOutput = "A".repeat(120000);
-  const messages = [
-    { role: "user", content: "Run analysis" },
-    {
-      role: "assistant",
-      content: "",
-      tool_calls: [
-        { id: "call_read_1", type: "function", function: { name: "Read", arguments: '{"file_path":"a.txt"}' } },
-        { id: "call_bash_2", type: "function", function: { name: "Bash", arguments: '{"command":"ls"}' } },
-        { id: "call_grep_3", type: "function", function: { name: "Grep", arguments: '{"pattern":"foo"}' } },
-        { id: "call_edit_4", type: "function", function: { name: "Edit", arguments: '{"file_path":"b.txt"}' } }
-      ]
-    },
-    { role: "tool", tool_call_id: "call_read_1", content: bigOutput },
-    { role: "tool", tool_call_id: "call_bash_2", content: bigOutput },
-    { role: "tool", tool_call_id: "call_grep_3", content: bigOutput },
-    { role: "tool", tool_call_id: "call_edit_4", content: bigOutput },
-    {
-      role: "assistant",
-      content: "",
-      tool_calls: [{ id: "call_mcp_5", type: "function", function: { name: "mcp__custom", arguments: "{}" } }]
-    },
-    { role: "tool", tool_call_id: "call_mcp_5", content: bigOutput }
-  ];
-
-  cases.push({
-    schema: "bb.compaction_oracle_case.v1",
-    preset: "claude_code@2.1.63",
-    case: "microcompact_masking_keep_latest",
-    source: {
-      ...baseSource,
-      evidence: [
-        "package/cli.js:2015-2017 (function Lg, T3Y)",
-        `package/cli.js:2015 [${mcConstsRange}]`,
-        `package/cli.js:2015 [${mcLoopRange}]`,
-        `package/cli.js:1661 [${plRange}]`
-      ]
-    },
-    capture: {
-      kind: "executed",
-      script: "scripts/compaction_oracles/capture_claude_code.js",
-      notes: `Executed microcompact selection loop sliced from cli.js (${mcLoopRange}) and constants (${mcConstsRange}) in node vm. Verbatim text: "var G3Y=20000,Z3Y=40000,f3Y=3,cv8=2000,", "let _=z.slice(-f3Y),$=Array.from(w.values()).reduce((Z,f)=>Z+f,0),O=0,H=new Set;for(let Z of z){if(_.includes(Z))continue;if($-O>Y)H.add(Z),O+=w.get(Z)||0}". Eligible tools whitelist C:2015: "T3Y=new Set([n4,...wd,k5,Sz,uy,HX,Lq,U3,...[]])" where n4="Read", wd=["Bash",null], k5="Grep", Sz="Glob", uy="WebSearch", HX="WebFetch", Lq="Edit", U3="Write". Keeps last 3 eligible calls (call_bash_2, call_grep_3, call_edit_4). Masks call_read_1. Ineligible MCP call_mcp_5 is excluded from T3Y and preserved untouched. Sliced template from C:1661/2015: "<persisted-output>Tool result saved to: \${filepath}\\n\\nUse Read to view</persisted-output>".`
-    },
-    input: {
-      messages,
-      usage: { input_tokens: 145000, output_tokens: 5000, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 150000 },
-      context_window: 200000,
-      max_input_tokens: null,
-      max_output_tokens: 32000,
-      reason: "threshold",
-      pipeline_order: ["microcompact"],
-      native_settings: { autoCompactEnabled: true },
-      artifact_sink: artifactSink
-    },
-    expect: {
-      selection: {
-        prefix_end: null,
-        first_kept_index: null,
-        summarize: [],
-        turn_prefix: [],
-        replay: [],
-        targets: mcResult.compactedIds.map(id => messages.findIndex(m => m.tool_call_id === id))
-      },
-      edits: [
-        {
-          index: 2,
-          message: {
-            role: "tool",
-            tool_call_id: "call_read_1",
-            content: maskedOutput
-          }
-        }
-      ]
-    }
-  });
-}
 
 // Case 10: Microcompact persist fallback to cleared placeholder (Executed)
 {
@@ -659,10 +569,9 @@ We identified missing CSRF validation and token leakage in URL params.
       context_window: 200000,
       max_input_tokens: null,
       max_output_tokens: 32000,
-      reason: "threshold",
+      reason: "request",
       pipeline_order: ["microcompact"],
-      native_settings: { autoCompactEnabled: true },
-      artifact_sink: artifactSink
+      native_settings: { autoCompactEnabled: true }
     },
     expect: {
       selection: {
@@ -696,6 +605,9 @@ const caseNames = [];
 
 // Removed: PreCompact hook blocking discrepancy. BreadBoard has no host hook
 // execution port, so hook commands cannot be represented by compaction input.
+// Removed: successful artifact persistence. There is no model-readable host
+// artifact sink in BreadBoard; only the executed cleared-placeholder fallback
+// is representable by the preset's request-time masking stage.
 const retainedNames = new Set(cases.map(c => `${c.case}.json`));
 for (const name of fs.readdirSync(OUT_DIR)) {
   if (name.endsWith(".json") && !retainedNames.has(name)) fs.unlinkSync(path.join(OUT_DIR, name));

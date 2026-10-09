@@ -20,6 +20,7 @@ native_settings:
     needs_follow_up: [triggers.0.needs_follow_up]
     features: [pipeline.stages.0.select.features]
 estimator: bytes4
+native_retention: {kind: message_text_budget, budget: 64000, roles: [user], exclude_contextual: true}
 triggers:
   - kind: threshold
     accounting: {kind: usage_plus_trailing, estimator: bytes4, usage_total: total_or_components, trailing: all}
@@ -41,12 +42,11 @@ pipeline:
   stages:
     - id: summary
       accept: any
-      commit_detail: replacement history installed
       select:
         kind: user_messages_budget
         budget: 20000
-        native_budget: 64000
         features: []
+        native_feature: RemoteCompactionV2
         exclude_prefix: {file: summary_prefix.md}
       reduce:
         kind: chat_summary

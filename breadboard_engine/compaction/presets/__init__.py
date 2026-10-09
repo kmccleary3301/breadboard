@@ -37,9 +37,10 @@ import yaml
 from ..handoff import HandoffCompaction
 from ..methods import CompactionMethod
 from ..params import BuildEnv, Params, PresetError
-from ..pipeline import MODES, REASONS, Pipeline, build_stage
+from ..pipeline import MODES, TARGET_REASONS, Pipeline, build_stage
 from ..primitives.accounting import build_estimator
 from ..primitives.triggers import Pressure, TriggerInput, build_limit, build_trigger
+from ..primitives.native_retention import build_native_retention
 from ..remote import RemoteCompaction
 from ..settings import CompactionSettings, settings_from_config
 from ..shake import ShakeCompaction
@@ -47,7 +48,7 @@ from ..snapcompact import SnapcompactCompaction
 
 PRESET_SCHEMA = "bb.compaction_preset.v1"
 DEFAULT_PRESET = "omp@18.4.5"
-REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact", "pipeline")
+REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact")
 CLAIMS = ("executed_oracle", "source_golden")
 
 ALGORITHMS: Dict[str, Callable[[], CompactionMethod]] = {
@@ -199,6 +200,7 @@ class Recipe:
     overflow_policy: str
     """``compact`` (compact and retry) or ``terminal`` (the overflow error ends the run)."""
     request_view: Tuple[str, ...]
+    native_retention: Optional[Any] = None
 
     @property
     def active(self) -> bool:
@@ -246,12 +248,14 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     claim = params.choice("claim", CLAIMS)
     params.mapping("native_settings")
     count = build_estimator(params.str("estimator"))
+    raw_retention = params.mapping("native_retention", None)
+    native_retention = None if raw_retention is None else build_native_retention(params.child(raw_retention, "native_retention"))
 
     triggers = tuple(
         build_trigger(params.child(item, f"triggers[{i}]")) for i, item in enumerate(params.list("triggers"))
     )
     target_params = params.child(params.mapping("target"), "target")
-    targets = {reason: build_limit(target_params.child(target_params.mapping(reason), reason)) for reason in REASONS}
+    targets = {reason: build_limit(target_params.child(target_params.mapping(reason), reason)) for reason in TARGET_REASONS}
     target_params.done()
 
     overflow = params.child(params.mapping("overflow"), "overflow")
@@ -260,9 +264,6 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
-    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS]
-    if unknown_steps:
-        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)
@@ -275,6 +276,9 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     ids = [s.id for s in stages]
     if len(set(ids)) != len(ids):
         raise PresetError(f"preset {config.preset} has duplicate stage ids {ids}")
+    unknown_steps = [s for s in request_view if s not in REQUEST_VIEW_STEPS and s not in ids]
+    if unknown_steps:
+        raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
     order = None
     if order_source == "omp_method_order":
@@ -292,4 +296,5 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         max_attempts_per_turn=attempts,
         overflow_policy=config.overflow_policy or preset_policy,
         request_view=request_view,
+        native_retention=native_retention,
     )

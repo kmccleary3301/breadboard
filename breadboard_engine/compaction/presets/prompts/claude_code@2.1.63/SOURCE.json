@@ -10,7 +10,6 @@
     "system.txt": "package/cli.js:2211 TD4 system",
     "bridge_prefix.txt": "package/cli.js:2199-2201 $Q6 prefix",
     "continuation.txt": "package/cli.js:2205-2206 $Q6 continuation",
-    "placeholder.txt": "package/cli.js:1661 zZ8",
-    "artifact.txt": "package/cli.js:2015 masking template + package/cli.js:1661 YD1,YZ8 + package/cli.js:370 n4; S.filepath renamed to {{filepath}}"
+    "placeholder.txt": "package/cli.js:1661 zZ8"
   }
 }

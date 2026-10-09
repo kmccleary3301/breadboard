@@ -12,8 +12,8 @@ claim: source_golden
 native_settings:
   adapter: paths
   keys:
-    autoCompactEnabled: [triggers.0.enabled, pipeline.stages.1.trigger.enabled]
-    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: [triggers.0.limit.pct_override, target.threshold.pct_override, pipeline.stages.0.select.limit.pct_override, pipeline.stages.1.trigger.limit.pct_override]
+    autoCompactEnabled: [triggers.0.enabled]
+    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: [triggers.0.limit.pct_override, target.threshold.pct_override, pipeline.stages.0.select.limit.pct_override]
     DISABLE_MICROCOMPACT: [pipeline.stages.0.select.disabled]
 estimator: chars4_round
 triggers:
@@ -28,13 +28,13 @@ target:
   manual: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000}
   overflow: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000}
 overflow: {policy: terminal, max_attempts_per_turn: 0}
-request_view: [pipeline]
+request_view: [microcompact]
 pipeline:
   mode: sequence
   stages:
     - id: microcompact
       accept: progress
-      commit_detail: eligible tool outputs masked
+      when: {reasons: [request, manual]}
       select:
         kind: latest_tool_outputs
         keep_latest_calls: 3
@@ -47,17 +47,9 @@ pipeline:
       reduce:
         kind: mask_tool_outputs
         placeholder: {file: placeholder.txt}
-        artifact_template: {file: artifact.txt}
     - id: summary
       accept: any
-      commit_detail: user summary bridge installed
-      trigger:
-        kind: threshold
-        enabled: true
-        accounting: {kind: usage_plus_trailing, estimator: chars4_round, usage_total: components, trailing: all}
-        limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 13000, pct_override: null}
-        compare: ">="
-        phase: every_request
+      when: {reasons: [threshold, manual]}
       select: {kind: whole_history}
       reduce:
         kind: chat_summary

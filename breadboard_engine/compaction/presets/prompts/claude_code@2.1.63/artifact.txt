@@ -1,3 +1,0 @@
-<persisted-output>Tool result saved to: {{filepath}}
-
-Use Read to view</persisted-output>

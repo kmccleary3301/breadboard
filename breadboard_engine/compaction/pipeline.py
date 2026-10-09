@@ -27,12 +27,11 @@ from .primitives.reducers import build_reducer
 from .primitives.selectors import Selection, build_selector
 from .params import Params
 from .state import CompactionRecord, CompactionState
-from .primitives.accounting import OccupancyInput, normalize_usage
-from .primitives.triggers import TriggerInput, build_trigger
 
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
 MODES = ("fallback", "sequence", "until_boundary")
-REASONS = ("threshold", "overflow", "manual")
+TARGET_REASONS = ("threshold", "overflow", "manual")
+REASONS = (*TARGET_REASONS, "request")
 
 
 @dataclass(frozen=True)
@@ -132,8 +131,6 @@ class Stage:
     reasons: Optional[FrozenSet[str]] = None
     """``when.reasons``: compaction reasons the stage runs for (all if ``None``)."""
     accept: Literal["progress", "any"] = "progress"
-    trigger: Optional[Any] = None
-    commit_detail: Optional[str] = None
 
 
 class Pipeline:
@@ -174,14 +171,6 @@ class Pipeline:
             if stage.reasons is not None and context.reason not in stage.reasons:
                 results.append(StageResult(stage_id, "noop", f"reason {context.reason!r} not in when.reasons"))
                 continue
-            if stage.trigger is not None and context.reason == "threshold":
-                data = TriggerInput(
-                    OccupancyInput(context.projected(), normalize_usage(context.last_usage), True),
-                    context.context_window, context.max_output_tokens,
-                )
-                if not stage.trigger.evaluate(data, context.messages).fires:
-                    results.append(StageResult(stage_id, "noop", "stage trigger did not fire"))
-                    continue
             try:
                 output = stage.step.run(context)
                 context.state.validate(output.record, context.messages)
@@ -205,7 +194,7 @@ class Pipeline:
             records.append(record)
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
-            results.append(StageResult(stage_id, status, stage.commit_detail, after, record.record_id, output.selection))
+            results.append(StageResult(stage_id, status, None, after, record.record_id, output.selection))
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
         return CompactionOutcome(
@@ -230,19 +219,16 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
             raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(REASONS)}")
         reasons = frozenset(raw_reasons)
         when_params.done()
-    raw_trigger = params.mapping("trigger", None)
-    trigger = None if raw_trigger is None else build_trigger(params.child(raw_trigger, "trigger"))
     accept = params.choice("accept", ("progress", "any"), "progress")
-    commit_detail = params.str("commit_detail", None)
     algorithm = params.str("algorithm", None)
     if algorithm is not None:
         if algorithm not in algorithms:
             raise ValueError(f"{params.where}.algorithm {algorithm!r} is unknown; expected one of {sorted(algorithms)}")
         params.done()
-        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, trigger, commit_detail)
+        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept)
     selector = build_selector(params.child(params.mapping("select"), "select"))
     reducer = build_reducer(params.child(params.mapping("reduce"), "reduce"))
     raw_place = params.mapping("place", None)
     placement = None if raw_place is None else build_placement(params.child(raw_place, "place"))
     params.done()
-    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, trigger, commit_detail)
+    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept)

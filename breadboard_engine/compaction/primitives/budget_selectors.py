@@ -9,18 +9,9 @@ from .accounting import _text_parts, normalize_usage, _usage_total, rounded_text
 from .byte_estimator import text_tokens
 from .selectors import Selection
 from .triggers import build_limit
+from .native_retention import truncate_middle
 
 
-def truncate_middle(text: str, budget: int) -> str:
-    raw = text.encode("utf-8")
-    keep = budget * 4
-    if len(raw) <= keep:
-        return text
-    left = keep // 2
-    right = keep - left
-    prefix = raw[:left].decode("utf-8", errors="ignore")
-    suffix = raw[len(raw) - right:].decode("utf-8", errors="ignore") if right else ""
-    return f"{prefix}…{(len(raw) - keep + 3) // 4} tokens truncated…{suffix}"
 
 
 class WholeHistory:
@@ -49,15 +40,21 @@ class UserMessagesBudget:
         from .reducers import resolve_prompt
         self.exclude_prefix = resolve_prompt(params.value("exclude_prefix", ""), params, "exclude_prefix")
         self.features = params.list("features", [])
-        self.native_budget = params.int("native_budget", 64000, minimum=0)
+        self.native_feature = params.str("native_feature", None)
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
-        native = "RemoteCompactionV2" in self.features
-        remaining = self.native_budget if native else self.budget
+        native = self.native_feature is not None and self.native_feature in self.features
+        remaining = self.budget
         retained = []
         replay = []
         start = context.state.kept_start(context.messages)
+        if native:
+            return Selection(
+                first_kept_index=len(context.messages),
+                replay=tuple(i for i in range(start, len(context.messages)) if context.messages[i].get("role") == "user"),
+                details={"native": True},
+            )
         boundary = context.state.latest_boundary()
         previous = boundary.native.items if boundary is not None and boundary.native is not None else (
             boundary.summary_messages if boundary is not None else ()
@@ -74,23 +71,11 @@ class UserMessagesBudget:
                 continue
             if remaining == 0:
                 break
-            cost = max(1, text_tokens(text)) if native else text_tokens(text)
-            item = dict(message) if native else {"role": "user", "content": text}
+            cost = text_tokens(text)
+            item = {"role": "user", "content": text}
             truncated = cost > remaining
             if truncated:
-                if native and isinstance(content, list):
-                    parts = []
-                    budget = remaining
-                    for part in content:
-                        if part.get("type") in {"text", "input_text"}:
-                            value = part["text"]
-                            parts.append({**part, "text": truncate_middle(value, budget)})
-                            budget = max(0, budget - text_tokens(value))
-                        else:
-                            parts.append(dict(part))
-                    item["content"] = parts
-                else:
-                    item["content"] = truncate_middle(text, remaining)
+                item["content"] = truncate_middle(text, remaining)
             retained.append(item)
             if index is not None:
                 replay.append(index)
@@ -99,8 +84,8 @@ class UserMessagesBudget:
                 break
         retained.reverse()
         replay.reverse()
-        return Selection(first_kept_index=len(context.messages), summarize=() if native else tuple(range(start, len(context.messages))),
-                         replay=tuple(replay), details={"retained_messages": tuple(retained), "native": native})
+        return Selection(first_kept_index=len(context.messages), summarize=tuple(range(start, len(context.messages))),
+                         replay=tuple(replay), details={"retained_messages": tuple(retained)})
 
 class LatestToolOutputs:
     kind = "latest_tool_outputs"
@@ -143,7 +128,7 @@ class LatestToolOutputs:
                 saved += results[call][1]
         usage = normalize_usage(context.last_usage)
         warning = self.limit.tokens(context.context_window, context.max_output_tokens) - self.warning_delta
-        if usage is None or _usage_total(usage, "components") < warning or saved < self.min_savings:
+        if not context.usage_fresh or usage is None or _usage_total(usage, "components") < warning or saved < self.min_savings:
             selected = []
         if not selected:
             raise MethodUnavailable("No eligible tool outputs meet warning and savings gates")
