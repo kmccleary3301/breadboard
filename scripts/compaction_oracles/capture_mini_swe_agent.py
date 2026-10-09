@@ -313,7 +313,7 @@ emit_case("observation_at_10k_elided_zero", {
             {
                 "role": "tool",
                 "tool_call_id": "t1",
-                "content": rendered_10k,
+                "content": json.dumps({"returncode": 0, "output": exact_10k_output, "exception_info": None}),
             },
         ],
         "usage": None,
@@ -369,7 +369,7 @@ emit_case("observation_over_10k_clipped", {
             {
                 "role": "tool",
                 "tool_call_id": "t1",
-                "content": rendered_long,
+                "content": json.dumps({"returncode": 0, "output": long_output, "exception_info": None}),
             },
         ],
         "usage": None,

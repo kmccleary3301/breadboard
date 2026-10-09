@@ -34,7 +34,8 @@
     "max_output_tokens": 16000,
     "reason": "threshold",
     "native_settings": {},
-    "summary_responses": []
+    "summary_responses": [],
+    "trigger_blocked": true
   },
   "expect": {
     "trigger": {

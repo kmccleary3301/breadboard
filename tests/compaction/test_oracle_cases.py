@@ -31,7 +31,7 @@ from breadboard_engine.compaction.primitives.triggers import TriggerInput
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
-CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details"}
+CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details", "edits", "failure"}
 
 
 def _cases() -> List[Any]:
@@ -53,7 +53,10 @@ class ScriptedSummaries:
         self.requests.append(request)
         if not self.responses:
             raise AssertionError("summary model called more times than the oracle recorded")
-        return SummaryResponse(self.responses.pop(0))
+        response = self.responses.pop(0)
+        if isinstance(response, Mapping):
+            return SummaryResponse(response["content"], finish_reason=response.get("finish_reason"))
+        return SummaryResponse(response)
 
 
 def _recipe(case: Mapping[str, Any]):
@@ -65,6 +68,10 @@ def _recipe(case: Mapping[str, Any]):
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
+    estimates = inp.get("message_token_estimates")
+    if estimates is not None:
+        assert len(estimates) == len(messages)
+    token_counts = {id(m): tokens for m, tokens in zip(messages, estimates or [])}
     return CompactionContext(
         messages=messages,
         state=state,
@@ -74,6 +81,9 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         context_window=inp["context_window"],
         tokens_before=recipe.count(state.project(messages, TARGET)),
         summarizer=summarizer,
+        prior_compactions=inp.get("prior_compactions", 0),
+        token_estimator=(lambda message: token_counts[id(message)]) if estimates is not None else None,
+        pending_entry_id=inp.get("pending_entry_id"),
     )
 
 
@@ -129,6 +139,7 @@ def test_oracle_case(case_file: Path) -> None:
             OccupancyInput(messages, normalize_usage(inp.get("usage")), usage_fresh=True),
             inp["context_window"],
             inp.get("max_output_tokens"),
+            blocked=inp.get("trigger_blocked", False),
         )
         pressure = recipe.pressure(data, messages)
         assert pressure is not None, "trigger case for a preset without triggers"
@@ -147,18 +158,55 @@ def test_oracle_case(case_file: Path) -> None:
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
     if "selection" in expect:
-        stage = recipe.pipeline.stages[recipe.pipeline.order[0]]
+        stage = recipe.pipeline.stages[inp.get("stage", recipe.pipeline.order[0])]
         assert isinstance(stage.step, ComposedStep), "selection cases need a composed first stage"
         selection = stage.step.selector.select(context)
         got_selection = {
             k: list(v) if isinstance(v, tuple) else v for k, v in ((k, getattr(selection, k)) for k in expect["selection"])
         }
         assert got_selection == expect["selection"]
+        if set(expect) == {"selection"}:
+            return
 
-    outcome = recipe.pipeline.run(
-        context,
-        target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
-    )
+    component = inp.get("component")
+    if component == "quality_audit":
+        step = recipe.pipeline.stages[inp["stage"]].step
+        assert step.reducer.audit_summary(**inp["audit_input"]) == expect["details"]
+        return
+    if component in {"summary_request", "placement"}:
+        from types import SimpleNamespace
+        from breadboard_engine.compaction.primitives.selectors import Selection
+        from breadboard_engine.compaction.primitives.reducers import Reduction
+        from breadboard_engine.compaction.pipeline import StageResult
+        step = recipe.pipeline.stages[inp["stage"]].step
+        assert isinstance(step, ComposedStep)
+        try:
+            if component == "summary_request":
+                reduction = step.reducer.reduce_text(context, **inp["summary_input"])
+                outcome = SimpleNamespace(records=(), stages=())
+            else:
+                selection = Selection(**inp["placement_input"]["selection"])
+                reduction = Reduction(summary=inp["placement_input"]["summary"],
+                                      details=inp["placement_input"].get("details") or {})
+                placed = step.placement.place(context, selection, reduction)
+                from breadboard_engine.compaction.primitives.alternation import PlacementResult
+                record = context.new_record(
+                    method=inp["stage"], first_kept_index=selection.first_kept_index,
+                    prefix_end=selection.prefix_end, summary=reduction.summary,
+                    summary_messages=placed.messages if isinstance(placed, PlacementResult) else placed,
+                    edits=placed.edits if isinstance(placed, PlacementResult) else (),
+                )
+                state.append(record, messages)
+                outcome = SimpleNamespace(records=(record,), stages=())
+        except Exception as exc:
+            outcome = SimpleNamespace(records=(), stages=(StageResult(
+                inp["stage"], "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"),))
+    else:
+        outcome = recipe.pipeline.run(
+            context,
+            target_tokens=recipe.target_tokens(context.reason, inp["context_window"]),
+            order=inp.get("stages"),
+        )
     assert not summaries.responses, "oracle recorded summary calls this preset did not make"
 
     if "failure" in expect:

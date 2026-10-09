@@ -1,12 +1,15 @@
 {
   "repo": "https://github.com/openclaw/openclaw",
   "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
-  "files": {
-    "system.txt": "packages/agent-core/src/harness/compaction/compaction.ts:591-593",
-    "prompt.txt": "packages/agent-core/src/harness/compaction/compaction.ts:595-626",
-    "update_prompt.txt": "packages/agent-core/src/harness/compaction/compaction.ts:628-665",
-    "turn_prefix.txt": "packages/agent-core/src/harness/compaction/compaction.ts:1007-1020",
-    "merge_instructions.txt": "src/agents/compaction.ts:50-63"
+  "source_sha256": {
+    "packages/agent-core/src/harness/messages.ts": "4949b5bbee9c1fee636dbfc6180bbb8f8da5855b857a12a445482f206437fe46",
+    "packages/agent-core/src/harness/compaction/compaction.ts": "068c06d3a643c803c6719fd6c8a71702dadb7eecf226bb27f3d58fd7cbd3127c"
   },
-  "license": "MIT"
+  "files": {
+    "summary.txt": "packages/agent-core/src/harness/compaction/compaction.ts:595",
+    "update-summary.txt": "packages/agent-core/src/harness/compaction/compaction.ts:628",
+    "turn-prefix.txt": "packages/agent-core/src/harness/compaction/compaction.ts:1007",
+    "summarization-system.txt": "packages/agent-core/src/harness/compaction/compaction.ts:591-593",
+    "summary-context.txt": "packages/agent-core/src/harness/messages.ts:45-51"
+  }
 }

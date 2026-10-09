@@ -62,8 +62,10 @@ def test_overflow_without_compaction_ends_the_run(tmp_path: Path, monkeypatch: p
     [
         "compaction:\n  enabled: true\n  contextWindow: 200000\n  keepRecentTokens: 50\n  methodOrder: [soft]\n",
         "compaction:\n  enabled: true\n  preset: pi@0.73.1\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
+        "compaction:\n  enabled: true\n  preset: hermes_agent@2026.9.11\n  contextWindow: 200000\n  protect_first_n: 0\n  protect_last_n: 3\n",
+        "compaction:\n  enabled: true\n  preset: openclaw@2026.9.4\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
     ],
-    ids=["omp", "pi"],
+    ids=["omp", "pi", "hermes", "openclaw"],
 )
 def test_overflow_with_compaction_summarizes_and_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compaction: str
@@ -77,3 +79,9 @@ def test_overflow_with_compaction_summarizes_and_continues(
     assert retried < OVERFLOW_AT
     # The run kept going after recovery instead of ending on the first overflow.
     assert sum(1 for kind, _ in calls if kind == "model") > len(overflowed) + 1
+
+
+def test_terminal_preset_overflow_ends_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls = _run(tmp_path, monkeypatch, "compaction:\n  enabled: true\n  preset: mini_swe_agent@2.4.6\n")
+    assert all(kind == "model" for kind, _ in calls)
+    assert calls[-1] == ("model", OVERFLOW_AT)

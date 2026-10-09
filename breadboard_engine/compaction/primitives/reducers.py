@@ -251,6 +251,9 @@ class Summarize:
         self.file_ops = params.choice("file_ops", ("omp_files_block", "read_modified_tags", "none"))
         self.split_turn_join = params.str("split_turn_join", DEFAULT_SPLIT_TURN_JOIN)
         self.empty_history = params.str("empty_history", "No prior history.")
+        self.quality_mode = params.choice("quality_mode", ("default", "safeguard"), "default")
+        self.identifier_policy = params.choice("identifier_policy", ("strict", "off"), "strict")
+        self.required_sections = params.list("required_sections", [])
         params.done()
 
     # -- requests -------------------------------------------------------
@@ -272,7 +275,24 @@ class Summarize:
             purpose=purpose,
             model=context.settings.summary_model or context.target.model,
         )
-        return context.summarizer.complete(request).text
+        response = context.summarizer.complete(request)
+        if self.quality_mode == "safeguard":
+            audit = self.audit_summary(response.text)
+            if not audit["ok"]:
+                from .checkpoint_summary import SummaryFailure
+                raise SummaryFailure("quality_audit_failed", ", ".join(audit["reasons"]))
+        return response.text
+
+    def audit_summary(self, summary: str, identifiers: Sequence[str] = ()) -> Dict[str, Any]:
+        import re
+        lines = {line.strip() for line in summary.splitlines()}
+        reasons = [f"missing_section:{section}" for section in self.required_sections if section not in lines]
+        if self.identifier_policy == "strict":
+            for identifier in identifiers:
+                present = identifier.lower() in summary.lower() if re.fullmatch(r"[a-fA-F0-9]+", identifier) else identifier in summary
+                if not present:
+                    reasons.append(f"missing_identifier:{identifier}")
+        return {"ok": not reasons, "reasons": reasons}
 
     def _summarize_window(
         self,
@@ -380,7 +400,10 @@ class Summarize:
         return Reduction(summary=summary, short_summary=short_summary, details=details)
 
 
-REDUCER_KINDS = {Summarize.kind: Summarize}
+from .observation_edits import DuplicateToolResults, ObservationClip
+from .checkpoint_summary import CheckpointSummary
+
+REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, DuplicateToolResults, ObservationClip, CheckpointSummary)}
 
 
 def build_reducer(params: Params) -> Any:

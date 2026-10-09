@@ -73,6 +73,14 @@
     "context_window": 200000,
     "max_input_tokens": null,
     "max_output_tokens": 4096,
+    "message_token_estimates": [
+      1000,
+      1000,
+      1000,
+      500,
+      500,
+      500
+    ],
     "reason": "threshold",
     "native_settings": {
       "keepRecentTokens": 1400

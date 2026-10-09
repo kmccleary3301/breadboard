@@ -56,9 +56,9 @@ class NativeCompactionError(CompactionError):
 
 @dataclass(frozen=True)
 class SummaryRequest:
-    system: str
+    system: Optional[str]
     messages: Tuple[Mapping[str, Any], ...]
-    max_tokens: int
+    max_tokens: Optional[int]
     purpose: SummaryPurpose
     model: Optional[str] = None
 
@@ -68,6 +68,7 @@ class SummaryResponse:
     text: str
     usage: Optional[Mapping[str, Any]] = None
     model: Optional[str] = None
+    finish_reason: Optional[str] = None
 
 
 @runtime_checkable
@@ -117,6 +118,9 @@ class CompactionContext:
     supports_images: bool = False
     custom_instructions: Optional[str] = None
     clock: Callable[[], str] = _utc_now
+    prior_compactions: int = 0
+    token_estimator: Optional[Callable[[Mapping[str, Any]], int]] = None
+    pending_entry_id: Optional[str] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

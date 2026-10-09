@@ -12,7 +12,7 @@
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_hermes.py",
-    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._align_boundary_backward at agent/context_compressor.py:3938-3946. When cut boundary lands on assistant message following a tool group (idx 4), pulls it back to parent assistant call (idx 2)."
+    "notes": "Executed _compress_window on the complete paired transcript, including both boundary alignments."
   },
   "input": {
     "messages": [
@@ -61,13 +61,16 @@
     "max_input_tokens": null,
     "max_output_tokens": 16000,
     "reason": "threshold",
-    "native_settings": {},
-    "summary_responses": []
+    "native_settings": {
+      "protect_first_n": 1
+    },
+    "summary_responses": [],
+    "stage": "summary"
   },
   "expect": {
     "selection": {
       "prefix_end": 2,
-      "first_kept_index": 2
+      "first_kept_index": 4
     }
   }
 }

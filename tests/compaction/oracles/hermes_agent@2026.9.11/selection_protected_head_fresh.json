@@ -62,7 +62,8 @@
     "native_settings": {
       "protect_first_n": 3
     },
-    "summary_responses": []
+    "summary_responses": [],
+    "stage": "summary"
   },
   "expect": {
     "selection": {

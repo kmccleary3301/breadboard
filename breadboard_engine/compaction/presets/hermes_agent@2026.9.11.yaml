@@ -1,0 +1,94 @@
+schema: bb.compaction_preset.v1
+id: hermes_agent@2026.9.11
+source:
+  repo: https://github.com/NousResearch/hermes-agent.git
+  commit: 939e45c91d751fadd94dcd1b873ac3cb44846213
+claim: executed_oracle
+native_settings:
+  adapter: paths
+  keys:
+    threshold:
+    - triggers.0.limit.percent
+    context_length:
+    - triggers.0.limit.window
+    max_tokens:
+    - triggers.0.limit.output_reserve
+    threshold_tokens:
+    - triggers.0.limit.cap
+    protect_first_n:
+    - pipeline.stages.1.select.protect_first_n
+    protect_last_n:
+    - pipeline.stages.1.select.protect_last_n
+    tail_mode:
+    - pipeline.stages.1.select.tail_mode
+    min_tail_user_messages:
+    - pipeline.stages.1.select.min_tail_user_messages
+    target_ratio:
+    - pipeline.stages.1.select.target_ratio
+estimator: bb_chars4
+triggers:
+- kind: threshold
+  accounting:
+    kind: provider_total
+    usage_total: input
+    without_usage: estimate
+  limit:
+    kind: effective_budget
+    percent: 0.5
+    window: null
+    output_reserve: 0
+    cap: null
+  compare: '>='
+  phase: every_request
+target:
+  threshold:
+    kind: window_minus_reserve
+    reserve: 0
+  manual:
+    kind: window_minus_reserve
+    reserve: 0
+  overflow:
+    kind: window_minus_reserve
+    reserve: 0
+overflow:
+  policy: compact
+  max_attempts_per_turn: 3
+request_view: []
+pipeline:
+  mode: sequence
+  stages:
+  - id: prune
+    select:
+      kind: visible_tool_outputs
+    reduce:
+      kind: duplicate_tool_results
+      placeholder: "[Duplicate tool output \u2014 same content as a more recent call]"
+  - id: summary
+    accept: any
+    select:
+      kind: decaying_prefix_tail
+      protect_first_n: 3
+      protect_last_n: 20
+      tail_mode: lean
+      min_tail_user_messages: 1
+      target_ratio: 0.2
+    reduce:
+      kind: checkpoint_summary
+      model: null
+      prompts:
+        initial_user:
+          file: initial-user.txt
+        initial_no_user:
+          file: initial-no-user.txt
+        update_user:
+          file: update-user.txt
+        update_no_user:
+          file: update-no-user.txt
+    place:
+      kind: alternation_template
+      end_marker:
+        file: end-marker.txt
+      prior_header:
+        file: prior-header.txt
+      merge_delimiter:
+        file: merge-delimiter.txt

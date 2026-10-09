@@ -95,8 +95,13 @@ class ComposedStep:
         selection = self.selector.select(context)
         reduction = self.reducer.reduce(context, selection)
         summary_messages: Sequence[Mapping[str, Any]] = ()
+        edits = reduction.edits
         if selection.first_kept_index is not None and self.placement is not None:
             summary_messages = self.placement.place(context, selection, reduction)
+            from .primitives.alternation import PlacementResult
+            if isinstance(summary_messages, PlacementResult):
+                edits = (*edits, *summary_messages.edits)
+                summary_messages = summary_messages.messages
         record = context.new_record(
             method=self.name,
             first_kept_index=selection.first_kept_index,
@@ -105,7 +110,7 @@ class ComposedStep:
             short_summary=reduction.short_summary,
             summary_messages=summary_messages,
             native=reduction.native,
-            edits=reduction.edits,
+            edits=edits,
             details=reduction.details,
         )
         return StepOutput(record, selection)
@@ -178,7 +183,7 @@ class Pipeline:
                 results.append(StageResult(stage_id, "unavailable", str(exc) or None))
                 continue
             except Exception as exc:
-                results.append(StageResult(stage_id, "failed", f"{type(exc).__name__}: {exc}"))
+                results.append(StageResult(stage_id, "failed", f"{getattr(exc, 'kind', type(exc).__name__)}: {exc}"))
                 if self.mode != "fallback":
                     stopped = f"stopped after {stage_id} failed"
                 continue

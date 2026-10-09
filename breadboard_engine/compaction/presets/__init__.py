@@ -47,7 +47,7 @@ from ..snapcompact import SnapcompactCompaction
 
 PRESET_SCHEMA = "bb.compaction_preset.v1"
 DEFAULT_PRESET = "omp@18.4.5"
-REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact")
+REQUEST_VIEW_STEPS = ("omp_prune", "omp_inline_snapcompact", "pipeline_edits")
 CLAIMS = ("executed_oracle", "source_golden")
 
 ALGORITHMS: Dict[str, Callable[[], CompactionMethod]] = {
@@ -270,6 +270,10 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     stages = [
         build_stage(pipe.child(item, f"stages[{i}]"), ALGORITHMS) for i, item in enumerate(pipe.list("stages"))
     ]
+    if "pipeline_edits" in request_view and any(
+        getattr(stage.step.selector, "kind", None) != "visible_tool_outputs" for stage in stages
+    ):
+        raise PresetError("pipeline_edits requires edit-only selectors")
     pipe.done()
     params.done()
     ids = [s.id for s in stages]

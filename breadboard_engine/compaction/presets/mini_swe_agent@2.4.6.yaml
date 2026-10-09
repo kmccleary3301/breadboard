@@ -1,0 +1,47 @@
+schema: bb.compaction_preset.v1
+id: mini_swe_agent@2.4.6
+source:
+  repo: https://github.com/SWE-agent/mini-swe-agent
+  commit: a83fcae82d2a08f0ee0c688f9d137b3566c097f8
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys: {}
+estimator: bb_chars4
+triggers:
+- kind: threshold
+  enabled: false
+  accounting:
+    kind: provider_total
+    usage_total: total_or_components
+  limit:
+    kind: window_minus_reserve
+    reserve: 0
+  compare: '>'
+  phase: every_request
+target:
+  threshold:
+    kind: window_minus_reserve
+    reserve: 0
+  manual:
+    kind: window_minus_reserve
+    reserve: 0
+  overflow:
+    kind: window_minus_reserve
+    reserve: 0
+overflow:
+  policy: terminal
+  max_attempts_per_turn: 0
+request_view:
+- pipeline_edits
+pipeline:
+  mode: sequence
+  stages:
+  - id: observation
+    accept: any
+    select:
+      kind: visible_tool_outputs
+    reduce:
+      kind: observation_clip
+      template:
+        file: observation.j2

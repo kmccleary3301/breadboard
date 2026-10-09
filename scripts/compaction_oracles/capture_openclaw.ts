@@ -152,16 +152,6 @@ const messagesSlice = loadSlice(
   COMPACTION_SUMMARY_SUFFIX: string;
 };
 
-// Read verbatim prompt files from checkout
-const systemPromptVerbatim = fs.readFileSync(
-  path.join(sourceCheckout, "packages/agent-core/src/harness/compaction/compaction.ts"),
-  "utf-8"
-).split("\n").slice(590, 593).join("\n"); // lines 591-593
-
-const initialPromptVerbatim = fs.readFileSync(
-  path.join(sourceCheckout, "packages/agent-core/src/harness/compaction/compaction.ts"),
-  "utf-8"
-).split("\n").slice(594, 626).join("\n"); // lines 595-626
 
 const cases: string[] = [];
 
@@ -365,6 +355,7 @@ function emitCase(caseName: string, payload: unknown) {
       context_window: 200_000,
       max_input_tokens: null,
       max_output_tokens: 4096,
+      message_token_estimates: entries.map((entry) => tokenWeights[entry.id]),
       reason: "threshold",
       native_settings: {
         keepRecentTokens: 1400,
@@ -444,22 +435,13 @@ function emitCase(caseName: string, payload: unknown) {
       native_settings: {
         identifierPolicy: "strict",
       },
-      summary_responses: [validSummary],
+      summary_responses: [],
+      component: "quality_audit",
+      stage: "summary",
+      audit_input: { summary: validSummary, identifiers: ["tx_987654321", "commit_3a9d69db306cd7f081e06254cb89c4bcc14a7107"] },
     },
     expect: {
-      summary_requests: [
-        {
-          system: systemPromptVerbatim,
-          messages: [
-            {
-              role: "user",
-              content: initialPromptVerbatim,
-            },
-          ],
-          max_tokens: null,
-          tools: [],
-        },
-      ],
+      details: auditResult,
     },
   });
 }
@@ -563,7 +545,10 @@ function emitCase(caseName: string, payload: unknown) {
       max_output_tokens: 4096,
       reason: "threshold",
       native_settings: {},
-      summary_responses: [summaryContent],
+      summary_responses: [],
+      component: "placement",
+      stage: "summary",
+      placement_input: { selection: { first_kept_index: 2 }, summary: summaryContent },
     },
     expect: {
       projected_view: [

@@ -75,6 +75,7 @@ class RecentTokens:
         self.walk = params.choice("walk", tuple(_WALKS))
         self.count = build_estimator(params.str("estimator", "bb_chars4"))
         self.when_empty = params.choice("when_empty", ("unavailable", "summarize"), "unavailable")
+        self.preserve_pending = params.bool("preserve_pending", False)
         params.done()
 
     def _count_one(self, message: Mapping[str, Any]) -> int:
@@ -83,8 +84,17 @@ class RecentTokens:
     def select(self, context: CompactionContext) -> Selection:
         messages = context.messages
         start = context.state.kept_start(messages)
-        cut = _WALKS[self.walk](messages, start, len(messages), self.budget, count_tokens=self._count_one)
+        count_one = context.token_estimator or self._count_one
+        cut = _WALKS[self.walk](messages, start, len(messages), self.budget, count_tokens=count_one)
         first = cut.first_kept_index
+        if self.preserve_pending:
+            pending = next((i for i, m in enumerate(messages)
+                            if i >= start and context.pending_entry_id is not None
+                            and m.get("id") == context.pending_entry_id), None)
+            if pending is not None and pending < first:
+                from .protected_windows import align_backward
+                first = align_backward(messages, pending)
+                return Selection(first_kept_index=first, summarize=tuple(range(start, first)))
         history_end = cut.turn_start_index if cut.is_split_turn else first
         summarize = tuple(range(start, history_end))
         turn_prefix = tuple(range(cut.turn_start_index, first)) if cut.is_split_turn else ()
@@ -93,7 +103,9 @@ class RecentTokens:
         return Selection(first_kept_index=first, summarize=summarize, turn_prefix=turn_prefix)
 
 
-SELECTOR_KINDS = {RecentTokens.kind: RecentTokens}
+from .protected_windows import DecayingPrefixTail, VisibleToolOutputs
+
+SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, DecayingPrefixTail, VisibleToolOutputs)}
 
 
 def build_selector(params: Params) -> Any:

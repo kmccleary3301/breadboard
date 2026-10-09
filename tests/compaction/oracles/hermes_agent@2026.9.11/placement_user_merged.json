@@ -44,9 +44,19 @@
     "max_output_tokens": 16000,
     "reason": "threshold",
     "native_settings": {},
-    "summary_responses": [
-      "Compact summary"
-    ]
+    "summary_responses": [],
+    "component": "placement",
+    "stage": "summary",
+    "placement_input": {
+      "selection": {
+        "prefix_end": 1,
+        "first_kept_index": 3
+      },
+      "summary": "Compact summary",
+      "details": {
+        "has_user_turn": false
+      }
+    }
   },
   "expect": {
     "projected_view": [

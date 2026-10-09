@@ -203,6 +203,15 @@ class CompactionController:
         if compaction_state is None or (not self.active and not compaction_state.records):
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
+        if self.active and "pipeline_edits" in self.recipe.request_view:
+            context = CompactionContext(
+                messages=messages, state=compaction_state, settings=self.settings, reason="manual",
+                target=target, context_window=context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW,
+                tokens_before=self.recipe.count(compaction_state.project(messages, target)),
+            )
+            outcome = self.recipe.pipeline.run(context, target_tokens=context.context_window)
+            for record in outcome.records:
+                self._after_record_appended(session_state, record, target, turn_index)
 
         # 1. Prune tool results if enabled
         if self.active and "omp_prune" in self.recipe.request_view and self.settings.prune.enabled:
@@ -238,6 +247,9 @@ class CompactionController:
                 model_id=target.model,
             )
 
+        for message in view:
+            message.pop("_compressed_summary", None)
+            message.pop("_compressed_summary_has_user_turn", None)
         return view
 
     def should_trigger_threshold(
@@ -369,6 +381,7 @@ class CompactionController:
             remote_ports=remote_ports,
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
+            pending_entry_id=getattr(session_state, "pending_entry_id", None),
             **kwargs,
         )
 

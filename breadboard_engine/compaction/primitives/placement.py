@@ -64,7 +64,9 @@ class Template:
         return [{"role": m["role"], "content": self._render(m["content"], reduction)} for m in self.messages]
 
 
-PLACEMENT_KINDS = {Template.kind: Template}
+from .alternation import AlternationTemplate
+
+PLACEMENT_KINDS = {cls.kind: cls for cls in (Template, AlternationTemplate)}
 
 
 def build_placement(params: Params) -> Any:

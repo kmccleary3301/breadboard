@@ -42,10 +42,20 @@
     "max_input_tokens": null,
     "max_output_tokens": 16000,
     "reason": "threshold",
-    "native_settings": {},
+    "native_settings": {
+      "summary_model": "hermes-3"
+    },
     "summary_responses": [
       "   "
-    ]
+    ],
+    "component": "summary_request",
+    "stage": "summary",
+    "summary_input": {
+      "conversation": "test prompt",
+      "previous_summary": "",
+      "summary_budget": 2000,
+      "has_user_turn": true
+    }
   },
   "expect": {
     "failure": {

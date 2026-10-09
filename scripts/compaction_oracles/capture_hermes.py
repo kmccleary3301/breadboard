@@ -451,7 +451,7 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         {"role": "user", "content": "U2"},
         {"role": "assistant", "content": "A2"},
     ]
-    aligned_4 = cc_pair._align_boundary_backward(msgs_pair, 4)
+    paired_start, paired_end = cc_pair._compress_window(msgs_pair)
     cases.append({
         "schema": "bb.compaction_oracle_case.v1",
         "preset": PRESET_ID,
@@ -484,8 +484,8 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         },
         "expect": {
             "selection": {
-                "prefix_end": cc_pair._align_boundary_forward(msgs_pair, cc_pair._protect_head_size(msgs_pair)),
-                "first_kept_index": aligned_4,
+                "prefix_end": paired_start,
+                "first_kept_index": paired_end,
             },
         },
     })
@@ -876,8 +876,9 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     # 16. Failure guard: Summary failure cooldown blocks subsequent auto-compaction
     # -------------------------------------------------------------
     cc_cd = ContextCompressor(model="hermes-3", config_context_length=128000)
-    cc_cd._summary_failure_cooldown_until = time.monotonic() + 30.0
-    fires_cd, reason_cd = cc_cd.should_compress_info(cc_cd.threshold_tokens + 5000)
+    cc_cd._summary_failure_cooldown_until = 130.0
+    with patch("time.monotonic", return_value=100.0):
+        fires_cd, reason_cd = cc_cd.should_compress_info(cc_cd.threshold_tokens + 5000)
     cases.append({
         "schema": "bb.compaction_oracle_case.v1",
         "preset": PRESET_ID,
@@ -919,6 +920,48 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         },
     })
 
+    for case in cases:
+        inp = case["input"]
+        name = case["case"]
+        if "selection" in case["expect"]:
+            inp["stage"] = "summary"
+        if name == "selection_protected_head_decayed":
+            inp["prior_compactions"] = cc_decayed.compression_count
+        if name == "selection_tail_tool_pairing":
+            inp["native_settings"]["protect_first_n"] = cc_pair.protect_first_n
+            case["capture"]["notes"] = "Executed _compress_window on the complete paired transcript, including both boundary alignments."
+        if name == "pruning_duplicate_tool_results":
+            inp["stages"] = ["prune"]
+            case["capture"]["notes"] = "Executed _prune_old_tool_results; duplicate detection uses MD5 and preserves the newest copy (agent/context_compressor.py:2641-2656)."
+        if name.startswith("summary_request"):
+            inp["component"] = "summary_request"
+            inp["stage"] = "summary"
+            inp["summary_input"] = {
+                "conversation": turns_text if name.endswith("fresh") else "User: Apply patch\nAssistant: Applied patch",
+                "previous_summary": "" if name.endswith("fresh") else cc_iter._previous_summary,
+                "summary_budget": 2000,
+                "has_user_turn": True,
+            }
+        if name.startswith("placement"):
+            inp["component"] = "placement"
+            inp["stage"] = "summary"
+            inp["summary_responses"] = []
+            standalone = name.endswith("standalone")
+            inp["placement_input"] = {
+                "selection": {"prefix_end": len(head_msgs1) if standalone else len(head_msgs2),
+                              "first_kept_index": 3},
+                "summary": "Compact summary",
+                "details": {"has_user_turn": True if standalone else bool(cc_place2._summary_has_user_turn)},
+            }
+        if name in {"failure_guard_empty_content", "failure_guard_length_truncated"}:
+            inp["component"] = "summary_request"
+            inp["stage"] = "summary"
+            inp["native_settings"]["summary_model"] = cc_fail1.model
+            inp["summary_input"] = {"conversation": "test prompt", "previous_summary": "",
+                                    "summary_budget": 2000, "has_user_turn": True}
+        if name == "failure_guard_cooldown_blocked":
+            inp["trigger_blocked"] = cc_cd._summary_failure_cooldown_until > 100.0
+
     return cases
 
 
@@ -932,20 +975,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    worktrees = [
-        Path("/Users/kylemccleary/projects/breadboard-compaction-ref-20261009"),
-        Path("/Users/kylemccleary/projects/breadboard"),
-    ]
+    worktrees = [Path(__file__).resolve().parents[2]]
 
-    prompt_dirs = [wt / "breadboard_engine/compaction/presets/prompts" / PRESET_ID for wt in worktrees]
     oracle_dirs = [wt / "tests/compaction/oracles" / PRESET_ID for wt in worktrees]
 
-    print(f"Writing prompt templates and SOURCE.json for {PRESET_ID}...")
-    files_map = write_prompt_files(args.source, prompt_dirs)
-    print(f"Wrote {len(files_map)} prompt files to {prompt_dirs[0]}")
+    print(f"Capturing cases for {PRESET_ID}...")
 
     print("Executing Hermes functions to generate oracle cases...")
-    cases = capture_cases(args.source)
+    sys.path.insert(0, str(args.source))
+    with patch("agent.context_compressor._today_for_prompt", return_value=""):
+        cases = capture_cases(args.source)
     print(f"Generated {len(cases)} oracle cases.")
 
     for oracle_dir in oracle_dirs:
