@@ -1,0 +1,55 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "opencode@1.2.17",
+  "case": "trigger_auto_disabled_with_overflow",
+  "source": {
+    "repo": "https://github.com/anomalyco/opencode",
+    "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
+    "evidence": [
+      "packages/opencode/src/session/processor.ts:355-367",
+      "packages/opencode/src/session/prompt.ts:536-540"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "Provider overflow is an explicit ingress, independent of the threshold switch. processor.ts:359-363 sets needsCompaction on ContextOverflowError; prompt.ts:539 passes overflow: !lastAssistant.finish."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hello"
+      },
+      {
+        "role": "assistant",
+        "content": "Hi"
+      }
+    ],
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 195000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "overflow",
+    "native_settings": {
+      "compaction": {
+        "auto": false
+      }
+    },
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 195000,
+      "limit": 168000,
+      "severity": "hard"
+    }
+  }
+}

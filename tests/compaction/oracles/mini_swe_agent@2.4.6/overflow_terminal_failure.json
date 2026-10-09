@@ -1,0 +1,39 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "mini_swe_agent@2.4.6",
+  "case": "overflow_terminal_failure",
+  "source": {
+    "repo": "https://github.com/SWE-agent/mini-swe-agent",
+    "commit": "a83fcae82d2a08f0ee0c688f9d137b3566c097f8",
+    "evidence": [
+      "src/minisweagent/models/litellm_model.py:50-57",
+      "src/minisweagent/models/utils/retry.py:19-24",
+      "src/minisweagent/agents/default.py:74-84"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_mini_swe_agent.py",
+    "notes": "Source-derived from LiteLLMModel and DefaultAgent exception path:\n1. src/minisweagent/models/litellm_model.py:50-57 lists `litellm.exceptions.ContextWindowExceededError` in `abort_exceptions`.\n2. src/minisweagent/models/utils/retry.py:19-24 excludes abort exceptions from retry.\n3. src/minisweagent/agents/default.py:74-84 formats terminal exit: `extra: {'exit_status': type(e).__name__}`.\nExecution aborts immediately with failure kind ContextWindowExceededError without retry or compaction."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Massive context exceeding window"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 2048,
+    "reason": "overflow",
+    "native_settings": {}
+  },
+  "expect": {
+    "failure": {
+      "kind": "ContextWindowExceededError",
+      "message": "litellm.exceptions.ContextWindowExceededError: Context window exceeded"
+    }
+  }
+}

@@ -286,7 +286,18 @@ def get_model_response(
     except Exception:
         pass
 
-    send_messages = copy.deepcopy(session_state.provider_messages)
+    compaction_ctrl = getattr(conductor, "compaction_controller", None)
+    if compaction_ctrl is not None:
+        send_messages = compaction_ctrl.prepare_request(
+            session_state,
+            conductor=conductor,
+            runtime=runtime,
+            client=client,
+            model=model,
+            turn_index=turn_index,
+        )
+    else:
+        send_messages = copy.deepcopy(session_state.provider_messages)
     requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
         {
@@ -712,6 +723,14 @@ def get_model_response(
                     "reason": stream_policy.get("reason"),
                     "stream_effective": stream_policy.get("stream_effective"),
                 }
+            compaction_state = getattr(session_state, "compaction_state", None)
+            if compaction_state is not None and compaction_state.records:
+                boundary = compaction_state.latest_boundary()
+                if boundary is not None:
+                    extra_meta["compaction_record_id"] = boundary.record_id
+                    extra_meta["compaction_first_kept_index"] = boundary.first_kept_index
+                extra_meta["compaction_records_count"] = len(compaction_state.records)
+            attempt_idx = compaction_ctrl.request_attempt if compaction_ctrl is not None else 0
             conductor.structured_request_recorder.record_request(
                 turn_index,
                 provider_id=getattr(runtime.descriptor, "provider_id", "unknown"),
@@ -722,7 +741,7 @@ def get_model_response(
                 stream=effective_stream_responses,
                 tool_count=len(tools_schema or []),
                 endpoint=request_endpoint,
-                attempt=0,
+                attempt=attempt_idx,
                 extra=extra_meta,
             )
     except Exception:

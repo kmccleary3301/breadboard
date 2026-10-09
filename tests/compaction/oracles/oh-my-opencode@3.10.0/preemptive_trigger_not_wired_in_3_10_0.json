@@ -1,0 +1,51 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "oh-my-opencode@3.10.0",
+  "case": "preemptive_trigger_not_wired_in_3_10_0",
+  "source": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+    "evidence": [
+      "src/plugin/event.ts:137-159",
+      "src/hooks/preemptive-compaction.ts:94-103,148-165",
+      "packages/opencode/src/session/compaction.ts:30-48"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "The complete shipped dispatcher at plugin/event.ts:137-159 never calls preemptiveCompaction.event, which is the only population of its token cache. Therefore only the native threshold applies; 160000 is below 168000."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Perform extensive operations"
+      },
+      {
+        "role": "assistant",
+        "content": "Working through operations..."
+      }
+    ],
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 160000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 160000,
+      "limit": 168000
+    }
+  }
+}

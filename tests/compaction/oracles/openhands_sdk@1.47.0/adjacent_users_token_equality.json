@@ -1,0 +1,75 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openhands_sdk@1.47.0",
+  "case": "adjacent_users_token_equality",
+  "source": {
+    "repo": "https://github.com/OpenHands/software-agent-sdk",
+    "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+    "evidence": [
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:120-399",
+      "openhands-sdk/openhands/sdk/context/view/view.py:38-51"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openhands.py",
+    "notes": "Executed pinned SDK 1.47.0 at 50080b58d35b4824fda25fca2345d80bcd08aeff. Reasons: none. Event payloads preserve display, response batches and thinking boundaries. Deterministic scripted completions and floor(text characters/4) token counter."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "XXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "user",
+        "content": "YYYYYYYYYYYYYYYYYYYY",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: YYYYYYYYYYYYYYYYYYYY",
+          "type": "MessageEvent"
+        }
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": 1000,
+    "max_output_tokens": null,
+    "reason": "threshold",
+    "native_settings": {
+      "max_size": 100,
+      "keep_first": 0,
+      "max_tokens": 9,
+      "minimum_progress": 0.1,
+      "hard_context_reset_max_retries": 5,
+      "hard_context_reset_context_scaling": 0.8
+    },
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 9,
+      "limit": 9,
+      "severity": null
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "XXXXXXXXXXXXXXXXXXX"
+          },
+          {
+            "type": "text",
+            "text": "YYYYYYYYYYYYYYYYYYYY"
+          }
+        ]
+      }
+    ]
+  }
+}

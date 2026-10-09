@@ -679,58 +679,76 @@ def run_main_loop(
                 self._inject_multi_agent_wakeups(session_state, markdown_logger)
             except Exception:
                 pass
-            # Build request and get response
-            try:
+            # Build request and get response. A context-overflow error may be
+            # recovered by compaction and retried, bounded by
+            # compaction.max_passes_per_turn; with compaction disabled the
+            # first error is raised exactly as before.
+            compaction_ctrl = getattr(self, "compaction_controller", None)
+            if compaction_ctrl is not None:
+                compaction_ctrl.begin_request()
+            while True:
                 try:
-                    session_state.record_lifecycle_event(
-                        "model_call_started",
-                        {"turn": turn_index, "model": str(model)},
-                        turn=turn_index,
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_started",
+                            {"turn": turn_index, "model": str(model)},
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    provider_result = self._get_model_response(
+                        runtime,
+                        client,
+                        model,
+                        tool_prompt_mode,
+                        effective_tool_defs,
+                        active_dialect_names,
+                        session_state,
+                        markdown_logger,
+                        stream_responses,
+                        local_tools_prompt,
+                        client_config,
                     )
-                except Exception:
-                    pass
-                provider_result = self._get_model_response(
-                    runtime,
-                    client,
-                    model,
-                    tool_prompt_mode,
-                    effective_tool_defs,
-                    active_dialect_names,
-                    session_state,
-                    markdown_logger,
-                    stream_responses,
-                    local_tools_prompt,
-                    client_config,
-                )
-                try:
-                    session_state.record_lifecycle_event(
-                        "model_call_finished",
-                        {"turn": turn_index},
-                        turn=turn_index,
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_finished",
+                            {"turn": turn_index},
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    break
+                except RuntimeError as exc:
+                    public_error = public_error_projection(
+                        exc,
+                        default_code="provider_runtime_error",
                     )
-                except Exception:
-                    pass
-            except RuntimeError as exc:
-                public_error = public_error_projection(
-                    exc,
-                    default_code="provider_runtime_error",
-                )
-                try:
-                    session_state.record_lifecycle_event(
-                        "model_call_finished",
-                        {
-                            "turn": turn_index,
-                            "error": public_error["error"],
-                            "error_type": public_error["error_type"],
-                        },
-                        turn=turn_index,
-                    )
-                except Exception:
-                    pass
-                if "Replay session exhausted" in str(exc):
-                    completed = True
-                    return finalize_run("loop_exit", "replay_complete")
-                raise
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_finished",
+                            {
+                                "turn": turn_index,
+                                "error": public_error["error"],
+                                "error_type": public_error["error_type"],
+                            },
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    if "Replay session exhausted" in str(exc):
+                        completed = True
+                        return finalize_run("loop_exit", "replay_complete")
+                    if compaction_ctrl is not None and compaction_ctrl.recover_from_overflow(
+                        exc,
+                        session_state,
+                        turn_index=turn_index,
+                        conductor=self,
+                        runtime=runtime,
+                        client=client,
+                        model=model,
+                    ):
+                        continue
+                    raise
             if session_state.get_provider_metadata("streaming_disabled"):
                 stream_responses = False
             if provider_result.usage:

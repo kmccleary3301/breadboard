@@ -24,6 +24,7 @@ from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
     HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
+    PI_0_73_1_TARGET_IDS,
     PI_RESPONSE_CONSUMER_ID,
     PI_0_57_1_RESPONSE_CONSUMER_ID,
     NATIVE_CHAT_RESPONSE_TARGETS,
@@ -59,6 +60,14 @@ from .runners.base import (
     thaw_json,
 )
 from .service import PolicyRuntimeClientResolver
+
+PI_SUMMARIZATION_SYSTEM_PROMPT: Final[str] = (
+    "You are a context summarization assistant. Your task is to read a conversation "
+    "between a user and an AI coding assistant, then produce a structured summary following "
+    "the exact format specified.\n\n"
+    "Do NOT continue the conversation. Do NOT respond to any questions in the conversation. "
+    "ONLY output the structured summary."
+)
 
 
 def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
@@ -298,7 +307,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     }
     deferred_targets = {
         OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
-        PI_RESPONSE_CONSUMER_ID: "pi@0.73.1",
+        PI_RESPONSE_CONSUMER_ID: PI_0_73_1_TARGET_IDS,
         PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
         OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
         OMP_16_2_13_RESPONSE_CONSUMER_ID: "oh-my-pi-r2@16.2.13",
@@ -320,7 +329,11 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         or version == 3
         and (
             renderer_id not in deferred_targets
-            or binding.get("target_id") != deferred_targets[renderer_id]
+            or (
+                binding.get("target_id") not in deferred_targets[renderer_id]
+                if isinstance(deferred_targets[renderer_id], (tuple, frozenset, set))
+                else binding.get("target_id") != deferred_targets[renderer_id]
+            )
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -1642,6 +1655,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                     expected_model_id=self._observation.model_id,
                     target_projection=self._target_projection,
                     native_system_prompt=self._native_stream_prompt,
+                    compaction_summary=request.compaction_summary,
                 )
             except (ProviderContractError, TypeError, ValueError) as exc:
                 error = RunnerProtocolError(
@@ -2151,6 +2165,7 @@ def _responses_request_to_chat(
     expected_model_id: str,
     target_projection: E4TargetPolicyProjection | None = None,
     native_system_prompt: str | None = None,
+    compaction_summary: bool = False,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]] | None]:
     if type(request) is not dict:
         raise TypeError("policy request must be an exact object")
@@ -2158,6 +2173,12 @@ def _responses_request_to_chat(
         raise ProviderContractError(
             "policy request model does not match the admitted policy observation"
         )
+    if compaction_summary and (
+        target_projection is None
+        or target_projection.runtime_profile is None
+        or target_projection.renderer_id != PI_RESPONSE_CONSUMER_ID
+    ):
+        raise ProviderContractError("compaction summary requests are admitted only for the Pi 0.73.1 native stream")
     if target_projection is not None and target_projection.runtime_profile is not None:
         if set(request) != {"model", "messages", "tools"}:
             raise ProviderContractError("source-native request fields differ from its source protocol")
@@ -2195,19 +2216,31 @@ def _responses_request_to_chat(
             if target_projection.renderer_id in _EMPTY_REQUIRED_OMITTED_TARGETS
             else [thaw_json(tool) for tool in target_projection.chat_tools]
         )
-        if (
-            type(messages) is not list
-            or len(messages) < 2
-            or any(type(message) is not dict or "extra" in message for message in messages)
-            or (
-                system_prompt is not None
-                and messages[0] != {"role": "system", "content": system_prompt}
-            )
-            or messages[1].get("role") != "user"
-            or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
-            or tools != expected_tools
-        ):
-            raise ProviderContractError("source-native request does not match its compiled source surface")
+        if compaction_summary:
+            if (
+                type(messages) is not list
+                or len(messages) < 2
+                or any(type(message) is not dict or "extra" in message for message in messages)
+                or messages[0] != {"role": "system", "content": PI_SUMMARIZATION_SYSTEM_PROMPT}
+                or messages[1].get("role") != "user"
+                or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
+                or tools != []
+            ):
+                raise ProviderContractError("source-native compaction summary request does not match its required schema")
+        else:
+            if (
+                type(messages) is not list
+                or len(messages) < 2
+                or any(type(message) is not dict or "extra" in message for message in messages)
+                or (
+                    system_prompt is not None
+                    and messages[0] != {"role": "system", "content": system_prompt}
+                )
+                or messages[1].get("role") != "user"
+                or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
+                or tools != expected_tools
+            ):
+                raise ProviderContractError("source-native request does not match its compiled source surface")
         if target_projection.renderer_id != MINI_RESPONSE_CONSUMER_ID:
             return messages, tools
         # No assistant splitting, argument decoding, null coercion or reordering: Mini's

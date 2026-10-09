@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+  "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+  "license": "MIT",
+  "source_sha256": {
+    "src/hooks/compaction-context-injector/hook.ts": "be299d081f88f95ae5618bcf8b2c9199ce861381e0a590c2fed72612f054fb52",
+    "src/shared/system-directive.ts": "34b3d34ac447b11d19d980080435b31274a3e72c5a2cdfeb694c14defd6e69c5"
+  },
+  "files": {
+    "contributor.txt": "src/hooks/compaction-context-injector/hook.ts:7-57, resolved via src/shared/system-directive.ts:8-17,49-58"
+  }
+}

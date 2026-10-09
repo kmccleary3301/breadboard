@@ -1,0 +1,128 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "oh-my-opencode@3.10.0",
+  "case": "todo_preservation_summary_contributor",
+  "source": {
+    "repo": "https://github.com/code-yeongyu/oh-my-openagent",
+    "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+    "evidence": [
+      "packages/opencode/src/session/compaction.ts:101-294",
+      "packages/opencode/src/session/message-v2.ts:490-729",
+      "src/hooks/compaction-context-injector/hook.ts:7-71",
+      "src/shared/system-directive.ts:8-17,49-58"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_opencode.ts",
+    "notes": "Executed pinned SessionCompaction.process and MessageV2.toModelMessages with AI SDK 5.0.124, scripted LLM and in-memory session persistence. Native tool messages are translated losslessly to BreadBoard's accepted call/result wire representation; native summary flags are ledger facts, not wire fields. Plugin context comes from the pinned injector. Selection excludes the synthetic marker, whose rendered text remains in the request and projection. The three-turn tool history verifies summary input before lifecycle pruning. This proves the continuity summary contributor, not the separate Todo.update persistence hook."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Build features and track todos"
+      },
+      {
+        "role": "assistant",
+        "content": "Working on tasks."
+      }
+    ],
+    "usage": {
+      "input_tokens": 0,
+      "output_tokens": 0,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 150000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      "Summary including todo state and active files."
+    ]
+  },
+  "expect": {
+    "summary_requests": [
+      {
+        "system": "You are a helpful AI assistant tasked with summarizing conversations.\n\nWhen asked to summarize, provide a detailed but concise summary of the conversation.\nFocus on information that would be helpful for continuing the conversation, including:\n- What was done\n- What is currently being worked on\n- Which files are being modified\n- What needs to be done next\n- Key user requests, constraints, or preferences that should persist\n- Important technical decisions and why they were made\n\nYour summary should be comprehensive enough to provide context but concise enough to be quickly understood.\n\nDo not respond to any questions in the conversation, only output the summary.\n",
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Build features and track todos"
+              }
+            ]
+          },
+          {
+            "role": "assistant",
+            "content": [
+              {
+                "type": "text",
+                "text": "Working on tasks."
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "What did we do so far?"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Provide a detailed prompt for continuing our conversation above.\nFocus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.\nThe summary that you construct will be used so that another agent can read it and continue the work.\n\nWhen constructing the summary, try to stick to this template:\n---\n## Goal\n\n[What goal(s) is the user trying to accomplish?]\n\n## Instructions\n\n- [What important instructions did the user give you that are relevant]\n- [If there is a plan or spec, include information about it so next agent can continue using it]\n\n## Discoveries\n\n[What notable things were learned during this conversation that would be useful for the next agent to know when continuing the work]\n\n## Accomplished\n\n[What work has been completed, what work is still in progress, and what work is left?]\n\n## Relevant files / directories\n\n[Construct a structured list of relevant files that have been read, edited, or created that pertain to the task at hand. If all the files in a directory are relevant, include the path to the directory.]\n---\n\n[SYSTEM DIRECTIVE: OH-MY-OPENCODE - COMPACTION CONTEXT]\n\nWhen summarizing this session, you MUST include the following sections in your summary:\n\n## 1. User Requests (As-Is)\n- List all original user requests exactly as they were stated\n- Preserve the user's exact wording and intent\n\n## 2. Final Goal\n- What the user ultimately wanted to achieve\n- The end result or deliverable expected\n\n## 3. Work Completed\n- What has been done so far\n- Files created/modified\n- Features implemented\n- Problems solved\n\n## 4. Remaining Tasks\n- What still needs to be done\n- Pending items from the original request\n- Follow-up tasks identified during the work\n\n## 5. Active Working Context (For Seamless Continuation)\n- **Files**: Paths of files currently being edited or frequently referenced\n- **Code in Progress**: Key code snippets, function signatures, or data structures under active development\n- **External References**: Documentation URLs, library APIs, or external resources being consulted\n- **State & Variables**: Important variable names, configuration values, or runtime state relevant to ongoing work\n\n## 6. Explicit Constraints (Verbatim Only)\n- Include ONLY constraints explicitly stated by the user or in existing AGENTS.md context\n- Quote constraints verbatim (do not paraphrase)\n- Do NOT invent, add, or modify constraints\n- If no explicit constraints exist, write \"None\"\n\n## 7. Agent Verification State (Critical for Reviewers)\n- **Current Agent**: What agent is running (momus, oracle, etc.)\n- **Verification Progress**: Files already verified/validated\n- **Pending Verifications**: Files still needing verification\n- **Previous Rejections**: If reviewer agent, what was rejected and why\n- **Acceptance Status**: Current state of review process\n\nThis section is CRITICAL for reviewer agents (momus, oracle) to maintain continuity.\n\n## 8. Delegated Agent Sessions\n- List ALL background agent tasks spawned during this session\n- For each: agent name, category, status, description, and **session_id**\n- **RESUME, DON'T RESTART.** Each listed session retains full context. After compaction, use `session_id` to continue existing agent sessions instead of spawning new ones. This saves tokens, preserves learned context, and prevents duplicate work.\n\nThis context is critical for maintaining continuity after compaction.\n"
+              }
+            ]
+          }
+        ],
+        "tools": []
+      }
+    ],
+    "selection": {
+      "summarize": [
+        0,
+        1
+      ]
+    },
+    "projected_view": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "What did we do so far?"
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": [
+          {
+            "type": "text",
+            "text": "Summary including todo state and active files."
+          }
+        ]
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."
+          }
+        ]
+      }
+    ]
+  }
+}

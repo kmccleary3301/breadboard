@@ -1,0 +1,12 @@
+{
+  "repo": "https://github.com/OpenHands/software-agent-sdk",
+  "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+  "source_sha256": {
+    "openhands/sdk/context/condenser/prompts/summarizing_prompt.j2": "88cfcc443636ee2df8aa267417a22c0f1c9e3caa73c4edce10fe4ad6b03dd3f3",
+    "openhands/sdk/utils/truncate.py": "2d8440e3908147b75a482d3782cf349eeecf61d44e87de37fe788ea5aa2ab8a5"
+  },
+  "files": {
+    "summarizing_prompt.j2": "openhands/sdk/context/condenser/prompts/summarizing_prompt.j2:1-55",
+    "truncate-notice.txt": "openhands/sdk/utils/truncate.py:15-18"
+  }
+}

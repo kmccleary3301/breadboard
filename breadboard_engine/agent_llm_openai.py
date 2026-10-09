@@ -481,6 +481,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         with session_state.context_mutation():
             session_state.messages = copy.deepcopy(restored)
             session_state.provider_messages = restored
+            session_state.reset_compaction_state()
         return any(message.get("role") == "system" for message in restored)
 
     def _retain_ctree(self, session_state: SessionState, session_id: str) -> None:

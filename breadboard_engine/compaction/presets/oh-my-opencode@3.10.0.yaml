@@ -1,0 +1,124 @@
+schema: bb.compaction_preset.v1
+id: oh-my-opencode@3.10.0
+source:
+  repo: https://github.com/code-yeongyu/oh-my-openagent
+  commit: e4e13cdebf2c57f3eecb2ab94950f7f6f681169a
+  evidence:
+  - src/hooks/anthropic-context-window-limit-recovery/target-token-truncation.ts:26-196
+  - src/hooks/compaction-context-injector/hook.ts:7-71
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    compaction.auto:
+    - triggers.0.enabled
+    compaction.prune:
+    - pipeline.stages.1.select.enabled
+    compaction.reserved:
+    - triggers.0.limit.reserved
+    - target.threshold.reserved
+    - target.manual.reserved
+    - target.overflow.reserved
+estimator: bb_chars4
+triggers:
+- kind: threshold
+  accounting:
+    kind: provider_total
+    usage_total: total_or_components
+    without_usage: skip
+  limit:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  compare: '>='
+  phase: every_request
+  severity: soft
+  enabled: true
+  disable_zero_window: true
+  provider_overflow: true
+target:
+  threshold:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  manual:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+  overflow:
+    kind: input_or_window_reserve
+    output_cap: 32000
+    input_buffer: 20000
+    reserved: null
+overflow:
+  max_attempts_per_turn: 1
+  policy: compact
+request_view:
+- prune
+pipeline:
+  mode: sequence
+  stages:
+  - id: recovery
+    when:
+      reasons:
+      - overflow
+    stop_on_detail: recovered
+    select:
+      kind: largest_first_masking
+      target_ratio: 0.5
+      chars_per_token: 4
+      placeholder: '[Old tool result content cleared]'
+    reduce:
+      kind: mask_outputs
+      placeholder: '[Old tool result content cleared]'
+  - id: prune
+    phase: user_turn_start
+    when: {reasons: [request]}
+    select:
+      kind: protected_tool_outputs
+      enabled: true
+      protect_tokens: 40000
+      protect_user_turns: 2
+      min_savings: 20000
+      exempt_tools:
+      - skill
+      stop_at_summary: true
+      placeholder: '[Old tool result content cleared]'
+    reduce:
+      kind: mask_outputs
+      placeholder: '[Old tool result content cleared]'
+  - id: summary
+    accept: any
+    select:
+      kind: whole_history
+      exclude_latest_user_on:
+      - overflow
+      replay_min_users: 2
+      replay_prefix_only: true
+      exclude_compaction_users: true
+    reduce:
+      kind: message_summary
+      system:
+        file: ../opencode@1.2.17/system.txt
+      prompt:
+        file: ../opencode@1.2.17/summary.txt
+      marker:
+        file: ../opencode@1.2.17/marker.txt
+      strip_media: true
+      max_tokens: null
+      contributors:
+      - file: contributor.txt
+    place:
+      kind: summary_replay
+      marker:
+        file: ../opencode@1.2.17/marker.txt
+      continuation:
+        file: ../opencode@1.2.17/continue.txt
+      overflow_prefix:
+        file: ../opencode@1.2.17/overflow-prefix.txt
+      auto_reasons:
+      - threshold
+      - overflow

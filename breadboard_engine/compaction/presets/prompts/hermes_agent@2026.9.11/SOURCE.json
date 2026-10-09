@@ -1,0 +1,16 @@
+{
+  "repo": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+  "source_sha256": {
+    "agent/context_compressor.py": "29b12a7bb57bd76dadcbcfdfee470001f9b5b0b015b6eaa8801c7cfc6a6139d0"
+  },
+  "files": {
+    "initial-user.txt": "agent/context_compressor.py:3352-3483",
+    "update-user.txt": "agent/context_compressor.py:3352-3483",
+    "initial-no-user.txt": "agent/context_compressor.py:3352-3483",
+    "update-no-user.txt": "agent/context_compressor.py:3352-3483",
+    "end-marker.txt": "agent/context_compressor.py:356-361",
+    "prior-header.txt": "agent/context_compressor.py:356-361",
+    "merge-delimiter.txt": "agent/context_compressor.py:356-361"
+  }
+}

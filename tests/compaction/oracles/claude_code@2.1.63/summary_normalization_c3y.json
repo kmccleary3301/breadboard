@@ -1,0 +1,49 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "summary_normalization_c3y",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2195-2199 (function c3Y)",
+      "package/cli.js:2195-2199 [bytes 5937174-5937514]"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Executed pure function c3Y sliced directly from cli.js (bytes 5937174-5937514) in node vm. Verbatim bundle text: \"function c3Y(A){let q=A,K=q.match(/<analysis>([\\s\\S]*?)<\\/analysis>/);if(K){let z=K[1]||\"\";q=q.replace(/<analysis>[\\s\\S]*?<\\/analysis>/,`Analysis:\\n${z.trim()}`)}let Y=q.match(/<summary>([\\s\\S]*?)<\\/summary>/);if(Y){let z=Y[1]||\"\";q=q.replace(/<summary>[\\s\\S]*?<\\/summary>/,`Summary:\\n${z.trim()}`)}return q=q.replace(/\\n\\n+/g,`\\n\\n`),q.trim()}\". Replaces <analysis> and <summary> tags with Markdown headers, collapses consecutive newlines, and trims."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Audit auth.ts"
+      },
+      {
+        "role": "assistant",
+        "content": "Done"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "manual",
+    "native_settings": {},
+    "summary_responses": [
+      "<analysis>\nThe user asked to audit security vulnerabilities in auth.ts.\nWe identified missing CSRF validation and token leakage in URL params.\n</analysis>\n\n<summary>\n1. Audited auth.ts for security flaws.\n2. Patched CSRF token verification middleware.\n3. Removed sensitive parameters from logging endpoints.\n</summary>"
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nAnalysis:\nThe user asked to audit security vulnerabilities in auth.ts.\nWe identified missing CSRF validation and token leakage in URL params.\n\nSummary:\n1. Audited auth.ts for security flaws.\n2. Patched CSRF token verification middleware.\n3. Removed sensitive parameters from logging endpoints."
+      }
+    ]
+  }
+}

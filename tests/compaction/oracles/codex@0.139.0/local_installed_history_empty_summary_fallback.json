@@ -1,0 +1,56 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "local_installed_history_empty_summary_fallback",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/compact.rs:562-566"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_codex.py",
+    "notes": "codex-rs/core/src/compact.rs:562-566: 'let summary_text = if summary_text.is_empty() { \"(no summary available)\".to_string() } else { summary_text.to_string() };'. An empty assistant response during summarization falls back to '(no summary available)'."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Write tests."
+      },
+      {
+        "role": "assistant",
+        "content": "Writing tests."
+      }
+    ],
+    "usage": {
+      "input_tokens": 91000,
+      "output_tokens": 1000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 92000
+    },
+    "context_window": 100000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [
+      ""
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "Write tests."
+      },
+      {
+        "role": "user",
+        "content": "Another language model started to solve this problem and produced a summary of its thinking process. You also have access to the state of the tools that were used by that language model. Use this to build on the work that has already been done and avoid duplicating work. Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:\n(no summary available)"
+      }
+    ]
+  }
+}

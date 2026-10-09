@@ -1,0 +1,15 @@
+{
+  "package": "@anthropic-ai/claude-code@2.1.63",
+  "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+  "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+  "source_sha256": {
+    "package/cli.js": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d"
+  },
+  "files": {
+    "summary.txt": "package/cli.js:2095-2195 rJ4 default with final instruction",
+    "system.txt": "package/cli.js:2211 TD4 system",
+    "bridge_prefix.txt": "package/cli.js:2199-2201 $Q6 prefix",
+    "continuation.txt": "package/cli.js:2205-2206 $Q6 continuation",
+    "placeholder.txt": "package/cli.js:1661 zZ8"
+  }
+}

@@ -1,0 +1,196 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openhands_sdk@1.47.0",
+  "case": "hard_failure_triggers_hard_context_reset",
+  "source": {
+    "repo": "https://github.com/OpenHands/software-agent-sdk",
+    "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
+    "evidence": [
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:120-399",
+      "openhands-sdk/openhands/sdk/context/view/view.py:38-51"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openhands.py",
+    "notes": "Executed pinned SDK 1.47.0 at 50080b58d35b4824fda25fca2345d80bcd08aeff. Reasons: events,request. Event payloads preserve display, response batches and thinking boundaries. Deterministic scripted completions and floor(text characters/4) token counter."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Msg 0",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: Msg 0",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 1",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: Msg 1",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Msg 2",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: Msg 2",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 3",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: Msg 3",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Msg 4",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: Msg 4",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 5",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: Msg 5",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Msg 6",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: Msg 6",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 7",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: Msg 7",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "user",
+        "content": "Msg 8",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: Msg 8",
+          "type": "MessageEvent"
+        }
+      },
+      {
+        "role": "assistant",
+        "content": "Msg 9",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: Msg 9",
+          "type": "MessageEvent"
+        }
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "manual",
+    "native_settings": {
+      "max_size": 8,
+      "keep_first": 2,
+      "max_tokens": null,
+      "minimum_progress": 0.1,
+      "hard_context_reset_max_retries": 5,
+      "hard_context_reset_context_scaling": 0.8
+    },
+    "summary_responses": [
+      {
+        "error": {
+          "kind": "RuntimeError",
+          "message": "Simulated failure 1"
+        }
+      },
+      {
+        "error": {
+          "kind": "RuntimeError",
+          "message": "Simulated failure 2"
+        }
+      },
+      "Hard reset recovered summary"
+    ]
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 10,
+      "limit": 8,
+      "severity": "hard"
+    },
+    "selection": {
+      "prefix_end": 2,
+      "first_kept_index": 9,
+      "summarize": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    },
+    "summary": "Hard reset recovered summary",
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "Hard reset recovered summary"
+      }
+    ],
+    "summary_requests": [
+      {
+        "system": null,
+        "messages": [
+          {
+            "role": "user",
+            "content": "You are maintaining a context-aware state summary for an interactive agent.\nYou will be given a list of events corresponding to actions taken by the agent, which will include previous summaries.\nIf the events being summarized contain ANY task-tracking, you MUST include a TASK_TRACKING section to maintain continuity.\nWhen referencing tasks make sure to preserve exact task IDs and statuses.\n\nTrack:\n\nUSER_CONTEXT: (Preserve essential user requirements, goals, and clarifications in concise form)\n\nTASK_TRACKING: {Active tasks, their IDs and statuses - PRESERVE TASK IDs}\n\nCOMPLETED: (Tasks completed so far, with brief results)\nPENDING: (Tasks that still need to be done)\nCURRENT_STATE: (Current variables, data structures, or relevant state)\n\nFor code-specific tasks, also include:\nCODE_STATE: {File paths, function signatures, data structures}\nTESTS: {Failing cases, error messages, outputs}\nCHANGES: {Code edits, variable updates}\nDEPS: {Dependencies, imports, external calls}\nVERSION_CONTROL_STATUS: {Repository state, current branch, PR status, commit history}\n\nPRIORITIZE:\n1. Adapt tracking format to match the actual task type\n2. Capture key user requirements and goals\n3. Distinguish between completed and pending tasks\n4. Keep all sections concise and relevant\n\nSKIP: Tracking irrelevant details for the current task type\n\nExample formats:\n\nFor code tasks:\nUSER_CONTEXT: Fix FITS card float representation issue\nCOMPLETED: Modified mod_float() in card.py, all tests passing\nPENDING: Create PR, update documentation\nCODE_STATE: mod_float() in card.py updated\nTESTS: test_format() passed\nCHANGES: str(val) replaces f\"{val:.16G}\"\nDEPS: None modified\nVERSION_CONTROL_STATUS: Branch: fix-float-precision, Latest commit: a1b2c3d\n\nFor other tasks:\nUSER_CONTEXT: Write 20 haikus based on coin flip results\nCOMPLETED: 15 haikus written for results [T,H,T,H,T,H,T,T,H,T,H,T,H,T,H]\nPENDING: 5 more haikus needed\nCURRENT_STATE: Last flip: Heads, Haiku count: 15/20\n\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 2\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 3\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 4\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 5\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 6\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 7\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 8\n</EVENT>\n\n\nNow summarize the events using the rules above."
+          }
+        ],
+        "max_tokens": null,
+        "tools": []
+      },
+      {
+        "system": null,
+        "messages": [
+          {
+            "role": "user",
+            "content": "You are maintaining a context-aware state summary for an interactive agent.\nYou will be given a list of events corresponding to actions taken by the agent, which will include previous summaries.\nIf the events being summarized contain ANY task-tracking, you MUST include a TASK_TRACKING section to maintain continuity.\nWhen referencing tasks make sure to preserve exact task IDs and statuses.\n\nTrack:\n\nUSER_CONTEXT: (Preserve essential user requirements, goals, and clarifications in concise form)\n\nTASK_TRACKING: {Active tasks, their IDs and statuses - PRESERVE TASK IDs}\n\nCOMPLETED: (Tasks completed so far, with brief results)\nPENDING: (Tasks that still need to be done)\nCURRENT_STATE: (Current variables, data structures, or relevant state)\n\nFor code-specific tasks, also include:\nCODE_STATE: {File paths, function signatures, data structures}\nTESTS: {Failing cases, error messages, outputs}\nCHANGES: {Code edits, variable updates}\nDEPS: {Dependencies, imports, external calls}\nVERSION_CONTROL_STATUS: {Repository state, current branch, PR status, commit history}\n\nPRIORITIZE:\n1. Adapt tracking format to match the actual task type\n2. Capture key user requirements and goals\n3. Distinguish between completed and pending tasks\n4. Keep all sections concise and relevant\n\nSKIP: Tracking irrelevant details for the current task type\n\nExample formats:\n\nFor code tasks:\nUSER_CONTEXT: Fix FITS card float representation issue\nCOMPLETED: Modified mod_float() in card.py, all tests passing\nPENDING: Create PR, update documentation\nCODE_STATE: mod_float() in card.py updated\nTESTS: test_format() passed\nCHANGES: str(val) replaces f\"{val:.16G}\"\nDEPS: None modified\nVERSION_CONTROL_STATUS: Branch: fix-float-precision, Latest commit: a1b2c3d\n\nFor other tasks:\nUSER_CONTEXT: Write 20 haikus based on coin flip results\nCOMPLETED: 15 haikus written for results [T,H,T,H,T,H,T,T,H,T,H,T,H,T,H]\nPENDING: 5 more haikus needed\nCURRENT_STATE: Last flip: Heads, Haiku count: 15/20\n\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 0\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 1\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 2\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 3\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 4\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 5\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 6\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 7\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: Msg 8\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: Msg 9\n</EVENT>\n\n\nNow summarize the events using the rules above."
+          }
+        ],
+        "max_tokens": null,
+        "tools": []
+      },
+      {
+        "system": null,
+        "messages": [
+          {
+            "role": "user",
+            "content": "You are maintaining a context-aware state summary for an interactive agent.\nYou will be given a list of events corresponding to actions taken by the agent, which will include previous summaries.\nIf the events being summarized contain ANY task-tracking, you MUST include a TASK_TRACKING section to maintain continuity.\nWhen referencing tasks make sure to preserve exact task IDs and statuses.\n\nTrack:\n\nUSER_CONTEXT: (Preserve essential user requirements, goals, and clarifications in concise form)\n\nTASK_TRACKING: {Active tasks, their IDs and statuses - PRESERVE TASK IDs}\n\nCOMPLETED: (Tasks completed so far, with brief results)\nPENDING: (Tasks that still need to be done)\nCURRENT_STATE: (Current variables, data structures, or relevant state)\n\nFor code-specific tasks, also include:\nCODE_STATE: {File paths, function signatures, data structures}\nTESTS: {Failing cases, error messages, outputs}\nCHANGES: {Code edits, variable updates}\nDEPS: {Dependencies, imports, external calls}\nVERSION_CONTROL_STATUS: {Repository state, current branch, PR status, commit history}\n\nPRIORITIZE:\n1. Adapt tracking format to match the actual task type\n2. Capture key user requirements and goals\n3. Distinguish between completed and pending tasks\n4. Keep all sections concise and relevant\n\nSKIP: Tracking irrelevant details for the current task type\n\nExample formats:\n\nFor code tasks:\nUSER_CONTEXT: Fix FITS card float representation issue\nCOMPLETED: Modified mod_float() in card.py, all tests passing\nPENDING: Create PR, update documentation\nCODE_STATE: mod_float() in card.py updated\nTESTS: test_format() passed\nCHANGES: str(val) replaces f\"{val:.16G}\"\nDEPS: None modified\nVERSION_CONTROL_STATUS: Branch: fix-float-precision, Latest commit: a1b2c3d\n\nFor other tasks:\nUSER_CONTEXT: Write 20 haikus based on coin flip results\nCOMPLETED: 15 haikus written for results [T,H,T,H,T,H,T,T,H,T,H,T,H,T,H]\nPENDING: 5 more haikus needed\nCURRENT_STATE: Last flip: Heads, Haiku count: 15/20\n\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n<EVENT>\n<response clipped><NOTE>Due to \n</EVENT>\n\n\nNow summarize the events using the rules above."
+          }
+        ],
+        "max_tokens": null,
+        "tools": []
+      }
+    ]
+  }
+}

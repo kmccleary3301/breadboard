@@ -1,0 +1,83 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "selection_protected_head_decayed",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:3917-3927",
+      "agent/context_compressor.py:3929-3937"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._effective_protect_first_n at agent/context_compressor.py:3917-3927 and _protect_head_size at agent/context_compressor.py:3929-3937. Decayed session: compression_count >= 1 causes protect_first_n to decay to 0; only system message remains in prefix_end (1)."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "System prompt."
+      },
+      {
+        "role": "user",
+        "content": "U1"
+      },
+      {
+        "role": "assistant",
+        "content": "A1"
+      },
+      {
+        "role": "user",
+        "content": "U2"
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      },
+      {
+        "role": "user",
+        "content": "U3"
+      },
+      {
+        "role": "assistant",
+        "content": "A3"
+      },
+      {
+        "role": "user",
+        "content": "U4"
+      },
+      {
+        "role": "assistant",
+        "content": "A4"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 16000,
+    "reason": "threshold",
+    "native_settings": {
+      "protect_first_n": 3
+    },
+    "summary_responses": [],
+    "stage": "summary",
+    "prior_compactions": 1
+  },
+  "expect": {
+    "selection": {
+      "prefix_end": 1,
+      "first_kept_index": 4,
+      "summarize": [
+        1,
+        2,
+        3
+      ],
+      "turn_prefix": [],
+      "replay": [],
+      "targets": []
+    }
+  }
+}

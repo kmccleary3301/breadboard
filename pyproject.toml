@@ -11,6 +11,7 @@ dependencies = ["fastapi>=0.100", "httpx>=0.27", "Jinja2>=3.1", "jsonschema>=4.1
 
 [project.optional-dependencies]
 mini = ["litellm==1.101.0"]
+snapcompact = ["Pillow>=10"]
 
 [project.scripts]
 breadboard = "breadboard.product.cli:main"
@@ -27,6 +28,8 @@ namespaces = true
 "agent_configs.templates" = ["*.yaml", "*.json"]
 "agent_configs.templates.prompts" = ["*.md"]
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
+"breadboard_engine.compaction" = ["prompts/*.md", "snapcompact/fonts/*"]
+"breadboard_engine.compaction.presets" = ["*.yaml", "prompts/*/*"]
 "breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json", "pi_tools_0_57_1.mjs", "pi_tools_0_73_1.mjs", "hermes_*.py", "native_worker.py", "runners/*.ts", "openclaw_tool_worker.mjs", "openclaw_classifier_loader.mjs"]
 "breadboard.rl.harness.resources.qualification" = ["canonical_artifact_vectors_v1.json", "tls/authority.json", "tls/ca.cert.pem", "tls/server.cert.pem", "tls/server.key.pem"]
 "breadboard_engine.execution" = ["node/*.mjs", "node/THIRD_PARTY_NOTICES.txt"]

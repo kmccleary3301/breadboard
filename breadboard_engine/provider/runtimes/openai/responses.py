@@ -17,6 +17,7 @@ from ...contracts import (
 from ...input_media import resolve_input_media
 from ...model_role_options import openai_responses_role_options
 from ....logging.provider_dump import provider_dump_logger
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .chat import OpenAIChatRuntime
 
@@ -84,8 +85,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 developer_messages.append(cloned)
             instructions = None
 
+        has_native_marker = any(
+            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
+        )
         has_conversation = False
-        if responses_stateful:
+        if responses_stateful and not has_native_marker:
             has_conversation = bool(
                 context.session_state.get_provider_metadata("conversation_id")
                 or context.session_state.get_provider_metadata("previous_response_id")
@@ -269,6 +273,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 "tool_result",
             }:
                 raise ProviderContractError(f"unsupported Responses role: {role!r}")
+            if "bb_native_compaction" in message:
+                marker = message.get("bb_native_compaction")
+                if isinstance(marker, dict):
+                    provider = marker.get("provider")
+                    api = marker.get("api")
+                    if provider == "openai" and api == "responses":
+                        items = marker.get("items") or ()
+                        for item in items:
+                            if isinstance(item, dict):
+                                cloned = dict(item)
+                                cloned.pop("bb_native_compaction", None)
+                                converted.append(cloned)
+                        continue
             outputs = tool_outputs(message)
             if outputs:
                 converted.extend(outputs)
@@ -429,7 +446,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 else "provider"
             )
             raise ProviderRuntimeError(
-                redaction.safe_exception_message(exc), kind=kind
+                redaction.safe_exception_message(exc),
+                kind=kind,
+                details=provider_overflow_details(exc),
             ) from None
 
         session_state = getattr(context, "session_state", None)
@@ -958,6 +977,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 redaction.safe_exception_message(exc),
                 kind=kind,
                 output_emitted=output_emitted,
+                details=provider_overflow_details(exc),
             ) from None
 
     def _normalize_output_message_content(self, content: Any) -> Any:
@@ -1070,7 +1090,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             if resolved_choice is not None:
                 payload["tool_choice"] = resolved_choice
 
-        if responses_stateful:
+        has_native_marker = any(
+            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
+        )
+        if responses_stateful and not has_native_marker:
             conversation_id = context.session_state.get_provider_metadata(
                 "conversation_id"
             )
@@ -1082,7 +1105,6 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
             if previous_response_id:
                 payload["previous_response_id"] = previous_response_id
-
         extra_payload = context.extra.get("responses_extra") if context.extra else None
         if isinstance(extra_payload, dict):
             payload.update(extra_payload)
@@ -1144,7 +1166,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 raise
             except Exception as exc:  # pragma: no cover - exercised in integration
                 raise ProviderRuntimeError(
-                    redaction.safe_exception_message(exc)
+                    redaction.safe_exception_message(exc),
+                    details=provider_overflow_details(exc),
                 ) from None
 
         normalized_messages: List[ProviderMessage] = []
@@ -1350,4 +1373,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             reasoning_blocks=reasoning_blocks or None,
             model=getattr(response, "model", None),
             metadata=metadata,
+        )
+    def compaction_port(
+        self,
+        *,
+        client: Any,
+        model: str,
+        context: Any = None,
+    ) -> Any:
+        from ....compaction.remote.openai import OpenAIResponsesCompactionPort
+
+        return OpenAIResponsesCompactionPort(
+            client=client,
+            model=model,
+            context=context,
+            runtime=self,
         )

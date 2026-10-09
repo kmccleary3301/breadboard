@@ -1,0 +1,50 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "mini_swe_agent@2.4.6",
+  "case": "trigger_zero_occupancy",
+  "source": {
+    "repo": "https://github.com/SWE-agent/mini-swe-agent",
+    "commit": "a83fcae82d2a08f0ee0c688f9d137b3566c097f8",
+    "evidence": [
+      "src/minisweagent/agents/default.py:130-151",
+      "src/minisweagent/agents/default.py:69-72"
+    ]
+  },
+  "capture": {
+    "kind": "source_derived",
+    "script": "scripts/compaction_oracles/capture_mini_swe_agent.py",
+    "notes": "Source-derived from src/minisweagent/agents/default.py:130-151.\nVerbatim query() loop checks:\n  if 0 < self.config.step_limit <= self.n_calls or 0 < self.config.cost_limit <= self.cost:\n      raise LimitsExceeded(...)\n  if 0 < self.config.wall_time_limit_seconds <= int(time.time() - self._start_time):\n      raise TimeExceeded(...)\nNo context token, usage, or occupancy threshold exists in DefaultAgent; history is purely append-only (line 71: `self.messages.extend(messages)`). Therefore trigger.fires = False."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are a helpful coding assistant."
+      },
+      {
+        "role": "user",
+        "content": "Fix bug in repo."
+      }
+    ],
+    "usage": {
+      "input_tokens": 100,
+      "output_tokens": 50,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 150
+    },
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 2048,
+    "reason": "threshold",
+    "native_settings": {}
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 150,
+      "limit": 128000,
+      "severity": "soft"
+    }
+  }
+}

@@ -20,8 +20,15 @@ const SCHEMA_VERSION = "bb.native-worker.rpc.v1";
 const TOOL_IDS = new Set(["read", "bash", "edit", "write"]);
 
 function packageImport(nodeModules, packageName, entry) {
-  if (!nodeModules) return import(packageName);
-  return import(pathToFileURL(resolve(nodeModules, packageName, entry)).href);
+  if (nodeModules) {
+    return import(pathToFileURL(resolve(nodeModules, packageName, entry)).href);
+  }
+  if (!entry || entry === "dist/index.js") {
+    return import(packageName);
+  }
+  const base = import.meta.resolve(packageName);
+  const sub = entry.startsWith("dist/") ? "./" + entry.slice(5) : "./" + entry;
+  return import(new URL(sub, base).href);
 }
 
 const nodeModules = process.env.PI_CODING_AGENT_NODE_MODULES;
@@ -32,6 +39,23 @@ const promptModule = await packageImport(nodeModules, "@mariozechner/pi-coding-a
 const resourceModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/resource-loader.js");
 const shellModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/shell.js");
 const childProcessModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/child-process.js");
+const compactionModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/compaction/index.js");
+const messagesModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/messages.js");
+const {
+  prepareCompaction,
+  DEFAULT_COMPACTION_SETTINGS,
+  serializeConversation,
+  SUMMARIZATION_PROMPT,
+  UPDATE_SUMMARIZATION_PROMPT,
+  SUMMARIZATION_SYSTEM_PROMPT,
+  TURN_PREFIX_SUMMARIZATION_PROMPT,
+  computeFileLists,
+  formatFileOperations,
+} = compactionModule;
+const {
+  convertToLlm,
+  createCompactionSummaryMessage,
+} = messagesModule;
 const {
   createBashTool,
   createBashToolDefinition,
@@ -508,7 +532,7 @@ function projectRequest(payload) {
   if (!Array.isArray(payload?.messages)) fail("project_request requires messages");
   const model = modelForProject(initializedState.modelConfig);
   const acceptsImage = model.input.includes("image");
-  const messages = payload.messages.map((message) => {
+  const messages = convertToLlm(payload.messages).map((message) => {
     if (acceptsImage || !Array.isArray(message?.content)) return message;
     return {
       ...message,
@@ -519,6 +543,149 @@ function projectRequest(payload) {
   const outboundMessages = convertMessages(model, context, model.compat);
   const tools = initializedState.schemas;
   return { schema_version: "bb.pi-native.v1", kind: "request", messages: outboundMessages, tools };
+}
+
+function entriesFromMessages(messages) {
+  return messages.map((msg, index) => {
+    const id = `entry_${index}`;
+    if (msg.role === "compactionSummary") {
+      return {
+        id,
+        type: "compaction",
+        summary: msg.summary,
+        firstKeptEntryId: msg.firstKeptEntryId || `entry_${index + 1}`,
+        tokensBefore: msg.tokensBefore || 0,
+        details: msg.details || {},
+        timestamp: msg.timestamp || Date.now(),
+      };
+    }
+    return {
+      id,
+      type: "message",
+      message: msg,
+      timestamp: msg.timestamp || Date.now(),
+    };
+  });
+}
+
+function prepareCompactionPhase(payload) {
+  if (!Array.isArray(payload?.messages)) fail("prepare_compaction requires messages");
+  const pathEntries = entriesFromMessages(payload.messages);
+  const settings = {
+    ...DEFAULT_COMPACTION_SETTINGS,
+    ...(payload.settings || {}),
+  };
+  const preparation = prepareCompaction(pathEntries, settings);
+  if (!preparation) {
+    return {
+      schema_version: "bb.pi-native.v1",
+      kind: "compaction_unavailable",
+      reason: "nothing_to_compact",
+    };
+  }
+  const firstKeptIndex = pathEntries.findIndex((e) => e.id === preparation.firstKeptEntryId);
+  const reserveTokens = settings.reserveTokens;
+  const maxTokens = Math.floor(0.8 * reserveTokens);
+  let basePrompt = preparation.previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
+  if (payload.customInstructions) {
+    basePrompt = `${basePrompt}\n\nAdditional focus: ${payload.customInstructions}`;
+  }
+  const llmMessages = convertToLlm(preparation.messagesToSummarize);
+  const conversationText = serializeConversation(llmMessages);
+  let promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
+  if (preparation.previousSummary) {
+    promptText += `<previous-summary>\n${preparation.previousSummary}\n</previous-summary>\n\n`;
+  }
+  promptText += basePrompt;
+
+  const summaryMessages = [
+    {
+      role: "system",
+      content: SUMMARIZATION_SYSTEM_PROMPT,
+    },
+    {
+      role: "user",
+      content: promptText,
+    },
+  ];
+
+  let turnPrefixMessages = null;
+  if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0) {
+    const turnPrefixLlm = convertToLlm(preparation.turnPrefixMessages);
+    const turnPrefixText = serializeConversation(turnPrefixLlm);
+    const turnPrefixPrompt = `<conversation>\n${turnPrefixText}\n</conversation>\n\n${TURN_PREFIX_SUMMARIZATION_PROMPT}`;
+    turnPrefixMessages = [
+      {
+        role: "system",
+        content: SUMMARIZATION_SYSTEM_PROMPT,
+      },
+      {
+        role: "user",
+        content: turnPrefixPrompt,
+      },
+    ];
+  }
+
+  const fileOps = {
+    read: Array.from(preparation.fileOps.read),
+    written: Array.from(preparation.fileOps.written),
+    edited: Array.from(preparation.fileOps.edited),
+  };
+
+  return {
+    schema_version: "bb.pi-native.v1",
+    kind: "compaction_prepared",
+    preparation: {
+      firstKeptIndex,
+      firstKeptEntryId: preparation.firstKeptEntryId,
+      isSplitTurn: preparation.isSplitTurn,
+      tokensBefore: preparation.tokensBefore,
+      fileOps,
+      settings,
+    },
+    summary_request: {
+      messages: summaryMessages,
+      max_tokens: maxTokens,
+    },
+    turn_prefix_request: turnPrefixMessages ? {
+      messages: turnPrefixMessages,
+      max_tokens: Math.floor(0.5 * reserveTokens),
+    } : null,
+  };
+}
+
+function finalizeCompactionPhase(payload) {
+  if (typeof payload?.summary !== "string") fail("finalize_compaction requires summary");
+  const prep = payload.preparation;
+  if (!prep || typeof prep !== "object") fail("finalize_compaction requires preparation");
+  let finalSummary = payload.summary;
+  if (prep.isSplitTurn && typeof payload.turn_prefix_summary === "string") {
+    finalSummary = `${finalSummary}\n\n---\n\n**Turn Context (split turn):**\n\n${payload.turn_prefix_summary}`;
+  }
+  const fileOps = {
+    read: new Set(prep.fileOps?.read || []),
+    written: new Set(prep.fileOps?.written || []),
+    edited: new Set(prep.fileOps?.edited || []),
+  };
+  const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+  finalSummary += formatFileOperations(readFiles, modifiedFiles);
+
+  const compactionMessage = {
+    role: "compactionSummary",
+    summary: finalSummary,
+    tokensBefore: prep.tokensBefore ?? 0,
+    firstKeptEntryId: prep.firstKeptEntryId,
+    details: { readFiles, modifiedFiles },
+    timestamp: Date.now(),
+  };
+
+  return {
+    schema_version: "bb.pi-native.v1",
+    kind: "compaction_finalized",
+    compaction_message: compactionMessage,
+    first_kept_index: prep.firstKeptIndex,
+    summary: finalSummary,
+  };
 }
 async function executeOperation(operation, payload, signal) {
   const defaultCwd = initializedState?.workspace
@@ -535,6 +702,8 @@ async function executeOperation(operation, payload, signal) {
     };
   }
   if (operation === "project_request") return projectRequest(payload);
+  if (operation === "prepare_compaction") return prepareCompactionPhase(payload);
+  if (operation === "finalize_compaction") return finalizeCompactionPhase(payload);
   if (operation === "parse_streaming_json_batch") {
     if (!Array.isArray(payload?.inputs)) fail("parse_streaming_json_batch requires inputs");
     const results = payload.inputs.map((input) => {

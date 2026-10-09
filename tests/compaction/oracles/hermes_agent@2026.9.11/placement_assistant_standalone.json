@@ -1,0 +1,85 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "placement_assistant_standalone",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:4513-4546",
+      "agent/transports/chat_completions.py:296-332"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._summary_placement at agent/context_compressor.py:4513-4546. Last head role is 'user'; tail starts with 'user'. summary_role alternates to 'assistant' and places standalone between head and tail. Executed the pinned transport serializer to remove ledger-only metadata."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "U1"
+      },
+      {
+        "role": "assistant",
+        "content": "middle"
+      },
+      {
+        "role": "user",
+        "content": "U2"
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 16000,
+    "reason": "threshold",
+    "native_settings": {},
+    "summary_responses": [],
+    "component": "placement",
+    "stage": "summary",
+    "placement_input": {
+      "selection": {
+        "prefix_end": 2,
+        "first_kept_index": 3
+      },
+      "summary": "Compact summary",
+      "details": {
+        "has_user_turn": true
+      }
+    }
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "U1"
+      },
+      {
+        "role": "assistant",
+        "content": "Compact summary\n\n--- END OF CONTEXT SUMMARY \u2014 respond to the message below, not the summary above ---"
+      },
+      {
+        "role": "user",
+        "content": "U2"
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      }
+    ]
+  }
+}

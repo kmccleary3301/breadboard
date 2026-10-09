@@ -1,0 +1,61 @@
+schema: bb.compaction_preset.v1
+id: codex@0.139.0
+source:
+  repo: https://github.com/openai/codex
+  commit: a7dff904308535e965aee87680c1fc5ef1d19eec
+  evidence:
+    - codex-rs/protocol/src/openai_models.rs:426-441
+    - codex-rs/core/src/context_manager/history.rs:255-314,467-538
+    - codex-rs/core/src/session/turn.rs:246-273,1033-1035
+    - codex-rs/core/src/compact.rs:435-453,512-575
+    - codex-rs/core/src/compact_remote_v2.rs:421-552
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    model_auto_compact_token_limit: [triggers.0.limit.config_limit, target.threshold.config_limit]
+    model_auto_compact_token_limit_scope: [triggers.0.scope]
+    compact_prompt: [pipeline.stages.0.reduce.prompt]
+    phase: [triggers.0.sampling_phase]
+    needs_follow_up: [triggers.0.needs_follow_up]
+    features: [pipeline.stages.0.select.features]
+estimator: bytes4
+native_retention: {kind: message_text_budget, budget: 64000, roles: [user], exclude_contextual: true}
+triggers:
+  - kind: threshold
+    accounting: {kind: usage_plus_trailing, estimator: bytes4, usage_total: total_or_components, trailing: all}
+    limit: {kind: window_fraction, percent: 90, config_limit: null}
+    compare: ">="
+    phase: every_request
+    scope: total
+    sampling_phase: pre_turn
+    requires_follow_up: true
+    needs_follow_up: true
+target:
+  threshold: {kind: window_fraction, percent: 90, config_limit: null}
+  manual: {kind: window_fraction, percent: 90}
+  overflow: {kind: window_fraction, percent: 90}
+overflow: {policy: terminal, max_attempts_per_turn: 0}
+request_view: []
+pipeline:
+  mode: until_boundary
+  stages:
+    - id: summary
+      accept: any
+      select:
+        kind: user_messages_budget
+        budget: 20000
+        features: []
+        native_feature: RemoteCompactionV2
+        exclude_prefix: {file: summary_prefix.md}
+      reduce:
+        kind: chat_summary
+        system_from_history: true
+        prompt: {file: prompt.md}
+        max_tokens: null
+        empty_fallback: (no summary available)
+      place:
+        kind: bridge
+        prefix: {file: summary_prefix.md}
+        separator: "\n"
+        replay: before

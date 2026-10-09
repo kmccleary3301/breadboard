@@ -74,6 +74,9 @@ class NativeStreamProfile:
     # Worker phase that parses the response's tool-call argument strings; the
     # parsed list is handed to ``state.prepare_response(native, parsed)``.
     parse_arguments_phase: str | None = None
+    # The worker implements prepare_compaction/finalize_compaction, so a
+    # target with BreadBoard compaction on can recover from context overflow.
+    implements_compaction_phases: bool = False
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -173,6 +176,7 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
+        implements_compaction_phases=True,  # pi_tools_0_73_1.mjs prepare/finalize_compaction
     ),
     PI_0_57_1_RESPONSE_CONSUMER_ID: NativeStreamProfile(
         consumer_id=PI_0_57_1_RESPONSE_CONSUMER_ID,

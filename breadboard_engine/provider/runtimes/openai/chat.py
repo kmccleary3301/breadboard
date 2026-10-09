@@ -35,6 +35,7 @@ from ....compilation.provider_response import (
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
@@ -487,6 +488,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     raise ProviderRuntimeError(
                         redaction.safe_exception_message(exc),
                         kind=kind,
+                        details=provider_overflow_details(exc),
                     ) from None
                 response = OpenAIChatStreamDecoder(self).native_response(
                     raw_response,
@@ -754,7 +756,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     if isinstance(exc, (AttributeError, TypeError))
                     else "provider"
                 )
-                raise ProviderRuntimeError(redaction.safe_exception_message(exc), kind=kind) from None
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    kind=kind,
+                    details=provider_overflow_details(exc),
+                ) from None
 
         if self._non_null_unknown_fields(
             response,

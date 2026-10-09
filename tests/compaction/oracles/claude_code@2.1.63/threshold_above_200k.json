@@ -1,0 +1,55 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "threshold_above_200k",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2307 (h96, PQ6, ac)",
+      "package/cli.js:2307 [bytes 5978544-5979169]",
+      "package/cli.js:2307 [bytes 5980003-5980056]"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Executed bundle functions sliced from cli.js (bytes 5978544-5979169) and constants (bytes 5980003-5980056) in node vm. 167001 tokens strictly exceeds 167000 limit, acResult.isAboveAutoCompactThreshold=true."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "hi"
+      }
+    ],
+    "usage": {
+      "input_tokens": 160000,
+      "output_tokens": 7001,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 167001
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {
+      "autoCompactEnabled": true
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 167001,
+      "limit": 167000,
+      "severity": "soft"
+    }
+  }
+}

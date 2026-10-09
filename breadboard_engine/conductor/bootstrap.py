@@ -39,6 +39,7 @@ from ..permissions import PermissionBroker
 from ..permissions.policy_pack import PolicyPack
 from .loop_detection import LoopDetectionService
 from .context_window_guard import ContextWindowGuard
+from ..compaction.controller import CompactionController
 from .streaming_policy import StreamingPolicy
 from ..provider import ProviderInvoker
 from .prompt_planner import ToolPromptPlanner
@@ -253,6 +254,7 @@ def initialize_execution_components(conductor: Any) -> None:
     conductor.permission_broker = PermissionBroker(conductor.config.get("permissions"), policy_pack=policy)
     conductor.loop_detector = LoopDetectionService()
     conductor.context_guard = ContextWindowGuard()
+    conductor.compaction_controller = CompactionController(conductor.config)
     conductor.message_formatter = MessageFormatter(conductor.workspace)
     conductor.agent_executor = AgentToolExecutor(conductor.config, conductor.workspace)
     conductor.agent_executor.set_enhanced_executor(conductor.enhanced_executor)
