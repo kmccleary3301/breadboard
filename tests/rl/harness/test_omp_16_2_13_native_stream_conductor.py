@@ -607,3 +607,22 @@ def test_omp_16_2_13_declared_case_replays_through_conductor(tmp_path: Path, cas
     report = _compare(case, trace)
     assert report["passed"] is True, f"{case} failed: {report['findings']}"
     assert report["verdict"] in {"exact", "normalized", "named_divergence"}
+
+
+def test_omp_16_2_13_context_overflow_ends_episode_without_breadboard_compaction(tmp_path: Path) -> None:
+    # harness.yaml keeps BreadBoard compaction off for this target; the mirrored
+    # stock native setting (agent.compaction_enabled) must not route the
+    # overflow into compaction phases the pinned worker does not implement.
+    overflow = json.dumps({"error": {
+        "message": "This model's maximum context length is 200000 tokens.",
+        "type": "invalid_request_error",
+        "code": "context_length_exceeded",
+    }}).encode()
+    episode = asyncio.run(_run_episode(
+        tmp_path, [(400, "application/json", overflow)], task="List the files.",
+        seed=lambda ws: ws.mkdir(parents=True, exist_ok=True),
+    ))
+
+    assert episode.error is None
+    assert len(episode.requests) == 1
+    assert episode.trace["requests"][-1] == episode.requests[0]["body"]

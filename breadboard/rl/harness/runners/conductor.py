@@ -44,6 +44,7 @@ from breadboard.rl.harness.runner_identity import measure_module_artifact
 from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
 from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
 from breadboard.rl.harness.runners import mini_semantics
+from breadboard.rl.harness.runners.native_compaction import compact_history, compaction_settings
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
     CompiledPolicyRuntimeClientPort,
@@ -2681,10 +2682,16 @@ class _ConductorSession:
                 },
             )
         source_profile = self._projection.source_profile
-        compaction_enabled = bool(
-            source_profile.get("compaction")
-            or (isinstance(source_profile.get("agent"), Mapping) and source_profile["agent"].get("compaction_enabled"))
-        ) if isinstance(source_profile, Mapping) else False
+        # harness.yaml policy.provider.compaction lands here as runtime_profile
+        # "compaction" (targets.py _lower_worker_target). The mirrored stock
+        # setting agent.compaction_enabled does not route BreadBoard recovery.
+        compaction_enabled = isinstance(source_profile, Mapping) and source_profile.get("compaction") is True
+        if compaction_enabled and not profile.implements_compaction_phases:
+            raise RunnerProtocolError(
+                f"{profile.target_id} enables compaction but its worker has no compaction phases",
+                code="native_compaction_unsupported", **self._context(),
+            )
+        settings_for_compaction = compaction_settings(source_profile) if compaction_enabled else None
         overflow_recovery_attempted = [False]
 
         await commit(0, "initial", None)
@@ -2740,84 +2747,20 @@ class _ConductorSession:
                         ):
                             state.messages.pop()
 
-                        compaction_settings = (
-                            source_profile.get("compaction_settings")
-                            or (
-                                source_profile.get("agent", {}).get("compaction_settings")
-                                if isinstance(source_profile.get("agent"), Mapping)
-                                else None
-                            )
-                        )
-                        payload = {"messages": state.messages}
-                        if compaction_settings:
-                            payload["settings"] = compaction_settings
-                        prep_result = await phase("prepare_compaction", payload)
-                        if prep_result.get("kind") == "compaction_prepared":
-                            summary_req = prep_result["summary_request"]
-                            frozen_summary_req = freeze_json_object({
-                                "model": model.model_id,
-                                "messages": summary_req["messages"],
-                                "tools": [],
-                            }, field_name="native summary request")
-                            summary_response, summary_receipt = await self._native_policy_exchange(
-                                frozen_summary_req, model=model, turn=turn, phase_mode=profile.phase_mode,
+                        async def summary_exchange(request: FrozenJsonObject) -> tuple[Mapping[str, Any], Any]:
+                            return await self._native_policy_exchange(
+                                request, model=model, turn=turn, phase_mode=profile.phase_mode,
                                 compaction_summary=True,
                             )
-                            summary_receipt_body = thaw_json(summary_receipt)
-                            summary_body = (
-                                dict(summary_receipt_body)
-                                if isinstance(summary_receipt_body, Mapping)
-                                else {"request": summary_receipt}
-                            )
-                            summary_body["_compaction_summary"] = True
-                            trace_requests.append(summary_body)
 
-                            summary_native = thaw_json(summary_response["native_response"])
-                            summary_text = summary_native.get("content") or ""
-
-                            turn_prefix_summary = None
-                            if prep_result.get("turn_prefix_request") is not None:
-                                tp_req = prep_result["turn_prefix_request"]
-                                frozen_tp_req = freeze_json_object({
-                                    "model": model.model_id,
-                                    "messages": tp_req["messages"],
-                                    "tools": [],
-                                }, field_name="native turn prefix summary request")
-                                tp_response, tp_receipt = await self._native_policy_exchange(
-                                    frozen_tp_req, model=model, turn=turn, phase_mode=profile.phase_mode,
-                                    compaction_summary=True,
-                                )
-                                tp_receipt_body = thaw_json(tp_receipt)
-                                tp_body = (
-                                    dict(tp_receipt_body)
-                                    if isinstance(tp_receipt_body, Mapping)
-                                    else {"request": tp_receipt}
-                                )
-                                tp_body["_compaction_summary"] = True
-                                trace_requests.append(tp_body)
-                                tp_native = thaw_json(tp_response["native_response"])
-                                turn_prefix_summary = tp_native.get("content") or ""
-
-                            finalized = await phase("finalize_compaction", {
-                                "summary": summary_text,
-                                "turn_prefix_summary": turn_prefix_summary,
-                                "preparation": prep_result["preparation"],
-                            })
-                            if finalized.get("kind") == "compaction_finalized":
-                                compaction_msg = finalized["compaction_message"]
-                                first_kept_index = finalized["first_kept_index"]
-
-                                state.messages = [compaction_msg, *state.messages[first_kept_index:]]
-                                await commit(
-                                    0, "before_policy", turn,
-                                    events=[{
-                                        "kind": "compaction",
-                                        "summary": finalized["summary"],
-                                        "first_kept_index": first_kept_index,
-                                        "tokens_before": prep_result["preparation"].get("tokensBefore", 0),
-                                    }],
-                                )
-                                continue
+                        compacted = await compact_history(
+                            state.messages, settings=settings_for_compaction, model_id=model.model_id,
+                            phase=phase, exchange=summary_exchange, trace_requests=trace_requests,
+                        )
+                        if compacted is not None:
+                            state.messages = compacted.messages
+                            await commit(0, "before_policy", turn, events=[compacted.event])
+                            continue
 
                     failure = _find_native_provider_failure(exc) if profile.provider_failure_terminates else None
                     if failure is None:
