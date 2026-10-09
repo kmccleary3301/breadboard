@@ -56,9 +56,9 @@ class NativeCompactionError(CompactionError):
 
 @dataclass(frozen=True)
 class SummaryRequest:
-    system: str
+    system: Optional[str]
     messages: Tuple[Mapping[str, Any], ...]
-    max_tokens: int
+    max_tokens: Optional[int]
     purpose: SummaryPurpose
     model: Optional[str] = None
 
@@ -117,6 +117,9 @@ class CompactionContext:
     supports_images: bool = False
     custom_instructions: Optional[str] = None
     clock: Callable[[], str] = _utc_now
+    token_counter: Optional[Callable[[Sequence[Mapping[str, Any]]], int]] = None
+    effective_input_tokens: Optional[int] = None
+    severity: str = "soft"
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)
@@ -134,6 +137,8 @@ class CompactionContext:
         details: Optional[Mapping[str, Any]] = None,
         warning: Optional[str] = None,
         prefix_end: Optional[int] = None,
+        reset_context: bool = False,
+        coalesce_user: bool = False,
     ) -> CompactionRecord:
         sequence = self.state.next_sequence
         draft = CompactionRecord(
@@ -153,6 +158,8 @@ class CompactionContext:
             details=dict(details or {}),
             warning=warning,
             prefix_end=prefix_end,
+            reset_context=reset_context,
+            coalesce_user=coalesce_user,
         )
         payload = draft.to_dict()
         payload.pop("record_id")

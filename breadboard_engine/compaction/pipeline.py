@@ -107,6 +107,8 @@ class ComposedStep:
             native=reduction.native,
             edits=reduction.edits,
             details=reduction.details,
+            reset_context=selection.reset_context,
+            coalesce_user=bool(getattr(self.placement, "coalesce_user", False)),
         )
         return StepOutput(record, selection)
 
@@ -129,6 +131,9 @@ class Stage:
     reasons: Optional[FrozenSet[str]] = None
     """``when.reasons``: compaction reasons the stage runs for (all if ``None``)."""
     accept: Literal["progress", "any"] = "progress"
+    severity: Optional[str] = None
+    failure_next_on: Optional[str] = None
+    failure_kinds: Tuple[str, ...] = ()
 
 
 class Pipeline:
@@ -154,7 +159,7 @@ class Pipeline:
     ) -> CompactionOutcome:
         results: List[StageResult] = []
         records: List[CompactionRecord] = []
-        current = self.count(context.projected())
+        current = self.count(context.state.project(context.messages, context.target, coalesce=False))
         stopped: Optional[str] = None
         for stage_id in order if order is not None else self.order:
             if stopped is None and self.mode == "fallback" and records and current <= target_tokens:
@@ -169,6 +174,9 @@ class Pipeline:
             if stage.reasons is not None and context.reason not in stage.reasons:
                 results.append(StageResult(stage_id, "noop", f"reason {context.reason!r} not in when.reasons"))
                 continue
+            if stage.severity is not None and context.severity != stage.severity:
+                results.append(StageResult(stage_id, "noop", f"severity {context.severity!r} not in when.severity"))
+                continue
             try:
                 output = stage.step.run(context)
                 context.state.validate(output.record, context.messages)
@@ -179,11 +187,15 @@ class Pipeline:
                 continue
             except Exception as exc:
                 results.append(StageResult(stage_id, "failed", f"{type(exc).__name__}: {exc}"))
-                if self.mode != "fallback":
+                permitted = (
+                    stage.failure_next_on == context.severity
+                    and type(exc).__name__ in stage.failure_kinds
+                )
+                if self.mode != "fallback" and not permitted:
                     stopped = f"stopped after {stage_id} failed"
                 continue
             probe = CompactionState([*context.state.records, output.record])
-            after = self.count(probe.project(context.messages, context.target))
+            after = self.count(probe.project(context.messages, context.target, coalesce=False))
             if stage.accept == "progress" and after >= current:
                 results.append(StageResult(stage_id, "noop", "no progress", after))
                 continue
@@ -209,24 +221,36 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
     stage_id = params.str("id")
     when = params.mapping("when", None)
     reasons: Optional[FrozenSet[str]] = None
+    severity = None
     if when is not None:
         when_params = params.child(when, "when")
-        raw_reasons = when_params.list("reasons")
+        raw_reasons = when_params.list("reasons", REASONS)
         bad = [r for r in raw_reasons if r not in REASONS]
         if bad:
             raise ValueError(f"{when_params.where}.reasons has unknown reasons {bad}; expected {list(REASONS)}")
         reasons = frozenset(raw_reasons)
+        severity = when_params.choice("severity", ("soft", "hard", None), None)
         when_params.done()
     accept = params.choice("accept", ("progress", "any"), "progress")
+    failure = params.mapping("on_failure", None)
+    failure_next_on = None
+    failure_kinds = ()
+    if failure is not None:
+        policy = params.child(failure, "on_failure")
+        failure_next_on = policy.choice("next_on_severity", ("soft", "hard"))
+        failure_kinds = tuple(policy.list("kinds"))
+        if not all(isinstance(kind, str) for kind in failure_kinds):
+            raise ValueError(f"{policy.where}.kinds must contain exception names")
+        policy.done()
     algorithm = params.str("algorithm", None)
     if algorithm is not None:
         if algorithm not in algorithms:
             raise ValueError(f"{params.where}.algorithm {algorithm!r} is unknown; expected one of {sorted(algorithms)}")
         params.done()
-        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept)
+        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, severity, failure_next_on, failure_kinds)
     selector = build_selector(params.child(params.mapping("select"), "select"))
     reducer = build_reducer(params.child(params.mapping("reduce"), "reduce"))
     raw_place = params.mapping("place", None)
     placement = None if raw_place is None else build_placement(params.child(raw_place, "place"))
     params.done()
-    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept)
+    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, severity, failure_next_on, failure_kinds)

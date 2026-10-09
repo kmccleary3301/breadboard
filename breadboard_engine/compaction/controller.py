@@ -44,11 +44,15 @@ class CompactionController:
         config: Optional[Mapping[str, Any]] = None,
         *,
         summary_model: Optional[SummaryModelProtocol] = None,
+        token_counter: Optional[Callable[[Sequence[Mapping[str, Any]]], int]] = None,
+        effective_input_tokens: Optional[int] = None,
     ) -> None:
         self.config: CompactionConfig = load_compaction_config((config or {}).get("compaction"))
         self.settings = self.config.settings
         self.recipe: Recipe = build_recipe(self.config)
         self.summary_model = summary_model
+        self.token_counter = token_counter
+        self.effective_input_tokens = effective_input_tokens
         self._turn_passes: Dict[int, int] = {}
         # Provider attempt number for the request being built; bumped after
         # each successful overflow recovery so retried requests are recorded
@@ -256,12 +260,15 @@ class CompactionController:
             return False
 
         compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
-        view = compaction_state.project(messages, None) if compaction_state is not None else messages
+        view = compaction_state.project(messages, None, coalesce=False) if compaction_state is not None else messages
         # Provider usage describes the last request sent. If a record was
         # appended since (no new message arrived), that request predates the
         # compaction and its usage would retrigger it.
         usage_fresh = len(messages) != self._messages_len_at_last_record
-        data = TriggerInput(OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window)
+        data = TriggerInput(
+            OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window,
+            token_counter=self.token_counter, effective_input_tokens=self.effective_input_tokens,
+        )
         pressure = self.recipe.pressure(data, messages)
         return pressure is not None and pressure.fires
 
@@ -338,7 +345,7 @@ class CompactionController:
         if remote_ports is None:
             remote_ports = self.remote_ports_for(runtime, client, resolved_target.model)
 
-        projected = compaction_state.project(messages, resolved_target)
+        projected = compaction_state.project(messages, resolved_target, coalesce=False)
         tokens_before = self.recipe.count(projected)
 
         summarizer = self.summary_model
@@ -369,6 +376,8 @@ class CompactionController:
             remote_ports=remote_ports,
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
+            token_counter=self.token_counter,
+            effective_input_tokens=self.effective_input_tokens,
             **kwargs,
         )
 

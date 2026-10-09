@@ -31,7 +31,7 @@ from breadboard_engine.compaction.primitives.triggers import TriggerInput
 
 ORACLES = Path(__file__).parent / "oracles"
 TARGET = ProjectionTarget("oracle", "oracle", "oracle-model")
-CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details"}
+CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summary", "details", "edits", "failure"}
 
 
 def _cases() -> List[Any]:
@@ -45,7 +45,7 @@ def _cases() -> List[Any]:
 
 
 class ScriptedSummaries:
-    def __init__(self, responses: List[str]) -> None:
+    def __init__(self, responses: List[Any]) -> None:
         self.responses = list(responses)
         self.requests: List[SummaryRequest] = []
 
@@ -53,13 +53,40 @@ class ScriptedSummaries:
         self.requests.append(request)
         if not self.responses:
             raise AssertionError("summary model called more times than the oracle recorded")
-        return SummaryResponse(self.responses.pop(0))
+        response = self.responses.pop(0)
+        if isinstance(response, Mapping) and "error" in response:
+            error = response["error"]
+            kinds = {"RuntimeError": RuntimeError, "ValueError": ValueError}
+            assert error["kind"] in kinds, f"unsupported scripted exception {error['kind']}"
+            raise kinds[error["kind"]](error["message"])
+        return SummaryResponse(response)
 
 
 def _recipe(case: Mapping[str, Any]):
     inp = case["input"]
     config = load_compaction_config({"enabled": True, "preset": case["preset"], **(inp.get("native_settings") or {})})
     return build_recipe(config)
+
+
+def _token_counter(inp):
+    spec = inp.get("token_counter")
+    if spec is None:
+        return None
+    assert spec["kind"] == "text_chars_floor", f"unsupported token counter {spec}"
+    divisor = spec["divisor"]
+    assert isinstance(divisor, int) and divisor > 0
+
+    def count(messages):
+        chars = 0
+        for message in messages:
+            content = message.get("content")
+            if isinstance(content, str):
+                chars += len(content)
+            elif isinstance(content, list):
+                chars += sum(len(p["text"]) for p in content if isinstance(p, Mapping) and isinstance(p.get("text"), str))
+        return chars // divisor
+
+    return count
 
 
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
@@ -72,8 +99,10 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         reason=inp.get("reason") or "threshold",
         target=TARGET,
         context_window=inp["context_window"],
-        tokens_before=recipe.count(state.project(messages, TARGET)),
+        tokens_before=recipe.count(state.project(messages, TARGET, coalesce=False)),
         summarizer=summarizer,
+        token_counter=_token_counter(inp),
+        effective_input_tokens=inp.get("max_input_tokens"),
     )
 
 
@@ -86,8 +115,11 @@ def _state_from_ledger(case, messages) -> CompactionState:
             method="oracle_ledger",
             first_kept_index=prior["first_kept_index"],
             summary=prior["summary"],
-            summary_messages=[{"role": "user", "content": prior["summary"]}],
+            summary_messages=prior.get("summary_messages") or [{"role": "user", "content": prior["summary"]}],
             details=prior.get("details") or {},
+            prefix_end=prior.get("prefix_end"),
+            reset_context=prior.get("reset_context", False),
+            coalesce_user=prior.get("coalesce_user", False),
         )
         state.append(record, prefix)
     return state
@@ -123,12 +155,16 @@ def test_oracle_case(case_file: Path) -> None:
     inp = case["input"]
     messages = inp["messages"]
     recipe = _recipe(case)
+    state = _state_from_ledger(case, messages)
 
     if "trigger" in expect:
         data = TriggerInput(
-            OccupancyInput(messages, normalize_usage(inp.get("usage")), usage_fresh=True),
+            OccupancyInput(state.project(messages, TARGET, coalesce=False), normalize_usage(inp.get("usage")), usage_fresh=True),
             inp["context_window"],
             inp.get("max_output_tokens"),
+            reason=inp.get("reason") or "threshold",
+            token_counter=_token_counter(inp),
+            effective_input_tokens=inp.get("max_input_tokens"),
         )
         pressure = recipe.pressure(data, messages)
         assert pressure is not None, "trigger case for a preset without triggers"
@@ -143,7 +179,6 @@ def test_oracle_case(case_file: Path) -> None:
         assert set(expect) <= {"trigger", "failure"}, "a terminal-overflow case cannot expect a compaction result"
         return
 
-    state = _state_from_ledger(case, messages)
     summaries = ScriptedSummaries(inp.get("summary_responses") or [])
     context = _context(case, state, messages, summaries)
     if "selection" in expect:

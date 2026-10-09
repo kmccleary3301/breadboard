@@ -120,6 +120,10 @@ class CompactionRecord:
     warning: Optional[str] = None
     prefix_end: Optional[int] = None
     """End of the verbatim protected prefix; ``None`` means no prefix."""
+    reset_context: bool = False
+    """Replace the whole context, including the system head."""
+    coalesce_user: bool = False
+    """Join adjacent plain user messages in the provider projection."""
 
     @property
     def is_boundary(self) -> bool:
@@ -152,6 +156,10 @@ class CompactionRecord:
         # Omitted when unset, so records without a prefix keep their v1 bytes and ids.
         if self.prefix_end is not None:
             payload["prefix_end"] = self.prefix_end
+        if self.reset_context:
+            payload["reset_context"] = True
+        if self.coalesce_user:
+            payload["coalesce_user"] = True
         return payload
 
     @classmethod
@@ -178,6 +186,8 @@ class CompactionRecord:
             tokens_after=raw.get("tokens_after"),
             warning=raw.get("warning"),
             prefix_end=raw.get("prefix_end"),
+            reset_context=bool(raw.get("reset_context", False)),
+            coalesce_user=bool(raw.get("coalesce_user", False)),
         )
 
 
@@ -245,7 +255,7 @@ class CompactionState:
             raise CompactionStateError("compaction record sequence is not next")
         if record.history_length != len(messages):
             raise CompactionStateError("compaction record was made for a different history length")
-        head = leading_system_count(messages)
+        head = 0 if record.reset_context else leading_system_count(messages)
         previous = self.latest_boundary()
         if record.is_boundary:
             first = int(record.first_kept_index)
@@ -321,10 +331,14 @@ class CompactionState:
         self,
         messages: Sequence[Mapping[str, Any]],
         target: Optional[ProjectionTarget] = None,
+        *,
+        coalesce: bool = True,
     ) -> List[Dict[str, Any]]:
         """Build the request view for ``target`` from the full history."""
         head = leading_system_count(messages)
         boundary = self._active_boundary(target)
+        if boundary is not None and boundary.reset_context:
+            head = 0
         start = int(boundary.first_kept_index) if boundary is not None else head
         prefix_end = head if boundary is None or boundary.prefix_end is None else int(boundary.prefix_end)
         edits: Dict[int, Mapping[str, Any]] = {}
@@ -347,6 +361,12 @@ class CompactionState:
                 view.extend(copy.deepcopy(dict(m)) for m in boundary.summary_messages)
         for index in range(start, len(messages)):
             view.append(copy.deepcopy(dict(edits.get(index, messages[index]))))
+        if coalesce and (
+            (boundary is not None and boundary.coalesce_user) or any("bb_event" in m for m in view)
+        ):
+            from .primitives.event_messages import wire_messages
+
+            view = wire_messages(view)
         return view
 
     def to_list(self) -> List[Dict[str, Any]]:

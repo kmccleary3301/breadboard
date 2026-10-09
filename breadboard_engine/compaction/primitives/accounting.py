@@ -167,6 +167,7 @@ def pi_estimate_messages(messages: Sequence[Message]) -> int:
 ESTIMATORS: Dict[str, Estimator] = {
     "bb_chars4": estimate_messages_tokens,
     "pi_chars4": pi_estimate_messages,
+    "event_count": len,
 }
 
 

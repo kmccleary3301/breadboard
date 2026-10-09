@@ -6,54 +6,86 @@
     "repo": "https://github.com/OpenHands/software-agent-sdk",
     "commit": "50080b58d35b4824fda25fca2345d80bcd08aeff",
     "evidence": [
-      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:143",
-      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:172-173"
+      "openhands-sdk/openhands/sdk/context/condenser/llm_summarizing_condenser.py:120-399",
+      "openhands-sdk/openhands/sdk/context/view/view.py:38-51"
     ]
   },
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_openhands.py",
-    "notes": "Executed against pinned openhands-sdk v1.47.0 (commit 50080b58d35b4824fda25fca2345d80bcd08aeff, dist sha256 350edf01b0ab2047941fa338995187e98605ccf946f49c432802fa25b2070cee) loaded from /privateopenhands-sdk/openhands/sdk/__init__.py. total_tokens (30) > max_tokens (25). Reason.TOKENS in reasons produces CondensationRequirement.HARD (lines 172-173)."
+    "notes": "Executed pinned SDK 1.47.0 at 50080b58d35b4824fda25fca2345d80bcd08aeff. Reasons: tokens. Event payloads preserve display, response batches and thinking boundaries. Deterministic scripted completions and floor(text characters/4) token counter."
   },
   "input": {
     "messages": [
       {
         "role": "user",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       },
       {
         "role": "assistant",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       },
       {
         "role": "user",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       },
       {
         "role": "assistant",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       },
       {
         "role": "user",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       },
       {
         "role": "assistant",
-        "content": "XXXXXXXXXXXXXXXXXXXX"
+        "content": "XXXXXXXXXXXXXXXXXXXX",
+        "bb_event": {
+          "display": "MessageEvent (agent)\n  assistant: XXXXXXXXXXXXXXXXXXXX",
+          "type": "MessageEvent"
+        }
       }
     ],
     "usage": null,
-    "context_window": 1000,
-    "max_input_tokens": 25,
+    "context_window": 200000,
+    "max_input_tokens": 1000,
     "max_output_tokens": null,
     "reason": "threshold",
     "native_settings": {
+      "max_size": 100,
+      "keep_first": 1,
       "max_tokens": 25,
-      "keep_first": 1
+      "minimum_progress": 0.1,
+      "hard_context_reset_max_retries": 5,
+      "hard_context_reset_context_scaling": 0.8
     },
     "summary_responses": [
       "Token reduction summary"
-    ]
+    ],
+    "token_counter": {
+      "kind": "text_chars_floor",
+      "divisor": 4
+    }
   },
   "expect": {
     "trigger": {
@@ -75,14 +107,28 @@
       "replay": [],
       "targets": []
     },
+    "summary": "Token reduction summary",
     "projected_view": [
       {
         "role": "user",
-        "content": "XXXXXXXXXXXXXXXXXXXX\nSummary of events 2..7"
+        "content": "XXXXXXXXXXXXXXXXXXXX\nToken reduction summary"
       },
       {
         "role": "assistant",
         "content": "XXXXXXXXXXXXXXXXXXXX"
+      }
+    ],
+    "summary_requests": [
+      {
+        "system": null,
+        "messages": [
+          {
+            "role": "user",
+            "content": "You are maintaining a context-aware state summary for an interactive agent.\nYou will be given a list of events corresponding to actions taken by the agent, which will include previous summaries.\nIf the events being summarized contain ANY task-tracking, you MUST include a TASK_TRACKING section to maintain continuity.\nWhen referencing tasks make sure to preserve exact task IDs and statuses.\n\nTrack:\n\nUSER_CONTEXT: (Preserve essential user requirements, goals, and clarifications in concise form)\n\nTASK_TRACKING: {Active tasks, their IDs and statuses - PRESERVE TASK IDs}\n\nCOMPLETED: (Tasks completed so far, with brief results)\nPENDING: (Tasks that still need to be done)\nCURRENT_STATE: (Current variables, data structures, or relevant state)\n\nFor code-specific tasks, also include:\nCODE_STATE: {File paths, function signatures, data structures}\nTESTS: {Failing cases, error messages, outputs}\nCHANGES: {Code edits, variable updates}\nDEPS: {Dependencies, imports, external calls}\nVERSION_CONTROL_STATUS: {Repository state, current branch, PR status, commit history}\n\nPRIORITIZE:\n1. Adapt tracking format to match the actual task type\n2. Capture key user requirements and goals\n3. Distinguish between completed and pending tasks\n4. Keep all sections concise and relevant\n\nSKIP: Tracking irrelevant details for the current task type\n\nExample formats:\n\nFor code tasks:\nUSER_CONTEXT: Fix FITS card float representation issue\nCOMPLETED: Modified mod_float() in card.py, all tests passing\nPENDING: Create PR, update documentation\nCODE_STATE: mod_float() in card.py updated\nTESTS: test_format() passed\nCHANGES: str(val) replaces f\"{val:.16G}\"\nDEPS: None modified\nVERSION_CONTROL_STATUS: Branch: fix-float-precision, Latest commit: a1b2c3d\n\nFor other tasks:\nUSER_CONTEXT: Write 20 haikus based on coin flip results\nCOMPLETED: 15 haikus written for results [T,H,T,H,T,H,T,T,H,T,H,T,H,T,H]\nPENDING: 5 more haikus needed\nCURRENT_STATE: Last flip: Heads, Haiku count: 15/20\n\n\n<EVENT>\nMessageEvent (agent)\n  assistant: XXXXXXXXXXXXXXXXXXXX\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXXX\n</EVENT>\n\n<EVENT>\nMessageEvent (agent)\n  assistant: XXXXXXXXXXXXXXXXXXXX\n</EVENT>\n\n<EVENT>\nMessageEvent (user)\n  user: XXXXXXXXXXXXXXXXXXXX\n</EVENT>\n\n\nNow summarize the events using the rules above."
+          }
+        ],
+        "max_tokens": null,
+        "tools": []
       }
     ]
   }

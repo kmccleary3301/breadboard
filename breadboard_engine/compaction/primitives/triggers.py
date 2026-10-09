@@ -128,6 +128,9 @@ class TriggerInput:
     occupancy: OccupancyInput
     context_window: int
     max_output_tokens: Optional[int] = None
+    reason: str = "threshold"
+    token_counter: Optional[Callable[[Sequence[Mapping[str, Any]]], int]] = None
+    effective_input_tokens: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -136,7 +139,7 @@ class Pressure:
     tokens: Optional[int]
     limit: int
     source: str
-    severity: str
+    severity: Optional[str]
     in_phase: bool
 
     def to_dict(self) -> Dict[str, Any]:
@@ -178,7 +181,37 @@ class ThresholdTrigger:
         return Pressure(fires, measured.tokens, limit, measured.source, self.severity, in_phase)
 
 
-TRIGGER_KINDS = {ThresholdTrigger.kind: ThresholdTrigger}
+class EventCountTrigger:
+    """Strict event pressure with optional tokenizer pressure and explicit requests."""
+
+    kind = "event_count"
+
+    def __init__(self, params: Params) -> None:
+        self.maximum = params.int("maximum", 240, minimum=1)
+        self.max_tokens = params.int("max_tokens", None)
+        params.done()
+
+    def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
+        from .event_messages import wire_messages
+
+        events = data.occupancy.messages
+        request = data.reason in {"manual", "overflow"}
+        caps = [v for v in (self.max_tokens, data.effective_input_tokens) if v is not None]
+        cap = min(caps) if caps else None
+        total = None
+        if cap is not None and data.token_counter is not None:
+            total = data.token_counter(wire_messages(events))
+        token_pressure = total is not None and total > cap
+        fires = request or token_pressure or len(events) > self.maximum
+        severity = "hard" if request or token_pressure else "soft" if fires else None
+        return Pressure(
+            fires, total if total is not None else len(events) if fires else 0,
+            cap if total is not None else self.maximum, "events" if total is None else "tokenizer",
+            severity, True,
+        )
+
+
+TRIGGER_KINDS = {ThresholdTrigger.kind: ThresholdTrigger, EventCountTrigger.kind: EventCountTrigger}
 
 
 def build_trigger(params: Params) -> Any:
