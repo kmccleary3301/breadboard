@@ -204,7 +204,8 @@ class Pipeline:
             records.append(record)
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
-            results.append(StageResult(stage_id, status, None, after, record.record_id))
+            detail = ("boundary committed" if record.is_boundary else "edits committed") if self.mode == "until_boundary" else None
+            results.append(StageResult(stage_id, status, detail, after, record.record_id))
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
         return CompactionOutcome(
