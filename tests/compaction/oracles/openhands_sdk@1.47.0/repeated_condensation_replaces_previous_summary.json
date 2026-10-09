@@ -219,14 +219,17 @@
         "summary_messages": [
           {
             "role": "user",
-            "content": "First round summary",
-            "bb_event": {
+            "content": "First round summary"
+          }
+        ],
+        "details": {
+          "event_metadata": [
+            {
               "display": "CondensationSummaryEvent (environment)\n  user: First round summary",
               "type": "CondensationSummaryEvent"
             }
-          }
-        ],
-        "details": {},
+          ]
+        },
         "coalesce_user": true
       }
     ]

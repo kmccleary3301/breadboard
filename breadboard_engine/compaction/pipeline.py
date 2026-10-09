@@ -30,7 +30,7 @@ from .state import CompactionRecord, CompactionState
 
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
 MODES = ("fallback", "sequence", "until_boundary")
-REASONS = ("threshold", "overflow", "manual")
+REASONS = ("threshold", "overflow", "manual", "request")
 
 
 @dataclass(frozen=True)
@@ -142,6 +142,7 @@ class Pipeline:
         stages: Sequence[Stage],
         mode: str,
         count: Callable[[Sequence[Mapping[str, Any]]], int],
+        failure_policy: Optional[Mapping[str, str]] = None,
     ) -> None:
         if mode not in MODES:
             raise ValueError(f"unknown pipeline mode {mode!r}")
@@ -149,6 +150,8 @@ class Pipeline:
         self.order: Tuple[str, ...] = tuple(stage.id for stage in stages)
         self.mode = mode
         self.count = count
+        default = "raise_original" if mode == "until_boundary" else "return"
+        self.failure_policy = {"soft": default, "hard": default, **(failure_policy or {})}
 
     def run(
         self,
@@ -161,6 +164,8 @@ class Pipeline:
         records: List[CompactionRecord] = []
         current = self.count(context.state.project(context.messages, context.target, coalesce=False))
         stopped: Optional[str] = None
+        original_failure: Optional[Exception] = None
+        terminal_failure: Optional[Exception] = None
         for stage_id in order if order is not None else self.order:
             if stopped is None and self.mode == "fallback" and records and current <= target_tokens:
                 stopped = "target reached"
@@ -184,6 +189,9 @@ class Pipeline:
                 raise
             except MethodUnavailable as exc:
                 results.append(StageResult(stage_id, "unavailable", str(exc) or None))
+                if original_failure is not None:
+                    terminal_failure = original_failure
+                    stopped = f"stopped after {stage_id} unavailable"
                 continue
             except Exception as exc:
                 results.append(StageResult(stage_id, "failed", f"{type(exc).__name__}: {exc}"))
@@ -191,7 +199,14 @@ class Pipeline:
                     stage.failure_next_on == context.severity
                     and type(exc).__name__ in stage.failure_kinds
                 )
-                if self.mode != "fallback" and not permitted:
+                if permitted:
+                    original_failure = original_failure or exc
+                elif self.mode != "fallback":
+                    policy = self.failure_policy[context.severity]
+                    if self.mode == "until_boundary" and stage.failure_kinds and type(exc).__name__ not in stage.failure_kinds:
+                        policy = "raise_original"
+                    if policy == "raise_original":
+                        terminal_failure = original_failure or exc
                     stopped = f"stopped after {stage_id} failed"
                 continue
             probe = CompactionState([*context.state.records, output.record])
@@ -208,7 +223,7 @@ class Pipeline:
             results.append(StageResult(stage_id, status, detail, after, record.record_id))
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
-        return CompactionOutcome(
+        outcome = CompactionOutcome(
             records=tuple(records),
             stages=tuple(results),
             tokens_before=context.tokens_before,
@@ -216,6 +231,12 @@ class Pipeline:
             target_tokens=target_tokens,
             reached_target=bool(records) and current <= target_tokens,
         )
+        if terminal_failure is None and original_failure is not None and not records and self.failure_policy[context.severity] == "raise_original":
+            terminal_failure = original_failure
+        if terminal_failure is not None:
+            terminal_failure.compaction_outcome = outcome
+            raise terminal_failure
+        return outcome
 
 
 def build_stage(params: Params, algorithms: Mapping[str, Callable[[], CompactionMethod]]) -> Stage:

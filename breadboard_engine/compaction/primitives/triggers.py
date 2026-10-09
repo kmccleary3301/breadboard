@@ -126,11 +126,10 @@ i.e. before the first request after new user input."""
 @dataclass(frozen=True)
 class TriggerInput:
     occupancy: OccupancyInput
-    context_window: int
+    context_window: Optional[int]
     max_output_tokens: Optional[int] = None
     reason: str = "threshold"
-    token_counter: Optional[Callable[[Sequence[Mapping[str, Any]]], int]] = None
-    effective_input_tokens: Optional[int] = None
+    max_input_tokens: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -172,6 +171,8 @@ class ThresholdTrigger:
         return bool(history) and history[-1].get("role") == "user"
 
     def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
+        if data.context_window is None or data.context_window <= 0:
+            return Pressure(False, None, 0, "missing_context_window", self.severity, False)
         limit = self.limit.tokens(data.context_window, data.max_output_tokens)
         in_phase = self.in_phase(history)
         measured = self.accounting.measure(data.occupancy)
@@ -189,24 +190,26 @@ class EventCountTrigger:
     def __init__(self, params: Params) -> None:
         self.maximum = params.int("maximum", 240, minimum=1)
         self.max_tokens = params.int("max_tokens", None)
+        from .accounting import build_estimator
+
+        self.count = build_estimator(params.str("estimator"))
         params.done()
 
     def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
-        from .event_messages import wire_messages
+        # Event pressure is independent of the optional model input cap.
 
         events = data.occupancy.messages
         request = data.reason in {"manual", "overflow"}
-        caps = [v for v in (self.max_tokens, data.effective_input_tokens) if v is not None]
-        cap = min(caps) if caps else None
-        total = None
-        if cap is not None and data.token_counter is not None:
-            total = data.token_counter(wire_messages(events))
+        caps = [v for v in (self.max_tokens, data.max_input_tokens) if v is not None]
+        cap = min(caps) if data.max_input_tokens is not None else None
+        total = self.count(events) if cap is not None else None
         token_pressure = total is not None and total > cap
         fires = request or token_pressure or len(events) > self.maximum
         severity = "hard" if request or token_pressure else "soft" if fires else None
         return Pressure(
             fires, total if total is not None else len(events) if fires else 0,
-            cap if total is not None else self.maximum, "events" if total is None else "tokenizer",
+            cap if total is not None else self.maximum,
+            "estimate" if total is not None else "events; token pressure unavailable: missing max_input_tokens",
             severity, True,
         )
 

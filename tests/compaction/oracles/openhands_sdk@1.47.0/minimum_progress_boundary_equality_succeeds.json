@@ -239,7 +239,16 @@
       },
       {
         "role": "user",
-        "content": "Boundary equality summary\nMsg 18"
+        "content": [
+          {
+            "type": "text",
+            "text": "Boundary equality summary"
+          },
+          {
+            "type": "text",
+            "text": "Msg 18"
+          }
+        ]
       },
       {
         "role": "assistant",

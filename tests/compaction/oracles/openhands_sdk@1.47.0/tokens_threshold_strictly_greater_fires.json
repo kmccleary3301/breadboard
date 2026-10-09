@@ -81,11 +81,7 @@
     },
     "summary_responses": [
       "Token reduction summary"
-    ],
-    "token_counter": {
-      "kind": "text_chars_floor",
-      "divisor": 4
-    }
+    ]
   },
   "expect": {
     "trigger": {
@@ -111,7 +107,16 @@
     "projected_view": [
       {
         "role": "user",
-        "content": "XXXXXXXXXXXXXXXXXXXX\nToken reduction summary"
+        "content": [
+          {
+            "type": "text",
+            "text": "XXXXXXXXXXXXXXXXXXXX"
+          },
+          {
+            "type": "text",
+            "text": "Token reduction summary"
+          }
+        ]
       },
       {
         "role": "assistant",

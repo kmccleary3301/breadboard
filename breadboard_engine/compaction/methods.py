@@ -34,7 +34,7 @@ from .state import (
     record_id_for,
 )
 
-CompactionReason = Literal["threshold", "overflow", "manual", "mid_turn", "idle"]
+CompactionReason = Literal["threshold", "overflow", "manual", "mid_turn", "idle", "request"]
 SummaryPurpose = Literal["summary", "update_summary", "short_summary", "turn_prefix", "handoff", "branch_summary"]
 
 
@@ -117,8 +117,8 @@ class CompactionContext:
     supports_images: bool = False
     custom_instructions: Optional[str] = None
     clock: Callable[[], str] = _utc_now
-    token_counter: Optional[Callable[[Sequence[Mapping[str, Any]]], int]] = None
-    effective_input_tokens: Optional[int] = None
+    max_input_tokens: Optional[int] = None
+    max_output_tokens: Optional[int] = None
     severity: str = "soft"
 
     def projected(self) -> List[Dict[str, Any]]:

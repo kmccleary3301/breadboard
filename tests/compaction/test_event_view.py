@@ -80,19 +80,22 @@ def test_until_boundary_stops_first_condensation_and_does_not_fall_through_error
     assert [s.status for s in outcome.stages] == ["committed", "noop"]
     assert len(ctx.summarizer.requests) == 1
     _, failed = context(turns(10), [RuntimeError("downstream")])
-    outcome = Pipeline([replace(first, failure_next_on=None), second], "until_boundary", len).run(failed, target_tokens=1)
-    assert [s.status for s in outcome.stages] == ["failed", "noop"]
+    from breadboard_engine.compaction.primitives.event_selection import NoCondensationAvailableException
+    with pytest.raises(NoCondensationAvailableException, match="Summarization LLM call failed: downstream") as error:
+        Pipeline([replace(first, failure_next_on=None), second], "until_boundary", len).run(failed, target_tokens=1)
+    assert [s.status for s in error.value.compaction_outcome.stages] == ["failed", "noop"]
     assert not failed.state.records
     assert len(failed.summarizer.requests) == 1
 
 
-def test_token_trigger_requires_real_counter_and_honors_agent_cap():
-    recipe, ctx = context(turns(10), ["unused"], max_tokens=25)
+def test_token_trigger_reports_missing_input_cap_and_honors_agent_cap():
+    recipe, ctx = context([{"role": "user", "content": "X" * 84}], ["unused"], max_tokens=25)
     from breadboard_engine.compaction.primitives.accounting import OccupancyInput
     from breadboard_engine.compaction.primitives.triggers import TriggerInput
     data = TriggerInput(OccupancyInput(ctx.messages, None, True), 200000)
-    assert not recipe.pressure(data, ctx.messages).fires
-    pressure = recipe.pressure(replace(data, token_counter=lambda messages: 21, effective_input_tokens=20), ctx.messages)
+    pressure = recipe.pressure(data, ctx.messages)
+    assert not pressure.fires and "missing max_input_tokens" in pressure.source
+    pressure = recipe.pressure(replace(data, max_input_tokens=20), ctx.messages)
     assert pressure.to_dict() == {"fires": True, "tokens": 21, "limit": 20, "severity": "hard"}
 
 
@@ -108,3 +111,146 @@ def test_unknown_native_key_lists_all_accepted_keys():
         load_compaction_config({"enabled": True, "preset": "openhands_sdk@1.47.0", "unexpected": 1})
     for key in ("max_size", "keep_first", "max_tokens", "minimum_progress", "hard_context_reset_max_retries", "hard_context_reset_context_scaling"):
         assert key in str(error.value)
+
+
+def session(messages, **metadata):
+    from breadboard_engine.state.session_state import SessionState
+
+    state = SessionState("ws", "image", {})
+    for message in messages:
+        state.add_message(message)
+    for key, value in metadata.items():
+        state.set_provider_metadata(key, value)
+    return state
+
+
+def test_production_threshold_uses_declared_estimator_and_configured_route_limits():
+    from types import SimpleNamespace
+    from breadboard_engine.compaction.controller import CompactionController
+
+    class SummaryRuntime:
+        def __init__(self):
+            self.calls = 0
+
+        def invoke(self, **kwargs):
+            from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
+            self.calls += 1
+            assert kwargs["context"].extra["compaction_summary"]
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None, model=kwargs["model"])
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0", "max_tokens": 25, "keep_first": 1}})
+    state = session([{"role": "user" if i % 2 == 0 else "assistant", "content": "X" * 20} for i in range(6)])
+    runtime = SummaryRuntime()
+    conductor = SimpleNamespace(config={"providers": {"models": [{"model_id": "first", "max_input_tokens": 1000, "max_output_tokens": 100}]}})
+    view = controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model="first", turn_index=1)
+    assert runtime.calls == 1 and state.compaction_state.records
+    assert all("bb_event" not in message for message in view)
+    assert all("bb_event" not in message for record in state.compaction_state.records for message in record.summary_messages)
+    assert state.compaction_state.records[-1].details["event_metadata"]
+    state.set_provider_metadata("max_input_tokens", 20)
+    state.set_provider_metadata("max_output_tokens", 10)
+    assert controller.resolve_model_limits(state, conductor, "first") == (20, 10)
+    state.set_provider_metadata("max_input_tokens", None)
+    state.set_provider_metadata("max_output_tokens", None)
+    conductor.config["providers"]["models"].append({"model_id": "second", "max_input_tokens": 40, "max_output_tokens": 5})
+    assert controller.resolve_model_limits(state, conductor, "second") == (40, 5)
+
+
+def test_hard_threshold_exhaustion_propagates_original_failure_before_request():
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.primitives.event_selection import NoCondensationAvailableException
+
+    class FailingSummary:
+        def __init__(self):
+            self.calls = 0
+
+        def complete(self, request):
+            self.calls += 1
+            raise RuntimeError("balanced original" if self.calls == 1 else "reset failure")
+
+    summaries = FailingSummary()
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0", "max_tokens": 25, "keep_first": 1}}, summary_model=summaries)
+    state = session([{"role": "user" if i % 2 == 0 else "assistant", "content": "X" * 20} for i in range(6)], max_input_tokens=1000)
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    with pytest.raises(NoCondensationAvailableException, match="Summarization LLM call failed: balanced original") as error:
+        controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
+    assert summaries.calls == 6
+    assert not state.compaction_state.records
+    assert [stage.status for stage in error.value.compaction_outcome.stages] == ["failed", "failed"]
+    assert events[-1][0] == "compaction_finished" and events[-1][1]["status"] == "failed"
+    assert len(events[-1][1]["stages"]) == 2
+
+
+@pytest.mark.parametrize("preset", ["openhands_sdk@1.47.0", "omp@18.4.5", "pi@0.73.1"])
+def test_event_pressure_does_not_require_model_window(preset):
+    from breadboard_engine.compaction.controller import CompactionController
+
+    options = {"max_size": 10} if preset.startswith("openhands") else {}
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset, **options}})
+    assert controller.should_trigger_threshold(session(turns(11)), context_window=None) == preset.startswith("openhands")
+
+
+def test_user_blocks_and_summary_blocks_do_not_add_token_separators():
+    from breadboard_engine.compaction.primitives.accounting import chars_div4_floor
+    from breadboard_engine.compaction.primitives.event_messages import wire_messages, summary_message
+
+    for first in ({"role": "user", "content": "X" * 19}, summary_message("X" * 19)):
+        view = wire_messages([first, {"role": "user", "content": "Y" * 20}])
+        assert view == [{"role": "user", "content": [{"type": "text", "text": "X" * 19}, {"type": "text", "text": "Y" * 20}]}]
+        assert chars_div4_floor(view) == 9
+
+
+def test_request_stage_ids_run_on_each_request_and_emit_all_results():
+    from types import SimpleNamespace
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.presets import load_preset_document
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0"}})
+    document = load_preset_document(controller.config.preset)
+    document["request_view"] = ["hard_context_reset"]
+    document["pipeline"]["stages"][1]["when"] = {"reasons": ["request"]}
+    controller.recipe = build_recipe(controller.config, document)
+    events = []
+    state = session(turns(3))
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+
+    class Summary:
+        def complete(self, request):
+            return SummaryResponse("request summary")
+
+    controller.summary_model = Summary()
+    for _ in range(2):
+        controller.prepare_request(state, conductor=SimpleNamespace(config={}), runtime=None, client=None, model="test", turn_index=1)
+    finished = [payload for event, payload in events if event == "compaction_finished"]
+    assert len(finished) == 2
+    assert all(item["reason"] == "request" for item in finished)
+    assert all([stage["id"] for stage in item["stages"]] == ["hard_context_reset"] for item in finished)
+    assert all(item["stages"][0]["status"] == "committed" for item in finished)
+
+
+def test_event_threshold_prepares_request_without_provider_window():
+    from breadboard_engine.compaction.controller import CompactionController
+
+    class Summary:
+        def complete(self, request):
+            return SummaryResponse("event summary")
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0", "max_size": 10}}, summary_model=Summary())
+    state = session(turns(11))
+    view = controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
+    assert state.compaction_state.records
+    assert len(view) < len(state.provider_messages)
+
+
+def test_soft_failure_keeps_request_view_and_reports_failed_stage():
+    from breadboard_engine.compaction.controller import CompactionController
+
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0", "max_size": 10, "minimum_progress": 0.9}})
+    messages = turns(11)
+    state = session(messages)
+    events = []
+    state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
+    view = controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
+    assert view == messages and not state.compaction_state.records
+    assert [stage["status"] for stage in events[-1][1]["stages"]] == ["failed", "noop"]

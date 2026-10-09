@@ -68,27 +68,6 @@ def _recipe(case: Mapping[str, Any]):
     return build_recipe(config)
 
 
-def _token_counter(inp):
-    spec = inp.get("token_counter")
-    if spec is None:
-        return None
-    assert spec["kind"] == "text_chars_floor", f"unsupported token counter {spec}"
-    divisor = spec["divisor"]
-    assert isinstance(divisor, int) and divisor > 0
-
-    def count(messages):
-        chars = 0
-        for message in messages:
-            content = message.get("content")
-            if isinstance(content, str):
-                chars += len(content)
-            elif isinstance(content, list):
-                chars += sum(len(p["text"]) for p in content if isinstance(p, Mapping) and isinstance(p.get("text"), str))
-        return chars // divisor
-
-    return count
-
-
 def _context(case, state: CompactionState, messages, summarizer=None) -> CompactionContext:
     inp = case["input"]
     recipe = _recipe(case)
@@ -101,8 +80,8 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         context_window=inp["context_window"],
         tokens_before=recipe.count(state.project(messages, TARGET, coalesce=False)),
         summarizer=summarizer,
-        token_counter=_token_counter(inp),
-        effective_input_tokens=inp.get("max_input_tokens"),
+        max_input_tokens=inp.get("max_input_tokens"),
+        max_output_tokens=inp.get("max_output_tokens"),
     )
 
 
@@ -163,8 +142,7 @@ def test_oracle_case(case_file: Path) -> None:
             inp["context_window"],
             inp.get("max_output_tokens"),
             reason=inp.get("reason") or "threshold",
-            token_counter=_token_counter(inp),
-            effective_input_tokens=inp.get("max_input_tokens"),
+            max_input_tokens=inp.get("max_input_tokens"),
         )
         pressure = recipe.pressure(data, messages)
         assert pressure is not None, "trigger case for a preset without triggers"

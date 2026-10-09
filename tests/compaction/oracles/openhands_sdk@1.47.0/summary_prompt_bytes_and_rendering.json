@@ -90,7 +90,16 @@
     "projected_view": [
       {
         "role": "user",
-        "content": "Msg 0\nPreserve task IDs"
+        "content": [
+          {
+            "type": "text",
+            "text": "Msg 0"
+          },
+          {
+            "type": "text",
+            "text": "Preserve task IDs"
+          }
+        ]
       }
     ],
     "summary_requests": [

@@ -59,7 +59,9 @@ def main() -> None:
             return Message(role="tool", tool_call_id=self.tool_call_id, content=[TextContent(text=self.content_text)])
 
     def message_dict(message):
-        result = {"role": message.role, "content": "\n".join(p.text for p in message.content if hasattr(p, "text"))}
+        texts = [p.text for p in message.content if hasattr(p, "text")]
+        content = [{"type": "text", "text": text} for text in texts] if len(texts) > 1 else texts[0] if texts else ""
+        result = {"role": message.role, "content": content}
         if message.tool_calls:
             result["tool_calls"] = [
                 {"id": call.id, "type": "function", "function": {"name": call.name, "arguments": call.arguments}}
@@ -171,8 +173,6 @@ def main() -> None:
             "input": {"messages": [event_dict(e) for e in events], "usage": None, "context_window": 200000, "max_input_tokens": token_limit, "max_output_tokens": None, "reason": "manual" if manual else "threshold", "native_settings": native, "summary_responses": list(responses)},
             "expect": expect,
         }
-        if token_limit is not None:
-            payload["input"]["token_counter"] = {"kind": "text_chars_floor", "divisor": 4}
         if ledger:
             payload["input"]["ledger"] = list(ledger)
         (out / f"{name}.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -216,12 +216,34 @@ def main() -> None:
     tail = turns(8, "New")
     for event in tail:
         view1.append_event(event)
-    ledger = [{"history_length": len(events), "prefix_end": first.summary_offset, "first_kept_index": first.summary_offset + len(first.forgotten_event_ids), "summary": first.summary, "summary_messages": [event_dict(first.summary_event)], "details": {}, "coalesce_user": True}]
+    ledger = [{"history_length": len(events), "prefix_end": first.summary_offset, "first_kept_index": first.summary_offset + len(first.forgotten_event_ids), "summary": first.summary, "summary_messages": [message_dict(first.summary_event.to_llm_message())], "details": {"event_metadata": [event_dict(first.summary_event)["bb_event"]]}, "coalesce_user": True}]
     capture("repeated_condensation_replaces_previous_summary", events + tail, settings={"max_size": 8}, previous_events=view1.events, ledger=ledger, responses=["Second round updated summary"], selection=False)
     capture("hard_failure_triggers_hard_context_reset", turns(10), settings={"max_size": 8}, manual=True, responses=[{"error": {"kind": "RuntimeError", "message": "Simulated failure 1"}}, {"error": {"kind": "RuntimeError", "message": "Simulated failure 2"}}, "Hard reset recovered summary"])
     capture("soft_failure_leaves_view_unchanged", turns(12), settings={"max_size": 10, "minimum_progress": 0.9}, responses=[])
     capture("defaults_settings_variant_240_2", [], selection=False)
     capture("defaults_helper_variant_80_4", [], helper=True, selection=False)
+    # SDK coalesces text blocks without separators for its tokenizer.
+    adjacent = [
+        MessageEvent(llm_message=Message(role="user", content=[TextContent(text=text)]), source="user")
+        for text in ("X" * 19, "Y" * 20)
+    ]
+    capture("adjacent_users_token_equality", adjacent, settings={"max_size": 100, "max_tokens": 9, "keep_first": 0}, token_limit=1000, selection=False)
+    prior_events = turns(2)
+    prior_view = View.from_events(prior_events)
+    prior_view.append_event(CondensationRequest())
+    prior_llm = ScriptedLLM(["S" * 19])
+    prior_condenser = LLMSummarizingCondenser(llm=prior_llm.llm, max_size=100, keep_first=0)
+    prior = prior_condenser.condense(prior_view)
+    assert isinstance(prior, Condensation) and prior_llm.consumed == ["S" * 19]
+    prior_view.append_event(prior)
+    following_user = adjacent[1]
+    prior_view.append_event(following_user)
+    prior_ledger = [{"history_length": 2, "prefix_end": 0, "first_kept_index": 2,
+                     "summary": prior.summary, "summary_messages": [message_dict(prior.summary_event.to_llm_message())],
+                     "details": {"event_metadata": [event_dict(prior.summary_event)["bb_event"]]}, "coalesce_user": True}]
+    capture("summary_then_user_token_equality", prior_events + [following_user],
+            settings={"max_size": 100, "max_tokens": 9, "keep_first": 0}, token_limit=1000,
+            previous_events=prior_view.events, ledger=prior_ledger, selection=False)
     # Only delete cases intentionally removed from this capture, never arbitrary files.
     for name in DROPPED:
         (out / f"{name}.json").unlink(missing_ok=True)

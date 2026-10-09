@@ -409,7 +409,16 @@
       },
       {
         "role": "user",
-        "content": "Strictest reduction summary\nTurn 28"
+        "content": [
+          {
+            "type": "text",
+            "text": "Strictest reduction summary"
+          },
+          {
+            "type": "text",
+            "text": "Turn 28"
+          }
+        ]
       },
       {
         "role": "assistant",

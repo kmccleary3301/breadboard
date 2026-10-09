@@ -46,7 +46,8 @@ class EventSummary:
             prompt = self.template.render(events=[self._truncate(text, limit) for text in strings]).strip()
             try:
                 response = context.summarizer.complete(SummaryRequest(system=None, messages=({"role": "user", "content": prompt},), max_tokens=None, purpose="summary", model=context.settings.summary_model))
-                return Reduction(summary=response.text)
+                placed = [*selection.details.get("synthetic_prefix", ()), summary_message(response.text or "")]
+                return Reduction(summary=response.text, details={"event_metadata": [m.get("bb_event") or {} for m in placed]})
             except CompactionCancelled:
                 raise
             except Exception as error:
@@ -65,4 +66,5 @@ class OffsetSummary:
         params.done()
 
     def place(self, context, selection, reduction):
-        return [*selection.details.get("synthetic_prefix", ()), summary_message(reduction.summary or "")]
+        placed = [*selection.details.get("synthetic_prefix", ()), summary_message(reduction.summary or "")]
+        return [{key: value for key, value in message.items() if key != "bb_event"} for message in placed]

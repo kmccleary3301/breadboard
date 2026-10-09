@@ -164,10 +164,16 @@ def pi_estimate_messages(messages: Sequence[Message]) -> int:
     return sum(pi_estimate_message(m) for m in messages if isinstance(m, Mapping))
 
 
+def chars_div4_floor(messages: Sequence[Message]) -> int:
+    """Floor of total text characters / 4; no message or block separators."""
+    return sum(len(text) for message in messages for text in _text_parts(message.get("content"))) // 4
+
+
 ESTIMATORS: Dict[str, Estimator] = {
     "bb_chars4": estimate_messages_tokens,
     "pi_chars4": pi_estimate_messages,
     "event_count": len,
+    "chars_div4_floor": chars_div4_floor,
 }
 
 

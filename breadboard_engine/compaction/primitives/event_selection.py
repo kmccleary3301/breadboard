@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence
 from ..methods import CompactionContext, MethodUnavailable
 from ..params import Params, PresetError
 from ..transcript import leading_system_count, tool_call_ids
-from .event_messages import wire_messages
+from .accounting import build_estimator
 
 if TYPE_CHECKING:
     from .selectors import Selection
@@ -56,6 +56,10 @@ def indexed_view(context: CompactionContext) -> tuple[list[dict[str, Any]], list
     head = 0 if prior.reset_context else leading_system_count(context.messages)
     prefix = head if prior.prefix_end is None else prior.prefix_end
     indices = [*range(prefix), *([None] * len(prior.summary_messages)), *range(prior.first_kept_index, len(context.messages))]
+    metadata = prior.details.get("event_metadata") or []
+    for offset, item in enumerate(metadata):
+        if item:
+            events[prefix + offset]["bb_event"] = item
     return events, indices
 
 
@@ -66,6 +70,7 @@ class PrefixSuffixEvents:
         self.maximum = params.int("maximum", 240, minimum=1)
         self.keep_first = params.int("keep_first", 2, minimum=0)
         self.max_tokens = params.int("max_tokens", None)
+        self.count = build_estimator(params.str("estimator"))
         self.minimum_progress = params.number("minimum_progress", 0.1)
         params.done()
         if self.minimum_progress is None or not 0 < self.minimum_progress < 1:
@@ -83,20 +88,19 @@ class PrefixSuffixEvents:
             suffixes.append(len(events) // 2 - self.keep_first - 1)
         if len(events) > self.maximum:
             suffixes.append(self.maximum // 2 - self.keep_first - 1)
-        caps = [v for v in (self.max_tokens, context.effective_input_tokens) if v is not None]
-        cap = min(caps) if caps else None
-        count = context.token_counter
-        if cap is not None and count is not None:
-            total = count(wire_messages(events))
+        caps = [v for v in (self.max_tokens, context.max_input_tokens) if v is not None]
+        cap = min(caps) if context.max_input_tokens is not None else None
+        if cap is not None:
+            total = self.count(events)
             if total > cap:
                 hard = True
-                base = count(wire_messages(events[:self.keep_first]))
+                base = self.count(events[:self.keep_first])
                 reduction = total - cap // 2
                 # The source binary search uses strictly greater incremental tokens.
                 low, high = self.keep_first, len(events)
                 while low < high:
                     middle = (low + high) // 2
-                    if count(wire_messages(events[:middle])) - base > reduction:
+                    if self.count(events[:middle]) - base > reduction:
                         high = middle
                     else:
                         low = middle + 1

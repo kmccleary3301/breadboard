@@ -159,7 +159,16 @@
       },
       {
         "role": "user",
-        "content": "Pair-safe summary\nMsg 4"
+        "content": [
+          {
+            "type": "text",
+            "text": "Pair-safe summary"
+          },
+          {
+            "type": "text",
+            "text": "Msg 4"
+          }
+        ]
       }
     ],
     "summary_requests": [

@@ -55,9 +55,10 @@ def wire_messages(messages: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]
         prior_plain = bool(out) and out[-1].get("role") == "user" and not any(out[-1].get(k) for k in ("tool_calls", "tool_call_id", "name", "bb_native_compaction"))
         if plain and prior_plain:
             left, right = out[-1].get("content"), message.get("content")
-            if isinstance(left, str) and isinstance(right, str):
-                out[-1]["content"] = left + "\n" + right
-                continue
+            if isinstance(left, str):
+                left = [{"type": "text", "text": left}]
+            if isinstance(right, str):
+                right = [{"type": "text", "text": right}]
             if isinstance(left, list) and isinstance(right, list):
                 out[-1]["content"] = left + right
                 continue

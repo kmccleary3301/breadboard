@@ -19,7 +19,7 @@ native_settings:
     hard_context_reset_context_scaling: [pipeline.stages.1.reduce.context_scaling]
 estimator: event_count
 triggers:
-  - {kind: event_count, maximum: 240, max_tokens: null}
+  - {kind: event_count, maximum: 240, max_tokens: null, estimator: chars_div4_floor}
 target:
   threshold: {kind: fixed, tokens: 120}
   manual: {kind: fixed, tokens: 120}
@@ -31,6 +31,7 @@ overflow:
 request_view: []
 pipeline:
   mode: until_boundary
+  failure_policy: {soft: return, hard: raise_original}
   stages:
     - id: balanced_summary
       accept: any
@@ -39,6 +40,7 @@ pipeline:
         maximum: 240
         keep_first: 2
         max_tokens: null
+        estimator: chars_div4_floor
         minimum_progress: 0.1
       reduce:
         kind: event_summary
