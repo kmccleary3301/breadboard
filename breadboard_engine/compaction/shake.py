@@ -467,9 +467,6 @@ def collect_shake_regions(
     return regions
 
 
-# Alias matching OMP camelCase naming
-collectShakeRegions = collect_shake_regions
-
 
 def format_shake_artifact_text(regions: Sequence[ShakeRegion]) -> str:
     """Concatenate original regions into the persisted shake artifact body.
@@ -545,9 +542,6 @@ def apply_shake_region(
             content[region.block_index] = blk_copy
 
 
-applyShakeRegion = apply_shake_region
-
-
 def apply_shake_regions(
     messages: Sequence[Mapping[str, Any]],
     items: Sequence[Tuple[ShakeRegion, str]],
@@ -569,9 +563,6 @@ def apply_shake_regions(
         if 0 <= region.index < len(out):
             apply_shake_region(out[region.index], region, replacement, clock_now)
     return out
-
-
-applyShakeRegions = apply_shake_regions
 
 
 def shake(context: CompactionContext) -> Optional[CompactionRecord]:

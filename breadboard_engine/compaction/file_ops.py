@@ -36,9 +36,6 @@ def create_file_ops() -> FileOperations:
     return FileOperations()
 
 
-createFileOps = create_file_ops
-
-
 def split_read_selector(path: str) -> tuple[str, Optional[str]]:
     """Split a read-tool path into base path and trailing selector."""
     colon = path.rfind(":")
@@ -64,15 +61,9 @@ def split_read_selector(path: str) -> tuple[str, Optional[str]]:
     return base, sel
 
 
-splitReadSelector = lambda p: {"path": split_read_selector(p)[0], "sel": split_read_selector(p)[1]}
-
-
 def strip_read_selector(path: str) -> str:
     """Strip a trailing selector so line ranges deduplicate to the base file path."""
     return split_read_selector(path)[0]
-
-
-stripReadSelector = strip_read_selector
 
 
 def is_url_scheme_path(path: str) -> bool:
@@ -80,20 +71,10 @@ def is_url_scheme_path(path: str) -> bool:
     return bool(URL_SCHEME_RE.search(path))
 
 
-isUrlSchemePath = is_url_scheme_path
-
-
 class FileLists(NamedTuple):
     read_files: list[str]
     modified_files: list[str]
 
-    @property
-    def readFiles(self) -> list[str]:
-        return self.read_files
-
-    @property
-    def modifiedFiles(self) -> list[str]:
-        return self.modified_files
 
 
 def compute_file_lists(file_ops: FileOperations) -> FileLists:
@@ -102,9 +83,6 @@ def compute_file_lists(file_ops: FileOperations) -> FileLists:
     read_only = sorted(f for f in file_ops.read if not is_url_scheme_path(f) and f not in modified)
     modified_files = sorted(modified)
     return FileLists(read_files=read_only, modified_files=modified_files)
-
-
-computeFileLists = compute_file_lists
 
 
 # -----------------------------------------------------------------------------
@@ -242,9 +220,6 @@ def upsert_file_operations(
     return f"{base_summary}\n\n{file_ops_tag}"
 
 
-upsertFileOperations = upsert_file_operations
-
-
 # -----------------------------------------------------------------------------
 # Tool Call Extraction
 # -----------------------------------------------------------------------------
@@ -338,9 +313,6 @@ def extract_file_ops_from_message(
             file_ops.written.add(path)
         elif name in _EDIT_TOOLS:
             file_ops.edited.add(path)
-
-
-extractFileOpsFromMessage = extract_file_ops_from_message
 
 
 def extract_file_operations(
