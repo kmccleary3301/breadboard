@@ -93,6 +93,26 @@ def _state_from_ledger(case, messages) -> CompactionState:
     return state
 
 
+_CASE_KEYS = {"schema", "preset", "case", "source", "capture", "input", "expect"}
+_EXPECT_KEYS = CHECKED | {"edits", "failure"}
+
+
+@pytest.mark.parametrize(
+    "case_file", [pytest.param(p, id=f"{p.parent.name}/{p.stem}") for p in sorted(ORACLES.glob("*/*.json"))]
+)
+def test_oracle_case_is_well_formed(case_file: Path) -> None:
+    """Every captured case, packaged preset or not, states provenance and at least one expectation."""
+    case = json.loads(case_file.read_text(encoding="utf-8"))
+    assert set(case) == _CASE_KEYS
+    assert case["schema"] == "bb.compaction_oracle_case.v1"
+    assert (case["preset"], case["case"]) == (case_file.parent.name, case_file.stem)
+    assert case["capture"]["kind"] in {"executed", "source_derived"}
+    assert case["capture"]["script"].startswith("scripts/compaction_oracles/")
+    assert case["source"].get("commit") or case["source"].get("sha256") or case["source"].get("package_sha256")
+    assert case["expect"] and set(case["expect"]) <= _EXPECT_KEYS, sorted(case["expect"])
+    assert "/tmp/" not in case_file.read_text(encoding="utf-8").replace("/tmp/session/", "")
+
+
 @pytest.mark.parametrize("case_file", _cases())
 def test_oracle_case(case_file: Path) -> None:
     case = json.loads(case_file.read_text(encoding="utf-8"))

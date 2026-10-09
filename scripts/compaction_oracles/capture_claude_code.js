@@ -709,46 +709,6 @@ We identified missing CSRF validation and token leakage in URL params.
   });
 }
 
-// Case 12: Post-compact file/plan/skill reattachments (Source-derived, expect omitted)
-{
-  cases.push({
-    schema: "bb.compaction_oracle_case.v1",
-    preset: "claude_code@2.1.63",
-    case: "postcompact_reattachments",
-    source: {
-      ...baseSource,
-      evidence: [
-        "package/cli.js:2209-2211 (SG6 post-compact reattachments)",
-        "package/cli.js:1952-1954 (file reread limit maxTokens=5000, total=50000)",
-        "package/cli.js:6022-6041 (file/plan/skill system-reminder templates)"
-      ]
-    },
-    capture: {
-      kind: "source_derived",
-      script: "scripts/compaction_oracles/capture_claude_code.js",
-      notes: `Source-derived from SG6 (C:2209-2211). Post-compaction scans read-file history, takes up to 5 most recently read files, re-reads them with maxTokens=5000 within a 50000-token total budget, and renders them wrapped in <system-reminder> user messages ("Called the Read tool with the following input..."). If a file exceeds limits, it appends a compact_file_reference: "Note: \${filename} was read before the last conversation was summarized, but the contents are too large to include. Use Read tool if you need to access it.". Also reattaches active plan-mode instructions and invoked skills in reverse chronological order. Expect is intentionally omitted because BreadBoard lacks host file re-read, plan-mode, and skill runtime ports.`
-    },
-    input: {
-      messages: [
-        { role: "user", content: "Read foo.py and edit it" },
-        {
-          role: "assistant",
-          content: "",
-          tool_calls: [{ id: "call_r1", type: "function", function: { name: "Read", arguments: '{"file_path":"foo.py"}' } }]
-        },
-        { role: "tool", tool_call_id: "call_r1", content: "def foo(): return 42" }
-      ],
-      usage: { input_tokens: 160000, output_tokens: 7000, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 167000 },
-      context_window: 200000,
-      max_input_tokens: null,
-      max_output_tokens: 32000,
-      reason: "threshold",
-      native_settings: { autoCompactEnabled: true },
-      summary_responses: ["<summary>Read and inspected foo.py.</summary>"]
-    }
-  });
-}
-
 // --- 4. Write case files and report counts ---
 
 let executedCount = 0;
