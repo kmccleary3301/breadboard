@@ -74,22 +74,3 @@ class ChatSummary:
             text = normalize_xml_summary(text)
         return Reduction(summary=text)
 
-
-class MaskToolOutputs:
-    kind = "mask_tool_outputs"
-
-    def __init__(self, params: Params) -> None:
-        self.placeholder = resolve_prompt(params.value("placeholder"), params, "placeholder")
-        params.done()
-
-    def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
-        if not selection.targets:
-            raise MethodUnavailable("No selected tool outputs")
-        prior = {e.index: e.message for r in context.state.records for e in r.edits}
-        edits = []
-        for index in selection.targets:
-            message = dict(prior.get(index, context.messages[index]))
-            message["content"] = self.placeholder
-            message.pop("toolUseResult", None)
-            edits.append(MessageEdit(index, message))
-        return Reduction(edits=tuple(edits))

@@ -20,6 +20,9 @@ class WholeHistory:
     def __init__(self, params: Params) -> None:
         self.exclude_latest_user_on = params.list("exclude_latest_user_on", [])
         self.view = params.choice("view", ("history", "events"), "history")
+        self.replay_min_users = params.int("replay_min_users", 1, minimum=1)
+        self.replay_prefix_only = params.bool("replay_prefix_only", False)
+        self.exclude_compaction_users = params.bool("exclude_compaction_users", False)
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
@@ -38,10 +41,15 @@ class WholeHistory:
         end = len(context.messages)
         replay = ()
         if context.reason in self.exclude_latest_user_on:
-            index = next((i for i in range(end - 1, start - 1, -1) if context.messages[i].get("role") == "user"), None)
-            if index is not None:
-                replay = (index,)
-        return Selection(first_kept_index=end, summarize=tuple(i for i in range(start, end) if i not in replay), replay=replay)
+            users = [
+                i for i in range(start, end) if context.messages[i].get("role") == "user"
+                and not (self.exclude_compaction_users and context.messages[i].get("compaction"))
+            ]
+            if len(users) >= self.replay_min_users:
+                replay = (users[-1],)
+                if self.replay_prefix_only:
+                    end = users[-1]
+        return Selection(first_kept_index=len(context.messages), summarize=tuple(i for i in range(start, end) if i not in replay), replay=replay)
 
 
 class UserMessagesBudget:

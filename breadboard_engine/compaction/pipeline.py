@@ -26,6 +26,7 @@ from .primitives.placement import build_placement
 from .primitives.reducers import build_reducer
 from .primitives.selectors import Selection, build_selector
 from .params import Params
+from .primitives.triggers import PHASES
 from .state import CompactionRecord, CompactionState
 
 StageStatus = Literal["committed", "edited", "noop", "unavailable", "failed"]
@@ -146,6 +147,8 @@ class Stage:
     severity: Optional[str] = None
     failure_next_on: Optional[str] = None
     failure_kinds: Tuple[str, ...] = ()
+    stop_on_detail: Optional[str] = None
+    phase: str = "every_request"
 
 
 class Pipeline:
@@ -194,6 +197,11 @@ class Pipeline:
             if stage.severity is not None and context.severity != stage.severity:
                 results.append(StageResult(stage_id, "noop", f"severity {context.severity!r} not in when.severity"))
                 continue
+            if stage.phase == "user_turn_start" and (
+                not context.messages or context.messages[-1].get("role") != "user"
+            ):
+                results.append(StageResult(stage_id, "noop", "phase user_turn_start not active"))
+                continue
             try:
                 output = stage.step.run(context)
                 context.state.validate(output.record, context.messages)
@@ -241,6 +249,8 @@ class Pipeline:
             current = after
             status: StageStatus = "committed" if record.is_boundary else "edited"
             results.append(StageResult(stage_id, status, None, after, record.record_id, output.selection))
+            if stage.stop_on_detail is not None and record.details.get(stage.stop_on_detail):
+                stopped = f"stopped after {stage_id} {stage.stop_on_detail}"
             if status == "committed" and self.mode == "until_boundary":
                 stopped = f"stopped after {stage_id} committed"
         outcome = CompactionOutcome(
@@ -284,15 +294,17 @@ def build_stage(params: Params, algorithms: Mapping[str, Callable[[], Compaction
         if not all(isinstance(kind, str) for kind in failure_kinds):
             raise ValueError(f"{policy.where}.kinds must contain exception names")
         policy.done()
+    stop_on_detail = params.str("stop_on_detail", None)
+    phase = params.choice("phase", PHASES, "every_request")
     algorithm = params.str("algorithm", None)
     if algorithm is not None:
         if algorithm not in algorithms:
             raise ValueError(f"{params.where}.algorithm {algorithm!r} is unknown; expected one of {sorted(algorithms)}")
         params.done()
-        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, severity, failure_next_on, failure_kinds)
+        return Stage(stage_id, AlgorithmStep(algorithms[algorithm]()), reasons, accept, severity, failure_next_on, failure_kinds, stop_on_detail, phase)
     selector = build_selector(params.child(params.mapping("select"), "select"))
     reducer = build_reducer(params.child(params.mapping("reduce"), "reduce"))
     raw_place = params.mapping("place", None)
     placement = None if raw_place is None else build_placement(params.child(raw_place, "place"))
     params.done()
-    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, severity, failure_next_on, failure_kinds)
+    return Stage(stage_id, ComposedStep(stage_id, selector, reducer, placement), reasons, accept, severity, failure_next_on, failure_kinds, stop_on_detail, phase)

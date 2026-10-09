@@ -6,13 +6,14 @@
     "repo": "https://github.com/anomalyco/opencode",
     "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
     "evidence": [
-      "packages/opencode/src/session/compaction.ts:50-100"
+      "packages/opencode/src/session/compaction.ts:50-99",
+      "packages/opencode/src/session/message-v2.ts:636-638"
     ]
   },
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "if (part.state.time.compacted) break loop. Pruning loop breaks at first encountered already-compacted part."
+    "notes": "Executed pinned prune with native messages reconstructed from the recorded chat input. Tool names, call IDs, completed state and compaction markers are preserved; expected targets come only from updatePart calls. The budget cases contain two user turns after tool results, so the scan reaches the boundary."
   },
   "input": {
     "messages": [
@@ -22,24 +23,36 @@
       },
       {
         "role": "assistant",
-        "content": "Answer 1"
+        "content": "Running",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "bash",
+              "arguments": "{}"
+            }
+          }
+        ]
       },
       {
         "role": "tool",
         "tool_call_id": "c1",
-        "content": "[Old tool result content cleared]"
+        "name": "bash",
+        "content": "[Old tool result content cleared]",
+        "compacted": true
+      },
+      {
+        "role": "user",
+        "content": "Middle turn"
       },
       {
         "role": "user",
         "content": "Turn 2"
-      },
-      {
-        "role": "assistant",
-        "content": "Answer 2"
       }
     ],
     "usage": {
-      "input_tokens": 100000,
+      "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,
@@ -50,7 +63,10 @@
     "max_output_tokens": 32000,
     "reason": "threshold",
     "native_settings": {},
-    "summary_responses": []
+    "summary_responses": [],
+    "stage_ids": [
+      "prune"
+    ]
   },
   "expect": {
     "selection": {

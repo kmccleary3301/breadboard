@@ -194,7 +194,7 @@ def test_controller_supplies_real_boundary_count_in_both_passes():
             raise MethodUnavailable("inspection only")
 
     controller = CompactionController({"compaction": {"enabled": True, "preset": "mini_swe_agent@2.4.6"}})
-    controller.recipe = replace(controller.recipe, pipeline=Pipeline(
+    controller.recipe = replace(controller.recipe, order=("observation",), pipeline=Pipeline(
         [Stage("observation", AlgorithmStep(ObserveContext()))], "sequence", controller.recipe.count))
     state = SessionState("ws", "image", {})
     for i in range(5):

@@ -159,8 +159,20 @@ def _paths_config(preset_id: str, doc: Mapping[str, Any], raw: Mapping[str, Any]
     keys = (doc.get("native_settings") or {}).get("keys") or {}
     bb: Dict[str, Any] = {}
     native: Dict[str, Any] = {}
-    seen: Dict[str, str] = {}
+    # Accept nested spelling only when the preset declares the dotted leaf keys.
+    expanded: Dict[str, Any] = {}
+    def expand(key: str, value: Any) -> None:
+        if key not in keys and isinstance(value, Mapping) and any(k.startswith(key + ".") for k in keys):
+            for child, child_value in value.items():
+                expand(f"{key}.{child}", child_value)
+        else:
+            if key in expanded:
+                raise ValueError(f"duplicate compaction key {key!r}")
+            expanded[key] = value
     for key, value in raw.items():
+        expand(key, value)
+    seen: Dict[str, str] = {}
+    for key, value in expanded.items():
         if key in _BB_KEYS:
             attr = _BB_KEYS[key]
             if attr in seen:
@@ -205,10 +217,11 @@ class Recipe:
     @property
     def active(self) -> bool:
         stage_order = self.order if self.order is not None else self.pipeline.order
-        return self.settings.enabled and bool(stage_order)
+        return self.settings.enabled and bool(stage_order or self.request_view)
 
-    def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None) -> int:
-        return self.targets["threshold" if reason == "request" else reason].tokens(context_window, max_output)
+    def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None,
+                      max_input: Optional[int] = None) -> int:
+        return self.targets["threshold" if reason == "request" else reason].tokens(context_window, max_output, max_input)
 
     def pressure(self, data: TriggerInput, history: Any) -> Optional[Pressure]:
         """The first firing trigger's decision; else the first trigger's; ``None`` without triggers."""
@@ -257,7 +270,6 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     target_params = params.child(params.mapping("target"), "target")
     targets = {reason: build_limit(target_params.child(target_params.mapping(reason), reason)) for reason in TARGET_REASONS}
     target_params.done()
-    targets["request"] = targets["threshold"]
 
     overflow = params.child(params.mapping("overflow"), "overflow")
     preset_attempts = overflow.int("max_attempts_per_turn", minimum=0)
@@ -266,7 +278,7 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
 
     request_view = tuple(params.list("request_view"))
     if "omp_inline_snapcompact" in request_view[:-1]:
-        raise PresetError("request_view: omp_inline_snapcompact must be the final entry")
+        raise PresetError("request_view: omp_inline_snapcompact must be the final request_view entry")
 
     pipe = params.child(params.mapping("pipeline"), "pipeline")
     mode = pipe.choice("mode", MODES)
@@ -289,7 +301,11 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         raise PresetError(f"preset {config.preset} request_view has unknown steps {unknown_steps}")
 
 
-    order = None
+    # Request-only stages remain addressable, but are not compaction stages.
+    order = tuple(
+        stage.id for stage in stages
+        if stage.id not in request_view or stage.reasons is None or stage.reasons - {"request"}
+    )
     if order_source == "omp_method_order":
         order = config.settings.method_order
     attempts = config.max_passes_per_turn if config.max_passes_per_turn is not None else preset_attempts

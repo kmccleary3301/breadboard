@@ -292,7 +292,7 @@ def test_inline_request_transform_must_be_last(later):
     config = load_compaction_config({"enabled": True, "preset": "omp@18.4.5"})
     document = load_preset_document(config.preset)
     document["request_view"] = ["omp_inline_snapcompact", later]
-    with pytest.raises(PresetError, match="omp_inline_snapcompact must be the final entry"):
+    with pytest.raises(PresetError, match="omp_inline_snapcompact must be the final request_view entry"):
         build_recipe(config, document)
 
 

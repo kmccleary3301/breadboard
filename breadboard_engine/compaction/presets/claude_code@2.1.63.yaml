@@ -47,8 +47,9 @@ pipeline:
         auto_compact_enabled: true
         disabled_auto_limit: {kind: output_reserve_plus_buffer, output_cap: 20000, default_output: 32000, buffer: 0}
       reduce:
-        kind: mask_tool_outputs
+        kind: mask_outputs
         placeholder: {file: placeholder.txt}
+        remove_fields: [toolUseResult]
     - id: summary
       accept: any
       when: {reasons: [threshold, manual]}

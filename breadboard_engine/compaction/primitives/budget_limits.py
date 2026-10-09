@@ -17,7 +17,7 @@ class EffectiveBudget:
         self.cap = params.int("cap", None, minimum=1)
         params.done()
 
-    def tokens(self, window: int, max_output: int | None) -> int:
+    def tokens(self, window: int, max_output: int | None, max_input: int | None = None) -> int:
         window = self.window or window
         usable = window - self.output_reserve
         if usable <= 0:
@@ -42,5 +42,5 @@ class FlooredCappedReserve:
         self.cap_ratio = params.number("cap_ratio", 0.25)
         params.done()
 
-    def tokens(self, window: int, max_output: int | None) -> int:
+    def tokens(self, window: int, max_output: int | None, max_input: int | None = None) -> int:
         return window - min(max(self.reserve, self.floor), int(window * self.cap_ratio))

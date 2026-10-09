@@ -18,9 +18,10 @@ from .methods import (
     CompactionReason,
     RemoteCompactionPort,
     SummaryModel as SummaryModelProtocol,
+    _utc_now,
 )
 from .images import drop_images
-from .overflow import is_context_overflow
+from .overflow import is_context_overflow, overflow_token_bounds
 from .pipeline import CompactionOutcome, StageResult
 from .presets import CompactionConfig, Recipe, build_recipe, load_compaction_config
 from .primitives.accounting import OccupancyInput, normalize_usage
@@ -119,21 +120,23 @@ class CompactionController:
     ) -> tuple[Optional[int], Optional[int]]:
         """Resolve current route input/output limits without inventing an input cap."""
         get_metadata = getattr(session_state, "get_provider_metadata", None)
+        profile = getattr(session_state, "_episode_provider_profile", None)
         config = getattr(conductor, "config", None) or {}
         entries = (config.get("providers") or {}).get("models") or []
         entry = next(
-            (item for item in entries if isinstance(item, Mapping) and item.get("model_id") == model), {},
+            (item for item in entries if isinstance(item, Mapping) and item.get("model_id") == (model or getattr(conductor, "model", None))), {},
         )
         limits = []
         for key in ("max_input_tokens", "max_output_tokens"):
-            value = get_metadata(key) if callable(get_metadata) else None
+            value = getattr(profile, key, None)
+            if value is None:
+                value = get_metadata(key) if callable(get_metadata) else None
             if value is None and callable(get_metadata):
                 value = get_metadata("model_" + key)
             if value is None:
                 value = entry.get(key)
             limits.append(value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None)
         return limits[0], limits[1]
-
 
     def resolve_supports_images(self, *, conductor: Optional[Any] = None, model: Optional[str] = None) -> bool:
         """Image input capability from the model's provider config entry.
@@ -286,7 +289,7 @@ class CompactionController:
                                for stage_id in stage_ids[len(results):])
                 records = tuple(record for outcome in outcomes for record in outcome.records)
                 tokens_after = self.recipe.count(compaction_state.project(messages, target, coalesce=False))
-                target_tokens = self.recipe.target_tokens("request", context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW, max_output)
+                target_tokens = self.recipe.target_tokens("request", context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW, max_output, max_input)
                 aggregate = CompactionOutcome(
                     records=records,
                     stages=tuple(results),
@@ -391,6 +394,8 @@ class CompactionController:
         supports_images: bool = False,
         clock: Optional[Callable[[], str]] = None,
         max_output_tokens: Optional[int] = None,
+        overflow_tokens: Optional[int] = None,
+        overflow_limit: Optional[int] = None,
     ) -> CompactionContext:
         """Populate the production dependencies for every ledger-producing pass."""
         messages = session_state.provider_messages
@@ -417,9 +422,6 @@ class CompactionController:
                          max_output_tokens=max_output, reason=reason, max_input_tokens=max_input),
             messages,
         )
-        kwargs = {}
-        if clock is not None:
-            kwargs["clock"] = clock
         return CompactionContext(
             messages=messages, state=state, settings=self.settings, reason=reason, target=target,
             context_window=window, tokens_before=self.recipe.count(projected),
@@ -427,12 +429,13 @@ class CompactionController:
             supports_images=supports_images,
             custom_instructions=custom_instructions or self.settings.custom_instructions,
             max_input_tokens=max_input, max_output_tokens=max_output,
+            overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
             last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
             usage_fresh=len(messages) != self._messages_len_at_last_record,
             native_retention=self.recipe.native_retention,
             prior_compactions=sum(record.is_boundary for record in state.records),
             severity="hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft",
-            **kwargs,
+            clock=clock or _utc_now,
         )
 
     def compact(
@@ -453,22 +456,27 @@ class CompactionController:
         clock: Optional[Callable[[], str]] = None,
         max_output_tokens: Optional[int] = None,
         _request_outcomes: Optional[List[CompactionOutcome]] = None,
+        overflow_tokens: Optional[int] = None,
+        overflow_limit: Optional[int] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
         target_reason = "threshold" if reason == "request" else reason
         if target_reason not in self.recipe.targets:
             raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
+
         resolved_target = target or ProjectionTarget("unknown", "unknown", "unknown")
         context = self._context_for_pass(
             session_state, reason=reason, target=resolved_target, conductor=conductor,
             runtime=runtime, client=client, context_window=context_window, turn_index=turn_index,
             custom_instructions=custom_instructions, remote_ports=remote_ports,
             supports_images=supports_images, clock=clock, max_output_tokens=max_output_tokens,
+            overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
         )
         messages, compaction_state = context.messages, context.state
-        resolved_window, tokens_before, max_output = context.context_window, context.tokens_before, context.max_output_tokens
-
-        target_tokens = self.recipe.target_tokens(reason, resolved_window, max_output)
+        tokens_before = context.tokens_before
+        target_tokens = self.recipe.target_tokens(
+            reason, context.context_window, context.max_output_tokens, context.max_input_tokens,
+        )
         self._record_event(
             session_state,
             "compaction_started",
@@ -607,6 +615,7 @@ class CompactionController:
         ):
             return False
         self.record_pass(turn_index)
+        overflow_tokens, overflow_limit = overflow_token_bounds(exc)
         outcome = self.compact(
             session_state,
             reason="overflow",
@@ -619,6 +628,8 @@ class CompactionController:
             ),
             turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
+            overflow_tokens=overflow_tokens,
+            overflow_limit=overflow_limit,
         )
         if not outcome.compacted:
             return False

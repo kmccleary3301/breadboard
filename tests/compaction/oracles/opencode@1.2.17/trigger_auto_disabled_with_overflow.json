@@ -6,28 +6,28 @@
     "repo": "https://github.com/anomalyco/opencode",
     "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
     "evidence": [
-      "packages/opencode/src/server/routes/session.ts:488-491",
-      "packages/opencode/src/session/compaction.ts:32-34"
+      "packages/opencode/src/session/processor.ts:355-367",
+      "packages/opencode/src/session/prompt.ts:536-540"
     ]
   },
   "capture": {
-    "kind": "executed",
+    "kind": "source_derived",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "Route gate session.ts:488-491 checks `if (!auto && !overflow)`. When overflow is true, it bypasses the `auto=false` rejection and executes compaction."
+    "notes": "Provider overflow is an explicit ingress, independent of the threshold switch. processor.ts:359-363 sets needsCompaction on ContextOverflowError; prompt.ts:539 passes overflow: !lastAssistant.finish."
   },
   "input": {
     "messages": [
       {
         "role": "user",
-        "content": "Explain big system"
+        "content": "Hello"
       },
       {
         "role": "assistant",
-        "content": "Starting explanation..."
+        "content": "Hi"
       }
     ],
     "usage": {
-      "input_tokens": 195000,
+      "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,

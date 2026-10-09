@@ -12,7 +12,7 @@
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "Executed via runtime code sliced from compaction.ts:30-48 (isOverflow). Evaluated: count=129999, usable=130000, auto=true. Total (129999) is below usable (130000) under input.model.limit.input branch."
+    "notes": "Executed pinned isOverflow with provider totals preserved verbatim in input; limit is the formula at compaction.ts:42-46."
   },
   "input": {
     "messages": [
@@ -43,7 +43,8 @@
     "trigger": {
       "fires": false,
       "tokens": 129999,
-      "limit": 130000
+      "limit": 130000,
+      "severity": "soft"
     }
   }
 }

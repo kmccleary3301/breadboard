@@ -42,7 +42,7 @@ class OmpSettingsLimit:
         params.done()
         self.settings = params.env.settings
 
-    def tokens(self, window: int, max_output: Optional[int]) -> int:
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
         if self.use == "threshold":
             return resolve_threshold_tokens(window, self.settings)
         return max(1, window - resolve_budget_reserve_tokens(window, self.settings))
@@ -57,7 +57,7 @@ class WindowMinusReserve:
         self.reserve = params.int("reserve", minimum=0)
         params.done()
 
-    def tokens(self, window: int, max_output: Optional[int]) -> int:
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
         return window - self.reserve
 
 
@@ -73,7 +73,7 @@ class WindowFraction:
         if not 0 < self.percent <= 100:
             raise PresetError(f"{params.where}.percent must be in (0, 100]")
 
-    def tokens(self, window: int, max_output: Optional[int]) -> int:
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
         derived = math.floor(window * self.percent / 100)
         return derived if self.config_limit is None else min(derived, self.config_limit)
 
@@ -95,13 +95,32 @@ class OutputReservePlusBuffer:
                 self.pct_override = None
         params.done()
 
-    def tokens(self, window: int, max_output: Optional[int]) -> int:
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
         output = max_output if max_output else self.default_output
         effective = window - min(output, self.output_cap)
         limit = effective - self.buffer
         if self.pct_override is not None and 0 < self.pct_override <= 100:
             return min(math.floor(effective * self.pct_override / 100), limit)
         return limit
+
+
+class InputOrWindowReserve:
+    """Use an input limit with a buffer, otherwise reserve the model's output."""
+
+    kind = "input_or_window_reserve"
+
+    def __init__(self, params: Params) -> None:
+        self.output_cap = params.int("output_cap", 32000, minimum=1)
+        self.input_buffer = params.int("input_buffer", 20000, minimum=0)
+        self.reserved = params.int("reserved", None, minimum=0)
+        params.done()
+
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
+        output = min(max_output or self.output_cap, self.output_cap)
+        if max_input:
+            reserve = self.reserved if self.reserved is not None else min(self.input_buffer, output)
+            return max_input - reserve
+        return window - output
 
 
 class FixedLimit:
@@ -111,7 +130,7 @@ class FixedLimit:
         self.value = params.int("tokens", minimum=1)
         params.done()
 
-    def tokens(self, window: int, max_output: Optional[int]) -> int:
+    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
         return self.value
 
 
@@ -120,7 +139,7 @@ from .budget_limits import EffectiveBudget, FlooredCappedReserve
 LIMIT_KINDS = {
     cls.kind: cls
     for cls in (OmpSettingsLimit, WindowMinusReserve, WindowFraction, OutputReservePlusBuffer, FixedLimit,
-                EffectiveBudget, FlooredCappedReserve)
+                EffectiveBudget, FlooredCappedReserve, InputOrWindowReserve)
 }
 
 
@@ -184,6 +203,8 @@ class ThresholdTrigger:
         self.needs_follow_up = params.bool("needs_follow_up", True)
         self.sampling_phase = params.choice("sampling_phase", ("pre_turn", "mid_turn"), "pre_turn")
         self.scope = params.choice("scope", ("total",), "total")
+        self.disable_zero_window = params.bool("disable_zero_window", False)
+        self.provider_overflow = params.bool("provider_overflow", False)
         params.done()
 
     def in_phase(self, history: Sequence[Mapping[str, Any]]) -> bool:
@@ -196,14 +217,17 @@ class ThresholdTrigger:
         return bool(history) and history[-1].get("role") == "user"
 
     def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
-        if data.context_window is None or data.context_window <= 0:
+        if data.context_window is None or (data.context_window <= 0 and not self.disable_zero_window):
             return Pressure(False, None, 0, "missing_context_window", self.severity, False)
-        limit = self.limit.tokens(data.context_window, data.max_output_tokens)
+        limit = self.limit.tokens(data.context_window, data.max_output_tokens, data.max_input_tokens)
         in_phase = self.in_phase(history)
         measured = self.accounting.measure(data.occupancy)
         if measured is None:
             return Pressure(False, None, limit, "no_usage", self.severity, in_phase)
-        fires = self.enabled and not data.blocked and in_phase and COMPARATORS[self.compare](measured.tokens, limit)
+        if self.provider_overflow and data.reason == "overflow":
+            return Pressure(True, measured.tokens, limit, measured.source, "hard", in_phase)
+        enabled = self.enabled and not (self.disable_zero_window and data.context_window == 0)
+        fires = enabled and not data.blocked and in_phase and COMPARATORS[self.compare](measured.tokens, limit)
         return Pressure(fires, measured.tokens, limit, measured.source, self.severity, in_phase)
 
 

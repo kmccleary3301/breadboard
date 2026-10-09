@@ -146,6 +146,25 @@ The request pass renders tool observations through the pinned clipping
 template, including the exact 10,000-character boundary. Overflow is terminal.
 This preset does not add summarization to a harness that has none.
 
+### `opencode@1.2.17`
+
+Accepts `compaction.auto`, `compaction.prune` and `compaction.reserved`,
+as dotted or nested settings. Provider totals trigger at usable input capacity.
+Request pruning runs at user-turn start after threshold summarization, protects
+recent turns and tool tokens, exempts skill outputs, and requires over 20,000
+saved tokens. Overflow can exclude and replay the latest user when an earlier
+user remains. Summaries use pinned media placeholders and the summary bridge.
+Prune timing is a user-turn-start approximation, not upstream post-turn timing.
+
+### `oh-my-opencode@3.10.0`
+
+Accepts the same settings. Adds largest-first output masking toward half the
+failing request's parsed provider limit before overflow summarization.
+Sufficient masking avoids the summary; otherwise the summary pipeline runs.
+Pinned continuity instructions preserve task context. The unwired preemptive
+path remains disabled. External todo restoration, arbitrary hooks, destructive
+storage, debounce timers and live tool-after truncation are not cloned.
+
 ## When it runs
 
 | Trigger | What happens |
@@ -210,18 +229,23 @@ from `primitives/` and their parameters:
 
 | Part | Kinds |
 |---|---|
-| `estimator` | `bb_chars4`, `pi_chars4` |
+| `estimator` | `bb_chars4`, `pi_chars4`, `bytes4`, `chars4_round`, `event_count`, `chars_div4_floor` |
 | trigger `accounting` | `max_usage_estimate`, `usage_plus_trailing`, `provider_total`, `estimate_only` |
-| trigger `limit`, `target` | `omp_settings`, `window_minus_reserve`, `window_fraction`, `output_reserve_plus_buffer`, `fixed` |
-| stage `select` | `recent_tokens` (`walk: group_gt` for OMP, `message_crossing_ge` for Pi) |
-| stage `reduce` | `summarize` |
-| stage `place` | `template` |
+| trigger `limit`, `target` | `omp_settings`, `window_minus_reserve`, `window_fraction`, `output_reserve_plus_buffer`, `fixed`, `effective_budget`, `floored_capped_reserve`, `input_or_window_reserve` |
+| stage `select` | `recent_tokens`, `prefix_suffix_events`, `whole_history`, `user_messages_budget`, `latest_tool_outputs`, `decaying_prefix_tail`, `visible_tool_outputs`, `protected_tool_outputs`, `largest_first_masking` |
+| stage `reduce` | `summarize`, `event_summary`, `chat_summary`, `mask_outputs`, `duplicate_tool_results`, `observation_clip`, `checkpoint_summary`, `message_summary` |
+| stage `place` | `template`, `offset_summary`, `bridge`, `alternation_template`, `summary_replay` |
 | stage `algorithm` | `omp_remote`, `omp_snapcompact`, `omp_handoff`, `omp_shake` |
 
 `pipeline.mode` decides what happens after each stage result: `fallback`
 (OMP: try the next stage until the target is reached), `sequence` (run every
 stage, stop on failure) or `until_boundary` (stop at the first committed
 boundary).
+
+Stages can declare `phase: every_request` or `user_turn_start`. Compaction and
+request stages share one context builder for route limits, summarization,
+instructions, usage freshness, prior boundaries and numeric overflow bounds.
+Provider error text stays redacted; only safe token counts reach recovery.
 
 `native_settings.adapter: paths` maps each harness setting to recipe paths;
 `omp_settings` hands the block to OMP's parser, and recipe values read it

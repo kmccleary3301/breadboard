@@ -429,11 +429,12 @@ class Summarize:
 
 
 from .event_summary import EventSummary
-from .chat_reducers import ChatSummary, MaskToolOutputs
+from .chat_reducers import ChatSummary
 from .observation_edits import DuplicateToolResults, ObservationClip
 from .checkpoint_summary import CheckpointSummary
+from .message_reduction import MaskOutputs, MessageSummary
 
-REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary, ChatSummary, MaskToolOutputs, DuplicateToolResults, ObservationClip, CheckpointSummary)}
+REDUCER_KINDS = {cls.kind: cls for cls in (Summarize, EventSummary, ChatSummary, DuplicateToolResults, ObservationClip, CheckpointSummary, MaskOutputs, MessageSummary)}
 
 
 def build_reducer(params: Params) -> Any:

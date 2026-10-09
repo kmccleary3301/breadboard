@@ -62,6 +62,7 @@ class SummaryRequest:
     purpose: SummaryPurpose
     model: Optional[str] = None
 
+    tools: Tuple[Mapping[str, Any], ...] = ()
 
 @dataclass(frozen=True)
 class SummaryResponse:
@@ -125,6 +126,8 @@ class CompactionContext:
     usage_fresh: bool = True
     native_retention: Optional[Any] = None
     prior_compactions: int = 0
+    overflow_tokens: Optional[int] = None
+    overflow_limit: Optional[int] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

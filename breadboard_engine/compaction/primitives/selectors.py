@@ -97,8 +97,9 @@ class RecentTokens:
 from .event_selection import PrefixSuffixEvents
 from .budget_selectors import LatestToolOutputs, UserMessagesBudget, WholeHistory
 from .protected_windows import DecayingPrefixTail, VisibleToolOutputs
+from .history_selection import ProtectedToolOutputs, LargestFirstMasking
 
-SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, PrefixSuffixEvents, WholeHistory, UserMessagesBudget, LatestToolOutputs, DecayingPrefixTail, VisibleToolOutputs)}
+SELECTOR_KINDS = {cls.kind: cls for cls in (RecentTokens, PrefixSuffixEvents, WholeHistory, UserMessagesBudget, LatestToolOutputs, DecayingPrefixTail, VisibleToolOutputs, ProtectedToolOutputs, LargestFirstMasking)}
 
 
 def build_selector(params: Params) -> Any:

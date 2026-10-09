@@ -6,21 +6,21 @@
     "repo": "https://github.com/anomalyco/opencode",
     "commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
     "evidence": [
-      "packages/opencode/src/session/message-v2.ts:805-835",
-      "packages/opencode/src/session/compaction.ts:145-165"
+      "packages/opencode/src/session/compaction.ts:101-294",
+      "packages/opencode/src/session/message-v2.ts:490-729"
     ]
   },
   "capture": {
     "kind": "executed",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "FilterCompacted (message-v2.ts:805-835) breaks when reaching a compaction marker, keeping that summary assistant. In the subsequent compaction request, the previous summary assistant is passed into `messages` for summary generation."
+    "notes": "Executed pinned SessionCompaction.process and MessageV2.toModelMessages with AI SDK 5.0.124, scripted LLM and in-memory session persistence. Native tool messages are translated losslessly to BreadBoard's accepted call/result wire representation; native summary flags are ledger facts, not wire fields. Plugin context comes from the pinned injector. Selection excludes the synthetic marker, whose rendered text remains in the request and projection. The three-turn tool history verifies summary input before lifecycle pruning."
   },
   "input": {
     "messages": [
       {
         "role": "assistant",
-        "summary": true,
-        "content": "Prior compaction summary: phase 1 complete."
+        "content": "Prior compaction summary: phase 1 complete.",
+        "summary": true
       },
       {
         "role": "user",
@@ -32,11 +32,11 @@
       }
     ],
     "usage": {
-      "input_tokens": 160000,
+      "input_tokens": 0,
       "output_tokens": 0,
       "cache_read_tokens": 0,
       "cache_write_tokens": 0,
-      "total_tokens": 160000
+      "total_tokens": 150000
     },
     "context_window": 200000,
     "max_input_tokens": null,
@@ -48,20 +48,12 @@
     ]
   },
   "expect": {
-    "selection": {
-      "summarize": [
-        0,
-        1,
-        2
-      ]
-    },
     "summary_requests": [
       {
         "system": "You are a helpful AI assistant tasked with summarizing conversations.\n\nWhen asked to summarize, provide a detailed but concise summary of the conversation.\nFocus on information that would be helpful for continuing the conversation, including:\n- What was done\n- What is currently being worked on\n- Which files are being modified\n- What needs to be done next\n- Key user requests, constraints, or preferences that should persist\n- Important technical decisions and why they were made\n\nYour summary should be comprehensive enough to provide context but concise enough to be quickly understood.\n\nDo not respond to any questions in the conversation, only output the summary.\n",
         "messages": [
           {
             "role": "assistant",
-            "summary": true,
             "content": [
               {
                 "type": "text",
@@ -92,6 +84,15 @@
             "content": [
               {
                 "type": "text",
+                "text": "What did we do so far?"
+              }
+            ]
+          },
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
                 "text": "Provide a detailed prompt for continuing our conversation above.\nFocus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.\nThe summary that you construct will be used so that another agent can read it and continue the work.\n\nWhen constructing the summary, try to stick to this template:\n---\n## Goal\n\n[What goal(s) is the user trying to accomplish?]\n\n## Instructions\n\n- [What important instructions did the user give you that are relevant]\n- [If there is a plan or spec, include information about it so next agent can continue using it]\n\n## Discoveries\n\n[What notable things were learned during this conversation that would be useful for the next agent to know when continuing the work]\n\n## Accomplished\n\n[What work has been completed, what work is still in progress, and what work is left?]\n\n## Relevant files / directories\n\n[Construct a structured list of relevant files that have been read, edited, or created that pertain to the task at hand. If all the files in a directory are relevant, include the path to the directory.]\n---"
               }
             ]
@@ -100,19 +101,25 @@
         "tools": []
       }
     ],
+    "selection": {
+      "summarize": [
+        0,
+        1,
+        2
+      ]
+    },
     "projected_view": [
       {
         "role": "user",
         "content": [
           {
             "type": "text",
-            "text": "Provide a detailed prompt for continuing our conversation above.\nFocus on information that would be helpful for continuing the conversation, including what we did, what we're doing, which files we're working on, and what we're going to do next.\nThe summary that you construct will be used so that another agent can read it and continue the work.\n\nWhen constructing the summary, try to stick to this template:\n---\n## Goal\n\n[What goal(s) is the user trying to accomplish?]\n\n## Instructions\n\n- [What important instructions did the user give you that are relevant]\n- [If there is a plan or spec, include information about it so next agent can continue using it]\n\n## Discoveries\n\n[What notable things were learned during this conversation that would be useful for the next agent to know when continuing the work]\n\n## Accomplished\n\n[What work has been completed, what work is still in progress, and what work is left?]\n\n## Relevant files / directories\n\n[Construct a structured list of relevant files that have been read, edited, or created that pertain to the task at hand. If all the files in a directory are relevant, include the path to the directory.]\n---"
+            "text": "What did we do so far?"
           }
         ]
       },
       {
         "role": "assistant",
-        "summary": true,
         "content": [
           {
             "type": "text",
