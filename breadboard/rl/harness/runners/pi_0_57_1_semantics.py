@@ -265,6 +265,7 @@ class Pi0571SemanticsState:
 
     def prepare_response(
         self, response: NativeProviderResponse, parsed_arguments: Sequence[Any],
+        *, usage: Mapping[str, Any] | None = None,
     ) -> Pi0571ResponseResult:
         """Commit one sent response with worker-parsed tool arguments."""
         if not isinstance(response, NativeProviderResponse):
@@ -284,12 +285,19 @@ class Pi0571SemanticsState:
         self.request_records.append(
             Pi0571RequestRecord(self.stream_fn_issued, True, response.request_digest)
         )
-        assistant = self._assistant(blocks, pinned_usage(response.usage, self.cost), stop)
+        assistant = self._assistant(
+            blocks, dict(usage) if usage is not None else pinned_usage(response.usage, self.cost), stop,
+        )
         self.messages.append(assistant)
         self.native_stop_reason = stop
         if not calls:
             self.exit_status = "Submitted" if stop == "stop" else stop
         return Pi0571ResponseResult(assistant, calls, stop, not calls)
+
+    def reopen_after_overflow(self) -> None:
+        """Resume the source's overflow retry after rebuilding session context."""
+        self.exit_status = None
+        self.native_stop_reason = None
 
     def commit_provider_failure(self, message: Mapping[str, Any]) -> None:
         """Commit the worker-projected pinned assistant error message."""

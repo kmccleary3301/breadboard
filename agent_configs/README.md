@@ -1,24 +1,26 @@
 # Agent configuration catalog
 
-The six top-level files dated `2026-09-10` are the current E4 catalog. The date is the BreadBoard catalog refresh date, not an upstream capture date. Each file preserves the version and claim boundary of the latest accepted source in `docs/conformance/e4_lane_inventory.json` or, for oh-my-opencode, the pinned freeze-manifest replay row.
+The current E4 catalog is the four BreadBoard agent profiles dated `2026-10-09` plus the two target-config projections dated `2026-09-10`. The date is the BreadBoard catalog refresh date, not an upstream capture date. Each file preserves the version and claim boundary of the latest accepted source in `docs/conformance/e4_lane_inventory.json` or, for oh-my-opencode, the pinned freeze-manifest replay row.
 
-| Family | Current file | Upstream identity | Scope |
-|---|---|---|---|
-| Codex CLI | `codex_0-139-0_gpt55_e4_9-10-2026.yaml` | Codex CLI 0.139.0, `gpt-5.5` | Runnable BreadBoard capture/replay profile. Acceptance is limited to the read-only capture probe; this is not a full Codex parity claim. |
-| Claude Code | `claude_code_2-1-63_e4_9-10-2026.yaml` | Claude Code 2.1.63 capture package | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
-| OpenCode | `opencode_1-2-17_e4_9-10-2026.yaml` | OpenCode 1.2.17 | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
-| oh-my-opencode | `oh_my_opencode_3-10-0_e4_9-10-2026.yaml` | oh-my-opencode 3.10.0 at commit `5137df72d8fab3fec609c82f91387db8e3b13825` | Runnable standalone BreadBoard dossier for the frozen Phase 8 async/subagent replay surface. |
-| Oh My Pi | `oh_my_pi_16-2-13_e4_9-10-2026.yaml` | `@oh-my-pi/pi-coding-agent@16.2.13` at commit `5356713eae60e67ee64d9b02e3b5e377d248ee7f` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
-| Pi | `pi_0-57-1_e4_9-10-2026.yaml` | `@mariozechner/pi-coding-agent@0.57.1` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
+Each `2026-10-09` profile is its `2026-09-10` predecessor plus the harness's own context compaction: a `compaction:` block selecting the preset cloned from the pinned source (native default settings) and the model's context window. OpenCode and oh-my-opencode also declare the model's input and output limits, which their thresholds use. `docs/guides/CONTEXT_COMPACTION.md` documents each preset. The `2026-09-10` profiles remain as compaction-off baselines.
+
+| Family | Current file | Upstream identity | Compaction | Scope |
+|---|---|---|---|---|
+| Codex CLI | `codex_0-139-0_gpt55_e4_10-9-2026.yaml` | Codex CLI 0.139.0, `gpt-5.5` | `codex@0.139.0`, window 272000 (`models.json` gpt-5.5) | Runnable BreadBoard capture/replay profile. Acceptance is limited to the read-only capture probe; this is not a full Codex parity claim. |
+| Claude Code | `claude_code_2-1-63_e4_10-9-2026.yaml` | Claude Code 2.1.63 capture package | `claude_code@2.1.63`, window 200000 (`cli.js` default) | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
+| OpenCode | `opencode_1-2-17_e4_10-9-2026.yaml` | OpenCode 1.2.17 | `opencode@1.2.17`, window 400000, input 272000, output 32000 (bundled models.dev snapshot) | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
+| oh-my-opencode | `oh_my_opencode_3-10-0_e4_10-9-2026.yaml` | oh-my-opencode 3.10.0 at commit `5137df72d8fab3fec609c82f91387db8e3b13825` | `oh-my-opencode@3.10.0`, same limits as OpenCode | Runnable standalone BreadBoard dossier for the frozen Phase 8 async/subagent replay surface. |
+| Oh My Pi | `oh_my_pi_16-2-13_e4_9-10-2026.yaml` | `@oh-my-pi/pi-coding-agent@16.2.13` at commit `5356713eae60e67ee64d9b02e3b5e377d248ee7f` | target revision `oh-my-pi-r3@16.2.13` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
+| Pi | `pi_0-57-1_e4_9-10-2026.yaml` | `@mariozechner/pi-coding-agent@0.57.1` | target revision `pi-r4@0.57.1` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
 
 ## Run and inspect
 
 The four BreadBoard agent profiles support the existing TUI config path:
 
 ```bash
-node tui_skeleton/dist/main.js doctor --config agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml
+node tui_skeleton/dist/main.js doctor --config agent_configs/codex_0-139-0_gpt55_e4_10-9-2026.yaml
 node tui_skeleton/dist/main.js run \
-  --config agent_configs/claude_code_2-1-63_e4_9-10-2026.yaml \
+  --config agent_configs/claude_code_2-1-63_e4_10-9-2026.yaml \
   --workspace ./agent_ws \
   "Describe this repository."
 ```

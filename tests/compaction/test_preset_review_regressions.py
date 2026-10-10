@@ -333,3 +333,30 @@ def test_final_inline_imaging_composes_with_request_stage_outcomes(observation_l
         assert view[-1]["content"] != history[-1]["content"]
     else:
         assert view[-1] == history[-1]
+
+
+@pytest.mark.parametrize("max_output_tokens", [None, 32000])
+def test_codex_threshold_is_window_fraction_not_preempted_by_output_reserve(max_output_tokens):
+    """Codex compacts at 90% of the window whatever the output cap.
+
+    At the RL window W=131072 with a 32000 output cap, a reserve-style rule
+    (prompt + output > W) would act at 99072, before Codex's own trigger at
+    floor(0.9 * W) = 117964 (openai_models.rs:430-441, compare ``>=``). The
+    preset must keep Codex's accounting so overflow, terminal for Codex, is
+    reached only where stock Codex reaches it.
+    """
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "codex@0.139.0"}})
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "user", "content": "task"})
+    state.add_message({"role": "assistant", "content": "working"})
+
+    def fires(total):
+        usage = {"input_tokens": total, "output_tokens": 0, "total_tokens": total}
+        return controller.should_trigger_threshold(
+            state, context_window=131072, last_usage=usage, max_output_tokens=max_output_tokens,
+        )
+
+    assert not fires(131072 - 32000)
+    assert not fires(117963)
+    assert fires(117964)
+    assert controller.recipe.overflow_policy == "terminal"

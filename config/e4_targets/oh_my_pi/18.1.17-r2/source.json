@@ -1,0 +1,11 @@
+{
+  "schema_version": "bb.e4.source.v1",
+  "package": "@oh-my-pi/pi-coding-agent",
+  "version": "18.1.17",
+  "source_commit": "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec",
+  "source_archive": "05_oh_my_pi_source_18.1.17_3b3a6dc9.zip",
+  "source_archive_sha256": "sha256:67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587",
+  "package_archive": "06_oh_my_pi_npm_18.1.17.tgz",
+  "package_integrity": "sha512-kkKsQUAStT8O6z9vlDQMwQzMBzUBSxA5vBrGpONEdOrgSVzYMtVWxxm1t6uSVFpN9cophbTCFRV0wRAonc8XVw==",
+  "lock_sha256": "sha256:9c0ed804704050ad4dbc3de84581694c7e505fdc39b0c13dea337300bae82a7e"
+}

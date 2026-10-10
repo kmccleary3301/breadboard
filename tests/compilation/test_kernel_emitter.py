@@ -343,6 +343,7 @@ def test_config_surface_fields_registry_matches_curated_inventory_contract() -> 
     rows = {entry["id"]: entry for entry in entries}
     dossier_only_ids = {"profile", "tool_packs", "tool_bindings", "terminal_sessions"}
     expected_ids = {
+        "compaction",
         "completion",
         "concurrency",
         "enhanced_tools",
@@ -368,7 +369,7 @@ def test_config_surface_fields_registry_matches_curated_inventory_contract() -> 
         "workspace",
     }
 
-    assert len(entries) == 23
+    assert len(entries) == 24
     assert set(rows) == expected_ids
 
     for entry_id, row in rows.items():

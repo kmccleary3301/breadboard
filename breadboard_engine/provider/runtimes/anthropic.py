@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import re
 import time
 from types import SimpleNamespace
@@ -109,6 +110,10 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             },
                         }
                     )
+                elif block_type == "thinking" and "text" in block:
+                    if not isinstance(block["text"], str):
+                        raise ProviderContractError("canonical thinking requires text")
+                    blocks.append({"type": "thinking", "thinking": block["text"]})
                 elif block_type in {
                     "image",
                     "document",
@@ -120,9 +125,26 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 elif block_type in {"tool_call", "tool_result"}:
                     blocks.append(dict(block))
                 elif block_type == "provider_replay":
-                    raise ProviderContractError(
-                        "Anthropic provider replay requires native replay conversion"
-                    )
+                    if (
+                        block.get("provider_id") != "anthropic"
+                        or block.get("schema_version") != "anthropic.messages.v1"
+                        or block.get("replay_scope") != "same_provider"
+                    ):
+                        raise ProviderContractError("incompatible Anthropic reasoning replay")
+                    payload = block.get("payload")
+                    if not isinstance(payload, dict) or not blocks:
+                        raise ProviderContractError("Anthropic reasoning replay requires its preceding block")
+                    previous = blocks[-1]
+                    if set(payload) == {"signature"}:
+                        signature = payload["signature"]
+                        if previous.get("type") != "thinking" or "signature" in previous or not isinstance(signature, str) or not signature:
+                            raise ProviderContractError("thinking signature requires an unsigned preceding thinking block")
+                        previous["signature"] = signature
+                    elif set(payload) == {"redacted_data"}:
+                        if previous != {"type": "redacted_thinking", "data": payload["redacted_data"]}:
+                            raise ProviderContractError("redacted replay disagrees with its preceding block")
+                    else:
+                        raise ProviderContractError("unsupported Anthropic reasoning replay payload")
                 else:
                     raise ProviderContractError(
                         f"unsupported Anthropic content block: {block_type!r}"
@@ -270,6 +292,10 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 )
             blocks = text_blocks(content)
             if role == "assistant":
+                reasoning = message.get("reasoning")
+                if reasoning is not None:
+                    canonical_reasoning = ProviderMessage(role="assistant", content=None, reasoning=reasoning).as_dict()["content"]
+                    blocks = text_blocks(canonical_reasoning) + blocks
                 raw_calls = message.get("tool_calls")
                 if raw_calls is not None:
                     if not isinstance(raw_calls, list):
@@ -352,7 +378,9 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return dict(usage_obj)
         model_dump = getattr(usage_obj, "model_dump", None)
         if callable(model_dump):
-            value = model_dump()
+            # SDK default-null fields are not provider usage observations.
+            # Preserve explicit nulls so the strict contract still rejects them.
+            value = model_dump(exclude_unset=True)
             if isinstance(value, dict):
                 return value
         raise ProviderContractError("Anthropic usage must be an object")
@@ -530,6 +558,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             finish_reason="stop" if stop_reason == "compaction" else stop_reason,
             index=0,
             raw_message=response,
+            reasoning=reasoning_blocks or None,
             annotations={
                 "anthropic_stop_reason": getattr(response, "stop_reason", None)
             },
@@ -831,6 +860,31 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return [block]
         return system_prompt
 
+    @staticmethod
+    def _sdk_request_options(method: Any, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Preserve wire sampling fields across the supported SDK range.
+
+        SDK 1.12.1 messages.py:972-999 omits legacy sampling kwargs, but
+        :142-146 and :1049-1053 document and forward extra_body. Older SDKs
+        accept these fields directly. Inspect the selected stream/create
+        callable rather than catching TypeError and retrying a request.
+        """
+        sampling = tuple(key for key in ("temperature", "top_p", "top_k") if key in request)
+        if not sampling:
+            return request
+        parameters = inspect.signature(method).parameters
+        if any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+            return request
+        unsupported = tuple(key for key in sampling if key not in parameters)
+        if not unsupported:
+            return request
+        options = dict(request)
+        extra_body = dict(options.get("extra_body") or {})
+        for key in unsupported:
+            extra_body[key] = options.pop(key)
+        options["extra_body"] = extra_body
+        return options
+
     def _call_streaming(
         self,
         client: Any,
@@ -839,7 +893,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
     ) -> Tuple[
         Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]
     ]:
-        stream_ctx = client.messages.stream(**request)
+        method = client.messages.stream
+        stream_ctx = method(**self._sdk_request_options(method, request))
         usage_override: Optional[Dict[str, Any]] = None
         response_obj: Any = None
         block_types: Dict[int, str] = {}
@@ -888,6 +943,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             details={"code": "invalid_anthropic_event"},
                         )
                     message_id = message_id_value
+                    usage_override = self._extract_usage(message)
                     context.record_provider_event("response_start", {})
                 elif event_type == "content_block_start":
                     if message_id is None or message_stopped:
@@ -1108,9 +1164,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         streamed_stop_reason = stop_reason
                     event_usage = self._get_attr(event, "usage")
                     if event_usage is not None:
-                        usage_override = self._extract_usage(
-                            SimpleNamespace(usage=event_usage)
-                        )
+                        delta_usage = self._extract_usage(SimpleNamespace(usage=event_usage))
+                        usage_override = {**(usage_override or {}), **(delta_usage or {})}
                 elif event_type == "message_stop":
                     if (
                         message_id is None
@@ -1124,6 +1179,14 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         )
                     message_stopped = True
                 elif event_type == "ping":
+                    continue
+                elif (
+                    event_type in {"text", "input_json", "thinking", "signature", "citation"}
+                    and type(event).__module__ == "anthropic.lib.streaming._types"
+                ):
+                    # messages.stream yields SDK snapshot events after the raw
+                    # deltas already consumed above (_types.py:22-105). They
+                    # are not additional provider output or protocol events.
                     continue
                 elif event_type == "error":
                     err_obj = self._get_attr(event, "error")
@@ -1181,7 +1244,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         client: Any,
         request: Dict[str, Any],
     ) -> Tuple[Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]]:
-        raw_response = client.messages.with_raw_response.create(**request)
+        method = client.messages.with_raw_response.create
+        raw_response = method(**self._sdk_request_options(method, request))
         parsed = raw_response.parse()
         http_response = getattr(raw_response, "http_response", None)
         headers = self._normalize_headers(getattr(http_response, "headers", {}) or {})
@@ -1208,7 +1272,13 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         anthropic_cfg = (context.agent_config.get("provider_tools") or {}).get(
             "anthropic", {}
         )
-        max_tokens = anthropic_cfg.get("max_output_tokens", 1024)
+        summary_params = (context.extra or {}).get("compaction_request_params")
+        if summary_params is not None:
+            anthropic_cfg = {
+                key: value for key, value in anthropic_cfg.items()
+                if key not in {"temperature", "top_p", "top_k", "thinking", "tool_choice"}
+            }
+        max_tokens = (context.extra or {}).get("max_tokens", anthropic_cfg.get("max_output_tokens", 1024))
         temperature = anthropic_cfg.get("temperature")
         prompt_cache_cfg = (
             (anthropic_cfg.get("prompt_cache") or {})
@@ -1290,13 +1360,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         if temperature is not None:
             request["temperature"] = float(temperature)
-        request.update(
-            anthropic_role_options(
-                context,
-                default_max_output_tokens=request["max_tokens"],
-                base_sampling="temperature" in request or "top_p" in request,
+        if anthropic_cfg.get("thinking") is not None:
+            request["thinking"] = anthropic_cfg["thinking"]
+        if summary_params is None:
+            request.update(
+                anthropic_role_options(
+                    context,
+                    default_max_output_tokens=request["max_tokens"],
+                    base_sampling="temperature" in request or "top_p" in request,
+                )
             )
-        )
+        else:
+            request.update(summary_params)
 
         response_metadata: Dict[str, Any] = {"stream": bool(stream)}
         if resolved_tool_choice:

@@ -125,6 +125,8 @@ def _normalized_reasoning_blocks(
             raise ProviderContractError(
                 f"{label} must be text or canonical reasoning blocks"
             )
+        # Deduplicate aliases across fields, not ordered blocks in one field.
+        prior_fields = seen.copy()
         for block in normalized:
             if block["type"] not in {
                 "thinking",
@@ -135,7 +137,7 @@ def _normalized_reasoning_blocks(
                     f"{label} contains a non-reasoning content block"
                 )
             identity = canonical_json(block)
-            if identity not in seen:
+            if identity not in prior_fields:
                 seen.add(identity)
                 blocks.append(block)
 

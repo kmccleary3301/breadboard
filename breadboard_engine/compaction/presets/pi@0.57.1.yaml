@@ -1,0 +1,76 @@
+schema: bb.compaction_preset.v1
+id: pi@0.57.1
+source:
+  repo: https://github.com/badlogic/pi-mono
+  package: "@mariozechner/pi-coding-agent@0.57.1"
+  commit: a9cedccdde77e9d765303463d8a6cd11c58f7a7f
+  published_package_sha256: 8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f
+  evidence:
+    - dist/core/compaction/compaction.js:71-73,142-146     # calculateContextTokens, shouldCompact
+    - dist/core/compaction/compaction.js:217-347,430-607   # findCutPoint, prepareCompaction, compact
+    - dist/core/messages.js:7-12                           # summary message template
+    - dist/core/agent-session.js:251,1326-1395             # _checkCompaction, overflow retry reset
+# tests/compaction/oracles/pi@0.57.1 (scripts/compaction_oracles/capture_pi.mjs)
+claim: executed_oracle
+native_settings:
+  # Pi's settings.json compaction keys. `enabled` is BreadBoard's key and is
+  # off unless set, unlike Pi's default.
+  adapter: paths
+  keys:
+    reserveTokens:
+      - triggers.0.limit.reserve
+      - target.threshold.reserve
+      - target.manual.reserve
+      - target.overflow.reserve
+      - pipeline.stages.0.reduce.max_tokens.reserve
+      - pipeline.stages.0.reduce.turn_prefix_max_tokens.reserve
+    keepRecentTokens:
+      - pipeline.stages.0.select.budget
+estimator: pi_chars4
+triggers:
+  # Checked before a user prompt is sent (agent-session.js:644); reads the last
+  # assistant usage only, and does nothing until a response carries usage.
+  - kind: threshold
+    accounting: {kind: provider_total, usage_total: total_or_components, without_usage: skip, estimator: pi_chars4}
+    limit: {kind: window_minus_reserve, reserve: 16384}
+    compare: ">"
+    phase: user_turn_start
+target:
+  threshold: {kind: window_minus_reserve, reserve: 16384}
+  manual: {kind: window_minus_reserve, reserve: 16384}
+  overflow: {kind: window_minus_reserve, reserve: 16384}
+overflow:
+  # _overflowRecoveryAttempted: one compact-and-retry until a response succeeds.
+  max_attempts_per_turn: 1
+  policy: compact
+request_view: []
+pipeline:
+  mode: sequence
+  stages:
+    - id: summary
+      accept: any   # Pi commits the compaction whether or not it shrank the context
+      select:
+        kind: recent_tokens
+        budget: 20000
+        walk: message_crossing_ge
+        estimator: pi_chars4
+        when_empty: summarize
+        boundary: history_length
+      reduce:
+        kind: summarize
+        transcript: pi
+        escape_boundary_tags: false
+        windowing: single
+        prompts:
+          system: {file: summarization-system.txt}
+          initial: {file: summary.txt}
+          update: {file: update-summary.txt}
+          turn_prefix: {file: turn-prefix.txt}
+        max_tokens: {kind: reserve_fraction, reserve: 16384, fraction: 0.8}
+        turn_prefix_max_tokens: {kind: reserve_fraction, reserve: 16384, fraction: 0.5}
+        file_ops: read_modified_tags
+      place:
+        kind: template
+        engine: literal
+        messages:
+          - {role: user, content: {file: summary-context.txt}}

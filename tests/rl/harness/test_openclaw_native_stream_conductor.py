@@ -1,4 +1,4 @@
-from dataclasses import replace
+from dataclasses import fields, replace
 
 import asyncio
 from contextlib import contextmanager
@@ -76,12 +76,13 @@ pytestmark = pytest.mark.skipif(
 
 
 def _compile_target(
-    tmp_path: Path, *, profile_digest: str
+    tmp_path: Path, *, profile_digest: str,
+    target_id: str = "openclaw@2026.9.4", context_window: int = 32_768,
 ) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], Any]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
         compiled = compile_e4_harness(
-            load_e4_target("openclaw@2026.9.4"),
+            load_e4_target(target_id),
             {},
             {
                 "version": 2,
@@ -94,7 +95,7 @@ def _compile_target(
                         {
                             "id": "model-a",
                             "adapter": "openai",
-                            "context_length": 32_768,
+                            "context_length": context_window,
                             "route_handle_id": "route-a",
                             "credential_handle_id": "credential-a",
                             "params": {},
@@ -121,7 +122,9 @@ def _compile_target(
 
 
 def _sse_tool_response(
-    index: int, calls: list[tuple[str, str, Mapping[str, Any]]]
+    index: int, calls: list[tuple[str, str, Mapping[str, Any]]],
+    *, content: str | None = None, usage: Mapping[str, Any] | None = None,
+    finish_reason: str | None = None,
 ) -> bytes:
     chunks: list[dict[str, Any]] = []
     if calls:
@@ -136,6 +139,7 @@ def _sse_tool_response(
                         "index": 0,
                         "delta": {
                             "role": "assistant",
+                            **({"content": content} if content is not None else {}),
                             "tool_calls": [
                                 {
                                     "index": ordinal,
@@ -165,13 +169,15 @@ def _sse_tool_response(
                 "choices": [
                     {
                         "index": 0,
-                        "delta": {"role": "assistant", "content": "done"},
+                        "delta": {"role": "assistant", "content": "done" if content is None else content},
                         "finish_reason": None,
                     }
                 ],
             }
         )
         finish = "stop"
+    if finish_reason is not None:
+        finish = finish_reason
     chunks.append(
         {
             "id": f"response-{index}",
@@ -181,6 +187,11 @@ def _sse_tool_response(
             "choices": [{"index": 0, "delta": {}, "finish_reason": finish}],
         }
     )
+    if usage is not None:
+        chunks.append({
+            "id": f"response-{index}", "object": "chat.completion.chunk",
+            "created": index, "model": "model-a", "choices": [], "usage": dict(usage),
+        })
     return b"".join(
         b"data: " + json.dumps(chunk, separators=(",", ":")).encode() + b"\n\n"
         for chunk in chunks
@@ -203,7 +214,7 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] |
             requests.append(body)
             ordinal = len(requests) - 1
             calls = responses(ordinal, requests) if callable(responses) else responses[min(ordinal, len(responses) - 1)]
-            if isinstance(calls, Mapping):
+            if isinstance(calls, Mapping) and "http_error" in calls:
                 # A scripted provider refusal: {"http_error": status, "body": {...}}.
                 payload = json.dumps(calls["body"]).encode()
                 self.send_response(calls["http_error"])
@@ -213,7 +224,14 @@ def _scripted_server(responses: list[list[tuple[str, str, Mapping[str, Any]]]] |
                 self.end_headers()
                 self.wfile.write(payload)
                 return
-            payload = _sse_tool_response(ordinal + 1, calls)
+            payload = (
+                _sse_tool_response(
+                    ordinal + 1, calls["calls"] if "calls" in calls else [],
+                    content=calls.get("content"), usage=calls.get("usage"),
+                    finish_reason=calls.get("finish_reason"),
+                )
+                if isinstance(calls, Mapping) else _sse_tool_response(ordinal + 1, calls)
+            )
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
             self.send_header("Content-Length", str(len(payload)))
@@ -469,13 +487,16 @@ async def _run_episode(
     *,
     worker_factory: Callable[[Path, tuple[RunnerToolBinding, ...]], _NativeWorkerPort] | None = None,
     wire_policy: Mapping[str, Any] = _SUPPLIER_WIRE_POLICY,
+    target_id: str = "openclaw@2026.9.4",
+    context_window: int = 32_768,
+    evidence_limits: Mapping[str, int] | None = None,
 ):
     with _scripted_server(responses) as (base_url, requests):
         profile = OpenAICompletionsProviderProfile(
             model="model-a",
             scoped_credential="episode-secret",
             base_url=base_url,
-            context_window=32_768,
+            context_window=context_window,
             max_output_tokens=2_048,
             caller_headers={},
             request_policy={
@@ -488,11 +509,18 @@ async def _run_episode(
             capabilities=dict(wire_policy["capabilities"]),
         )
         projection, semantics, manifest = _compile_target(
-            tmp_path, profile_digest=profile_identity_digest(profile)
+            tmp_path, profile_digest=profile_identity_digest(profile),
+            target_id=target_id, context_window=context_window,
         )
         # The runtime plan contract stores JSON arrays as lists; preserve the
         # compiler's exact tool bytes while adapting the immutable projection.
+        original_projection = projection
         projection = replace(projection, chat_tools=thaw_json(projection.chat_tools))
+        assert all(
+            getattr(projection, field.name) == getattr(original_projection, field.name)
+            for field in fields(projection) if field.name != "chat_tools"
+        )
+        assert projection.chat_tools == thaw_json(original_projection.chat_tools)
         observation = _observation(
             provider_id="openai",
             model_id="model-a",
@@ -518,7 +546,7 @@ async def _run_episode(
             semantics=semantics,
             tools=tools,
             policy_slot_ids=("model:model-a",),
-            limit_updates={"max_turns": 8, "action_timeout_ms": 35_000},
+            limit_updates={"max_turns": 8, "action_timeout_ms": 35_000, **(evidence_limits or {})},
             implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
         )
         base_payload = plan.base_compiled.model_dump(mode="python")
@@ -944,11 +972,15 @@ async def test_openclaw_initialization_materializes_pinned_system_prompt(tmp_pat
         )
         prompt = initialized["system_prompt"]
         assert prompt.startswith("<!-- openclaw:attempt:STABLE -->\n")
-        assert "session=agent:main:explicit:bbe4-" in prompt
+        # Both revisions declare isolated agent exec. Its source scope is
+        # agent-exec-BAuhpelg.mjs:388, not the previous BB-only explicit scope.
+        assert "session=agent:main:agent-exec:bbe4-" in prompt
         assert "## Tooling\nTools policy-filtered." in prompt
         assert "<available_skills>" in prompt
         assert "## Workspace Files (injected)" in prompt
         assert f"## {tmp_path}/BOOTSTRAP.md" not in prompt
+        assert not (tmp_path / "IDENTITY.md").exists()
+        assert not (tmp_path / "USER.md").exists()
     finally:
         await worker.close()
 

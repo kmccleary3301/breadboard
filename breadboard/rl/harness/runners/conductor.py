@@ -20,10 +20,10 @@ from breadboard_engine.compilation.contracts import (
     canonical_sha256,
 )
 from breadboard_engine.compilation.provider_response import (
-    NATIVE_CHAT_RESPONSE_TARGETS,
+    NATIVE_CHAT_RESPONSE_CONSUMERS,
+    NATIVE_TARGET_IDS,
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
-    PI_0_73_1_TARGET_IDS,
     PI_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
@@ -44,7 +44,12 @@ from breadboard.rl.harness.runner_identity import measure_module_artifact
 from breadboard.rl.harness import native_stream_consumers, native_stream_profiles
 from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
 from breadboard.rl.harness.runners import mini_semantics
-from breadboard.rl.harness.runners.native_compaction import compact_history, compaction_settings
+from breadboard.rl.harness.runners.native_compaction import (
+    CompactedHistory,
+    compact_history,
+    compaction_context_window,
+    compaction_settings,
+)
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
     CompiledPolicyRuntimeClientPort,
@@ -330,7 +335,7 @@ class PolicyRuntimeBinding:
         metadata = plan.effective_semantics.get("metadata")
         target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
         if isinstance(target, Mapping) and (
-            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
+            target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_CONSUMERS}
             or target.get("renderer_id") in NATIVE_STREAM_PROFILES
         ):
             if not isinstance(client, CompiledPolicyRuntimeClientPort):
@@ -351,7 +356,7 @@ class PolicyRuntimeBinding:
 
     def bind_native_tools(self, tools: tuple[Mapping[str, Any], ...]) -> None:
         if (
-            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
@@ -384,7 +389,7 @@ class PolicyRuntimeBinding:
 
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
-            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
@@ -398,7 +403,7 @@ class PolicyRuntimeBinding:
 
     def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
         if (
-            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            self._source_consumer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
@@ -755,32 +760,22 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     source_consumer_id = None
     expected_api_variant = "responses"
     if isinstance(target, Mapping) and (
-        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_TARGETS}
+        target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_CONSUMERS}
         or target.get("renderer_id") in NATIVE_STREAM_PROFILES
     ):
         source_consumer_id = target["renderer_id"]
         stream_profile = NATIVE_STREAM_PROFILES.get(source_consumer_id)
-        expected_target, expected_version = (
-            (stream_profile.target_id, stream_profile.target_version)
+        expected_version = (
+            stream_profile.target_version
             if stream_profile is not None
-            else {
-                MINI_RESPONSE_CONSUMER_ID: ("mini-swe-agent@2.4.6", 2),
-                **{
-                    consumer_id: (target_id, 3)
-                    for consumer_id, target_id in NATIVE_CHAT_RESPONSE_TARGETS.items()
-                },
-            }[source_consumer_id]
+            else 2 if source_consumer_id == MINI_RESPONSE_CONSUMER_ID else 3
         )
         expected_api_variant = (
             stream_profile.api_variant
             if stream_profile is not None
-            else "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_TARGETS else "responses"
+            else "chat" if source_consumer_id in NATIVE_CHAT_RESPONSE_CONSUMERS else "responses"
         )
-        target_id_valid = (
-            target.get("target_id") in PI_0_73_1_TARGET_IDS
-            if source_consumer_id == PI_RESPONSE_CONSUMER_ID
-            else target.get("target_id") == expected_target
-        )
+        target_id_valid = target.get("target_id") in NATIVE_TARGET_IDS[source_consumer_id]
         if (
             not target_id_valid
             or target.get("version") != expected_version
@@ -2443,7 +2438,7 @@ class _ConductorSession:
             or consumer_id != profile.consumer_id
             or profile.phase_mode not in {"streaming", "checkpointed"}
             or not isinstance(source_profile, Mapping)
-            or any(not isinstance(source_profile.get(name), Mapping)
+            or any(not isinstance(source_profile.get(name), (Mapping, bool))
                    for name in profile.sealed_initialize_fields)
             or profile.phase_mode == "streaming" and (
                 profile.state_factory is None
@@ -2686,14 +2681,55 @@ class _ConductorSession:
         # "compaction" (targets.py _lower_worker_target). The mirrored stock
         # setting agent.compaction_enabled does not route BreadBoard recovery.
         compaction_enabled = isinstance(source_profile, Mapping) and source_profile.get("compaction") is True
-        if compaction_enabled and not profile.implements_compaction_phases:
+        if compaction_enabled and not (profile.implements_compaction_phases or profile.compaction_in_source):
             raise RunnerProtocolError(
                 f"{profile.target_id} enables compaction but its worker has no compaction phases",
                 code="native_compaction_unsupported", **self._context(),
             )
         settings_for_compaction = compaction_settings(source_profile) if compaction_enabled else None
-        overflow_recovery_attempted = [False]
+        compaction_window = compaction_context_window(source_profile) if compaction_enabled else None
+        if compaction_enabled and profile.implements_compaction_phases and profile.compaction_model_window_field is not None:
+            compaction_window = self._binding.source_model_config.get(profile.compaction_model_window_field)
+            if type(compaction_window) is not int or compaction_window <= 0:
+                raise RunnerProtocolError(
+                    "bound native model lacks a positive compaction window",
+                    code="native_response_binding_invalid", **self._context(),
+                )
+        checkpoints = profile.compaction_checkpoints if compaction_enabled else frozenset()
+        overflow_attempts = [0]
+        last_usage: list[Any] = [None]
+        last_tools: list[Any] = [None]
 
+        async def run_compaction(
+            turn: int, *, reason: Literal["overflow", "threshold"],
+            checkpoint: Literal["overflow", "before_request", "agent_end"],
+            tools: Any, commit_phase: str,
+        ) -> CompactedHistory | None:
+            async def summary_exchange(request: FrozenJsonObject) -> tuple[Mapping[str, Any], Any]:
+                return await self._native_policy_exchange(
+                    request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                    compaction_summary=True,
+                )
+
+            compacted = await compact_history(
+                state.messages, reason=reason, checkpoint=checkpoint, usage=last_usage[0],
+                context_window=compaction_window, settings=settings_for_compaction,
+                model_id=model.model_id, tools=tools, phase=phase,
+                exchange=summary_exchange, trace_requests=trace_requests,
+            )
+            if compacted is None:
+                return None
+            if compacted.continuation is not None and checkpoint != "agent_end":
+                raise RunnerProtocolError(
+                    "native compaction continuation is admitted only at agent_end checkpoint",
+                    code="native_compaction_invalid",
+                    **self._context(),
+                )
+            state.messages = compacted.messages
+            if compacted.continuation is not None:
+                state.resume_after_compaction(compacted.continuation)
+            await commit(0, commit_phase, turn, events=[compacted.event])
+            return compacted
         await commit(0, "initial", None)
         async def step(turn: int) -> RunnerTermination | None:
             before = len(state.messages)
@@ -2707,7 +2743,10 @@ class _ConductorSession:
             request_body: Any = None
             projected: Any = None
 
+            threshold_checked = False
             while True:
+                overflow_message = None
+                request_traced = False
                 projected = await phase("project_request", {"messages": state.messages})
                 if projected.get("kind") != "request":
                     raise RunnerProtocolError(
@@ -2719,12 +2758,22 @@ class _ConductorSession:
                     "messages": projected.get("messages"),
                     "tools": projected.get("tools"),
                 }, field_name="native policy request")
+                last_tools[0] = projected.get("tools")
+                if "before_request" in checkpoints and self._turns and not threshold_checked:
+                    # The source checks its threshold before each request of
+                    # the tool loop after the first; once per request.
+                    threshold_checked = True
+                    if await run_compaction(
+                        turn, reason="threshold", checkpoint="before_request",
+                        tools=projected.get("tools"), commit_phase="before_policy",
+                    ) is not None:
+                        continue
 
                 try:
                     response, request_body = await self._native_policy_exchange(
                         frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
                     )
-                    overflow_recovery_attempted[0] = False
+                    overflow_attempts[0] = 0
                     failure = None
                     break
                 except RunnerDependencyError as exc:
@@ -2732,35 +2781,49 @@ class _ConductorSession:
                     is_overflow = is_context_overflow(exc) or (
                         candidate_failure is not None and is_context_overflow(candidate_failure)
                     )
-                    if compaction_enabled and is_overflow and not overflow_recovery_attempted[0]:
-                        overflow_recovery_attempted[0] = True
+                    if (
+                        "overflow" in checkpoints and is_overflow
+                        and (
+                            profile.compaction_overflow_attempts is None
+                            or overflow_attempts[0] < profile.compaction_overflow_attempts
+                        )
+                    ):
+                        overflow_attempts[0] += 1
                         if candidate_failure is not None:
                             failed_body = thaw_json(candidate_failure.request_body)
                             trace_requests.append(dict(failed_body))
                         else:
                             trace_requests.append(dict(thaw_json(frozen_request)))
+                        request_traced = True
 
-                        if (
+                        if profile.compaction_overflow_message_phase is not None:
+                            if candidate_failure is None:
+                                raise
+                            overflow_message = await self._project_native_provider_failure(
+                                phase, profile.compaction_overflow_message_phase,
+                                candidate_failure, state.messages,
+                                requires_duration=profile.provider_failure_requires_duration,
+                            )
+                            # Pi saves the error to SessionManager before removing
+                            # it from agent state. The worker owns that distinction.
+                            state.messages.append(dict(overflow_message))
+                        elif (
                             state.messages
                             and state.messages[-1].get("role") == "assistant"
                             and state.messages[-1].get("stopReason") == "error"
                         ):
                             state.messages.pop()
 
-                        async def summary_exchange(request: FrozenJsonObject) -> tuple[Mapping[str, Any], Any]:
-                            return await self._native_policy_exchange(
-                                request, model=model, turn=turn, phase_mode=profile.phase_mode,
-                                compaction_summary=True,
-                            )
-
-                        compacted = await compact_history(
-                            state.messages, settings=settings_for_compaction, model_id=model.model_id,
-                            phase=phase, exchange=summary_exchange, trace_requests=trace_requests,
+                        # A source that compacts but judges the retry still
+                        # cannot fit ends the turn with the overflow error.
+                        compacted = await run_compaction(
+                            turn, reason="overflow", checkpoint="overflow",
+                            tools=projected.get("tools"), commit_phase="before_policy",
                         )
-                        if compacted is not None:
-                            state.messages = compacted.messages
-                            await commit(0, "before_policy", turn, events=[compacted.event])
+                        if compacted is not None and compacted.retry:
                             continue
+                        if overflow_message is not None and compacted is None:
+                            state.messages.pop()
 
                     failure = _find_native_provider_failure(exc) if profile.provider_failure_terminates else None
                     if failure is None:
@@ -2787,15 +2850,19 @@ class _ConductorSession:
                     "native provider request body differs from the pinned source request",
                     code="native_request_body_mismatch", **self._context(),
                 )
-            trace_requests.append(dict(request_body))
+            if not request_traced:
+                trace_requests.append(dict(request_body))
             if failure is not None:
                 before = len(state.messages)
                 if profile.provider_failure_phase is None:
                     state.commit_provider_failure(str(failure))
+                elif overflow_message is not None:
+                    state.commit_provider_failure(overflow_message)
                 else:
                     state.commit_provider_failure(
                         await self._project_native_provider_failure(
                             phase, profile.provider_failure_phase, failure, state.messages,
+                            requires_duration=profile.provider_failure_requires_duration,
                         )
                     )
                 await commit(before, "exit", turn)
@@ -2804,13 +2871,25 @@ class _ConductorSession:
             native = native_stream_consumers.native_response_from_dict(
                 thaw_json(response["native_response"])
             )
+            last_usage[0] = native.usage
+            usage_kwargs: dict[str, Any] = {}
+            if profile.assistant_usage_phase is not None:
+                projected_usage = await phase(profile.assistant_usage_phase, {
+                    "usage": thaw_json(native.usage),
+                })
+                if projected_usage.get("kind") != "assistant_usage" or type(projected_usage.get("usage")) is not dict:
+                    raise RunnerProtocolError(
+                        "native assistant usage projection is malformed",
+                        code="native_response_invalid", **self._context(),
+                    )
+                usage_kwargs["usage"] = projected_usage["usage"]
             before = len(state.messages)
             if profile.parse_arguments_phase is None:
-                parsed = state.prepare_response(native)
+                parsed = state.prepare_response(native, **usage_kwargs)
             else:
                 parsed = state.prepare_response(native, await self._parse_native_arguments(
                     phase, profile.parse_arguments_phase, native,
-                ))
+                ), **usage_kwargs)
             if inspect.isawaitable(parsed):
                 # Profiles whose response preparation runs a pinned worker
                 # are awaited so the episode deadline can cancel them.
@@ -2994,6 +3073,22 @@ class _ConductorSession:
             if state.is_exited:
                 if native.stream_termination is not None:
                     return RunnerTermination.POLICY_INCOMPLETE
+                if (
+                    "agent_end" in checkpoints
+                    and (
+                        state.native_stop_reason not in profile.incomplete_stop_reasons
+                        or state.native_stop_reason in profile.compaction_incomplete_stop_reasons
+                    )
+                ):
+                    compacted = await run_compaction(
+                        turn, reason="threshold", checkpoint="agent_end",
+                        tools=last_tools[0], commit_phase="assistant",
+                    )
+                    if compacted is not None and compacted.continuation:
+                        return None
+                    if compacted is not None and compacted.reason == "overflow" and compacted.retry:
+                        state.reopen_after_overflow()
+                        return None
                 return self._native_stop_termination(
                     state.native_stop_reason, profile.incomplete_stop_reasons,
                 )
@@ -3132,6 +3227,32 @@ class _ConductorSession:
         state: FrozenJsonObject = freeze_json_object({}, field_name="native source state")
         trace_requests: list[dict[str, Any]] = []
         trace_tool_calls: list[dict[str, Any]] = []
+        summary_exchanges: dict[int | None, int] = {}
+        active_summary_ids: dict[int | None, int] = {}
+        max_summary_exchanges = (
+            None if profile.compaction_overflow_attempts is None
+            else profile.compaction_overflow_attempts + 1
+        )
+
+        def admit_summary(turn: int | None, value: Mapping[str, Any]) -> None:
+            # Stock auxiliary retries remain inside one _call_summary_llm call
+            # (auxiliary_client.py:7357-7398). The worker identifies that call;
+            # do not spend another logical compaction on each physical retry.
+            if "compaction_summary_id" in value:
+                summary_id = value["compaction_summary_id"]
+                retry = value.get("compaction_summary_retry")
+                if type(summary_id) is not int or summary_id <= 0 or type(retry) is not bool:
+                    raise invalid("native logical summary identity is invalid")
+                if retry:
+                    if active_summary_ids.get(turn) != summary_id:
+                        raise invalid("native summary retry has no active logical call")
+                    return
+                if active_summary_ids.get(turn) == summary_id:
+                    raise invalid("native logical summary identity was reused")
+                active_summary_ids[turn] = summary_id
+            summary_exchanges[turn] = summary_exchanges.get(turn, 0) + 1
+            if max_summary_exchanges is not None and summary_exchanges[turn] > max_summary_exchanges:
+                raise invalid("too many compaction summary exchanges in one step")
 
         def parse_json_or_text(value: Any) -> Any:
             if not isinstance(value, str):
@@ -3352,6 +3473,44 @@ class _ConductorSession:
                 await commit_history(
                     value, phase_name, turn, checkpoint_call_id=checkpoint_call_id,
                 )
+                # Hermes also requests summaries after executing tools, inside
+                # the source run_tool_round phase (turn_tool_round.py:188-201).
+                # Finish that phase only after routing its auxiliary exchange.
+                if (
+                    value["kind"] == "provider_request"
+                    and value.get("purpose") == "compaction_summary"
+                    and operation not in {"sample", "provider_response"}
+                ):
+                    http_request = value.get("http_request")
+                    if not isinstance(http_request, Mapping):
+                        raise invalid("native serialized summary request is missing")
+                    request_body = decode_json_body(http_request.get("body_b64"))
+                    if not isinstance(request_body, Mapping):
+                        raise invalid("native summary request body is not JSON")
+                    admit_summary(turn, value)
+                    trace_entry = {
+                        "index": len(trace_requests),
+                        "body": project_request_body(request_body),
+                        "_compaction_summary": True,
+                        **({"stock_body_sha256": value["stock_body_sha256"]}
+                           if "stock_body_sha256" in value else {}),
+                    }
+                    trace_requests.append(trace_entry)
+                    async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
+                        receipt = await self._invoke_native_policy(
+                            http_request, model=model, turn=turn,
+                            verify_staged_body=True, compaction_summary=True,
+                        )
+                    public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
+                    decoded_response = (
+                        decode_json_body(public_response.get("body_b64"))
+                        if isinstance(public_response, Mapping) else None
+                    )
+                    if isinstance(decoded_response, Mapping):
+                        trace_entry["response"] = project_response(decoded_response)
+                    command = "provider_response"
+                    command_payload = {**receipt, "remaining_seconds": remaining()}
+                    continue
                 if value["kind"] != "history_checkpoint":
                     return value
                 command = "history_ack"
@@ -3403,6 +3562,13 @@ class _ConductorSession:
                 raise cancellation
 
         self._native_stream_close_callback = close_once
+        # harness.yaml policy.provider.compaction (targets.py _lower_worker_target).
+        compaction_enabled = self._projection.source_profile.get("compaction") is True
+        if compaction_enabled and not profile.compaction_in_source:
+            raise RunnerProtocolError(
+                f"{profile.target_id} enables compaction but its worker does not run it in source",
+                code="native_compaction_unsupported", **self._context(),
+            )
         initialized = await phase(
             "initialize", {
                 "task": task, "model_config": model_config,
@@ -3410,6 +3576,7 @@ class _ConductorSession:
                     name: self._projection.source_profile[name]
                     for name in profile.sealed_initialize_fields
                 },
+                **({"compaction": compaction_enabled} if profile.compaction_in_source else {}),
             }, "initial", None,
         )
         source_runtime = initialized.get("source_runtime")
@@ -3432,46 +3599,84 @@ class _ConductorSession:
             raise invalid("native worker did not initialize its complete tool surface")
         self._binding.bind_native_tools(initialized["tool_schemas"])
         async def step(turn: int) -> RunnerTermination | None:
-            sampled = await phase("sample", {}, "before_policy", turn)
-            if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
+            sampled: FrozenJsonObject | None = None
+            while True:
+                if sampled is None:
+                    sampled = await phase("sample", {}, "before_policy", turn)
+                if sampled.get("kind") == "sample_ready" and state["status"] != "RUNNING":
+                    if state["status"] == "ERROR":
+                        err_msg = (
+                            state.get("source_result_metadata", {}).get("final_response")
+                            or state.get("source_result_metadata", {}).get("error")
+                            or (state.get("source_error") or {}).get("message")
+                            or "native source phase failed before a provider request"
+                        )
+                        await self._raise_error(RunnerDependencyError(
+                            err_msg,
+                            code="native_source_failed", **self._context(),
+                        ), turn=turn)
+                    return self._native_stop_termination(
+                        state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
+                        else "stopped" if state["status"] == "STOPPED" else None,
+                        profile.incomplete_stop_reasons | {"stopped"},
+                        profile.limit_stop_reasons,
+                    )
+                if sampled.get("kind") != "provider_request":
+                    raise invalid("native sample did not produce its single provider request")
+                http_request = sampled.get("http_request")
+                if not isinstance(http_request, Mapping):
+                    raise invalid("native serialized provider request is missing")
+                request_body = decode_json_body(http_request.get("body_b64"))
+                if not isinstance(request_body, Mapping):
+                    raise invalid("native provider request body is not JSON")
+                is_summary = sampled.get("purpose") == "compaction_summary"
+                trace_entry = {
+                    "index": len(trace_requests),
+                    "body": project_request_body(request_body),
+                }
+                if is_summary:
+                    admit_summary(turn, sampled)
+                    trace_entry["_compaction_summary"] = True
+                    if "stock_body_sha256" in sampled:
+                        trace_entry["stock_body_sha256"] = sampled["stock_body_sha256"]
+                trace_requests.append(trace_entry)
+                invoke_kwargs: dict[str, Any] = {
+                    "verify_staged_body": profile.phase_mode == "checkpointed",
+                }
+                if is_summary or "compaction_summary" in inspect.signature(self._invoke_native_policy).parameters:
+                    invoke_kwargs["compaction_summary"] = is_summary
+                async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
+                    receipt = await self._invoke_native_policy(
+                        http_request, model=model, turn=turn, **invoke_kwargs,
+                    )
+                public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
+                decoded_response = (
+                    decode_json_body(public_response.get("body_b64"))
+                    if isinstance(public_response, Mapping) else None
+                )
+                if isinstance(decoded_response, Mapping):
+                    trace_requests[-1]["response"] = project_response(decoded_response)
+                sampled = await phase("provider_response", receipt, "before_policy", turn)
+                if sampled.get("kind") == "provider_request":
+                    continue
+                if sampled.get("kind") != "sample_ready":
+                    raise invalid("native sample did not complete its SDK request")
                 if state["status"] == "ERROR":
+                    err_msg = (
+                        state.get("source_result_metadata", {}).get("final_response")
+                        or state.get("source_result_metadata", {}).get("error")
+                        or (state.get("source_error") or {}).get("message")
+                        or "native source phase failed before a provider request"
+                    )
                     await self._raise_error(RunnerDependencyError(
-                        "native source phase failed before a provider request",
+                        err_msg,
                         code="native_source_failed", **self._context(),
                     ), turn=turn)
-                return self._native_stop_termination(
-                    state.get("public_stop") if state.get("public_stop") in profile.limit_stop_reasons
-                    else "stopped" if state["status"] == "STOPPED" else None,
-                    profile.incomplete_stop_reasons | {"stopped"},
-                    profile.limit_stop_reasons,
-                )
-            if sampled.get("kind") != "provider_request":
-                raise invalid("native sample did not produce its single provider request")
-            http_request = sampled.get("http_request")
-            if not isinstance(http_request, Mapping):
-                raise invalid("native serialized provider request is missing")
-            request_body = decode_json_body(http_request.get("body_b64"))
-            if not isinstance(request_body, Mapping):
-                raise invalid("native provider request body is not JSON")
-            trace_requests.append({
-                "index": len(trace_requests),
-                "body": project_request_body(request_body),
-            })
-            async with asyncio.timeout(min(profile.provider_timeout_seconds, remaining())):
-                receipt = await self._invoke_native_policy(
-                    http_request, model=model, turn=turn,
-                    verify_staged_body=profile.phase_mode == "checkpointed",
-                )
-            public_response = receipt if "body_b64" in receipt else receipt.get("native_http_response")
-            decoded_response = (
-                decode_json_body(public_response.get("body_b64"))
-                if isinstance(public_response, Mapping) else None
-            )
-            if isinstance(decoded_response, Mapping):
-                trace_requests[-1]["response"] = project_response(decoded_response)
-            sampled = await phase("provider_response", receipt, "before_policy", turn)
-            if sampled.get("kind") != "sample_ready":
-                raise invalid("native sample did not complete its SDK request")
+                is_overflow = decoded_response is not None and is_context_overflow(decoded_response)
+                if is_summary or is_overflow:
+                    sampled = None
+                    continue
+                break
             raw_sample = decode_json_body(sampled.get("raw_response_b64"))
             prepared = await phase("prepare", {}, "assistant", turn)
             if prepared.get("kind") != "prepared":
@@ -3664,7 +3869,7 @@ class _ConductorSession:
     async def _project_native_provider_failure(
         self, phase: Callable[[str, Mapping[str, Any]], Awaitable[dict[str, Any]]],
         operation: str, failure: NativeProviderRequestFailure,
-        messages: list[dict[str, Any]],
+        messages: list[dict[str, Any]], *, requires_duration: bool = False,
     ) -> Mapping[str, Any]:
         """Have the worker project the source's message for an HTTP status failure."""
         details = failure.details
@@ -3685,11 +3890,14 @@ class _ConductorSession:
                 "native provider failure body was withheld",
                 code="native_provider_failure_body_withheld", **self._context(),
             )
-        projected = await phase(operation, {
+        payload = {
             "http_status": details["http_status"],
             "response_body_text": details["response_body_text"],
             "messages": messages,
-        })
+        }
+        if requires_duration:
+            payload["provider_request_duration_ms"] = details.get("provider_request_duration_ms")
+        projected = await phase(operation, payload)
         message = projected.get("message")
         if projected.get("kind") != "provider_failure" or type(message) is not dict:
             raise RunnerProtocolError(
@@ -3746,15 +3954,26 @@ class _ConductorSession:
             model.trainable_values,
         ))
         await self._checkpoint("before_policy", turn=turn)
-        result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
-            episode_id=self._open_request.episode_id,
-            effective_plan_digest=self._open_request.effective_plan_digest,
-            binding_digest=self._binding.binding_digest,
-            policy_slot_id=model.policy_slot_id,
-            request_digest=request_digest, request_payload=frozen_request,
-            turn=turn, attempt=1,
-            compaction_summary=compaction_summary,
-        ))
+        started = time.perf_counter()
+        try:
+            result = await self._binding.invoke(PolicyRuntimeInvokeRequest(
+                episode_id=self._open_request.episode_id,
+                effective_plan_digest=self._open_request.effective_plan_digest,
+                binding_digest=self._binding.binding_digest,
+                policy_slot_id=model.policy_slot_id,
+                request_digest=request_digest, request_payload=frozen_request,
+                turn=turn, attempt=1,
+                compaction_summary=compaction_summary,
+            ))
+        except RunnerDependencyError as exc:
+            failure = _find_native_provider_failure(exc)
+            if failure is not None:
+                # Keep supplied replay timing; otherwise record this exchange,
+                # before source error projection performs any local work.
+                failure.details.setdefault(
+                    "provider_request_duration_ms", (time.perf_counter() - started) * 1000,
+                )
+            raise
         await self._checkpoint("after_policy", turn=turn)
         response, _ = freeze_json_object_with_size(
             result.response_payload, field_name="native policy response",
@@ -3803,8 +4022,8 @@ class _ConductorSession:
     async def _invoke_native_policy(
         self, http_request: Mapping[str, Any], *, model: _ModelProjection, turn: int,
         verify_staged_body: bool = False,
+        compaction_summary: bool = False,
     ) -> Mapping[str, Any]:
-        """Persist the serialized SDK exchange before releasing its response."""
         staged = self._binding.stage_native_http_request(http_request)
         # The checkpointed worker's _handle_http reads the SDK request bytes
         # and publishes body_b64. The provider's _invoke_native_http sends the
@@ -3823,6 +4042,7 @@ class _ConductorSession:
         frozen_request = freeze_json_object(staged, field_name="native policy request")
         _, digest = await self._native_policy_exchange(
             frozen_request, model=model, turn=turn, phase_mode="checkpointed",
+            compaction_summary=compaction_summary,
         )
         return self._binding.take_native_http_response(digest)
     async def _loop_openhands(self, request: ConductorRunRequest) -> RunnerResult:

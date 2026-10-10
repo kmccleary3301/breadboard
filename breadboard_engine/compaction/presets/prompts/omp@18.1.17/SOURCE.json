@@ -1,0 +1,6 @@
+{
+  "repo": "https://github.com/can1357/oh-my-pi",
+  "package": "@oh-my-pi/pi-coding-agent@18.1.17",
+  "version": "18.1.17",
+  "extracted_by": "scripts/compaction_oracles/capture_omp.ts"
+}

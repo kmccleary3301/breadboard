@@ -4,7 +4,7 @@
   "case": "recovery_largest_first_masking",
   "source": {
     "repo": "https://github.com/code-yeongyu/oh-my-openagent",
-    "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+    "commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
     "evidence": [
       "src/hooks/anthropic-context-window-limit-recovery/parser.ts:12-18,48-58,76-209",
       "src/hooks/anthropic-context-window-limit-recovery/executor.ts:46-63",
@@ -98,6 +98,19 @@
     "reason": "overflow",
     "native_settings": {},
     "summary_responses": [],
+    "primitive_stage": {
+      "id": "recovery",
+      "select": {
+        "kind": "largest_first_masking",
+        "target_ratio": 0.5,
+        "chars_per_token": 4,
+        "placeholder": "[Old tool result content cleared]"
+      },
+      "reduce": {
+        "kind": "mask_outputs",
+        "placeholder": "[Old tool result content cleared]"
+      }
+    },
     "overflow_error": "prompt is too long: 210000 tokens > 160000 maximum",
     "overflow_tokens": 210000,
     "overflow_limit": 160000

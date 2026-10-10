@@ -32,7 +32,7 @@ triggers:
     input_buffer: 20000
     reserved: null
   compare: '>='
-  phase: every_request
+  phase: assistant_step_end
   severity: soft
   enabled: true
   disable_zero_window: true
@@ -56,13 +56,12 @@ target:
 overflow:
   max_attempts_per_turn: 1
   policy: compact
-request_view:
-- prune
+request_view: []
 pipeline:
   mode: sequence
   stages:
   - id: prune
-    phase: user_turn_start
+    phase: user_turn_end
     when: {reasons: [request]}
     select:
       kind: protected_tool_outputs
@@ -95,7 +94,9 @@ pipeline:
       marker:
         file: marker.txt
       strip_media: true
-      max_tokens: null
+      max_tokens: 32000
+      # compaction.ts:202-220 sends the complete converted history.
+      request: {stream: true, stateless: true}
       contributors: []
     place:
       kind: summary_replay

@@ -24,10 +24,10 @@ from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
     HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
-    PI_0_73_1_TARGET_IDS,
     PI_RESPONSE_CONSUMER_ID,
     PI_0_57_1_RESPONSE_CONSUMER_ID,
-    NATIVE_CHAT_RESPONSE_TARGETS,
+    NATIVE_CHAT_RESPONSE_CONSUMERS,
+    NATIVE_TARGET_IDS,
     OMP_RESPONSE_CONSUMER_ID,
     OMP_16_2_13_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
@@ -59,15 +59,8 @@ from .runners.base import (
     freeze_json_object,
     thaw_json,
 )
+from .native_stream_profiles import NATIVE_STREAM_PROFILES
 from .service import PolicyRuntimeClientResolver
-
-PI_SUMMARIZATION_SYSTEM_PROMPT: Final[str] = (
-    "You are a context summarization assistant. Your task is to read a conversation "
-    "between a user and an AI coding assistant, then produce a structured summary following "
-    "the exact format specified.\n\n"
-    "Do NOT continue the conversation. Do NOT respond to any questions in the conversation. "
-    "ONLY output the structured summary."
-)
 
 
 def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
@@ -305,15 +298,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     expected_fields = {
         *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
     }
-    deferred_targets = {
-        OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
-        PI_RESPONSE_CONSUMER_ID: PI_0_73_1_TARGET_IDS,
-        PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
-        OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
-        OMP_16_2_13_RESPONSE_CONSUMER_ID: "oh-my-pi-r2@16.2.13",
-        OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
-        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
-    }
+    deferred_consumers = NATIVE_TARGET_IDS.keys() - {MINI_RESPONSE_CONSUMER_ID}
     renderer_id = binding["renderer_id"]
     if (
         version not in (1, 2, 3)
@@ -323,17 +308,13 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         or version == 2
         and (
             renderer_id != MINI_RESPONSE_CONSUMER_ID
-            or binding.get("target_id") != "mini-swe-agent@2.4.6"
+            or binding.get("target_id") not in NATIVE_TARGET_IDS[MINI_RESPONSE_CONSUMER_ID]
             or not isinstance(binding.get("runtime_profile"), Mapping)
         )
         or version == 3
         and (
-            renderer_id not in deferred_targets
-            or (
-                binding.get("target_id") not in deferred_targets[renderer_id]
-                if isinstance(deferred_targets[renderer_id], (tuple, frozenset, set))
-                else binding.get("target_id") != deferred_targets[renderer_id]
-            )
+            renderer_id not in deferred_consumers
+            or binding.get("target_id") not in NATIVE_TARGET_IDS[renderer_id]
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -478,7 +459,7 @@ def _validate_request_features(
     if (
         target_projection is not None
         and target_projection.renderer_id in {
-            *NATIVE_CHAT_RESPONSE_TARGETS,
+            *NATIVE_CHAT_RESPONSE_CONSUMERS,
             OPENCLAW_RESPONSE_CONSUMER_ID,
             # Pinned 0.57.1 buildParams emits no n and, under custody compat
             # supportsStore=false, no store (openai-completions.js:295-356).
@@ -698,6 +679,7 @@ _NATIVE_HTTP_SECRET_HEADERS = frozenset(
 _NATIVE_HTTP_BODY_FIELDS = frozenset({
     "model", "messages", "tools", "stream", "temperature",
     "max_tokens", "max_completion_tokens", "reasoning_effort",
+    "tool_choice",
 })
 _CANONICAL_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _UNPINNED = object()
@@ -797,7 +779,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 MINI_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
                 PI_0_57_1_RESPONSE_CONSUMER_ID,
-                *NATIVE_CHAT_RESPONSE_TARGETS,
+                *NATIVE_CHAT_RESPONSE_CONSUMERS,
                 OMP_RESPONSE_CONSUMER_ID,
                 OMP_16_2_13_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
@@ -927,7 +909,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Bind the measured worker's once-rendered, workspace-dependent tools."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._native_binding is None or self._native_tool_schemas is not None
             or not isinstance(target.runtime_profile, Mapping)
             or type(tools) is not tuple
@@ -1000,7 +982,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         profile = self._profile
         if (
             target is None
-            or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or target.renderer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._native_binding is None
             or profile is None
         ):
@@ -1344,7 +1326,11 @@ class EpisodeOpenAICompletionsPolicyClient:
                         episode_id=request.episode_id,
                         effective_plan_digest=request.effective_plan_digest,
                     )
-                if self._max_requests is not None and self._request_attempts >= self._max_requests:
+                if (
+                    self._max_requests is not None
+                    and not request.compaction_summary
+                    and self._request_attempts >= self._max_requests
+                ):
                     raise RunnerDependencyError(
                         "episode provider request budget exhausted",
                         code="provider_request_budget_exhausted",
@@ -1356,7 +1342,8 @@ class EpisodeOpenAICompletionsPolicyClient:
 
                 def run() -> Any:
                     with self._state_lock:
-                        self._request_attempts += 1
+                        if not request.compaction_summary:
+                            self._request_attempts += 1
                     return self._runtime.send_native_http_request(
                         client=self._transport,
                         method=pending.method,
@@ -1503,7 +1490,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
-        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS:
+        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_CONSUMERS:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
                     "native Chat provider has no compiled-plan binding",
@@ -1708,13 +1695,19 @@ class EpisodeOpenAICompletionsPolicyClient:
                 None,
                 {},
                 stream=stream,
-                extra=(
+                extra=dict(
                     {"response_consumer_id": native_binding.policy.consumer_id}
                     if native_binding is not None
                     and is_native_response_consumer_registered(
                         native_binding.policy.consumer_id
                     )
-                    else {}
+                    else {},
+                    # A summary request carries tool_choice exactly when the
+                    # source's own summary payload does; None omits it.
+                    **({"tool_choice": thaw_json(request.request_payload).get("tool_choice")}
+                       if request.compaction_summary
+                       and isinstance(thaw_json(request.request_payload), Mapping)
+                       else {}),
                 ),
                 session_id=request.episode_id,
                 input_id=request.request_digest,
@@ -2173,14 +2166,25 @@ def _responses_request_to_chat(
         raise ProviderContractError(
             "policy request model does not match the admitted policy observation"
         )
+    summary_profile = (
+        NATIVE_STREAM_PROFILES.get(target_projection.renderer_id)
+        if compaction_summary and target_projection is not None
+        else None
+    )
     if compaction_summary and (
         target_projection is None
         or target_projection.runtime_profile is None
-        or target_projection.renderer_id != PI_RESPONSE_CONSUMER_ID
+        or summary_profile is None
+        or not (summary_profile.implements_compaction_phases or summary_profile.compaction_in_source)
     ):
-        raise ProviderContractError("compaction summary requests are admitted only for the Pi 0.73.1 native stream")
+        raise ProviderContractError("compaction summary requests are admitted only for compaction-capable native streams")
     if target_projection is not None and target_projection.runtime_profile is not None:
-        if set(request) != {"model", "messages", "tools"}:
+        admitted_keys = {"model", "messages", "tools"}
+        if compaction_summary and "tool_choice" in request:
+            if request.get("tool_choice") != "none":
+                raise ProviderContractError("compaction summary request admits tool_choice only with value 'none'")
+            admitted_keys = {"model", "messages", "tools", "tool_choice"}
+        if set(request) != admitted_keys:
             raise ProviderContractError("source-native request fields differ from its source protocol")
         messages = request["messages"]
         tools = request["tools"]
@@ -2217,14 +2221,32 @@ def _responses_request_to_chat(
             else [thaw_json(tool) for tool in target_projection.chat_tools]
         )
         if compaction_summary:
+            # The worker builds the source's own summary request; it carries
+            # the episode tools (deviation compaction_summary_episode_tools).
+            # A tool_choice "none" summary is a side request in the episode's
+            # own context (OMP handoff: session-handoff.ts:126-185), so it
+            # opens with the episode system message instead of the source's
+            # summarization system prompt.
+            if request.get("tool_choice") == "none":
+                if system_prompt is None:
+                    raise ProviderContractError("side-request compaction summary requires the episode system prompt")
+                expected_first = {"role": "system", "content": system_prompt}
+            elif summary_profile.compaction_summary_system_prompt is not None:
+                expected_first = {"role": "system", "content": summary_profile.compaction_summary_system_prompt}
+            else:
+                expected_first = None
             if (
                 type(messages) is not list
-                or len(messages) < 2
+                or not messages
                 or any(type(message) is not dict or "extra" in message for message in messages)
-                or messages[0] != {"role": "system", "content": PI_SUMMARIZATION_SYSTEM_PROMPT}
-                or messages[1].get("role") != "user"
+                or (
+                    messages[0] != expected_first
+                    if expected_first is not None
+                    else messages[0].get("role") != "user"
+                )
+                or messages[-1].get("role") != "user"
                 or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
-                or tools != []
+                or tools != expected_tools
             ):
                 raise ProviderContractError("source-native compaction summary request does not match its required schema")
         else:

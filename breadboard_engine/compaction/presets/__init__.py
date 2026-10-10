@@ -217,7 +217,8 @@ class Recipe:
     @property
     def active(self) -> bool:
         stage_order = self.order if self.order is not None else self.pipeline.order
-        return self.settings.enabled and bool(stage_order or self.request_view)
+        end_stages = any(stage.phase == "user_turn_end" for stage in self.pipeline.stages.values())
+        return self.settings.enabled and bool(stage_order or self.request_view or end_stages)
 
     def target_tokens(self, reason: str, context_window: int, max_output: Optional[int] = None,
                       max_input: Optional[int] = None) -> int:
@@ -304,7 +305,9 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     # Request-only stages remain addressable, but are not compaction stages.
     order = tuple(
         stage.id for stage in stages
-        if stage.id not in request_view or stage.reasons is None or stage.reasons - {"request"}
+        if stage.phase != "user_turn_end" and (
+            stage.id not in request_view or stage.reasons is None or stage.reasons - {"request"}
+        )
     )
     if order_source == "omp_method_order":
         order = config.settings.method_order

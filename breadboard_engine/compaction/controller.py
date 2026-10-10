@@ -124,7 +124,7 @@ class CompactionController:
         config = getattr(conductor, "config", None) or {}
         entries = (config.get("providers") or {}).get("models") or []
         entry = next(
-            (item for item in entries if isinstance(item, Mapping) and item.get("model_id") == (model or getattr(conductor, "model", None))), {},
+            (item for item in entries if isinstance(item, Mapping) and item.get("id") == (model or getattr(conductor, "model", None))), {},
         )
         limits = []
         for key in ("max_input_tokens", "max_output_tokens"):
@@ -193,6 +193,7 @@ class CompactionController:
             last_usage=session_state.get_provider_metadata("usage"),
             max_input_tokens=max_input,
             max_output_tokens=max_output,
+            checkpoint="every_request",
         ):
             self.compact(
                 session_state,
@@ -215,6 +216,48 @@ class CompactionController:
             context_window=context_window,
             conductor=conductor,
             client=client,
+        )
+
+    def finish_assistant_step(
+        self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
+        model: str, turn_index: Optional[int],
+    ) -> bool:
+        """Run a declared post-response checkpoint, including terminal answers."""
+        if not any(getattr(trigger, "phase", None) == "assistant_step_end" for trigger in self.recipe.triggers):
+            return False
+        window = self.resolve_context_window(conductor=conductor, session_state=session_state, model=model)
+        max_input, max_output = self.resolve_model_limits(session_state, conductor, model)
+        if not self.should_trigger_threshold(
+            session_state, context_window=window,
+            last_usage=session_state.get_provider_metadata("usage"),
+            max_input_tokens=max_input, max_output_tokens=max_output,
+            checkpoint="assistant_step_end",
+        ):
+            return False
+        outcome = self.compact(
+            session_state, reason="threshold", target=projection_target_for(runtime, model),
+            conductor=conductor, runtime=runtime, client=client,
+            context_window=window, turn_index=turn_index,
+            supports_images=self.resolve_supports_images(conductor=conductor, model=model),
+            max_output_tokens=max_output,
+        )
+        return outcome.compacted
+
+    def finish_user_turn(
+        self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
+        model: str, turn_index: Optional[int],
+    ) -> None:
+        """Run stages declared at native user-turn completion, not request build."""
+        if not self.active:
+            return
+        stages = [stage.id for stage in self.recipe.pipeline.stages.values() if stage.phase == "user_turn_end"]
+        if not stages:
+            return
+        self.compact(
+            session_state, reason="request", target=projection_target_for(runtime, model),
+            conductor=conductor, runtime=runtime, client=client,
+            context_window=self.resolve_context_window(conductor=conductor, session_state=session_state, model=model),
+            turn_index=turn_index, order=stages,
         )
 
     def build_request_view(
@@ -311,6 +354,7 @@ class CompactionController:
         last_usage: Optional[Any] = None,
         max_input_tokens: Optional[int] = None,
         max_output_tokens: Optional[int] = None,
+        checkpoint: Optional[str] = None,
     ) -> bool:
         """Whether any preset trigger fires for the current history and last usage."""
         if not self.active:
@@ -331,6 +375,7 @@ class CompactionController:
             OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window,
             max_input_tokens=max_input_tokens if max_input_tokens is not None else metadata_input,
             max_output_tokens=max_output_tokens if max_output_tokens is not None else metadata_output,
+            checkpoint=checkpoint,
         )
         pressure = self.recipe.pressure(data, messages)
         return pressure is not None and pressure.fires
@@ -355,6 +400,10 @@ class CompactionController:
     ) -> None:
         """Record lifecycle event and persist Product snapshot."""
         self._messages_len_at_last_record = len(session_state.provider_messages)
+        if record.is_boundary and target is not None and target.api == "responses" and record.details.get("stateless_summary"):
+            # Only explicitly stateless replacements supersede provider state.
+            session_state.set_provider_metadata("conversation_id", None)
+            session_state.set_provider_metadata("previous_response_id", None)
         self._record_event(
             session_state,
             "compaction_record_appended",
@@ -410,10 +459,24 @@ class CompactionController:
             remote_ports = self.remote_ports_for(runtime, client, target.model)
         summarizer = self.summary_model
         if summarizer is None and callable(getattr(runtime, "invoke", None)):
+            def summary_tools() -> Sequence[Mapping[str, Any]]:
+                from ..provider import provider_adapter_manager
+                native_tools = getattr(conductor, "current_native_tools", None)
+                if native_tools is None:
+                    native_tools, _ = provider_adapter_manager.filter_tools_for_provider(
+                        getattr(conductor, "yaml_tools", None) or [], target.provider,
+                    )
+                active_names = getattr(conductor, "_active_tool_names", None)
+                if active_names:
+                    native_tools = [tool for tool in native_tools if tool.name in active_names]
+                return provider_adapter_manager.translate_tools_to_native_schema(native_tools, target.provider)
             summarizer = ConductorSummaryModel(
                 runtime=runtime, client=client, model=self.settings.summary_model or target.model,
                 session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
                 turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
+                client_lease=getattr(conductor, "_provider_client_lease", None),
+                route_id=self.settings.summary_model or getattr(conductor, "_current_route_id", None) or target.model,
+                tool_schema_provider=summary_tools,
             )
         projected = state.project(messages, target, coalesce=False)
         window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW

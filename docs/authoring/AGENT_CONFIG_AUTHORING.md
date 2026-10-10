@@ -267,6 +267,7 @@ Keep capture output under `docs_tmp/`. Promotion into `docs/conformance/` still 
 
 | Field | Class | Runtime consumer | Public dossiers using it |
 |---|---|---|---:|
+| `compaction` | operational | breadboard_engine.compaction.controller / presets.load_compaction_config | 4 |
 | `completion` | operational | breadboard_engine.agent_llm_openai | 4 |
 | `concurrency` | operational | breadboard_engine.conductor.components | 2 |
 | `enhanced_tools` | operational | breadboard_engine.conductor.components | 2 |

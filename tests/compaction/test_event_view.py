@@ -141,7 +141,7 @@ def test_production_threshold_uses_declared_estimator_and_configured_route_limit
     controller = CompactionController({"compaction": {"enabled": True, "preset": "openhands_sdk@1.47.0", "max_tokens": 25, "keep_first": 1}})
     state = session([{"role": "user" if i % 2 == 0 else "assistant", "content": "X" * 20} for i in range(6)])
     runtime = SummaryRuntime()
-    conductor = SimpleNamespace(config={"providers": {"models": [{"model_id": "first", "max_input_tokens": 1000, "max_output_tokens": 100}]}})
+    conductor = SimpleNamespace(config={"providers": {"models": [{"id": "first", "max_input_tokens": 1000, "max_output_tokens": 100}]}})
     view = controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model="first", turn_index=1)
     assert runtime.calls == 1 and state.compaction_state.records
     assert all("bb_event" not in message for message in view)
@@ -152,7 +152,7 @@ def test_production_threshold_uses_declared_estimator_and_configured_route_limit
     assert controller.resolve_model_limits(state, conductor, "first") == (20, 10)
     state.set_provider_metadata("max_input_tokens", None)
     state.set_provider_metadata("max_output_tokens", None)
-    conductor.config["providers"]["models"].append({"model_id": "second", "max_input_tokens": 40, "max_output_tokens": 5})
+    conductor.config["providers"]["models"].append({"id": "second", "max_input_tokens": 40, "max_output_tokens": 5})
     assert controller.resolve_model_limits(state, conductor, "second") == (40, 5)
 
 
@@ -410,7 +410,7 @@ def test_threshold_and_context_share_validated_route_output_cap(profile_output, 
     state._episode_provider_profile = SimpleNamespace(context_window=200000, max_output_tokens=profile_output)
     events = []
     state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
-    controller.prepare_request(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
+    controller.finish_assistant_step(state, conductor=None, runtime=None, client=None, model="test", turn_index=1)
     assert len(observed) == 1 and observed[0].max_output_tokens == profile_output
     started = next(payload for event, payload in events if event == "compaction_started")
     assert started["target_tokens"] == 200000 - (profile_output or 32000)

@@ -79,6 +79,7 @@ def _compile_target(
     profile_digest: str,
     model_id: str = "model-a",
     target_id: str = "pi@0.73.1",
+    context_length: int = 32_768,
 ) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], c.CompiledConfigManifest]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
@@ -95,7 +96,7 @@ def _compile_target(
                     "models": [{
                         "id": model_id,
                         "adapter": "openai",
-                        "context_length": 32_768,
+                        "context_length": context_length,
                         "route_handle_id": "route-a",
                         "credential_handle_id": "credential-a",
                         "params": {},
@@ -382,7 +383,7 @@ class _NativeWorkerPort:
             "schema_version": "bb.native-worker.rpc.v1",
             "request_id": self._request_id,
             "operation": operation,
-            "payload": phase_payload,
+            "payload": thaw_json(phase_payload),
         }
         body = json.dumps(command, separators=(",", ":")).encode()
         self._process.stdin.write(struct.pack(">I", len(body)) + body)

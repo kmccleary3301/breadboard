@@ -284,7 +284,8 @@ def test_anthropic_runtime_stream_success(monkeypatch):
     assert result.reasoning_summaries == ["analysis"]
     assert result.usage == {"input_tokens": 12, "output_tokens": 34}
     assert result.metadata["usage"]["output_tokens"] == 34
-    assert normalized_result_messages(result)[1]["content"] == [
+    assert len(normalized_result_messages(result)) == 1
+    assert normalized_result_messages(result)[0]["content"][:4] == [
         {"type": "thinking", "text": "analysis"},
         {
             "type": "provider_replay",

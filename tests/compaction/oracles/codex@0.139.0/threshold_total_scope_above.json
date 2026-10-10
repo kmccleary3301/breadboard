@@ -11,9 +11,10 @@
     ]
   },
   "capture": {
-    "kind": "source_derived",
-    "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/protocol/src/openai_models.rs:433 derives limit 90000 for window 100000. codex-rs/core/src/session/turn.rs:745 compares auto_compact_scope_tokens (90001) >= auto_compact_scope_limit (90000), which evaluates to true."
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/pre_turn_and_second_compaction.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. Verified that usage exceeding auto_compact_token_limit triggers compaction before next turn sampling per codex-rs/core/src/session/turn.rs:804-821."
   },
   "input": {
     "messages": [

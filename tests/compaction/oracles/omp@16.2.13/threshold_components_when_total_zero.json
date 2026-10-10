@@ -1,0 +1,61 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "omp@16.2.13",
+  "case": "threshold_components_when_total_zero",
+  "source": {
+    "repo": "https://github.com/can1357/oh-my-pi",
+    "package": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "version": "16.2.13",
+    "commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "package_sha256": "293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff",
+    "evidence": [
+      "packages/agent-core/src/compaction/compaction.ts:245-285",
+      "packages/coding-agent/src/session/agent-session.ts:9580,9786"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_omp.ts",
+    "notes": "calculateContextTokens(usage) then shouldCompact(tokens, contextWindow, settings) and resolveThresholdTokens, called from the installed package exports."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "earlier task"
+      },
+      {
+        "role": "assistant",
+        "content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next task"
+      }
+    ],
+    "usage": {
+      "input_tokens": 100000,
+      "output_tokens": 2000,
+      "cache_read_tokens": 60000,
+      "cache_write_tokens": 30000,
+      "cache_read_input_tokens": 60000,
+      "cache_creation_input_tokens": 30000,
+      "total_tokens": 0
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "threshold",
+    "native_settings": {
+      "reserveTokens": 8000
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 192000,
+      "limit": 170000,
+      "severity": "soft"
+    }
+  }
+}

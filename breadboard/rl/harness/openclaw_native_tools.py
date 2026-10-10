@@ -4,6 +4,17 @@ This module intentionally owns only the tool boundary.  The model loop, provider
 transport, history commit, recovery admission, and terminal arbitration stay in
 BreadBoard's conductor.  The constants below are grounded in the pinned source
 archive (commit 3a9d69db306cd7f081e06254cb89c4bcc14a7107).
+
+Native compaction runs in the phase worker through the exported stock
+AgentSession.runCompactionWork (resource-loader-Bu_pVD2t.mjs:9952-10073).
+The conductor supplies policy answers; the worker owns request budgets,
+instructions, invalid-summary retry, full history replacement and the retained
+stock session ledger. Only provider calls and cited deterministic clocks/ids
+are replay seams. Headless agent_end threshold compaction settles without
+continuation (resource-loader:10122,10189); stock-classified length overflow
+instead compacts and retries through the existing conductor reopen path
+(resource-loader:10090-10109,10183-10187). The worker retains the source counter
+across both refused requests and zero-output length responses.
 """
 from __future__ import annotations
 
@@ -291,6 +302,7 @@ class _OpenClawWorkerClient:
         message_timestamp_ms: str,
         node: str | None = None,
         dist: str | None = None,
+        target_dir: str | Path | None = None,
     ) -> None:
         if not re.fullmatch(r"\d{13}", message_timestamp_ms):
             raise ValueError("declared message_timestamp_ms must be a 13-digit UTC epoch millisecond string")
@@ -325,26 +337,23 @@ class _OpenClawWorkerClient:
         self._request_id = 0
         self._pending: dict[str, str | None] = {}
         self._bootstrap: tuple[Mapping[str, Any], ...] = ()
-        bootstrap_root = (
-            Path(__file__).resolve().parents[3]
-            / "config"
-            / "e4_targets"
-            / "openclaw"
-            / OPENCLAW_VERSION
-            / "bootstrap"
+        target_path = (
+            Path(target_dir)
+            if target_dir is not None
+            else (
+                Path(__file__).resolve().parents[3]
+                / "config"
+                / "e4_targets"
+                / "openclaw"
+                / OPENCLAW_VERSION
+            )
         )
+        bootstrap_root = target_path / "bootstrap"
         assets: list[dict[str, str]] = []
         for name in ("AGENTS.md", "SOUL.md"):
             content = (bootstrap_root / name).read_text(encoding="utf-8")
             assets.append({"name": name, "content": content, "sha256": sha256_file(bootstrap_root / name)})
-        native_config_path = (
-            Path(__file__).resolve().parents[3]
-            / "config"
-            / "e4_targets"
-            / "openclaw"
-            / OPENCLAW_VERSION
-            / "native-config.json"
-        )
+        native_config_path = target_path / "native-config.json"
         native_config = json.loads(native_config_path.read_text(encoding="utf-8"))
         advertisement = native_config["advertisement"]
         # No compat override: the supplier's provider config declares none, so
@@ -510,11 +519,14 @@ class OpenClawNativeTools:
         message_timestamp_ms: str,
         *,
         worker: _OpenClawWorkerClient | None = None,
+        target_dir: str | Path | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
         self._worker = worker or _OpenClawWorkerClient(
-            self.workspace, message_timestamp_ms=message_timestamp_ms,
+            self.workspace,
+            message_timestamp_ms=message_timestamp_ms,
+            target_dir=target_dir,
         )
         self.scope = _NodeWorkerScope(self._worker)
     def execute(self, name: str, arguments: Mapping[str, Any] | None = None) -> dict[str, Any]:

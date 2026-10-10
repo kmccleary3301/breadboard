@@ -11,7 +11,23 @@ from breadboard_engine.provider.routing import provider_router
 from breadboard_engine.provider.runtime import provider_registry
 from breadboard_engine.state.session_state import SessionState
 
-from .test_controller import FakeRuntime, _controller, _session, _target
+from .test_controller import FakeRuntime as OmpFakeRuntime, _controller, _session, _target
+from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
+
+
+class FakeRuntime:
+    descriptor = type("Descriptor", (), {"provider_id": "openai", "default_api_variant": "chat", "runtime_id": "openai_chat"})()
+
+    def __init__(self):
+        self.summary_requests = []
+
+    def invoke(self, *, client, model, messages, tools, stream, context):
+        assert tools is None and stream is True
+        assert context.extra["compaction_summary"] is True
+        assert context.extra["max_tokens"] == 32000
+        self.summary_requests.append(copy.deepcopy(messages))
+        return ProviderResult(messages=[ProviderMessage(role="assistant", content="## Goal\nport the parser")],
+                              raw_response=None, model=model)
 
 PRESETS = ("opencode@1.2.17", "oh-my-opencode@3.10.0")
 
@@ -68,7 +84,7 @@ def test_summary_tool_results_pass_real_provider_converters(preset, provider_mod
 @pytest.mark.parametrize("limit", [160000, 200000])
 @pytest.mark.parametrize("chars", [500000, 600000])
 @pytest.mark.parametrize("error_format", ["provider_text", "redacted_bounds"])
-def test_plugin_overflow_uses_failing_request_bounds(usage, limit, chars, error_format):
+def test_plugin_native_overflow_summarizes_before_deferred_hook(usage, limit, chars, error_format):
     from breadboard_engine.provider.contract_runtime import ProviderRuntimeError
 
     state = _tool_history("x" * chars)
@@ -89,11 +105,10 @@ def test_plugin_overflow_uses_failing_request_bounds(usage, limit, chars, error_
     assert controller.recover_from_overflow(
         error, state, turn_index=1, conductor=None, runtime=runtime, client=object(), model="gpt-test",
     )
-    sufficient = not (limit == 160000 and chars == 500000)
-    assert bool(runtime.summary_requests) is not sufficient
-    assert [r.method for r in state.compaction_state.records] == (
-        ["recovery"] if sufficient else ["recovery", "summary"]
-    )
+    # Native processor.ts:420 returns compact immediately; the deferred
+    # session.error hook skips the finished summary (recovery-hook.ts:140).
+    assert len(runtime.summary_requests) == 1
+    assert [r.method for r in state.compaction_state.records] == ["summary"]
     assert state.provider_messages == history
 
 
@@ -144,29 +159,100 @@ def test_summary_does_not_prune_newly_eligible_tool_output(preset, reason):
 
 
 @pytest.mark.parametrize("preset", PRESETS)
-def test_request_prune_runs_only_at_user_turn_start_and_reports_request_reason(preset):
+def test_prune_runs_at_user_turn_end_not_request_start(preset):
+    # Pinned OpenCode prompt.ts:716 calls prune after the prompt loop exits.
     state = _eligible_tool_history()
     controller = CompactionController({"compaction": {"enabled": True, "preset": preset}})
     history = copy.deepcopy(state.provider_messages)
-    first = controller.build_request_view(state, target=_target(), turn_index=1)
-    assert first == history
+    assert controller.build_request_view(state, target=_target(), turn_index=1) == history
     assert not state.compaction_state.records
-    event = state.lifecycle_events[-1]
-    assert event["type"] == "compaction_finished"
-    assert event["payload"]["reason"] == "request"
-    assert event["payload"]["stages"][0]["status"] == "noop"
-    assert "phase" in event["payload"]["stages"][0]["detail"]
-    state.add_message({"role": "user", "content": "Next turn"})
-    second = controller.build_request_view(state, target=_target(), turn_index=2)
-    assert second[2]["content"] == "[Old tool result content cleared]"
-    record = state.compaction_state.records[-1]
-    assert record.reason == "request"
-    event = state.lifecycle_events[-1]
-    assert event["payload"]["reason"] == "request"
-    assert event["payload"]["stages"][0]["id"] == "prune"
-    assert event["payload"]["stages"][0]["status"] == "edited"
-    assert event["payload"]["stages"][0]["detail"] is None
-    assert state.provider_messages[:-1] == history
+    descriptor, _ = provider_router.get_runtime_descriptor("openai/gpt-4o-mini")
+    runtime = provider_registry.create_runtime(descriptor)
+    controller.finish_user_turn(
+        state, conductor=None, runtime=runtime, client=None,
+        model="gpt-4o-mini", turn_index=1,
+    )
+    assert controller.build_request_view(state, target=_target())[2]["content"] == "[Old tool result content cleared]"
+    assert state.compaction_state.records[-1].reason == "request"
+    assert state.lifecycle_events[-1]["payload"]["stages"][0]["id"] == "prune"
+    assert state.provider_messages == history
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+def test_completed_turn_pruning_survives_product_final_snapshot(preset):
+    # Stock compaction.ts:91-94 updates persisted tool parts after prompt.ts:716.
+    state = _eligible_tool_history()
+    original = copy.deepcopy(state.provider_messages)
+    state.record_provider_request_surface(original)
+    descriptor, _ = provider_router.get_runtime_descriptor("openai/gpt-4o-mini")
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset}})
+    controller.finish_user_turn(state, conductor=None, runtime=provider_registry.create_runtime(descriptor),
+                                client=None, model="gpt-4o-mini", turn_index=1)
+    retained = state.final_provider_context()
+    assert retained[2]["content"] == "[Old tool result content cleared]"
+    restored = SessionState("ws", "image", {})
+    restored.provider_messages = retained
+    assert controller.build_request_view(restored, target=_target())[2]["content"] == retained[2]["content"]
+    assert state.provider_messages == original
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+def test_final_assistant_pressure_uses_declared_checkpoint(preset):
+    state = _tool_history()
+    state.add_message({"role": "assistant", "content": "Final answer"})
+    state.set_provider_metadata("usage", {"total_tokens": 45000})
+    state.set_provider_metadata("max_input_tokens", 64000)
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset, "contextWindow": 64000}})
+    runtime = FakeRuntime()
+    controller.prepare_request(state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1)
+    assert not runtime.summary_requests
+    assert controller.finish_assistant_step(state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1)
+    assert len(runtime.summary_requests) == 1
+    assert not controller.finish_assistant_step(state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1)
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+def test_summary_boundary_invalidates_superseded_responses_reference(preset):
+    state = _tool_history()
+    state.set_provider_metadata("previous_response_id", "resp_original")
+    state.set_provider_metadata("conversation_id", "conv_original")
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset}})
+    from breadboard_engine.compaction.state import ProjectionTarget
+    controller.compact_now(state, target=ProjectionTarget("openai", "responses", "gpt-test"),
+                           runtime=FakeRuntime(), client=object())
+    assert state.get_provider_metadata("previous_response_id") is None
+    assert state.get_provider_metadata("conversation_id") is None
+    assert controller.build_request_view(state, target=_target())[0]["role"] == "user"
+
+
+@pytest.mark.parametrize("request_declared", [False, True])
+def test_legacy_summary_boundary_preserves_responses_state_references(request_declared):
+    from breadboard_engine.compaction.state import ProjectionTarget
+    from breadboard_engine.compaction.params import BuildEnv, Params
+    from breadboard_engine.compaction.primitives.chat_reducers import ChatSummary
+
+    state = _session()
+    state.set_provider_metadata("previous_response_id", "resp_original")
+    state.set_provider_metadata("conversation_id", "conv_original")
+    controller = _controller()
+    target = ProjectionTarget("openai", "responses", "gpt-test")
+    # Exercise the actual legacy recipe, not a manually fabricated boundary.
+    outcome = controller.compact_now(state, target=target, runtime=OmpFakeRuntime(), client=object())
+    assert outcome.compacted
+    assert state.get_provider_metadata("previous_response_id") == "resp_original"
+    assert state.get_provider_metadata("conversation_id") == "conv_original"
+    reducer = ChatSummary(Params({"system": "Summary", "prompt": "Summarize",
+                                  **({"request": {"stream": False}} if request_declared else {})}, "test", BuildEnv(None)))
+    assert reducer.stateless is False
+
+
+def test_other_presets_do_not_run_assistant_end_checkpoint():
+    controller = _controller()
+    runtime = FakeRuntime()
+    state = _session()
+    state.set_provider_metadata("usage", {"total_tokens": 999999})
+    assert not controller.finish_assistant_step(state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1)
+    assert not runtime.summary_requests
 
 
 @pytest.mark.parametrize("preset", PRESETS)
@@ -235,7 +321,7 @@ def test_request_summary_receives_configured_custom_instructions():
     document = load_preset_document(controller.config.preset)
     document["request_view"] = ["soft"]
     controller.recipe = build_recipe(controller.config, document)
-    runtime = FakeRuntime()
+    runtime = OmpFakeRuntime()
     controller.build_request_view(state, target=_target(), runtime=runtime, client=object())
     assert runtime.summary_requests
     assert any("Additional focus: PRESERVE_SENTINEL" in str(message["content"])
@@ -274,7 +360,7 @@ def test_request_remote_stage_receives_native_port_and_model_dependencies():
     document["request_view"] = ["remote"]
     controller.recipe = build_recipe(controller.config, document)
     conductor = SimpleNamespace(config={"providers": {"models": [{
-        "model_id": "gpt-test", "max_input_tokens": 120000, "max_output_tokens": 10000,
+        "id": "gpt-test", "max_input_tokens": 120000, "max_output_tokens": 10000,
     }]}})
     view = controller.build_request_view(
         state, target=_target(), runtime=PortRuntime(), client=client, conductor=conductor, supports_images=True,
@@ -303,6 +389,12 @@ def test_request_only_recipe_runs_prune_without_enabling_disabled_recipes(preset
     view = controller.prepare_request(
         state, conductor=None, runtime=runtime, client=object(), model="gpt-test", turn_index=1,
     )
+    descriptor, _ = provider_router.get_runtime_descriptor("openai/gpt-4o-mini")
+    controller.finish_user_turn(
+        state, conductor=None, runtime=provider_registry.create_runtime(descriptor),
+        client=None, model="gpt-4o-mini", turn_index=1,
+    )
+    view = controller.build_request_view(state, target=_target())
     assert not runtime.summary_requests
     finished = [e for e in state.lifecycle_events if e["type"] == "compaction_finished"]
     if enabled:
@@ -316,3 +408,66 @@ def test_request_only_recipe_runs_prune_without_enabling_disabled_recipes(preset
         assert not state.compaction_state.records
         assert not state.lifecycle_events
     assert state.provider_messages == history
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+@pytest.mark.parametrize(("original_text", "wrap"), [("\nFinish the inspection.", True), ("\ufeff", False), ("\x1c", True), (" \n\t", False)])
+def test_overflow_queued_user_reminder_is_ephemeral_and_not_summary_history(preset, original_text, wrap):
+    from types import SimpleNamespace
+    from breadboard_engine.compaction.state import ProjectionTarget
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+
+    state = _tool_history()
+    state.add_message({"role": "user", "content": original_text})
+    history = copy.deepcopy(state.provider_messages)
+    target = ProjectionTarget("openai", "responses", "gpt-test")
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset}})
+    controller.compact(state, reason="overflow", target=target, runtime=FakeRuntime(), client=object())
+    view = controller.build_request_view(state, target=target)
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    config = {"provider_tools": {"openai": {"responses_stateful": False}}}
+    context = ProviderRuntimeContext(state, config)
+    payload = runtime._request_payload(model="gpt-test", messages=view, tools=None, context=context)
+    expected = "\n".join(("<system-reminder>", "The user sent the following message:", original_text, "",
+                          "Please address this message and continue with your tasks.", "</system-reminder>")) if wrap else original_text
+    assert payload["input"][-1]["content"][0]["text"] == expected
+    assert view[-1]["content"][0]["text"] == original_text
+    assert state.provider_messages == history
+    summary = ProviderRuntimeContext(state, config, extra={"compaction_summary": True})
+    assert runtime._request_payload(model="gpt-test", messages=view, tools=None, context=summary)["input"][-1]["content"][0]["text"] == original_text
+    restored = SessionState("ws", "image", {})
+    restored.provider_messages = copy.deepcopy(view)
+    next_turn = ProviderRuntimeContext(restored, config)
+    assert runtime._request_payload(model="gpt-test", messages=view, tools=None, context=next_turn)["input"][-1]["content"][0]["text"] == original_text
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+@pytest.mark.parametrize("followup", ["native_assistant", "identical_user"])
+def test_queued_replay_reminder_expires_when_canonical_history_advances(preset, followup):
+    from types import SimpleNamespace
+    from breadboard_engine.compaction.state import ProjectionTarget
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+
+    state = _tool_history()
+    original = "Finish the inspection."
+    state.add_message({"role": "user", "content": original})
+    target = ProjectionTarget("openai", "responses", "gpt-test")
+    controller = CompactionController({"compaction": {"enabled": True, "preset": preset}})
+    controller.compact(state, reason="overflow", target=target, runtime=FakeRuntime(), client=object())
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    context = ProviderRuntimeContext(state, {"provider_tools": {"openai": {"responses_stateful": False}}})
+    view = controller.build_request_view(state, target=target)
+    first = runtime._request_payload(model="gpt-test", messages=view, tools=None, context=context)
+    assert "<system-reminder>" in first["input"][-1]["content"][0]["text"]
+    if followup == "native_assistant":
+        state.add_message({"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c2", "type": "function", "function": {"name": "bash", "arguments": "{}"}}
+        ]})
+        state.add_message({"role": "tool", "tool_call_id": "c2", "content": "done"})
+    else:
+        state.add_message({"role": "user", "content": original})
+    view = controller.build_request_view(state, target=target)
+    payload = runtime._request_payload(model="gpt-test", messages=view, tools=None, context=context)
+    texts = [part["text"] for item in payload["input"] for part in item.get("content", []) if isinstance(part, dict) and "text" in part]
+    assert original in texts
+    assert all("<system-reminder>" not in text for text in texts)

@@ -37,6 +37,8 @@ Status: `active`
 | `bb.coordination_view.v1` | BreadBoard Coordination View V1 candidate | `runtime_protocol` |
 | `bb.credentials.v1` | BreadBoard credential store logical model V1 | `host_protocol` |
 | `bb.directive.v1` | bb.directive.v1 | `host_protocol` |
+| `bb.e4.target_config.v2` | BreadBoard E4 executable target configuration V2 | `config_algebra` |
+| `bb.e4.target.v2` | BreadBoard E4 target descriptor V2 | `config_algebra` |
 | `bb.effective_config_graph.v1` | BreadBoard effective config graph | `runtime_protocol` |
 | `bb.effective_model_role_lock.v1` | BreadBoard effective model role lock V1 | `host_protocol` |
 | `bb.effective_operation_policy.v1` | BreadBoard effective operation policy V1 | `runtime_protocol` |
@@ -44,8 +46,6 @@ Status: `active`
 | `bb.environment_selector.v2` | BreadBoard Environment Selector V2 | `config_algebra` |
 | `bb.execution_capability.v1` | bb.execution_capability.v1 | `host_protocol` |
 | `bb.execution_placement.v1` | bb.execution_placement.v1 | `host_protocol` |
-| `bb.e4.target.v2` | BreadBoard E4 target descriptor V2 | `config_algebra` |
-| `bb.e4.target_config.v2` | BreadBoard E4 executable target configuration V2 | `config_algebra` |
 | `bb.extension_hook_execution.v1` | BreadBoard extension hook execution V1 | `host_protocol` |
 | `bb.external_protocol_session.v1` | BreadBoard external protocol session V1 | `host_protocol` |
 | `bb.kernel_event.v2` | BreadBoard Kernel Event V2 | `runtime_protocol` |

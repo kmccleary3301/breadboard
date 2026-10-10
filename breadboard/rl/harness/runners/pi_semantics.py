@@ -230,7 +230,9 @@ class PiSemanticsState:
             return self._cap_response()
         return None
 
-    async def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
+    async def prepare_response(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> PiResponseResult:
         """Commit an admitted assistant response without executing its tools.
 
         Argument parsing runs in the pinned worker without blocking the event
@@ -264,11 +266,18 @@ class PiSemanticsState:
             "provider": self.provider,
             "model": self.model_id,
         }
+        if usage is not None:
+            assistant["usage"] = dict(usage)
         self.messages.append(assistant)
         self.native_stop_reason = stop_reason
         if not calls:
             self.exit_status = "Submitted" if stop_reason == "stop" else stop_reason
         return PiResponseResult(assistant, calls, (), stop_reason, not calls)
+
+    def reopen_after_overflow(self) -> None:
+        """Resume the source's overflow retry after rebuilding session context."""
+        self.exit_status = None
+        self.native_stop_reason = None
 
     def _result_from_port(self, call: PiToolCall, raw: PiToolResult | Mapping[str, Any]) -> PiToolResult:
         if isinstance(raw, PiToolResult):

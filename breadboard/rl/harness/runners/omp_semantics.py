@@ -598,6 +598,14 @@ class OMPSemanticsState:
     def is_exited(self) -> bool:
         return self.exit_status is not None
 
+    def resume_after_compaction(self, continuation_messages: Sequence[Mapping[str, Any]]) -> None:
+        if self._closed:
+            raise OMPPhaseError("resume after close")
+        self.exit_status = None
+        self.native_stop_reason = None
+        self._pending_finish_reason = None
+        self.messages.extend(dict(m) for m in continuation_messages)
+
     def begin_query(self) -> dict[str, Any] | None:
         if self._closed:
             raise OMPPhaseError("query after close")
@@ -610,7 +618,6 @@ class OMPSemanticsState:
             self.messages.append(refusal)
             return refusal
         return None
-
     def project_request(self) -> dict[str, Any]:
         messages = [{"role": "system", "content": self.system_prompt}, *self.messages]
         return {"kind": "request", "messages": messages, "tools": [dict(schema) for schema in self.tool_schemas]}
@@ -639,14 +646,16 @@ class OMPSemanticsState:
             return str(exc)
         return None
 
-    def prepare_response(self, response: NativeProviderResponse) -> OMPResponseResult:
+    def prepare_response(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> OMPResponseResult:
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.stream_fn_issued <= self.request_count:
             raise OMPPhaseError("response has no admitted provider query")
         self.request_count += 1
         if response.stream_termination is not None:
-            return self._prepare_terminated_stream(response)
+            return self._prepare_terminated_stream(response, usage=usage)
         if response.raw_response is None:
             self.native_responses.append({"finish_reason": response.finish_reason})
         else:
@@ -688,6 +697,10 @@ class OMPSemanticsState:
             "content": blocks,
             "stopReason": finish_reason,
         }
+        if usage is not None:
+            # Conductor supplies stock parseChunkUsage output, not raw provider
+            # usage (openai-completions.ts:1858-1906).
+            assistant["usage"] = _thaw_native_wire(usage)
         self.messages.append(assistant)
         self._pending_finish_reason = finish_reason
         if not calls:
@@ -758,7 +771,9 @@ class OMPSemanticsState:
             synthetic_results=tuple(synthetic_results),
         )
 
-    def _prepare_terminated_stream(self, response: NativeProviderResponse) -> OMPResponseResult:
+    def _prepare_terminated_stream(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> OMPResponseResult:
         """Pinned error stop for a stream that ended without a finish_reason.
 
         openai-completions.ts:1227-1290 opens a block for non-empty text or any
@@ -797,6 +812,8 @@ class OMPSemanticsState:
             for call in calls
         )
         assistant: dict[str, Any] = {"role": "assistant", "content": blocks, "stopReason": "error"}
+        if usage is not None:
+            assistant["usage"] = _thaw_native_wire(usage)
         self.messages.append(assistant)
         self._pending_finish_reason = "error"
         self.recovery.accept_turn(assistant)

@@ -79,6 +79,9 @@ def _assistant_history_message(
     history: Dict[str, Any] = {"role": "assistant", "content": msg.content}
     if tool_calls is not None:
         history["tool_calls"] = tool_calls
+    reasoning = getattr(msg, "reasoning", None)
+    if reasoning is not None:
+        history["reasoning"] = reasoning
     annotations = getattr(msg, "annotations", None)
     if isinstance(annotations, dict):
         for field_name in ("reasoning_content", "reasoning", "reasoning_details"):

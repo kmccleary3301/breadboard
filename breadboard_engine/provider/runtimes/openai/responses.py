@@ -67,6 +67,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         responses_stateful = True
         if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
+        if context.extra.get("compaction_stateless") is True:
+            # Explicit full-history summaries must not become stateful deltas.
+            responses_stateful = False
 
         # Build instructions from system messages (if any)
         instructions_parts: List[str] = []
@@ -253,6 +256,27 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 calls.append(call)
             return calls
 
+        pending_users = ()
+        if context is not None and context.extra.get("compaction_summary") is not True:
+            ledger = getattr(context.session_state, "compaction_state", None)
+            boundary = ledger.latest_readable_boundary() if ledger is not None else None
+            if (
+                boundary is not None
+                and boundary.details.get("queued_user_reminder")
+                # The boundary stays in the ledger, but its replay stops being
+                # pending as soon as a response or a new user is appended.
+                and len(context.session_state.provider_messages) == boundary.history_length
+            ):
+                pending_users = boundary.summary_messages[2:]
+
+        def pending_user_text(text: str) -> str:
+            # OpenCode prompt.ts:630-645 wraps queued replay text ephemerally.
+            # ECMAScript trim, including BOM but not Python's C0 separators.
+            if not text.strip("\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"):
+                return text
+            return "\n".join(("<system-reminder>", "The user sent the following message:", text, "",
+                              "Please address this message and continue with your tasks.", "</system-reminder>"))
+
         converted: List[Dict[str, Any]] = []
         effective_include_tool_calls = (
             include_tool_calls or self.descriptor.provider_id == "openrouter"
@@ -292,6 +316,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 continue
 
             content = message.get("content")
+            pending_user = role == "user" and message in pending_users
             emitted_call = False
             if role == "assistant" and effective_include_tool_calls:
                 for call in assistant_tool_calls(message):
@@ -311,7 +336,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
             if isinstance(content, str):
                 content_blocks: List[Dict[str, Any]] = [
-                    {"type": default_text_type, "text": content}
+                    {"type": default_text_type, "text": pending_user_text(content) if pending_user else content}
                 ]
             elif isinstance(content, list):
                 content_blocks = []
@@ -329,6 +354,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                             raise ProviderContractError(
                                 "Responses text block requires text"
                             )
+                        if pending_user and not block.get("synthetic") and not block.get("ignored"):
+                            text = pending_user_text(text)
                         content_blocks.append(
                             {"type": default_text_type, "text": text}
                         )
@@ -1026,6 +1053,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         )
         provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
+        if context.extra.get("compaction_stateless") is True:
+            responses_stateful = False
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")
             or context.session_state.get_provider_metadata("previous_response_id")
@@ -1047,8 +1076,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             payload["instructions"] = instructions
 
         responses_tools = self._convert_tools_to_responses(tools)
-        if responses_tools:
-            payload["tools"] = responses_tools
+        if responses_tools or (context.extra.get("compaction_summary") is True and tools is not None):
+            payload["tools"] = responses_tools if responses_tools is not None else []
         if (
             self.descriptor.provider_id == "openrouter"
             and isinstance(model, str)
@@ -1109,6 +1138,12 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if isinstance(extra_payload, dict):
             payload.update(extra_payload)
         payload.update(openai_responses_role_options(context))
+        if context.extra.get("compaction_summary") is True:
+            if context.extra.get("compaction_request_options_declared") is True and context.extra.get("max_tokens") is not None:
+                payload["max_output_tokens"] = context.extra["max_tokens"]
+            summary_params = context.extra.get("compaction_request_params")
+            if isinstance(summary_params, dict):
+                payload.update(summary_params)
         return payload
 
     def project_request_body(

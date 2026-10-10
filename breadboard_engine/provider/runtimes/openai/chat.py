@@ -584,6 +584,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             # and Pi 0.57.1's buildParams emits none under custody compat
             # supportsStore=false (openai-completions.js:307-309).
             request["store"] = False
+        if "tool_choice" in context.extra:
+            if context.extra["tool_choice"] is None:
+                request.pop("tool_choice", None)
+            else:
+                request["tool_choice"] = context.extra["tool_choice"]
         return request
 
     def _unbound_request_options(

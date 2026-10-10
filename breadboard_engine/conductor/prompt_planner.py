@@ -25,7 +25,12 @@ class ToolPromptPlanner:
         if not send_messages:
             return None
 
-        last_message = send_messages[-1]
+        def append_directive(messages: List[dict], text: str) -> None:
+            if messages[-1].get("role") == "tool":
+                messages.append({"role": "user", "content": text})
+            else:
+                append_text_block(messages[-1], text)
+
         if tool_prompt_mode in ("per_turn_append", "system_and_per_turn"):
             tool_names = [t.name for t in tool_defs if getattr(t, "name", None)]
             tool_directive_text = (
@@ -39,7 +44,7 @@ class ToolPromptPlanner:
                 "NEVER use bash to write large file contents (heredocs, echo >>). For files: call create_file() then apply a diff block for contents.\n"
                 "Do NOT include extra prose.\nEND SYSTEM MESSAGE\n"
             )
-            append_text_block(last_message, tool_directive_text)
+            append_directive(send_messages, tool_directive_text)
             if markdown_logger:
                 try:
                     markdown_logger.log_tool_availability(tool_names)
@@ -62,11 +67,11 @@ class ToolPromptPlanner:
                     per_turn_availability = (per_turn_availability or "") + native_block
 
             if per_turn_availability:
-                append_text_block(last_message, "\n\n" + per_turn_availability)
+                append_directive(send_messages, "\n\n" + per_turn_availability)
                 with session_state.context_mutation():
                     provider_messages = session_state.provider_messages
                     if provider_messages:
-                        append_text_block(provider_messages[-1], "\n\n" + per_turn_availability)
+                        append_directive(provider_messages, "\n\n" + per_turn_availability)
                 per_turn_written_text = per_turn_availability
 
         return per_turn_written_text

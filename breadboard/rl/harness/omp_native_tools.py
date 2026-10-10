@@ -11,7 +11,7 @@ import importlib.resources
 import json
 import os
 from pathlib import Path
-import select
+import selectors
 import re
 import struct
 import subprocess
@@ -294,7 +294,11 @@ class NativeToolWorker:
 
     @staticmethod
     def _read_frame(stream: Any, timeout: float) -> bytes:
-        ready, _, _ = select.select([stream], [], [], timeout)
+        # select.select() rejects descriptors >= FD_SETSIZE (1024); a long-lived
+        # conductor process can exceed that, so use the platform poller.
+        with selectors.DefaultSelector() as selector:
+            selector.register(stream, selectors.EVENT_READ)
+            ready = selector.select(timeout)
         if not ready:
             raise NativeWorkerPhaseError("timed out waiting for native worker phase")
         header = stream.read(4)
@@ -312,7 +316,7 @@ class NativeToolWorker:
         *,
         timeout_seconds: float = 35.0,
     ) -> dict[str, Any]:
-        if operation not in {"initialize", "project_request", "prepare_tools", "execute_batch", "close"}:
+        if operation not in {"initialize", "project_request", "parse_usage", "prepare_tools", "execute_batch", "close", "prepare_compaction", "finalize_compaction", "project_provider_failure"}:
             raise ValueError(f"unknown OMP phase: {operation}")
         process = self._ensure_process()
         if process.stdin is None or process.stdout is None:

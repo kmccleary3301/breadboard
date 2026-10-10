@@ -4357,14 +4357,20 @@ def _native_close_test_case(
     malformed_execute: bool = False,
     close_error: BaseException | None = None,
     block_invoke: bool = False,
+    agent_end_compaction: bool = False,
+    runtime_profile_override: Mapping[str, Any] | None = None,
+    action_timeout_ms: int = 100,
+    limit_updates_override: Mapping[str, int] | None = None,
 ) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort]:
     from breadboard.rl.harness import native_stream_profiles
-    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard.rl.harness.runners import omp_semantics, pi_semantics
     from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
 
     observation = _observation()
     semantics = _tool_semantics(observation)
-    runtime_profile = {"advertisement": {}}
+    runtime_profile = {"advertisement": {}, "compaction": agent_end_compaction}
+    if runtime_profile_override is not None:
+        runtime_profile.update(runtime_profile_override)
     semantics["metadata"] = {
         "e4_target": {
             "renderer_id": PI_RESPONSE_CONSUMER_ID,
@@ -4391,21 +4397,26 @@ def _native_close_test_case(
         target_version=3,
         phase_schema_version="bb.pi-native.test.v1",
         tool_order=("read-file",),
-        max_turns=1,
+        max_turns=2 if agent_end_compaction else 1,
         action_timeout_ms=100,
         episode_timeout_seconds=5,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error"}),
         runtime_input_names=("cwd", "home", "current_date", "package_dir"),
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
-        state_module=pi_semantics,
-        state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
-            task=task,
-            system_prompt=system_prompt,
-            request_cap=2,
-            model_id="model-a",
-            provider="openai",
+        state_module=omp_semantics if agent_end_compaction else pi_semantics,
+        state_factory=(
+            lambda task, system_prompt, bootstrap: omp_semantics.OMPSemanticsState(
+                task=task, system_prompt=system_prompt, tool_schemas=(), request_cap=3,
+            )
+        ) if agent_end_compaction else (
+            lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
+                task=task, system_prompt=system_prompt, request_cap=2,
+                model_id="model-a", provider="openai",
+            )
         ),
+        implements_compaction_phases=agent_end_compaction,
+        compaction_checkpoints=frozenset({"agent_end"}) if agent_end_compaction else frozenset(),
     )
     registry = {PI_RESPONSE_CONSUMER_ID: profile}
     monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", registry)
@@ -4456,7 +4467,8 @@ def _native_close_test_case(
         observation=observation,
         semantics=semantics,
         tools=(_tool_grant("read-file"),),
-        limit_updates={"max_turns": 1, "action_timeout_ms": 100},
+        limit_updates={"max_turns": 2 if agent_end_compaction else 1, "action_timeout_ms": action_timeout_ms,
+                       **(limit_updates_override or {})},
         implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
     return plan, client, tools
@@ -5602,3 +5614,40 @@ async def test_conductor_tool_results_as_text_append_only_prefix_equality_across
         {"type": "function_call_output", "call_id": "call-2", "output": "output of tool 2"},
     ]
     await session.close()
+
+
+@pytest.mark.parametrize("continues", [False, True])
+async def test_agent_end_compaction_continuation_controls_next_turn(
+    monkeypatch: pytest.MonkeyPatch, continues: bool,
+) -> None:
+    from breadboard.rl.harness.runners.native_compaction import CompactedHistory
+
+    plan, client, tools = _native_close_test_case(monkeypatch, agent_end_compaction=True)
+    terminal = client.responses[-1]
+    client.responses = [copy.deepcopy(terminal), copy.deepcopy(terminal)]
+    calls: list[list[Mapping[str, Any]]] = []
+    continuation = {"role": "developer", "content": [{"type": "text", "text": "resume"}], "synthetic": True}
+
+    async def compact(messages: list[Any], **kwargs: Any) -> CompactedHistory | None:
+        assert kwargs["checkpoint"] == "agent_end"
+        calls.append(copy.deepcopy(messages))
+        if len(calls) > 1:
+            return None
+        return CompactedHistory(
+            messages=list(messages), event={"kind": "compaction", "checkpoint": "agent_end"},
+            continuation=[continuation] if continues else None,
+        )
+
+    monkeypatch.setattr(conductor_module, "compact_history", compact)
+    session, _, _, _, _, _ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert len(client.requests) == (2 if continues else 1)
+    if continues:
+        assert calls[1][-2] == continuation
+        assert calls[1][-1]["role"] == "assistant"
+    else:
+        assert len(calls) == 1

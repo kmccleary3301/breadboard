@@ -106,6 +106,61 @@ def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms
     assert tools.execute("read", {"path": "marker.txt"})["content"] == "after\n"
 
 
+@pytest.mark.parametrize("failure_kind", ["error_with_cause", "structured_error"])
+def test_argument_preparation_failure_matches_stock_immediate_outcome(failure_kind: str) -> None:
+    script = """
+import { pathToFileURL } from "node:url";
+const { prepareSourceToolCall } = await import(pathToFileURL(process.argv[2]));
+const { g: runAgentLoop } = await import(pathToFileURL(process.env.OPENCLAW_DIST + "/agent-core-B_87jlHI.mjs"));
+const failure = process.argv[3] === "error_with_cause"
+  ? new Error("preparation failed", { cause: new Error("underlying cause") })
+  : { status: 422, code: "INVALID_PREPARATION" };
+const tool = {
+  name: "throwing-preparation", description: "Preparation failure test",
+  parameters: { type: "object", properties: {} },
+  prepareArguments() { throw failure; },
+  execute() { throw new Error("tool must never execute"); },
+};
+const toolCall = { type: "toolCall", id: "call_0", name: tool.name, arguments: {} };
+const actual = await prepareSourceToolCall(tool, toolCall);
+const model = {
+  id: "openclaw-tool-client", name: "openclaw-tool-client",
+  api: "openai-completions", provider: "openai", input: ["text"],
+  baseUrl: "http://127.0.0.1", contextWindow: 32768, maxTokens: 2048,
+};
+const message = {
+  role: "assistant", content: [toolCall], stopReason: "toolUse", timestamp: 0,
+  turnId: "turn_0", api: model.api, provider: model.provider, model: model.id,
+  usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+};
+const stream = () => ({
+  async *[Symbol.asyncIterator]() { yield { type: "done", reason: "toolUse", message }; },
+  result: async () => message,
+});
+const events = [];
+await runAgentLoop(
+  [{ role: "user", content: [{ type: "text", text: "Exercise preparation" }], timestamp: 0 }],
+  { systemPrompt: "", messages: [], tools: [tool] },
+  { model, convertToLlm: (messages) => messages, shouldStopAfterTurn: () => true },
+  async (event) => { events.push(event); }, undefined, stream,
+);
+const stock = events.find((event) => event.type === "tool_execution_end");
+console.log(JSON.stringify({
+  actual, stock: { kind: "immediate", result: stock.result, isError: stock.isError },
+  executionStarted: stock.executionStarted,
+}));
+"""
+    result = subprocess.run(
+        ["node", "--import", str(_LOADER), "--input-type=module", "-e", script,
+         "stock-preparation-oracle", str(_WORKER), failure_kind],
+        capture_output=True, text=True, check=True, timeout=30, env=os.environ.copy(),
+    )
+    outcomes = json.loads(result.stdout)
+    assert outcomes["actual"] == outcomes["stock"]
+    assert outcomes["executionStarted"] is False
+
+
 def test_native_write_echoes_relative_path(tmp_path: Path, message_timestamp_ms: str) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:

@@ -238,3 +238,17 @@ def test_context_window_resolves_from_id_shaped_model_entry() -> None:
         model="test-model",
     )
     assert controller.resolve_context_window(conductor=conductor, model="test-model") == 65536
+
+
+def test_model_limits_resolve_from_id_shaped_model_entry() -> None:
+    controller = CompactionController({})
+    conductor = SimpleNamespace(
+        config={"providers": {"models": [
+            {"id": "other-model", "max_input_tokens": 1000, "max_output_tokens": 100},
+            {"id": "test-model", "max_input_tokens": 272000, "max_output_tokens": 32000},
+        ]}},
+        model="test-model",
+    )
+    session = SimpleNamespace(get_provider_metadata=lambda key: None)
+    assert controller.resolve_model_limits(session, conductor, "test-model") == (272000, 32000)
+    assert controller.resolve_model_limits(session, conductor) == (272000, 32000)

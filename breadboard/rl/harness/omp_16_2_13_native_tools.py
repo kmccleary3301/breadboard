@@ -13,7 +13,7 @@ import importlib.resources
 import json
 import os
 from pathlib import Path
-import select
+import selectors
 import shutil
 import struct
 import subprocess
@@ -24,7 +24,7 @@ OMP_COMMIT: Final[str] = "5356713eae60e67ee64d9b02e3b5e377d248ee7f"
 OMP_VERSION: Final[str] = "16.2.13"
 CONSUMER_ID: Final[str] = "breadboard.oh-my-pi.v16.2.13"
 LOCAL_ADAPTER_ID: Final[str] = "oh-my-pi.local.v16.2.13"
-TARGET_ID: Final[str] = "oh-my-pi-r2@16.2.13"
+TARGET_ID: Final[str] = "oh-my-pi-r3@16.2.13"
 ALLOWED_TOOLS: Final[tuple[str, ...]] = ("read", "bash", "edit", "write", "generate_image")
 EXCLUDED_CAPABILITIES: Final[frozenset[str]] = frozenset(
     {"url", "ssh", "pty", "archive", "sqlite", "image", "video", "pdf", "document", "internal-resource"}
@@ -197,7 +197,11 @@ class NativeToolWorker:
 
     @staticmethod
     def _read_frame(stream: Any, timeout: float) -> bytes:
-        ready, _, _ = select.select([stream], [], [], timeout)
+        # select.select() rejects descriptors >= FD_SETSIZE (1024); a long-lived
+        # conductor process can exceed that, so use the platform poller.
+        with selectors.DefaultSelector() as selector:
+            selector.register(stream, selectors.EVENT_READ)
+            ready = selector.select(timeout)
         if not ready:
             raise NativeWorkerPhaseError("timed out waiting for native worker phase")
         header = stream.read(4)

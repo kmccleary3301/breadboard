@@ -44,7 +44,7 @@ const cases: Case[] = [];
 function fixture(name: string, preset = "opencode@1.2.17"): Case {
   const base = preset.startsWith("opencode");
   return { schema: "bb.compaction_oracle_case.v1", preset, case: name,
-    source: { repo: base ? "https://github.com/anomalyco/opencode" : "https://github.com/code-yeongyu/oh-my-openagent", commit: base ? "715b844c2a88810b6178d7a2467c7d36ea8fb764" : "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a", evidence: [] },
+    source: { repo: base ? "https://github.com/anomalyco/opencode" : "https://github.com/code-yeongyu/oh-my-openagent", commit: base ? "715b844c2a88810b6178d7a2467c7d36ea8fb764" : "5137df72d8fab3fec609c82f91387db8e3b13825", evidence: [] },
     capture: { kind: "executed", script: "scripts/compaction_oracles/capture_opencode.ts", notes: "" },
     input: { messages: [{ role: "user", content: "Hello" }, { role: "assistant", content: "Hi" }], usage: { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: 0 }, context_window: 200000, max_input_tokens: null, max_output_tokens: 32000, reason: "threshold", native_settings: {}, summary_responses: [] }, expect: {} };
 }
@@ -154,6 +154,15 @@ for (const [name, messages, reason, response] of summaryFixtures) {
   cases.push(c);
 }
 const recovery = fixture("recovery_largest_first_masking", "oh-my-opencode@3.10.0");
+// This source capture exercises the deferred session.error hook directly.
+// Native OpenCode overflow summarizes before the hook runs; it is not a
+// production preset stage (processor.ts:359-364,420; recovery-hook.ts:89-102,140).
+recovery.input.primitive_stage = {
+  id: "recovery",
+  select: { kind: "largest_first_masking", target_ratio: 0.5, chars_per_token: 4,
+    placeholder: "[Old tool result content cleared]" },
+  reduce: { kind: "mask_outputs", placeholder: "[Old tool result content cleared]" },
+};
 recovery.input.messages = [user("Run tasks"), assistant("Running tools"), tool("call_a", 300000), assistant("More tools"), tool("call_b", 200000), assistant("Final tool"), tool("call_c", 50000)];
 for (const [index, message] of recovery.input.messages.entries()) {
   if (message.role !== "tool") continue;
@@ -178,8 +187,8 @@ const preemptive = fixture("preemptive_trigger_not_wired_in_3_10_0", "oh-my-open
 preemptive.input.messages = [user("Perform extensive operations"), assistant("Working through operations...")];
 preemptive.input.usage.total_tokens = 160000;
 preemptive.capture.kind = "source_derived";
-preemptive.source.evidence = ["src/plugin/event.ts:137-159", "src/hooks/preemptive-compaction.ts:94-103,148-165", "packages/opencode/src/session/compaction.ts:30-48"];
-preemptive.capture.notes = "The complete shipped dispatcher at plugin/event.ts:137-159 never calls preemptiveCompaction.event, which is the only population of its token cache. Therefore only the native threshold applies; 160000 is below 168000.";
+preemptive.source.evidence = ["src/plugin/event.ts:137-159", "src/plugin/hooks/create-session-hooks.ts:81-85", "src/hooks/preemptive-compaction.ts:92-106,152-170", "packages/opencode/src/session/compaction.ts:30-48"];
+preemptive.capture.notes = "The hook is created only when experimental.preemptive_compaction is set (create-session-hooks.ts:81-85), and even then the shipped dispatcher at plugin/event.ts:137-159 never calls preemptiveCompaction.event, which is the only population of its token cache. Therefore only the native threshold applies; 160000 is below 168000.";
 preemptive.expect = { trigger: { fires: false, tokens: 160000, limit: 168000 } };
 cases.push(preemptive);
 if (cases.length !== 26 || new Set(cases.map(c => `${c.preset}/${c.case}`)).size !== 26) throw new Error("Case count or identity changed");

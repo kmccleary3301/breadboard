@@ -705,6 +705,10 @@ class AgentRuntime:
                 plan_metadata=plan_metadata,
                 turn_index=turn_index_int,
             )
+        if executed_results:
+            # Record the admitted call protocol, not merely tool availability.
+            session_state.set_provider_metadata("last_tool_execution_input_kind", exchange.input_kind)
+            session_state.set_provider_metadata("last_tool_execution_turn_index", turn_index_int)
 
         try:
             self.conductor.provider_metrics.add_concurrency_sample(

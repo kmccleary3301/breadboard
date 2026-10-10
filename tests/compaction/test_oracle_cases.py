@@ -25,7 +25,7 @@ from breadboard_engine.compaction import (
     load_compaction_config,
 )
 from breadboard_engine.compaction.pipeline import CompactionOutcome, ComposedStep, StageResult
-from breadboard_engine.compaction.presets import build_recipe
+from breadboard_engine.compaction.presets import build_recipe, load_preset_document
 from breadboard_engine.compaction.primitives.accounting import OccupancyInput, normalize_usage
 from breadboard_engine.compaction.primitives.triggers import TriggerInput
 from breadboard_engine.compaction.state import NATIVE_MARKER_KEY
@@ -88,6 +88,13 @@ class ScriptedNative(OpenAIResponsesCompactionPort):
 def _recipe(case: Mapping[str, Any]):
     inp = case["input"]
     config = load_compaction_config({"enabled": True, "preset": case["preset"], **(inp.get("native_settings") or {})})
+    if "primitive_stage" in inp:
+        # Captured plugin hooks are direct component contracts, not stages in
+        # the production native-compaction lifecycle.
+        document = load_preset_document(case["preset"])
+        document["pipeline"] = {"mode": "sequence", "stages": [inp["primitive_stage"]]}
+        document["request_view"] = []
+        return build_recipe(config, document)
     return build_recipe(config)
 
 
@@ -96,7 +103,11 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
     recipe = _recipe(case)
     target = ProjectionTarget("openai", "responses", TARGET.model) if "native_responses" in inp else TARGET
     stage_ids = inp.get("stage_ids") or []
-    request_pass = bool(stage_ids) and all(stage_id in recipe.request_view for stage_id in stage_ids)
+    request_pass = bool(stage_ids) and all(
+        stage_id in recipe.request_view
+        or recipe.pipeline.stages[stage_id].phase == "user_turn_end"
+        for stage_id in stage_ids
+    )
     return CompactionContext(
         messages=messages,
         state=state,
