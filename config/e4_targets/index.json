@@ -44,6 +44,30 @@
     "pi-r3@0.57.1": {
       "descriptor": "pi/0.57.1-r3/target.json",
       "sha256": "95a2ca6d6451a94fefd3d52732ad7342281410994d0c8bf4f4ceda741bd56d57"
+    },
+    "pi-r3@0.73.1": {
+      "descriptor": "pi/0.73.1-r3/target.json",
+      "sha256": "7d79dab4ed66fa0264fe38f8beb228dc030e4173df8998c6fcfcb86e7430aba8"
+    },
+    "pi-r4@0.57.1": {
+      "descriptor": "pi/0.57.1-r4/target.json",
+      "sha256": "7cafc31c1217a2e9c48f041d68f660145d0b03309344a594358e8dbf40a73679"
+    },
+    "oh-my-pi-r3@16.2.13": {
+      "descriptor": "oh_my_pi/16.2.13-r3/target.json",
+      "sha256": "2b36cc3b48eac4a54e34d6cb984be5f234d1c29df8e8d6cf151eef70bdfa5274"
+    },
+    "oh-my-pi-r2@18.1.17": {
+      "descriptor": "oh_my_pi/18.1.17-r2/target.json",
+      "sha256": "bda017e547cc434e9560b7a923bb1d23d48147722349e8ae1dd349f4558cb78e"
+    },
+    "openclaw-r2@2026.9.4": {
+      "descriptor": "openclaw/2026.9.4-r2/target.json",
+      "sha256": "3ab11b2b0aadc6a160e93bde9d80a8051b39be8ae52035362d7cef62ad90b430"
+    },
+    "hermes-agent-r2@2026.9.11": {
+      "descriptor": "hermes_agent/2026.9.11-r2/target.json",
+      "sha256": "33c6f2c61b6407cb6832193e68f455cdb2cf33f6ab10fd8a2e9c2c00e3dbe6c0"
     }
   }
 }

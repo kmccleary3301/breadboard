@@ -1,0 +1,86 @@
+{
+  "assets": [
+    {
+      "bytes": 5570,
+      "path": "harness.yaml",
+      "sha256": "sha256:3dee194d9af37670bf3d539a3c949ab9ab9c48160778ddfb217059a7805221b9"
+    },
+    {
+      "bytes": 16971,
+      "path": "prompts/source-system-prompt.md",
+      "sha256": "sha256:6f4854f0e80a3a0931c9b34bda8a8d7e6f90d15ec4dfa7567c5f7019b02feca7"
+    },
+    {
+      "bytes": 8050,
+      "path": "native-config.json",
+      "sha256": "sha256:6d053c6057a54af6f0f0cac01e22a3a9e0f28a4086cbe5e7329995b88e57c489"
+    },
+    {
+      "bytes": 25799,
+      "path": "tool-surface.json",
+      "sha256": "sha256:8113c6b893ccbb0332ac13a4e55c711d7db95fff4d4b293ab32481b9b05bcdd8"
+    },
+    {
+      "bytes": 1144,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:16c45f9d667442781f03fa198914cc39abcaa48ec5ed8f644643e554ca2fbf63"
+    },
+    {
+      "bytes": 602,
+      "path": "source.json",
+      "sha256": "sha256:a1948e5e223e806025bf5d302dfda8abed98268c66e6a90cdacb7e32479df036"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/source-system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "oh_my_pi",
+  "overlay": {
+    "argv": [
+      "--tools",
+      "read,bash,edit,write",
+      "--thinking",
+      "off",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates",
+      "--no-session"
+    ],
+    "overlay_id": "breadboard.oh-my-pi.r2-headless.v18.1.17",
+    "settings": [
+      {
+        "name": "agent.request_cap",
+        "value": 8
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.max_tokens",
+        "value": 2048
+      },
+      {
+        "name": "model.timeout_seconds",
+        "value": 120
+      },
+      {
+        "name": "model.retry_enabled",
+        "value": false
+      },
+      {
+        "name": "model.images_enabled",
+        "value": false
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "oh-my-pi-r2@18.1.17",
+  "version": "18.1.17"
+}

@@ -1,17 +1,27 @@
 #!/usr/bin/env node
 /**
- * OpenClaw 2026.9.4 source-tool phase worker.
+ * OpenClaw 2026.9.4 source-tool and native-compaction phase worker.
  *
- * The worker has no provider/model loop.  It loads only the pinned dist
- * modules, retains one prepared batch, and exposes the six admitted source
- * tools through bb.openclaw-native.v1 phases.
+ * Loads pinned stock modules, exposes the six admitted source tools and runs
+ * exported AgentSession.runCompactionWork (resource-loader-Bu_pVD2t.mjs:9952-10073).
+ * The conductor supplies policy answers at the provider seam. The worker owns
+ * compaction semantics, the full replacement history and the stock session ledger.
+ * Headless admission skips onboarding template creation/injection. The bound
+ * model window reaches stock read/ls budgets and skill-catalog compaction.
+ * Runtime facts use the agent-exec scope with the declared replay identity.
+ * Caller-owned recovery continuation is projected at its transcript boundary,
+ * using verified stock prompt bytes and the stock timestamp formatter only.
+ * Replay traces retain stock's transport-clamped summary output cap; the sealed
+ * policy episode cap remains authoritative for actual BB summary exchanges.
  */
 import { pathToFileURL } from "node:url";
 import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { accessSync, constants as fsConstants } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import crypto from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
 const pinnedAttemptPrompt = "openclaw:pinned-attempt-prompt";
 
@@ -43,6 +53,22 @@ const MODULE_DIGESTS = Object.freeze({
   "helpers-C__iuzW9.mjs": "97f912914ff788bde4fb842a1ba4db16576c244ac633023a6d7ab1013a216a13",
   "session-transcript-repair-BqMz_6TX.mjs": "e4cf82d1d5e235e2d16549285c5c97f9b756f3b17cca95e4f3646b3c80eebac1",
   "model.inline-provider-BOrD-NlO.mjs": "8feef4dde90987e08cf6abdfdd0d42333b9e0f4f36a763b62aecd163eae746c2",
+  "compaction-DhVoBTx3.mjs": "e5cb4b696b6b27cd134073b930c144c156d1abcd0fbd3b3bdc817478806dbec2",
+  "agent-compaction-constants-DmXQuPyL.mjs": "1427b21bacd700537340721c16625455394d34bc457a6c6552af7d95945b6266",
+  "agent-settings-DcI_VuTd.mjs": "d5af3a814d7cbf8945e0a57353a544cb24100214b7d54939577c4d7ef1c75295",
+  "cjk-chars-CGxY6W63.mjs": "f9ecd1677fde596e23b21f883bfe5a1f28df4b5be33df1e9b3e7c5f5a5f25720",
+  "record-coerce-DItp3I4t.mjs": "e5acf8ca52794e3fce5b7db301d2425290a09dac816d3965c774f94b8b934dfe",
+  "utf16-slice-D_ngcYKd.mjs": "bc9d5d05e504a8c51ede86fbda75f5079388e50e42ac6ecd3885146f0193e944",
+  "result-BQGgYouL.mjs": "a1ca6ae792ef0cc288f1a6321dd57f7d45cc97ecff0da30a106121d3f4b75bbe",
+  "anthropic-DfKaEfcc.mjs": "357d69d78eefb812873a6f9ab1747229c1b5faf19210529ba4bcd439e99f39a9",
+  "src-DDmEryvj.mjs": "172de5b6befa26f6d7f3c91066c08e943e79313ab66fd348af7e3eb64d0aa087",
+  "tool-result-pairing-cBi7_uMO.mjs": "6cf899288d2966bb8fe5f7a12988865e616ad8ed9bbdbafbcf1c81ab1bcb4044",
+  "error-coercion-C1ZWqtQc.mjs": "00c3f84065dc9d2f55ac7e5ac2c72b7a20b2ff9473340c6a583661673d8f54e9",
+  "resource-loader-Bu_pVD2t.mjs": "62b6668ee808bdcedb6a7fc149aee940005c7fafb55427a0a0a313f38a0cc2d8",
+  "session-manager-DZHCo5g0.mjs": "de9ca3ee9781b71bb4994e3752e955db2c4a944cc1ab108fb07c9816bfb5ceec",
+  "compaction-planning-CkwWLY-c.mjs": "db1ff9d55fda41f0ac6fa93116f75a00ea6ae335a98a3388de7fce975a6f3843",
+  "agent-core-B_87jlHI.mjs": "f311dcf52bffaafa4d68436f7337321217c9a08ca5322a3d82176cc12ee2aba7",
+  "embedded-agent-CE9KzQvy.mjs": "d764d6270d9227498b5197eef25a598c15541c0269e6e9294a95d079ec88e4fa",
 });
 const MAX_LIVE_PROCESSES = 4;
 const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
@@ -83,8 +109,29 @@ let closing = false;
 let advertisedTools = new Map();
 let capabilityDenials = new Map();
 let finalized = false;
+// Stock session counter initialization: resource-loader-Bu_pVD2t.mjs:8285.
+let sourceOverflowRecoveryAttempts = 0;
+let sourceLastAdmissionTimestamp = null;
 const pending = new Map();
-
+let sourceSession = null;
+let sourceCompaction = null;
+let applyAgentCompactionSettingsFromConfig;
+let coerceErrorMessage = null;
+let validateToolArguments = null;
+let parseOpenAICompletionsUsage;
+let createEmptyTransportUsage;
+let sourceResource = null;
+let sourceSessionManager = null;
+let sourceAgentCore = null;
+let sourceCompactionSnapshot = null;
+let sourceContinuationPrompt = null;
+let sourceCompactionContinuation = null;
+let SAFETY_MARGIN;
+let estimateRenderedPromptTokens;
+let estimateJsonPayloadTokenPressure;
+let estimateMessageTokenPressure;
+let IMAGE_BLOCK_TOKENS;
+let MAX_COMPACTION_SUMMARY_CHARS;
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const text = (value) => typeof value === "string" ? value : String(value ?? "");
 async function verifyAndLoad() {
@@ -95,6 +142,16 @@ async function verifyAndLoad() {
     const actual = sha256(payload);
     if (actual !== expected) throw new Error(`pinned OpenClaw dist digest mismatch for ${name}`);
     bytes[name] = pathToFileURL(path);
+    if (name === "embedded-agent-CE9KzQvy.mjs") {
+      // Private stock data, not a copied prompt: the module exports only the
+      // embedded runner and compactor. Digest verification seals this declaration.
+      // embedded-agent-CE9KzQvy.mjs:5898,6063-6068.
+      const declaration = "\nconst CONTINUATION_PROMPT = ";
+      const start = payload.indexOf(declaration);
+      const end = payload.indexOf(";\n", start);
+      if (start < 0 || end < 0) throw new Error("pinned continuation declaration is missing");
+      sourceContinuationPrompt = JSON.parse(payload.subarray(start + declaration.length, end).toString("utf8"));
+    }
   }
   verifiedRegistryUrl = bytes["bash-process-registry-DHrULGkz.mjs"];
   const core = await import(bytes["core-coding-tools-DoP9tAh3.mjs"]);
@@ -108,7 +165,8 @@ async function verifyAndLoad() {
   sourceRuntimePrompt = (await import(bytes["sandbox-info-BDS1M4pk.mjs"])).i;
   sourceRuntimeFactsContext = (await import(bytes["system-prompt-report-DZJbcDI4.mjs"])).r;
   buildSourceRuntimeContextMessage = (await import(bytes["runtime-context-prompt-DWIcn5Yx.mjs"])).r;
-  convertSourceTranscriptToLlm = (await import(bytes["session-DVbOtm8K.mjs"])).u;
+  sourceSession = await import(bytes["session-DVbOtm8K.mjs"]);
+  convertSourceTranscriptToLlm = sourceSession.u;
   renderSourceFailureCopy = (await import(bytes["assistant-request-failure-copy-CeEzc8UX.mjs"])).t;
   ({ buildAttemptSystemPrompt: sourceAttemptPrompt, normalizeMessagesForLlmBoundary: normalizeSourceMessages, projectRuntimeContextFragments: projectSourceRuntimeFragments } = await import(pinnedAttemptPrompt));
   sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
@@ -117,12 +175,222 @@ async function verifyAndLoad() {
   collectAllowedToolNames = (await import(bytes["builtin-openclaw-B-H-7lKk.mjs"])).s;
   sanitizeToolUseResultPairing = (await import(bytes["session-transcript-repair-BqMz_6TX.mjs"])).i;
   sanitizeToolCallIdsForCloudCodeAssist = (await import(bytes["tool-call-id-CnwowhSs.mjs"])).o;
+  sourceCompaction = await import(bytes["compaction-DhVoBTx3.mjs"]);
+  applyAgentCompactionSettingsFromConfig = (await import(bytes["agent-settings-DcI_VuTd.mjs"])).r;
+  coerceErrorMessage = (await import(bytes["error-coercion-C1ZWqtQc.mjs"])).t;
+  sourceResource = await import(bytes["resource-loader-Bu_pVD2t.mjs"]);
+  sourceSessionManager = (await import(bytes["session-manager-DZHCo5g0.mjs"])).t;
+  sourceAgentCore = await import(bytes["agent-core-B_87jlHI.mjs"]);
+  SAFETY_MARGIN = (await import(bytes["compaction-planning-CkwWLY-c.mjs"])).r;
+  estimateRenderedPromptTokens = sourceResource.At;
+  estimateJsonPayloadTokenPressure = sourceResource.Ot;
+  estimateMessageTokenPressure = sourceResource.kt;
+  IMAGE_BLOCK_TOKENS = sourceCompaction.n;
+  MAX_COMPACTION_SUMMARY_CHARS = sourceCompaction.r;
+  const sourceRequire = createRequire(bytes["core-coding-tools-DoP9tAh3.mjs"]);
+  ({ validateToolArguments } = await import(pathToFileURL(sourceRequire.resolve("@openclaw/ai/validation"))));
+  ({ parseOpenAICompletionsUsage, createEmptyTransportUsage } = await import(pathToFileURL(sourceRequire.resolve("@openclaw/ai/transports"))));
   return {
     createCoreCodingTools: core.t,
     resolveBootstrapContextForRun: sourceBootstrapFiles.a,
     buildOpenAICompletionsParams: sourceTransport.t,
     buildInlineProviderModels: (await import(bytes["model.inline-provider-BOrD-NlO.mjs"])).t,
+    completeInlineProviderModel: (await import(bytes["model.inline-provider-BOrD-NlO.mjs"])).n,
   };
+}
+
+// Private stock glue, verbatim: agent-core-B_87jlHI.mjs:973-981.
+function prepareToolCallArguments(tool, toolCall) {
+  if (!tool.prepareArguments) return toolCall;
+  const preparedArguments = tool.prepareArguments(toolCall.arguments);
+  if (preparedArguments === toolCall.arguments) return toolCall;
+  return {
+    ...toolCall,
+    arguments: preparedArguments
+  };
+}
+
+// Private stock glue, verbatim: agent-core-B_87jlHI.mjs:1365-1373.
+function createErrorToolResult(message, details = {}) {
+  return {
+    content: [{
+      type: "text",
+      text: message
+    }],
+    details
+  };
+}
+
+export async function prepareSourceToolCall(tool, toolCall) {
+  if (!validateToolArguments) await verifyAndLoad();
+  // Private admission tail, verbatim: agent-core-B_87jlHI.mjs:1067-1093.
+  let preparedToolCall;
+  try {
+    preparedToolCall = prepareToolCallArguments(tool, toolCall);
+  } catch (error) {
+    return {
+      kind: "immediate",
+      result: createErrorToolResult(coerceErrorMessage(error)),
+      isError: true
+    };
+  }
+  let validatedArgs;
+  try {
+    validatedArgs = validateToolArguments(tool, preparedToolCall);
+  } catch (error) {
+    return {
+      kind: "immediate",
+      result: createErrorToolResult(coerceErrorMessage(error)),
+      isError: true,
+      errorKind: "argument-validation"
+    };
+  }
+  return {
+    kind: "prepared",
+    toolCall,
+    tool,
+    args: validatedArgs
+  };
+}
+
+// Private stock budget glue, verbatim: resource-loader-Bu_pVD2t.mjs:192-199,8875-8900.
+function estimateFreshLlmBoundaryTokenPressure(params) {
+  const toolTokens = params.tools?.length ? estimateJsonPayloadTokenPressure(params.tools.map(({ name, description, parameters }) => ({
+    name,
+    description,
+    parameters
+  }))) : 0;
+  return Math.ceil((estimateRenderedPromptTokens(params) + toolTokens + (params.imageCount ?? 0) * IMAGE_BLOCK_TOKENS + params.messages.reduce((total, message) => total + estimateMessageTokenPressure(message), 0)) * SAFETY_MARGIN);
+}
+function estimateCompactionHistoryTokens(messages, budget) {
+  const pending = budget?.pendingTokens && budget.pendingUserIdempotencyKey ? messages.findLast((message) => message.role === "user" && "idempotencyKey" in message && message.idempotencyKey === budget.pendingUserIdempotencyKey) : void 0;
+  const overlap = pending ? Math.min(estimateCompactionHistoryTokens([pending]), budget?.pendingUserTokens ?? budget?.pendingTokens ?? 0) : 0;
+  return estimateFreshLlmBoundaryTokenPressure({
+    messages,
+    prompt: ""
+  }) - estimateFreshLlmBoundaryTokenPressure({
+    messages: [],
+    prompt: ""
+  }) - overlap;
+}
+function resolveCompactionRetentionBudget(budget, messages) {
+  const preferredTokens = budget.contextWindow - budget.reserveTokens - budget.fixedTokens - budget.pendingTokens;
+  return {
+    maxTokens: preferredTokens <= 0 ? estimateCompactionHistoryTokens(messages, budget) - 1 : preferredTokens,
+    reserveTokens: estimateCompactionHistoryTokens([{
+      role: "compactionSummary",
+      summary: "x".repeat(MAX_COMPACTION_SUMMARY_CHARS),
+      tokensBefore: 0,
+      timestamp: 0
+    }])
+  };
+}
+
+function episodeSourceTools() {
+  return builtTools.map((tool) => {
+    const overlay = advertisedTools.get(tool.name);
+    return overlay ? { ...tool, description: overlay.description } : tool;
+  });
+}
+
+function createReplaySessionManager(entries, timestamp) {
+  // Selected model path: session-manager-DZHCo5g0.mjs:1477-1483;
+  // stock header:380-390. Clone because this factory consumes owned entries.
+  const manager = sourceSessionManager.fromSelectedEntries(structuredClone([
+    { type: "session", version: 4, id: "compaction-replay", timestamp, cwd: workspace },
+    ...entries,
+  ]), workspace);
+  const appendEntry = manager.appendEntry;
+  let nextId = entries.length;
+  // Only the id/clock seam. Real appendMessage/appendCompaction execute:
+  // session-manager-DZHCo5g0.mjs:995-998,1034-1036.
+  manager.appendEntry = function(entry, options) {
+    entry.id = `replay_${nextId++}`;
+    entry.timestamp = timestamp;
+    return appendEntry.call(this, entry, options);
+  };
+  return manager;
+}
+
+function createCompactionReplay(preparation, streamFn) {
+  const manager = createReplaySessionManager(preparation.entries, preparation.timestamp);
+  const agent = new sourceAgentCore.t({
+    initialState: {
+      model: modelConfig, systemPrompt: preparation.systemPrompt,
+      // Agent state may omit a length/error still saved in the ledger:
+      // resource-loader-Bu_pVD2t.mjs:10107-10109,10183-10186.
+      messages: preparation.hasCommittedCheckpoint ? preparation.messages : manager.buildSessionContext().messages,
+      tools: episodeSourceTools(),
+    },
+    streamFn,
+  });
+  // Invoke the exported session methods without starting the interactive host.
+  const session = Object.create(sourceResource.n.prototype);
+  session.agent = agent;
+  session.sessionManager = manager;
+  session.settingsManager = sourceResource.rt.inMemory({ compaction: preparation.settings });
+  session.overflowRecoveryAttempts = preparation.overflowRecoveryAttempts;
+  // Stock headless ownership: resource-loader-Bu_pVD2t.mjs:8330.
+  session.contextOverflowRecoveryOwner = "session";
+  session.currentExtensionRunner = new sourceResource.b([], undefined, workspace, manager, undefined);
+  // The replay transport supplies the response; it needs no provider credentials.
+  // Stock custom-stream auth permits this (resource-loader-Bu_pVD2t.mjs:8350-8356).
+  session.getCompactionRequestAuth = async () => ({});
+  return session;
+}
+
+function replaySummaryResponse(summary) {
+  const response = { stopReason: "stop", content: [{ type: "text", text: summary }] };
+  return {
+    async *[Symbol.asyncIterator]() {},
+    result: async () => response,
+  };
+}
+
+async function runAdmittedOverflowCompaction(session, requestBudget) {
+  // The conductor already classified a refused provider request as overflow.
+  // Its private recovery branch is verbatim, with this -> session only:
+  // resource-loader-Bu_pVD2t.mjs:10094-10109. Keep the same counter for length
+  // and HTTP overflows; do not manufacture an assistant error to call the gate.
+  if (session.contextOverflowRecoveryOwner === "caller") return false;
+  if (session.overflowRecoveryAttempts >= 3) {
+    session.emit({
+      type: "compaction_end",
+      reason: "overflow",
+      outcome: {
+        status: "failed",
+        reason: `Context overflow recovery failed after 3 compact-and-retry attempts. Try reducing context or switching to a larger-context model.`
+      }
+    });
+    return false;
+  }
+  session.overflowRecoveryAttempts += 1;
+  const messages = session.agent.state.messages;
+  if (messages.at(-1)?.role === "assistant") session.agent.state.messages = messages.slice(0, -1);
+  return await session.runAutoCompaction("overflow", true, requestBudget);
+}
+
+function runCompactionReplay(preparation, streamFn) {
+  const session = createCompactionReplay(preparation, streamFn);
+  let workOutcome;
+  let automaticOutcome;
+  session.emit = (event) => {
+    if (event.type === "compaction_start") preparation.sourceReason = event.reason;
+    if (event.type === "compaction_end") automaticOutcome = event.outcome;
+  };
+  const stockWork = session.runCompactionWork.bind(session);
+  // Deterministic item id only: stock allocates it at resource-loader:10131.
+  session.runCompactionWork = (options) => stockWork({ ...options, itemId: "compaction_replay" })
+    .then((outcome) => { workOutcome = outcome; return outcome; });
+  // The exported automatic caller owns failure framing (10190-10212), not RPC.
+  const run = preparation.reason === "threshold"
+    ? session.checkCompaction(preparation.triggerMessage, true, preparation.requestBudget)
+    : runAdmittedOverflowCompaction(session, preparation.requestBudget);
+  return run.then((retry) => ({
+    outcome: automaticOutcome?.status === "completed" ? workOutcome
+      : automaticOutcome || { status: "skipped", reason: "not_triggered" },
+    session, retry, reason: preparation.sourceReason,
+  }));
 }
 function exactKeys(value, expected, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -138,7 +406,7 @@ function exactKeys(value, expected, label) {
 // declared members (no compat) reach the pinned resolver, so the pinned
 // getCompat derives request compat from provider and baseUrl.
 const SOURCE_MODEL_MEMBERS = Object.freeze(["id", "name", "contextWindow", "maxTokens", "input"]);
-function resolveSourceModel(declared, buildInlineProviderModels) {
+function resolveSourceModel(declared, buildInlineProviderModels, completeInlineProviderModel) {
   if (!declared) return null;
   const provider = declared.provider;
   if (typeof provider !== "string" || !provider) throw new Error("model_config provider and id are required for pinned prompt");
@@ -149,7 +417,9 @@ function resolveSourceModel(declared, buildInlineProviderModels) {
   if (declared.api !== undefined) entry.api = declared.api;
   const resolved = buildInlineProviderModels({ [provider]: entry });
   if (resolved.length !== 1) throw new Error("model_config does not resolve to one source model");
-  return resolved[0];
+  // Stock completion, including pricing: prepared-model-runtime.configured-Cp6n-J8O.mjs:92-93;
+  // model.inline-provider-BOrD-NlO.mjs:107-125. Do not invent zero-cost defaults.
+  return completeInlineProviderModel(resolved[0], entry);
 }
 
 function validateAdvertisement(value) {
@@ -201,6 +471,8 @@ function makeTools(createCoreCodingTools) {
     includeBaseCodingTools: true,
     includeShellTools: true,
     readOnly: false,
+    // core-coding-tools-DoP9tAh3.mjs:1007,1024-1025 derive native read/ls caps.
+    modelContextWindowTokens: modelConfig.contextWindow,
     // Pinned supplier default: embedded-agent.runtime-DnOK0ORi.mjs:649
     // `permissionToolPolicy?.workspaceOnly ?? false` and agent-tools-DXxcrXNI.mjs:388
     // `fsConfig.workspaceOnly === true`; the capture config sets neither, so the
@@ -227,17 +499,27 @@ function toSourceHistory(messages) {
   if (!Array.isArray(messages)) throw new Error("project_request messages must be an array");
   return messages.map((message) => {
     if (!message || typeof message !== "object") throw new Error("project_request message must be an object");
-    if (message.role !== "tool") return message;
-    const raw = Array.isArray(message.content)
-      ? message.content.map((part) => typeof part?.text === "string" ? part.text : text(part))
-      : [text(message.content)];
-    return {
-      role: "toolResult",
-      toolCallId: text(message.tool_call_id),
-      content: raw.map((value) => ({ type: "text", text: value })),
-      isError: Boolean(message.isError),
-    };
+    // Provider-owned raw usage is projected by the real stock parser, without
+    // guessing aliases (openai-transport-params-9aPuV5YY.mjs:133-157).
+    if (message.role !== "assistant" || Object.hasOwn(message, "usage")) return message;
+    // Preserve stock-sanitized retained usage (resource-loader:235-258).
+    // Missing provider usage stays stock-empty (assistant-output-tLt4H-iQ.mjs:3-12).
+    return { ...message, usage: message.providerUsage
+      ? parseOpenAICompletionsUsage(message.providerUsage, modelConfig)
+      : createEmptyTransportUsage() };
   });
+}
+
+function admitSourceRecoveryEvents(messages) {
+  for (const msg of messages) {
+    if ((msg.role !== "assistant" && msg.role !== "user") || typeof msg.timestamp !== "number") continue;
+    if (sourceLastAdmissionTimestamp !== null && msg.timestamp <= sourceLastAdmissionTimestamp) continue;
+    // Agent-exec's caller-owned counter survives assistant/tool progress:
+    // embedded-agent-CE9KzQvy.mjs:3093-3095. Only a new canonical user turn
+    // begins another run; the transient continuation is never admitted here.
+    if (msg.role === "user") sourceOverflowRecoveryAttempts = 0;
+    sourceLastAdmissionTimestamp = msg.timestamp;
+  }
 }
 
 function projectSourceRequest(messages, buildOpenAICompletionsParams) {
@@ -249,22 +531,25 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
   const history = toSourceHistory(system && system.role === "system" ? messages.slice(1) : messages);
   const initialUser = history.find((message) => message.role === "user");
   if (initialUser && !Number.isFinite(initialUser.timestamp)) initialUser.timestamp = sourceInitialTimestamp;
+  admitSourceRecoveryEvents(history);
+  if (sourceCompactionContinuation) {
+    // Caller recovery's internal prompt is projected, never persisted:
+    // embedded-agent-CE9KzQvy.mjs:5961-5967,6063-6068.
+    history.splice(sourceCompactionContinuation.index, 0, sourceCompactionContinuation.message);
+  }
   const normalized = normalizeSourceMessages(history, { timezone: sourceTimezone, includeTimestamp: true });
   const fragments = sourceRuntimeFactsContext({
     cfg: sourceConfig, sessionKey: sourceSessionKey, agentId: "main",
     capabilityToolNames: new Set(TOOL_ORDER),
   });
   const sourceHistory = [
-    ...normalized,
+    ...convertSourceTranscriptToLlm(normalized),
     ...convertSourceTranscriptToLlm([
       buildSourceRuntimeContextMessage(projectSourceRuntimeFragments(fragments), fragments),
     ]),
   ];
   const baseTools = builtTools && builtTools.length ? builtTools : Array.from(tools.values());
-  const sourceTools = baseTools.map((tool) => {
-    const overlay = advertisedTools.get(tool.name);
-    return overlay ? { ...tool, description: overlay.description } : tool;
-  });
+  const sourceTools = episodeSourceTools();
   // Supplier transcript policy resolution:
   // builtin-openclaw-B-H-7lKk.mjs:18430 transcriptPolicy = resolveAttemptTranscriptPolicy({...})
   // (history-image-prune-BCKEHO6_.mjs:268) -> resolveTranscriptPolicy (helpers-C__iuzW9.mjs:183)
@@ -339,7 +624,9 @@ async function bootstrapContext(resolveBootstrapContextForRun, config, sessionId
   const resolved = await resolveBootstrapContextForRun({
     workspaceDir: workspace, config, agentId: "main", sessionId, sessionKey,
   });
-  return resolved.contextFiles;
+  // Non-primary headless runs do not inject onboarding instructions:
+  // builtin-openclaw-B-H-7lKk.mjs:1850-1861,1893.
+  return resolved.contextFiles.filter((file) => !/(^|[\\/])BOOTSTRAP\.md$/iu.test(file.path.trim()));
 }
 async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, packageDir, config, sessionKey) {
   const modelId = modelConfig?.id;
@@ -368,7 +655,10 @@ async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, pac
   const entries = sourceSkills(workspace, {
     agentId: "main", config, bundledSkillsDir: join(packageRoot, "skills"),
   });
-  const skillsPrompt = sourceSkillsPrompt({ workspaceDir: workspace, agentId: "main", config, entries });
+  const skillsPrompt = sourceSkillsPrompt({
+    workspaceDir: workspace, agentId: "main", config, entries,
+    contextTokenBudget: modelConfig.contextWindow,
+  });
   const embeddedSystemPrompt = {
     config, agentId: "main", workspaceDir: workspace, runtimeCwd: workspace,
     reasoningLevel: "off", skillsPrompt,
@@ -519,6 +809,7 @@ function spawnMarker(marker) {
 }
 
 async function markerObservation() {
+  // Observer-only nonce: appears in cleanup evidence, never history or a model request.
   const marker = `bb-openclaw-marker-${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
   const child = await spawnMarker(marker);
   await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
@@ -609,7 +900,7 @@ async function executePrepared() {
   const calls = prepared;
   const context = preparedContext;
   const sequential = calls.some((call) => tools.get(call.name)?.executionMode === "sequential");
-  const listed = calls.some((call) => call.name === "exec" && !call.error)
+  const listed = calls.some((call) => call.name === "exec" && !call.error && call.kind !== "immediate")
     ? await tools.get("process").execute("worker-live-limit", { action: "list" })
     : null;
   const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
@@ -617,6 +908,9 @@ async function executePrepared() {
   let reserved = 0;
   let completionIndex = 0;
   const run = async (call) => {
+    if (call.kind === "immediate") {
+      return { id: call.id, completion_index: completionIndex++, ...call.result, isError: call.isError };
+    }
     if (call.error) {
       return {
         id: call.id,
@@ -742,7 +1036,10 @@ async function handle(message) {
     }
     await materializeBootstrapAssets(assets);
     const source = await verifyAndLoad();
-    modelConfig = resolveSourceModel(declaredModel, source.buildInlineProviderModels);
+    sourceCompactionSnapshot = null;
+    sourceOverflowRecoveryAttempts = 0;
+    sourceLastAdmissionTimestamp = null;
+    modelConfig = resolveSourceModel(declaredModel, source.buildInlineProviderModels, source.completeInlineProviderModel);
     const ordered = makeTools(source.createCoreCodingTools);
     const modelId = modelConfig?.id;
     const provider = modelConfig?.provider;
@@ -751,12 +1048,14 @@ async function handle(message) {
     }
     const sessionId = runtimeInputs.session_id;
     if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
-    const sessionKey = `agent:main:explicit:${sessionId}`;
+    // agent-exec-BAuhpelg.mjs:388 uses this headless scope for runtime facts.
+    const sessionKey = `agent:main:agent-exec:${sessionId}`;
     const config = {
       agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace } },
       tools: { allow: TOOL_ORDER },
     };
-    await sourceWorkspace.d({ dir: workspace, ensureBootstrapFiles: true });
+    // agent exec skips template creation (agent-exec-BAuhpelg.mjs:106).
+    await sourceWorkspace.d({ dir: workspace, ensureBootstrapFiles: false });
     const bootstrapFiles = await bootstrapContext(source.resolveBootstrapContextForRun, config, sessionId, sessionKey);
     const { prompt: systemPrompt, runtimeFacts } = await materializeSourcePrompt(ordered, bootstrapFiles, runtimeInputs, packageDir, config, sessionKey);
     return {
@@ -764,7 +1063,7 @@ async function handle(message) {
       kind: "initialized",
       system_prompt: systemPrompt,
       tool_schemas: ordered.map(schemaFor),
-      bootstrap: { files: bootstrapFiles, runtime_facts: runtimeFacts, ...runtimeInputs },
+      bootstrap: { files: bootstrapFiles, runtime_facts: runtimeFacts, ...runtimeInputs, model_config: modelConfig },
       tools: TOOL_ORDER,
     };
   }
@@ -795,6 +1094,227 @@ async function handle(message) {
       runtime_error: runtimeError,
     };
   }
+  if (phase === "prepare_compaction") {
+    if (!modelConfig || typeof modelConfig !== "object") {
+      throw new Error("worker is not initialized with model_config");
+    }
+    if (!sourceCompaction) await verifyAndLoad();
+    const reason = message.reason;
+    const systemMessage = message.messages[0]?.role === "system" ? message.messages[0] : null;
+    const admittedMessages = systemMessage ? message.messages.slice(1) : message.messages;
+    const rawMessages = toSourceHistory(admittedMessages);
+    const latestAssistantIndex = admittedMessages.findLastIndex((msg) => msg.role === "assistant");
+    if (message.usage && latestAssistantIndex >= 0
+      && !Object.hasOwn(admittedMessages[latestAssistantIndex], "usage")
+      && !admittedMessages[latestAssistantIndex].providerUsage) {
+      rawMessages[latestAssistantIndex] = { ...rawMessages[latestAssistantIndex], usage: message.usage };
+    }
+    admitSourceRecoveryEvents(rawMessages);
+    const settings = message.settings;
+    const contextWindow = modelConfig.contextWindow;
+    const settingsManager = sourceResource.rt.inMemory({ compaction: settings });
+    // Stock defaults and overrides, not worker-invented fallbacks:
+    // resource-loader-Bu_pVD2t.mjs:2482-2499; agent-settings-DcI_VuTd.mjs:12-37.
+    applyAgentCompactionSettingsFromConfig({
+      settingsManager, cfg: sourceConfig, contextTokenBudget: contextWindow,
+    });
+    const effectiveSettings = settingsManager.getCompactionSettings();
+
+
+    // Persisted replay clocks/ids replace stock's clock and random entry ids only:
+    // session-manager-DZHCo5g0.mjs:995-998,1034-1036.
+    const latestTimestamp = rawMessages.reduce(
+      (latest, msg) => typeof msg.timestamp === "number" ? Math.max(latest, msg.timestamp) : latest, sourceInitialTimestamp,
+    );
+    const timestamp = new Date(latestTimestamp + 1).toISOString();
+    const entries = rawMessages.map((msg, index) => {
+      // Replace persisted random ids with replay indexes; stock appends ids at
+      // session-manager-DZHCo5g0.mjs:1034,995.
+      if (msg && typeof msg === "object" && msg.role === "compactionSummary" && typeof msg.summary === "string") {
+        return {
+          id: `entry_${index}`,
+          parentId: index === 0 ? null : `entry_${index - 1}`,
+          type: "compaction",
+          summary: msg.summary,
+          firstKeptEntryId: `entry_${index + 1}`,
+          tokensBefore: msg.tokensBefore,
+          timestamp: typeof msg.timestamp === "number" ? new Date(msg.timestamp).toISOString() : msg.timestamp,
+        };
+      }
+      return {
+        id: `entry_${index}`,
+        parentId: index === 0 ? null : `entry_${index - 1}`,
+        timestamp,
+        type: "message",
+        message: msg,
+      };
+    });
+    // Keep the actual committed ledger: stock uses previous compaction details
+    // (compaction-DhVoBTx3.mjs:252-258,674-676,751-753), absent from AgentMessages.
+    if (sourceCompactionSnapshot) {
+      if (rawMessages.length < sourceCompactionSnapshot.messages.length
+        || !isDeepStrictEqual(rawMessages.slice(0, sourceCompactionSnapshot.messages.length), sourceCompactionSnapshot.messages)) {
+        throw new Error("compaction history differs from the committed source checkpoint");
+      }
+      const manager = createReplaySessionManager(sourceCompactionSnapshot.entries, timestamp);
+      for (const msg of rawMessages.slice(sourceCompactionSnapshot.messages.length)) manager.appendMessage(msg);
+      entries.splice(0, entries.length, ...manager.getBranch());
+    }
+
+    const systemPrompt = systemMessage ? systemMessage.content : "";
+    const requestBudget = sourceResource.f({
+      contextWindow, reserveTokens: effectiveSettings.reserveTokens,
+      systemPrompt, tools: episodeSourceTools(),
+    });
+    const preparation = {
+      settings: effectiveSettings, reason, entries, systemPrompt, systemMessage,
+      messages: rawMessages,
+      hasCommittedCheckpoint: sourceCompactionSnapshot !== null,
+      requestBudget, timestamp, triggerMessage: rawMessages[latestAssistantIndex],
+      overflowRecoveryAttempts: sourceOverflowRecoveryAttempts,
+    };
+    const capturedRequests = [];
+    const firstCaptured = Promise.withResolvers();
+    const releaseHistory = Promise.withResolvers();
+    const prefixCaptured = Promise.withResolvers();
+    const replay = runCompactionReplay(preparation, (m, context, options) => {
+      const wire = sourceTransport.t(m, context, options);
+      capturedRequests.push({ messages: wire.messages, max_tokens: wire.max_completion_tokens ?? wire.max_tokens });
+      if (capturedRequests.length === 1) {
+        firstCaptured.resolve();
+        return releaseHistory.promise;
+      }
+      prefixCaptured.resolve();
+      return new Promise(() => {});
+    });
+    // Stock checkCompaction gates first; runAutoCompaction owns all planner
+    // failures (resource-loader-Bu_pVD2t.mjs:10085-10122,10190-10212).
+    const admission = await Promise.race([replay, firstCaptured.promise]);
+    if (admission !== undefined) {
+      sourceOverflowRecoveryAttempts = admission.session.overflowRecoveryAttempts;
+      return { schema_version: PROTOCOL, kind: "compaction_unavailable", reason: admission.outcome.reason };
+    }
+    // The real stock planner has now succeeded and reached its provider await.
+    // Re-run its exported planner only to serialize protocol preparation metadata.
+    const retention = resolveCompactionRetentionBudget(requestBudget, sourceSession.t(entries).messages);
+    const prepResult = sourceCompaction.g(entries, effectiveSettings, preparation.sourceReason === "overflow" ? "unresolved" : undefined, {
+      budget: { ...retention, estimateTokens: (msg) => estimateCompactionHistoryTokens([msg], requestBudget) },
+    });
+    if (!prepResult.ok) throw prepResult.error;
+    const prep = prepResult.value;
+    preparation.firstKeptEntryId = prep.firstKeptEntryId;
+    preparation.isSplitTurn = prep.isSplitTurn;
+    preparation.tokensBefore = prep.tokensBefore;
+    // Budget sizing is stock's private work glue, with only the replay timestamp/id:
+    // resource-loader-Bu_pVD2t.mjs:9995-10005.
+    const projectReplacement = (result, summary) => sourceSession.t([...entries, {
+      ...result, type: "compaction", id: "compaction_replay",
+      parentId: entries.at(-1)?.id ?? null, timestamp, summary,
+    }]).messages;
+    const requestTokenLimit = requestBudget.fixedTokens + requestBudget.pendingTokens + retention.maxTokens;
+    const remaining = requestTokenLimit - sourceResource.p(projectReplacement(prep, ""), requestBudget);
+    prep.summaryTokenBudget = Math.floor(remaining / SAFETY_MARGIN) - 1;
+    preparation.summaryTokenBudget = prep.summaryTokenBudget;
+    const summarizeTurnPrefix = prep.isSplitTurn && prep.turnPrefixMessages.length > 0;
+    const hasHistory = prep.messagesToSummarize.length > 0 || !summarizeTurnPrefix;
+    if (hasHistory && summarizeTurnPrefix) {
+      // compact() awaits history before prefix (compaction-DhVoBTx3.mjs:753-760).
+      // This provider-only dummy exposes the prefix await; no fitting or commit
+      // executes in the prepare-only session, even for a tiny summary budget.
+      releaseHistory.resolve(replaySummaryResponse("DUMMY_SUMMARY"));
+      const next = await Promise.race([replay, prefixCaptured.promise]);
+      if (next !== undefined) {
+        return { schema_version: PROTOCOL, kind: "compaction_unavailable", reason: next.outcome.reason };
+      }
+    }
+    const firstKeptMessage = entries.find((entry) => entry.id === prep.firstKeptEntryId).message;
+    preparation.firstKeptIndex = sourceSession.t(entries).messages.indexOf(firstKeptMessage) + (systemMessage ? 1 : 0);
+    const summaryRequest = hasHistory ? capturedRequests[0] : null;
+    const turnPrefixRequest = summarizeTurnPrefix ? capturedRequests[hasHistory ? 1 : 0] : null;
+    preparation.summaryRequest = summaryRequest;
+    preparation.turnPrefixRequest = turnPrefixRequest;
+
+    preparation.prep = { ...prep, fileOps: {
+      read: [...prep.fileOps.read], written: [...prep.fileOps.written], edited: [...prep.fileOps.edited],
+    } };
+
+    return {
+      schema_version: PROTOCOL,
+      kind: "compaction_prepared",
+      preparation,
+      summary_request: summaryRequest,
+      turn_prefix_request: turnPrefixRequest,
+    };
+  }
+  if (phase === "finalize_compaction") {
+    if (!modelConfig || typeof modelConfig !== "object") {
+      throw new Error("worker is not initialized with model_config");
+    }
+    if (!sourceCompaction) await verifyAndLoad();
+    const prep = message.preparation;
+    if (!prep || typeof prep !== "object") throw new Error("finalize_compaction requires preparation");
+    const summarizeTurnPrefix = prep.prep.isSplitTurn && prep.prep.turnPrefixMessages.length > 0;
+    const hasHistory = prep.prep.messagesToSummarize.length > 0 || !summarizeTurnPrefix;
+
+    const answers = [];
+    if (hasHistory && typeof message.summary === "string") {
+      answers.push({ request: prep.summaryRequest, summary: message.summary });
+    }
+    if (summarizeTurnPrefix) {
+      const prefix = hasHistory ? message.turn_prefix_summary : message.turn_prefix_summary ?? message.summary;
+      if (typeof prefix === "string") answers.push({ request: prep.turnPrefixRequest, summary: prefix });
+    }
+    const followupAnswers = Array.isArray(message.followup_summaries) ? message.followup_summaries : [];
+
+    // Suspend at the stock provider await only; stock decides whether invalid
+    // output retries once (resource-loader-Bu_pVD2t.mjs:10035-10040).
+    const followup = Promise.withResolvers();
+    let followupIdx = 0;
+    const streamFn = (m, context, options) => {
+      const wireParams = sourceTransport.t(m, context, options);
+      const request = { messages: wireParams.messages, max_tokens: wireParams.max_completion_tokens ?? wireParams.max_tokens };
+      const initialIdx = answers.findIndex((answer) => isDeepStrictEqual(answer.request, request));
+      if (initialIdx >= 0) return replaySummaryResponse(answers.splice(initialIdx, 1)[0].summary);
+      if (followupIdx < followupAnswers.length) return replaySummaryResponse(followupAnswers[followupIdx++]);
+      followup.resolve({ schema_version: PROTOCOL, kind: "compaction_followup_request", request });
+      return new Promise(() => {});
+    };
+
+    const completed = await Promise.race([runCompactionReplay(prep, streamFn), followup.promise]);
+    if (completed.kind === "compaction_followup_request") return completed;
+    sourceOverflowRecoveryAttempts = completed.session.overflowRecoveryAttempts;
+    if (completed.outcome.status !== "completed") {
+      return { schema_version: PROTOCOL, kind: "compaction_unavailable", reason: completed.outcome.reason };
+    }
+    const finalSummary = completed.outcome.result.summary;
+    const compaction_message = completed.session.agent.state.messages.find((msg) => msg.role === "compactionSummary");
+    const messages = [
+      ...(prep.systemMessage ? [prep.systemMessage] : []),
+      ...completed.session.agent.state.messages,
+    ];
+    sourceCompactionSnapshot = {
+      entries: completed.session.sessionManager.getBranch(),
+      messages: structuredClone(completed.session.agent.state.messages),
+    };
+    sourceCompactionContinuation = completed.retry ? {
+      index: sourceCompactionSnapshot.messages.length,
+      message: {
+        role: "user", content: sourceContinuationPrompt,
+        timestamp: new Date(prep.timestamp).getTime(),
+      },
+    } : null;
+
+    return {
+      schema_version: PROTOCOL,
+      kind: "compaction_finalized",
+      reason: completed.reason,
+      retry: completed.retry,
+      compaction_message,
+      messages,
+      first_kept_index: prep.firstKeptIndex,
+      summary: finalSummary,
+    };
+  }
   if (!workspace || tools.size !== TOOL_ORDER.length) throw new Error("worker is not initialized");
   if (phase === "project_request") {
     const projected = projectSourceRequest(
@@ -806,7 +1326,7 @@ async function handle(message) {
   if (phase === "prepare_tools") {
     if (!Array.isArray(message.calls)) throw new Error("prepare_tools calls must be an array");
     preparedContext = { assistantMessage: {} };
-    prepared = message.calls.map((call, index) => {
+    prepared = await Promise.all(message.calls.map(async (call, index) => {
       const id = String(call?.id ?? `call_${index}`);
       if (!call || typeof call.name !== "string" || !call.name) return { id, name: "", arguments: {}, error: "tool call has no name" };
       const tool = tools.get(call.name);
@@ -833,18 +1353,10 @@ async function handle(message) {
           return { id, name: call.name, arguments: call.arguments, error: "exec timeoutSeconds must be 0 or at most 30" };
         }
       }
-      try {
-        // This is the pinned source's prepareArguments hook.  Python never
-        // rewrites the decoder-finalized arguments.
-        const argumentsValue = typeof tool.prepareArguments === "function"
-          ? (tool.prepareArguments(call.arguments) ?? {})
-          : call.arguments;
-        if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) throw new Error("prepared arguments must be an object");
-        return { id, name: call.name, arguments: argumentsValue };
-      } catch (error) {
-        return { id, name: call.name, arguments: call.arguments, error: text(error?.message || error) };
-      }
-    });
+      const admission = await prepareSourceToolCall(tool, call);
+      if (admission.kind === "immediate") return { id, name: call.name, arguments: call.arguments, ...admission };
+      return { id, name: call.name, arguments: admission.args };
+    }));
     return {
       schema_version: PROTOCOL,
       kind: "prepared",
@@ -918,8 +1430,6 @@ async function shutdown(code = 0) {
     process.exit(code);
   }
 }
-process.once("SIGTERM", () => void shutdown(0));
-process.once("SIGINT", () => void shutdown(130));
 
 let input = Buffer.alloc(0);
 let chain = Promise.resolve();
@@ -941,12 +1451,13 @@ async function dispatch(command) {
     const result = await handle(message);
     writeFrame({ schema_version: "bb.native-worker.rpc.v1", request_id: command.request_id, result });
   } catch (error) {
+    // Transport only: forward error type/message to the conductor, never success or defaults.
     const message = error instanceof Error ? error.message : text(error);
     writeFrame({
       schema_version: "bb.native-worker.rpc.v1",
       request_id: command.request_id,
       error: {
-        type: error instanceof OpenClawMarkerObservationError ? error.name : "OpenClawWorkerError",
+        type: error instanceof Error ? error.name : "OpenClawWorkerError",
         message,
       },
     });
@@ -968,6 +1479,7 @@ function drainInput() {
     try {
       command = JSON.parse(frame);
     } catch (error) {
+      // Transport only: forward error type/message to the conductor, never success or defaults.
       writeFrame({
         schema_version: "bb.native-worker.rpc.v1",
         request_id: null,
@@ -979,14 +1491,18 @@ function drainInput() {
   }
 }
 
-process.stdin.on("data", (chunk) => {
-  input = Buffer.concat([input, chunk]);
-  drainInput();
-});
-process.stdin.on("end", async () => {
-  await chain;
-  finishInput();
-});
-await inputDone;
-if (finalizationOnly) process.stdout.end();
-else await shutdown(0);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.once("SIGTERM", () => void shutdown(0));
+  process.once("SIGINT", () => void shutdown(130));
+  process.stdin.on("data", (chunk) => {
+    input = Buffer.concat([input, chunk]);
+    drainInput();
+  });
+  process.stdin.on("end", async () => {
+    await chain;
+    finishInput();
+  });
+  await inputDone;
+  if (finalizationOnly) process.stdout.end();
+  else await shutdown(0);
+}

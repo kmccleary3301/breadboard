@@ -4,17 +4,18 @@
   "case": "preemptive_trigger_not_wired_in_3_10_0",
   "source": {
     "repo": "https://github.com/code-yeongyu/oh-my-openagent",
-    "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
+    "commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
     "evidence": [
       "src/plugin/event.ts:137-159",
-      "src/hooks/preemptive-compaction.ts:94-103,148-165",
+      "src/plugin/hooks/create-session-hooks.ts:81-85",
+      "src/hooks/preemptive-compaction.ts:92-106,152-170",
       "packages/opencode/src/session/compaction.ts:30-48"
     ]
   },
   "capture": {
     "kind": "source_derived",
     "script": "scripts/compaction_oracles/capture_opencode.ts",
-    "notes": "The complete shipped dispatcher at plugin/event.ts:137-159 never calls preemptiveCompaction.event, which is the only population of its token cache. Therefore only the native threshold applies; 160000 is below 168000."
+    "notes": "The hook is created only when experimental.preemptive_compaction is set (create-session-hooks.ts:81-85), and even then the shipped dispatcher at plugin/event.ts:137-159 never calls preemptiveCompaction.event, which is the only population of its token cache. Therefore only the native threshold applies; 160000 is below 168000."
   },
   "input": {
     "messages": [

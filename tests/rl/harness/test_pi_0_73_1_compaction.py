@@ -7,13 +7,36 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import re
 import threading
 _LOCAL_NODE_MODULES = Path(__file__).resolve().parents[3] / "node_modules"
 if "PI_CODING_AGENT_NODE_MODULES" not in os.environ and (_LOCAL_NODE_MODULES / "@mariozechner" / "pi-coding-agent").is_dir():
     os.environ["PI_CODING_AGENT_NODE_MODULES"] = str(_LOCAL_NODE_MODULES)
-from typing import Any, Mapping
+
+
+def _find_dist_compaction_js() -> Path | None:
+    for env_var in ["PI_CODING_AGENT_NODE_MODULES", "PI057_CODING_AGENT_NODE_MODULES"]:
+        base = os.environ.get(env_var)
+        if base:
+            candidate = Path(base) / "@mariozechner" / "pi-coding-agent" / "dist" / "core" / "compaction" / "compaction.js"
+            if candidate.is_file():
+                return candidate
+    if _LOCAL_NODE_MODULES.is_dir():
+        candidate = _LOCAL_NODE_MODULES / "@mariozechner" / "pi-coding-agent" / "dist" / "core" / "compaction" / "compaction.js"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _extract_const(source: str, const_name: str) -> str:
+    m = re.search(rf"const {const_name} = `(.*?)`;", source, re.DOTALL)
+    assert m, f"Could not find const {const_name}"
+    return m.group(1)
 
 import pytest
+
+from breadboard.rl.harness.native_stream_profiles import PI_SUMMARIZATION_SYSTEM_PROMPT
+
 
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
@@ -68,6 +91,8 @@ def _overflow_server(
     overflow_error_code: str = "context_length_exceeded",
     summary_text: str = "## Goal\nComplete task\n\n## Constraints & Preferences\n- (none)\n\n## Progress\n### Done\n- First turn complete\n\n### In Progress\n- Final step\n\n## Key Decisions\n- (none)\n\n## Next\n- Finish",
     final_assistant_text: str = "Task completed successfully.",
+    final_usage: dict[str, Any] | None = None,
+    final_finish_reason: str = "stop",
 ):
     requests: list[dict[str, Any]] = []
 
@@ -120,6 +145,11 @@ def _overflow_server(
                     [],
                     assistant_text=final_assistant_text,
                 )
+                if final_finish_reason != "stop":
+                    payload = payload.replace(b'"stop"', json.dumps(final_finish_reason).encode())
+                if final_usage is not None:
+                    usage_chunk = json.dumps({"choices": [], "usage": final_usage}).encode()
+                    payload = payload.replace(b"data: [DONE]", b"data: " + usage_chunk + b"\n\ndata: [DONE]")
 
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -146,14 +176,16 @@ async def _run_test_episode(
     *,
     target_id: str,
     task_prompt: str = "Please summarize and finish",
+    context_window: int = 32_768,
+    max_output_tokens: int = 2_048,
 ):
     model_id = "model-a"
     profile = OpenAICompletionsProviderProfile(
         model=model_id,
         scoped_credential="episode-secret",
         base_url=server_base_url,
-        context_window=32_768,
-        max_output_tokens=2_048,
+        context_window=context_window,
+        max_output_tokens=max_output_tokens,
         caller_headers={},
         request_policy={
             "mode": "streaming",
@@ -168,6 +200,7 @@ async def _run_test_episode(
         profile_digest=profile_identity_digest(profile),
         model_id=model_id,
         target_id=target_id,
+        context_length=context_window,
     )
     observation = _observation(
         provider_id="openai",
@@ -248,14 +281,14 @@ async def test_overflow_compaction_disabled_terminates_policy_incomplete(tmp_pat
 
 @pytest.mark.asyncio
 async def test_overflow_compaction_enabled_compacts_and_continues(tmp_path: Path):
-    """When compaction is enabled (pi-r2@0.73.1), context_length_exceeded triggers compaction and retries."""
+    """When compaction is enabled (pi-r3@0.73.1), context_length_exceeded triggers compaction and retries."""
     # Create a large task prompt to ensure keepRecentTokens cut point has content to summarize
     large_prompt = "Hello from user. " + ("Here is important context info. " * 3000)
     with _overflow_server(overflow_on_request_indices={0}) as (base_url, requests):
         result, events = await _run_test_episode(
             tmp_path,
             base_url,
-            target_id="pi-r2@0.73.1",
+            target_id="pi-r3@0.73.1",
             task_prompt=large_prompt,
         )
         assert result.termination == RunnerTermination.ASSISTANT_COMPLETE
@@ -266,8 +299,26 @@ async def test_overflow_compaction_enabled_compacts_and_continues(tmp_path: Path
         
         # Check summary request structure
         summary_req = requests[1]
-        assert "context summarization assistant" in summary_req["messages"][0]["content"]
-        
+        assert summary_req["messages"][0]["role"] == "system"
+        assert summary_req["messages"][0]["content"] == PI_SUMMARIZATION_SYSTEM_PROMPT
+        assert summary_req["messages"][1]["role"] == "user"
+        user_content = summary_req["messages"][1]["content"]
+        assert isinstance(user_content, list), f"Expected stock block form [{{'type': 'text', 'text': ...}}], got {type(user_content)}"
+        assert len(user_content) == 1
+        assert user_content[0]["type"] == "text"
+        user_text = user_content[0]["text"]
+        assert user_text.startswith("<conversation>\n")
+        assert "\n</conversation>\n\n" in user_text
+        # Assert user text ends with the stock SUMMARIZATION_PROMPT
+        dist_compaction = _find_dist_compaction_js()
+        if dist_compaction:
+            stock_summary_prompt = _extract_const(dist_compaction.read_text("utf-8"), "SUMMARIZATION_PROMPT")
+            assert user_text.endswith(stock_summary_prompt)
+        # Deviation compaction_summary_episode_tools: the summary request
+        # carries the episode's tools, so the policy endpoint's tool schema
+        # check sees one schema for the whole episode.
+        assert summary_req["tools"] == requests[0]["tools"]
+        assert summary_req["tools"]
         # Check retried request has compactionSummary user message
         retried_req = requests[2]
         retried_messages = retried_req["messages"]
@@ -287,6 +338,57 @@ async def test_overflow_compaction_enabled_compacts_and_continues(tmp_path: Path
         assert trace_reqs[1].get("_compaction_summary") is True
 
 
+@pytest.mark.parametrize("prompt_tokens,summary_count", [(1000, 1), (120000, 2)])
+@pytest.mark.asyncio
+async def test_overflow_retry_agent_end_uses_fresh_stock_usage(
+    tmp_path: Path, prompt_tokens: int, summary_count: int,
+):
+    large_prompt = "Initial task. " + "Important context. " * 3000
+    with _overflow_server(
+        overflow_on_request_indices={0},
+        final_usage={"prompt_tokens": prompt_tokens, "completion_tokens": 1000,
+                     "total_tokens": prompt_tokens + 1000},
+    ) as (base_url, requests):
+        result, _ = await _run_test_episode(
+            tmp_path, base_url, target_id="pi-r3@0.73.1", task_prompt=large_prompt,
+            context_window=131072,
+        )
+        assert result.termination == RunnerTermination.ASSISTANT_COMPLETE
+        trace = thaw_json(result.response["replay_trace"])
+        summaries = [request for request in trace["requests"] if request.get("_compaction_summary")]
+        assert len(summaries) == summary_count
+        assert len(requests) == 2 + summary_count
+        assert trace["request_count"] == 1
+
+@pytest.mark.parametrize("finish_reason,completion_tokens,termination", [
+    ("stop", 1000, RunnerTermination.ASSISTANT_COMPLETE),
+    ("length", 0, RunnerTermination.POLICY_INCOMPLETE),
+])
+@pytest.mark.asyncio
+async def test_agent_end_overflow_respects_stock_continue(
+    tmp_path: Path, finish_reason: str, completion_tokens: int, termination: RunnerTermination,
+):
+    """Stock retains a successful assistant, so empty-queue continue refuses it."""
+    with _overflow_server(
+        overflow_on_request_indices=set(),
+        final_usage={"prompt_tokens": 140000, "completion_tokens": completion_tokens,
+                     "total_tokens": 140000 + completion_tokens},
+        final_finish_reason=finish_reason,
+    ) as (base_url, requests):
+        result, _ = await _run_test_episode(
+            tmp_path, base_url, target_id="pi-r3@0.73.1",
+            task_prompt="Task " + "Background. " * 3000, context_window=131072,
+        )
+        trace = thaw_json(result.response["replay_trace"])
+        summaries = [request for request in trace["requests"] if request.get("_compaction_summary")]
+        assert result.termination == termination
+        assert len(summaries) == 1
+        assert len(requests) == 2
+        assert trace["request_count"] == 1
+        assert all("usage" in message for message in trace["messages"] if message["role"] == "assistant")
+
+
+
 @pytest.mark.asyncio
 async def test_overflow_repeated_overflow_bounded_and_terminal(tmp_path: Path):
     """Repeated overflow after compaction falls through to the original path and raises RunnerDependencyError for Pi."""
@@ -297,7 +399,7 @@ async def test_overflow_repeated_overflow_bounded_and_terminal(tmp_path: Path):
             await _run_test_episode(
                 tmp_path,
                 base_url,
-                target_id="pi-r2@0.73.1",
+                target_id="pi-r3@0.73.1",
                 task_prompt=large_prompt,
             )
         # Exactly 3 requests: initial (failed), summary (succeeded), retried (failed)
@@ -311,7 +413,7 @@ async def test_request_cap_not_incremented_by_compaction(tmp_path: Path):
         result, events = await _run_test_episode(
             tmp_path,
             base_url,
-            target_id="pi-r2@0.73.1",
+            target_id="pi-r3@0.73.1",
             task_prompt=large_prompt,
         )
         trace = thaw_json(result.response["replay_trace"])
@@ -337,7 +439,7 @@ def test_normal_request_with_summary_text_in_last_message_still_rejected_when_di
         tmp_path,
         profile_digest=profile_identity_digest(profile),
         model_id="model-a",
-        target_id="pi-r2@0.73.1",
+        target_id="pi-r3@0.73.1",
     )
     # Normal request (no compaction_summary=True) with wrong system prompt,
     # but last message attempts to mimic compaction summary text
@@ -375,3 +477,52 @@ def test_normal_request_with_summary_text_in_last_message_still_rejected_when_di
             native_system_prompt="Correct native system prompt",
             compaction_summary=False,
         )
+
+
+def test_summary_request_admission_requires_episode_tools_and_source_prompt(tmp_path: Path):
+    from breadboard.rl.harness.native_stream_profiles import PI_SUMMARIZATION_SYSTEM_PROMPT
+    from breadboard.rl.harness.policy_provider import _responses_request_to_chat, ProviderContractError
+    profile = OpenAICompletionsProviderProfile(
+        model="model-a",
+        scoped_credential="secret",
+        base_url="http://127.0.0.1:8000/v1",
+        context_window=32_768,
+        max_output_tokens=2_048,
+        caller_headers={},
+        request_policy={"mode": "streaming", "include_usage": True},
+        capabilities={"supports_store": True},
+    )
+    projection, _, _ = _compile_target(
+        tmp_path,
+        profile_digest=profile_identity_digest(profile),
+        model_id="model-a",
+        target_id="pi-r3@0.73.1",
+    )
+    episode_tools = [thaw_json(tool) for tool in projection.chat_tools]
+
+    def summary(system: str, tools: list) -> dict:
+        return {
+            "model": "model-a",
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": "<conversation>\n[User]: hi\n</conversation>\n\nSummarize."},
+            ],
+            "tools": tools,
+        }
+
+    def admit(request: dict) -> Any:
+        return _responses_request_to_chat(
+            request, expected_model_id="model-a", target_projection=projection,
+            native_system_prompt="Correct native system prompt", compaction_summary=True,
+        )
+
+    _, tools = admit(summary(PI_SUMMARIZATION_SYSTEM_PROMPT, episode_tools))
+    assert tools == episode_tools
+    for request in (
+        summary(PI_SUMMARIZATION_SYSTEM_PROMPT, []),
+        summary("Correct native system prompt", episode_tools),
+    ):
+        with pytest.raises(ProviderContractError, match="compaction summary request does not match"):
+            admit(request)
+
+

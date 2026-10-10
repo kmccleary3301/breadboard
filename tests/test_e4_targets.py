@@ -81,15 +81,21 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -155,15 +161,21 @@ def test_openclaw_sealed_package_has_one_pinned_source_prompt_and_bootstrap() ->
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -1057,3 +1069,98 @@ def test_omp_16_2_13_r2_compiled_tools_equal_wire_tools() -> None:
         assert set(compiled_params["properties"]) == set(wire_params["properties"])
         for prop_name, prop_spec in wire_params["properties"].items():
             assert thaw_json(compiled_params["properties"][prop_name]) == prop_spec
+
+
+_COMPACTION_REVISIONS = {
+    # revision: (predecessor, native-config keys the revision may change)
+    "pi-r3@0.73.1": ("pi-r2@0.73.1", {("target_id",), ("agent", "compaction_settings"), ("model", "context_window")}),
+    "pi-r4@0.57.1": (
+        "pi-r3@0.57.1",
+        {("target_id",), ("agent", "compaction_enabled"), ("agent", "compaction_settings"), ("model", "context_window")},
+    ),
+    "oh-my-pi-r3@16.2.13": (
+        "oh-my-pi-r2@16.2.13",
+        {("target_id",), ("model", "context_window"), ("model_registry", "contextWindow")},
+    ),
+    "oh-my-pi-r2@18.1.17": ("oh-my-pi@18.1.17", {("context_window",)}),
+    "openclaw-r2@2026.9.4": (
+        "openclaw@2026.9.4",
+        {
+            ("profile",), ("model", "context_window"), ("agent_exec", "compaction"),
+            ("native_worker", "owns"), ("native_worker", "does_not_own"),
+        },
+    ),
+    "hermes-agent-r2@2026.9.11": (
+        "hermes-agent@2026.9.11",
+        {("agent", "compression"), ("model", "context_length"), ("model", "context_window")},
+    ),
+}
+# Pi's headless print mode ends the session at the first prompt resolution.
+_SESSION_LIFECYCLE_DEVIATION_TARGETS = {"pi-r3@0.73.1", "pi-r4@0.57.1"}
+
+
+def _json_leaves(value: Any, path: tuple[str, ...] = ()) -> dict[tuple[str, ...], Any]:
+    if isinstance(value, dict) and value:
+        leaves: dict[tuple[str, ...], Any] = {}
+        for key, item in value.items():
+            leaves.update(_json_leaves(item, (*path, key)))
+        return leaves
+    return {path: value}
+
+
+@pytest.mark.parametrize("target_id", sorted(_COMPACTION_REVISIONS))
+def test_compaction_revision_is_its_predecessor_plus_native_compaction(target_id: str) -> None:
+    predecessor_id, allowed_native_changes = _COMPACTION_REVISIONS[target_id]
+    target, predecessor = load_e4_target(target_id), load_e4_target(predecessor_id)
+    index = json.loads((TARGET_ROOT / "index.json").read_bytes())["targets"]
+    assert index[target_id]["sha256"] == _NATIVE_WORKER_RECIPES[target_id][1] == target.descriptor_sha256
+    assert _NATIVE_WORKER_RECIPES[target_id][0] == _NATIVE_WORKER_RECIPES[predecessor_id][0]
+
+    descriptor, base_descriptor = (
+        {key: value for key, value in package.descriptor.items() if key not in {"target_id", "assets", "overlay"}}
+        for package in (target, predecessor)
+    )
+    assert descriptor == base_descriptor
+    assert target.descriptor["overlay"]["argv"] == predecessor.descriptor["overlay"]["argv"]
+    changed_assets = {"harness.yaml", "native-config.json", "tool-surface.json"}
+    for asset in predecessor.descriptor["assets"]:
+        if asset["path"] not in changed_assets:
+            assert target.read_asset_bytes(asset["path"]) == predecessor.read_asset_bytes(asset["path"])
+
+    harness = yaml.safe_load(target.read_asset_text("harness.yaml"))
+    base_harness = yaml.safe_load(predecessor.read_asset_text("harness.yaml"))
+    assert harness["target_id"] == target_id
+    assert harness["policy"]["provider"]["compaction"] is True
+    assert "compaction" not in harness["policy"]["claim_exclusions"]
+    assert [item["id"] for item in harness["policy"].pop("deviations")] == [
+        "compaction_summary_episode_tools",
+        "compaction_summary_max_tokens",
+        *(["compaction_session_lifecycle"] if target_id in _SESSION_LIFECYCLE_DEVIATION_TARGETS else []),
+    ]
+    base_harness["policy"]["provider"]["compaction"] = True
+    base_harness["policy"]["claim_exclusions"] = [
+        item for item in base_harness["policy"]["claim_exclusions"] if item != "compaction"
+    ]
+    base_harness["target_id"] = target_id
+    assert harness == base_harness
+
+    native = _json_leaves(json.loads(target.read_asset_text("native-config.json")))
+    base_native = _json_leaves(json.loads(predecessor.read_asset_text("native-config.json")))
+    changed = {
+        path for path in native.keys() | base_native.keys() if native.get(path, None) != base_native.get(path, None)
+    }
+    assert {path[:2] for path in changed} <= allowed_native_changes
+    context_window_paths = [path for path in native if path[-1] in {"context_window", "contextWindow"}]
+    assert context_window_paths and all(native[path] == 131072 for path in context_window_paths)
+
+    surface = json.loads(target.read_asset_text("tool-surface.json"))
+    base_surface = json.loads(predecessor.read_asset_text("tool-surface.json"))
+    assert surface.pop("target_id") == target_id
+    base_surface.pop("target_id")
+    assert surface == base_surface
+
+    lowered, base_lowered = lower_e4_target(target, {}), lower_e4_target(predecessor, {})
+    assert lowered.ordered_tool_names == base_lowered.ordered_tool_names
+    assert thaw_json(lowered.tools) == thaw_json(base_lowered.tools)
+    assert lowered.system_prompt == base_lowered.system_prompt
+    assert lowered.runtime_profile["compaction"] is True

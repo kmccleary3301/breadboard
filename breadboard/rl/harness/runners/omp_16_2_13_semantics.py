@@ -38,7 +38,7 @@ PROFILE_VERSION = "16.2.13"
 TRACE_SCHEMA_VERSION = "bb.e4.omp-replay-trace.v1"
 CONSUMER_ID = "breadboard.oh-my-pi.v16.2.13"
 PHASE_SCHEMA_VERSION = "bb.omp-native.v16.2.13"
-TARGET_ID = "oh-my-pi-r2@16.2.13"
+TARGET_ID = "oh-my-pi-r3@16.2.13"
 LOCAL_ADAPTER_ID = "oh-my-pi.local.v16.2.13"
 TOOL_NAMES = ("read", "bash", "edit", "write", "generate_image")
 REQUEST_CAP = 8
@@ -269,6 +269,11 @@ class Omp16213SemanticsState:
     def is_exited(self) -> bool:
         return self.exit_status is not None
 
+    def resume_after_compaction(self, continuation_messages: Sequence[Mapping[str, Any]]) -> None:
+        self.exit_status = None
+        self.native_stop_reason = None
+        self._pending_finish_reason = None
+        self.messages.extend(dict(m) for m in continuation_messages)
     def _assistant(
         self,
         content: list[dict[str, Any]],
@@ -323,6 +328,7 @@ class Omp16213SemanticsState:
 
     def prepare_response(
         self, response: NativeProviderResponse, parsed_arguments: Sequence[Any] | None = None,
+        *, usage: Mapping[str, Any] | None = None,
     ) -> Omp16213ResponseResult:
         """Commit one sent response with worker-parsed tool arguments."""
         if not isinstance(response, NativeProviderResponse):
@@ -373,7 +379,8 @@ class Omp16213SemanticsState:
             Omp16213RequestRecord(self.stream_fn_issued, True, response.request_digest)
         )
         assistant = self._assistant(
-            blocks, pinned_usage(response.usage, self.cost), stop, response_id=response.response_id,
+            blocks, dict(usage) if usage is not None else pinned_usage(response.usage, self.cost),
+            stop, response_id=response.response_id,
         )
         self.messages.append(assistant)
         self.native_stop_reason = stop

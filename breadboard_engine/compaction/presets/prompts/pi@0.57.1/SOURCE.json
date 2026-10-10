@@ -1,0 +1,21 @@
+{
+  "repo": "https://github.com/badlogic/pi-mono",
+  "package": "@mariozechner/pi-coding-agent@0.57.1",
+  "commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+  "published_package_sha256": "8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+  "license": "MIT",
+  "extracted_by": "scripts/compaction_oracles/capture_pi.mjs",
+  "source_sha256": {
+    "dist/core/compaction/compaction.js": "0b78d198040ca3e29a6e98883c063a5dcd07b705591aa75eb54e46e6a9a169ee",
+    "dist/core/compaction/utils.js": "e136d7b245c81eee780d549891ffcdb75c056f3dde09434286ba9a84b297173c",
+    "dist/core/messages.js": "a4e4865e343bf87f8078f75ff179a2a77cd7c2700cf8473476bd4dc5ed36adb6",
+    "dist/core/session-manager.js": "fea16266270d9cd5d1a40bf4999fc728ca70766e7cdb2a0edc2f7d9b52884f71"
+  },
+  "files": {
+    "summarization-system.txt": "dist/core/compaction/utils.js SUMMARIZATION_SYSTEM_PROMPT",
+    "summary.txt": "dist/core/compaction/compaction.js:349 SUMMARIZATION_PROMPT",
+    "update-summary.txt": "dist/core/compaction/compaction.js:381 UPDATE_SUMMARIZATION_PROMPT",
+    "turn-prefix.txt": "dist/core/compaction/compaction.js:533 TURN_PREFIX_SUMMARIZATION_PROMPT",
+    "summary-context.txt": "dist/core/messages.js COMPACTION_SUMMARY_PREFIX + {{summary}} + COMPACTION_SUMMARY_SUFFIX"
+  }
+}

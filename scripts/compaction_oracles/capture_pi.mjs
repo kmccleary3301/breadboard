@@ -21,11 +21,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const PRESET = "pi@0.73.1";
 const SCRIPT = "scripts/compaction_oracles/capture_pi.mjs";
 const REPO_ROOT = resolve(dirname(new URL(import.meta.url).pathname), "../..");
-const OUT_DIR = join(REPO_ROOT, "tests/compaction/oracles", PRESET);
-const PROMPT_DIR = join(REPO_ROOT, "breadboard_engine/compaction/presets/prompts", PRESET);
 
 const args = process.argv.slice(2);
 const pkgDir = args.find((a) => !a.startsWith("--"));
@@ -36,11 +33,49 @@ if (!pkgDir) {
 }
 const pkgRoot = resolve(pkgDir);
 const pkgJson = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"));
-if (pkgJson.name !== "@mariozechner/pi-coding-agent" || pkgJson.version !== "0.73.1") {
-  console.error(`expected @mariozechner/pi-coding-agent@0.73.1 at ${pkgRoot}, found ${pkgJson.name}@${pkgJson.version}`);
+if (pkgJson.name !== "@mariozechner/pi-coding-agent" || (pkgJson.version !== "0.73.1" && pkgJson.version !== "0.57.1")) {
+  console.error(`expected @mariozechner/pi-coding-agent@0.73.1 or 0.57.1 at ${pkgRoot}, found ${pkgJson.name}@${pkgJson.version}`);
   process.exit(2);
 }
 
+const version = pkgJson.version;
+const PRESET = `pi@${version}`;
+const OUT_DIR = join(REPO_ROOT, "tests/compaction/oracles", PRESET);
+const PROMPT_DIR = join(REPO_ROOT, "breadboard_engine/compaction/presets/prompts", PRESET);
+
+const METADATA = {
+  "0.73.1": {
+    commit: "781152fc24841dc54b22284514604048ebe5e2c9",
+    package_sha256: "7bf5d492670c04fd7c599dee7e6eaabff964084affd216766107e6741df7a2e1",
+    trigger_evidence: [
+      "dist/core/compaction/compaction.js:76-78,149-153",
+      "dist/core/agent-session.js:1376-1446",
+    ],
+    trigger_notes: "calculateContextTokens(usage) then shouldCompact(tokens, contextWindow, settings), called from the installed package (dist/core/compaction/compaction.js:76-78,149-153). The pre-prompt check reads the last assistant usage (dist/core/agent-session.js:1441).",
+    compaction_evidence: [
+      "dist/core/compaction/compaction.js:161-354,437-614",
+      "dist/core/compaction/utils.js:14-150",
+      "dist/core/messages.js:7-12,75-110",
+      "dist/core/session-manager.js:112-200",
+    ],
+  },
+  "0.57.1": {
+    commit: "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+    package_sha256: "8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+    trigger_evidence: [
+      "dist/core/compaction/compaction.js:71-73,142-146",
+      "dist/core/agent-session.js:1326-1395",
+    ],
+    trigger_notes: "calculateContextTokens(usage) then shouldCompact(tokens, contextWindow, settings), called from the installed package (dist/core/compaction/compaction.js:71-73,142-146). The pre-prompt check reads the last assistant usage (dist/core/agent-session.js:1390).",
+    compaction_evidence: [
+      "dist/core/compaction/utils.js:14-148",
+      "dist/core/messages.js:7-12,75-104",
+      "dist/core/session-manager.js:108-180",
+    ],
+  },
+};
+const meta = METADATA[version];
+const SRC = { repo: "https://github.com/badlogic/pi-mono", commit: meta.commit, package: `@mariozechner/pi-coding-agent@${version}`, package_sha256: meta.package_sha256 };
 /** Node resolution of @mariozechner/pi-ai from the package, so we load the same module instance it does. */
 function resolvePiAi(from) {
   let dir = from;
@@ -104,9 +139,9 @@ for (const [name, [text]] of Object.entries(PROMPTS)) {
 }
 const sourceJson = {
   repo: "https://github.com/badlogic/pi-mono",
-  package: "@mariozechner/pi-coding-agent@0.73.1",
-  commit: "781152fc24841dc54b22284514604048ebe5e2c9",
-  published_package_sha256: "7bf5d492670c04fd7c599dee7e6eaabff964084affd216766107e6741df7a2e1",
+  package: `@mariozechner/pi-coding-agent@${version}`,
+  commit: meta.commit,
+  published_package_sha256: meta.package_sha256,
   license: "MIT",
   extracted_by: SCRIPT,
   source_sha256: sourceDigests,
@@ -225,7 +260,6 @@ function entriesFor(history, ledger) {
 // Case helpers
 // ---------------------------------------------------------------------------
 
-const SRC = { repo: "https://github.com/badlogic/pi-mono", commit: "781152fc24841dc54b22284514604048ebe5e2c9", package: "@mariozechner/pi-coding-agent@0.73.1", package_sha256: "7bf5d492670c04fd7c599dee7e6eaabff964084affd216766107e6741df7a2e1" };
 const cases = [];
 
 function baseInput(messages, extra = {}) {
@@ -244,7 +278,7 @@ function captureThreshold(name, usage, window, settings, evidence) {
     preset: PRESET,
     case: name,
     source: { ...SRC, evidence },
-    capture: { kind: "executed", script: SCRIPT, notes: "calculateContextTokens(usage) then shouldCompact(tokens, contextWindow, settings), called from the installed package (dist/core/compaction/compaction.js:76-78,149-153). The pre-prompt check reads the last assistant usage (dist/core/agent-session.js:1441)." },
+    capture: { kind: "executed", script: SCRIPT, notes: meta.trigger_notes },
     input: baseInput(
       [
         { role: "user", content: "earlier task" },
@@ -290,7 +324,7 @@ async function captureCompaction(name, { history, settings = {}, responses, ledg
     schema: "bb.compaction_oracle_case.v1",
     preset: PRESET,
     case: name,
-    source: { ...SRC, evidence: ["dist/core/compaction/compaction.js:161-354,437-614", "dist/core/compaction/utils.js:14-150", "dist/core/messages.js:7-12,75-110", "dist/core/session-manager.js:112-200"] },
+    source: { ...SRC, evidence: meta.compaction_evidence },
     capture: {
       kind: "executed",
       script: SCRIPT,
@@ -305,7 +339,7 @@ async function captureCompaction(name, { history, settings = {}, responses, ledg
 // Cases
 // ---------------------------------------------------------------------------
 
-const TRIGGER_EVIDENCE = ["dist/core/compaction/compaction.js:76-78,149-153", "dist/core/agent-session.js:1376-1446"];
+const TRIGGER_EVIDENCE = meta.trigger_evidence;
 const usage = (input, output, total) => ({ input_tokens: input, output_tokens: output, cache_read_tokens: 0, cache_write_tokens: 0, total_tokens: total });
 captureThreshold("threshold_total_below_limit", usage(180000, 3615, 183615), 200000, {}, TRIGGER_EVIDENCE);
 captureThreshold("threshold_total_equal_limit_does_not_fire", usage(180000, 3616, 183616), 200000, {}, TRIGGER_EVIDENCE);

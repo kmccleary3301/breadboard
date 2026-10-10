@@ -314,8 +314,7 @@ class AnthropicAdapter(ProviderAdapter):
         return []
     
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
-        """Create Anthropic-expected tool result message"""
-        # Anthropic uses different format for tool results
+        """Record a correlated tool result; the runtime encodes Anthropic wire blocks."""
         if isinstance(result, dict) and isinstance(result.get("__mvi_text_output"), str):
             content = str(result["__mvi_text_output"])
         elif isinstance(result, dict):
@@ -324,14 +323,9 @@ class AnthropicAdapter(ProviderAdapter):
             content = str(result)
         
         return {
-            "role": "user",  # Anthropic typically expects user role for tool results
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": call_id,
-                    "content": content
-                }
-            ]
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": content,
         }
     
     def get_provider_id(self) -> str:

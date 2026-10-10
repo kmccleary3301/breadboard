@@ -10,9 +10,10 @@
     ]
   },
   "capture": {
-    "kind": "source_derived",
-    "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/session/turn.rs:246 defines needs_follow_up = model_needs_follow_up || has_pending_input. Line 273 checks: 'if token_limit_reached && needs_follow_up'. When a turn finishes with a complete answer and no tool calls or pending input (needs_follow_up = false), mid-turn compaction does not fire, leaving compaction to pre-turn check of next turn."
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/mid_turn_compaction.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. When needs_follow_up is true (tool call requested) and usage exceeds threshold, mid-turn auto-compaction fires immediately; when needs_follow_up is false, compaction is deferred to pre-turn check per codex-rs/core/src/session/turn.rs:346-358."
   },
   "input": {
     "messages": [

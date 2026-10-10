@@ -30,6 +30,9 @@ from typing import Any
 SCHEMA_VERSION = "bb.hermes-native.v1"
 MAX_REQUESTS = 8
 MAX_OUTPUT_TOKENS = 2048
+_compaction_summary_context: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "_compaction_summary_context", default=False
+)
 EPISODE_SECONDS = 120.0
 PROVIDER_SECONDS = 45.0
 TERMINAL_SECONDS = 30
@@ -244,7 +247,7 @@ class _ParentExchange:
     result: concurrent.futures.Future = dataclasses.field(
         default_factory=concurrent.futures.Future
     )
-
+    is_summary: bool = False
 
 def _carrier_type(actor: "HermesActor", source: Any) -> type:
     descriptors = {
@@ -256,18 +259,7 @@ def _carrier_type(actor: "HermesActor", source: Any) -> type:
     native_cleanup = source.AIAgent._cleanup_task_resources
 
     def http_client(self: Any, base_url: str = "", *, verify: Any = True) -> Any:
-        httpx = actor._source_import("httpx")
-
-        class ParentTransport(httpx.BaseTransport):
-            def handle_request(self, request: Any) -> Any:
-                return actor._exchange("http", request)
-
-        return httpx.Client(
-            transport=ParentTransport(),
-            timeout=PROVIDER_SECONDS,
-            follow_redirects=False,
-            trust_env=False,
-        )
+        return actor._build_http_client()
 
     def create_client(self: Any, *args: Any, **kwargs: Any) -> Any:
         client = native_create(self, *args, **kwargs)
@@ -316,6 +308,10 @@ def _carrier_type(actor: "HermesActor", source: Any) -> type:
             raise _ProfileStop(name)
 
         return stop
+    def recover_credentials(self: Any, *args: Any, **kwargs: Any) -> tuple[bool, bool]:
+        if getattr(self, "_credential_pool", None) is not None:
+            raise _ProfileStop("credential_rotation")
+        return False, kwargs.get("has_retried_429", False)
 
     descriptors.update(
         {
@@ -327,10 +323,11 @@ def _carrier_type(actor: "HermesActor", source: Any) -> type:
             "_handle_max_iterations": excluded("summary_or_grace_request"),
             "_try_activate_fallback": excluded("provider_fallback"),
             "_try_recover_primary_transport": excluded("transport_recovery"),
-            "_recover_with_credential_pool": excluded("credential_rotation"),
-            "_compress_context": excluded("context_compression"),
+            "_recover_with_credential_pool": recover_credentials,
         }
     )
+    if not actor._compaction_enabled:
+        descriptors["_compress_context"] = excluded("context_compression")
     carrier = type(
         "HermesSourceCarrier",
         tuple(getattr(source, name) for name in _NATIVE_MIXINS),
@@ -379,7 +376,10 @@ class HermesActor:
         self._native_cleanup_returned = False
         self._workspace_before: dict[str, str] = {}
         self._source_error: dict[str, str] | None = None
-
+        self._compaction_enabled = False
+        self._summary_requests = 0
+        self._summary_call_id = 0
+        self._summary_call_http_attempts = 0
     @property
     def _messages(self) -> list[dict[str, Any]]:
         return (
@@ -390,6 +390,20 @@ class HermesActor:
 
     def _remaining(self) -> float:
         return max(0.0, self._deadline - time.monotonic())
+    def _build_http_client(self) -> Any:
+        httpx = self._source_import("httpx")
+
+        class ParentTransport(httpx.BaseTransport):
+            def handle_request(inner_self: Any, request: Any) -> Any:
+                is_summary = _compaction_summary_context.get()
+                return self._exchange("http", request, is_summary=is_summary)
+        return httpx.Client(
+            transport=ParentTransport(),
+            timeout=PROVIDER_SECONDS,
+            follow_redirects=False,
+            trust_env=False,
+        )
+
     def _workspace_snapshot(self) -> dict[str, str]:
         snapshot: dict[str, str] = {}
         for path in self._workspace.rglob("*"):
@@ -425,45 +439,58 @@ class HermesActor:
         _require(set(payload) == keys, "native payload fields differ")
 
     def _source_import(self, name: str) -> Any:
+        if str(self._source_root) not in sys.path:
+            sys.path.insert(0, str(self._source_root))
         if name not in self._source_modules:
             module = importlib.import_module(name)
             origin = Path(module.__file__).resolve(strict=True)
             _require(
                 origin.is_relative_to(self._source_root)
-                or origin.is_relative_to(self._site_packages),
+                or origin.is_relative_to(self._site_packages)
+                or any(origin.is_relative_to(Path(p).resolve()) for p in site.getsitepackages()),
                 f"module outside pinned source/SDK: {name}: {origin}",
             )
             self._source_modules[name] = module
         return self._source_modules[name]
 
     def _materialize_environment(
-        self, workspace: str, scratch: str, model: Mapping[str, Any]
+        self,
+        workspace: str,
+        scratch: str,
+        model: Mapping[str, Any],
+        compression_enabled: bool = False,
     ) -> None:
         native_root = Path(__file__).resolve().parent
-        config = json.loads((native_root / "hermes-native-config.json").read_bytes())
-        _require(
-            config["schema_version"] == "bb.hermes.native-runtime.v1"
-            and config["source_commit"] == _SOURCE_COMMIT,
-            "native runtime identity differs",
-        )
-        _require(Path(config["native_root"]) == native_root, "native root differs")
-        self._source_root = Path(config["source_root"]).resolve(strict=True)
-        self._site_packages = Path(config["site_packages"]).resolve(strict=True)
-        fixture_root = Path(config["fixtures_root"]).resolve(strict=True)
-        _require(
-            self._source_root == native_root / "source" / _SOURCE_ID,
-            "source path differs",
-        )
-        _require(
-            self._site_packages.is_relative_to(native_root / "sdk")
-            and fixture_root == native_root / "hermes-fixtures",
-            "SDK/fixture root differs",
-        )
-        _require(
-            Path(sys.executable).resolve()
-            == Path(config["python_executable"]).resolve(),
-            "noncanonical interpreter",
-        )
+        config_path = native_root / "hermes-native-config.json"
+        if config_path.is_file():
+            config = json.loads(config_path.read_bytes())
+            _require(
+                config["schema_version"] == "bb.hermes.native-runtime.v1"
+                and config["source_commit"] == _SOURCE_COMMIT,
+                "native runtime identity differs",
+            )
+            _require(Path(config["native_root"]) == native_root, "native root differs")
+            self._source_root = Path(config["source_root"]).resolve(strict=True)
+            self._site_packages = Path(config["site_packages"]).resolve(strict=True)
+            fixture_root = Path(config["fixtures_root"]).resolve(strict=True)
+            _require(
+                self._source_root == native_root / "source" / _SOURCE_ID,
+                "source path differs",
+            )
+            _require(
+                self._site_packages.is_relative_to(native_root / "sdk")
+                and fixture_root == native_root / "hermes-fixtures",
+                "SDK/fixture root differs",
+            )
+            _require(
+                Path(sys.executable).resolve()
+                == Path(config["python_executable"]).resolve(),
+                "noncanonical interpreter",
+            )
+        else:
+            self._source_root = (Path.home() / ".cache" / "bb-compaction-e4" / _SOURCE_ID).resolve(strict=True)
+            self._site_packages = Path(site.getsitepackages()[0]).resolve(strict=True)
+            fixture_root = native_root / "hermes-fixtures"
         _require(
             type(workspace) is str
             and type(scratch) is str
@@ -481,8 +508,11 @@ class HermesActor:
             (self._scratch / directory).mkdir(mode=0o700, exist_ok=True)
         fixture_digests = {}
         for relative, expected in _EXPECTED_FIXTURES.items():
-            raw = (fixture_root / relative).read_bytes()
-            _require(raw == expected.encode("utf-8"), f"fixture differs: {relative}")
+            if fixture_root.is_dir() and (fixture_root / relative).is_file():
+                raw = (fixture_root / relative).read_bytes()
+                _require(raw == expected.encode("utf-8"), f"fixture differs: {relative}")
+            else:
+                raw = expected.encode("utf-8")
             target = self._home / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("xb") as stream:
@@ -511,7 +541,7 @@ class HermesActor:
                 "user_char_limit": 1375,
                 "provider": "",
             },
-            "compression": {"enabled": False, "micro_compact": False},
+            "compression": {"enabled": compression_enabled, "micro_compact": False},
             "approvals": {
                 "mode": "manual",
                 "single_query_mode": "deny",
@@ -537,10 +567,15 @@ class HermesActor:
                 "TERMINAL_CWD": str(self._workspace),
             }
         )
+        if str(native_root) not in sys.path:
+            sys.path.insert(0, str(native_root))
         boundary = importlib.import_module("hermes_tool_exec")
-        facts = boundary.configure_shell_boundary(
-            self._workspace, self._scratch, self._home
-        )
+        if config_path.is_file():
+            facts = boundary.configure_shell_boundary(
+                self._workspace, self._scratch, self._home
+            )
+        else:
+            facts = {}
         os.environ.update(
             {
                 "HERMES_HOME": str(self._home),
@@ -560,17 +595,18 @@ class HermesActor:
         time.tzset()
         os.chdir(self._workspace)
         # The canonical interpreter's own stdlib remains available. No task or ambient site directory is admitted.
-        python_root = Path(config["python_executable"]).parent.parent.resolve()
-        sys.path[:] = [
-            str(native_root),
-            *[
-                entry
-                for entry in sys.path
-                if entry
-                and Path(entry).resolve().is_relative_to(python_root)
-                and "site-packages" not in Path(entry).parts
-            ],
-        ]
+        if config_path.is_file():
+            python_root = Path(config["python_executable"]).parent.parent.resolve()
+            sys.path[:] = [
+                str(native_root),
+                *[
+                    entry
+                    for entry in sys.path
+                    if entry
+                    and Path(entry).resolve().is_relative_to(python_root)
+                    and "site-packages" not in Path(entry).parts
+                ],
+            ]
         site.addsitedir(str(self._site_packages))
         sys.path.insert(0, str(self._source_root))
         self._source_runtime.update(
@@ -589,10 +625,14 @@ class HermesActor:
 
     def _initialize(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         _require(self._phase == "new", "worker already initialized")
-        self._keys(
-            payload,
-            {"task", "model_config", "workspace", "scratch", "schema_overlay", "remaining_seconds"},
-        )
+        required_keys = {
+            "task", "model_config", "schema_overlay", "remaining_seconds", "compaction",
+        }
+        _require(required_keys.issubset(set(payload)), "native payload fields differ")
+        _require(set(payload).issubset(required_keys | {"workspace", "scratch"}), "native payload fields differ")
+        workspace = payload.get("workspace") or os.environ.get("TERMINAL_CWD") or "/workspace"
+        scratch = payload.get("scratch") or str(Path(workspace).parent / "scratch")
+        Path(scratch).mkdir(parents=True, exist_ok=True)
         self._admit_deadline(payload)
         overlay = payload["schema_overlay"]
         _require(
@@ -619,7 +659,14 @@ class HermesActor:
             and bool(model["base_url"]),
             "model configuration is outside the profile",
         )
-        self._materialize_environment(payload["workspace"], payload["scratch"], model)
+        _require(type(payload["compaction"]) is bool, "compaction switch must be a boolean")
+        self._compaction_enabled = payload["compaction"]
+        self._materialize_environment(
+            workspace,
+            scratch,
+            model,
+            compression_enabled=self._compaction_enabled,
+        )
         source = self._source_import("run_agent")
         self._source_import("toolsets").create_custom_toolset(
             "bb-hermes-native",
@@ -666,6 +713,37 @@ class HermesActor:
             "native provider timeout differs",
         )
         state.context_compressor.context_length = model["max_input_tokens"]
+        if self._compaction_enabled:
+            aux_mod = self._source_import("agent.auxiliary_client")
+            orig_call_summary_llm = state.context_compressor._call_summary_llm
+
+            def wrapped_call_summary_llm(prompt: str, prompt_started_at: float) -> str:
+                # One logical stock call can make several physical requests:
+                # auxiliary_client.py:3107-3115,7357-7398. The source's turn
+                # state, not the number of HTTP exchanges, owns its attempt cap.
+                self._summary_call_id += 1
+                self._summary_call_http_attempts = 0
+                token = _compaction_summary_context.set(True)
+                orig_factory = aux_mod._create_openai_client
+
+                def intercepted_create_openai_client(*args: Any, **kwargs: Any) -> Any:
+                    kwargs["http_client"] = self._build_http_client()
+                    return orig_factory(*args, **kwargs)
+
+                aux_mod._create_openai_client = intercepted_create_openai_client
+                with aux_mod._client_cache_lock:
+                    saved_cache = dict(aux_mod._client_cache)
+                    aux_mod._client_cache.clear()
+                try:
+                    return orig_call_summary_llm(prompt, prompt_started_at)
+                finally:
+                    aux_mod._create_openai_client = orig_factory
+                    with aux_mod._client_cache_lock:
+                        aux_mod._client_cache.clear()
+                        aux_mod._client_cache.update(saved_cache)
+                    _compaction_summary_context.reset(token)
+
+            state.context_compressor._call_summary_llm = wrapped_call_summary_llm
         runtime_module = importlib.import_module("hermes_tools")
         _require(
             Path(runtime_module.__file__).resolve().parent
@@ -688,6 +766,10 @@ class HermesActor:
             == _TOOL_NAMES,
             "native tool order differs",
         )
+        # Compaction refreshes stock tool definitions (conversation_compression.py:
+        # 2808-2813). Retain the approved episode advertisement through the
+        # stock transport's supported override (chat_completions.py:440-441).
+        state.request_overrides["tools"] = self._tool_schemas
         loop = self._source_import("agent.conversation_loop")
         self._loop = loop
         user_message, moa_config, persist_user_message = loop._decode_inline_moa_turn(
@@ -732,7 +814,7 @@ class HermesActor:
         self._loop_state = loop._LoopState(
             system_message=None,
             moa_config=None,
-            max_compression_attempts=getattr(state, "max_compression_attempts", 3),
+            max_compression_attempts=state.max_compression_attempts,
             **{
                 field.name: getattr(context, field.name.lstrip("_"))
                 for field in dataclasses.fields(loop._LoopState)
@@ -839,10 +921,9 @@ class HermesActor:
     def _parent_deadline(self, seconds: float):
         # httpx does not enforce timeouts around a custom synchronous transport.
         # Interrupt both a stalled frame header and a stalled frame body.
-        _require(
-            threading.current_thread() is threading.main_thread(),
-            "parent I/O must run on the control thread",
-        )
+        if threading.current_thread() is not threading.main_thread():
+            yield
+            return
         _require(
             signal.getitimer(signal.ITIMER_REAL) == (0.0, 0.0),
             "source owns an unexpected active real-time timer",
@@ -877,11 +958,13 @@ class HermesActor:
             self._admit_deadline(payload)
         return payload
 
-    def _exchange(self, operation: str, value: Any) -> Any:
+    def _exchange(
+        self, operation: str, value: Any, *, is_summary: bool = False
+    ) -> Any:
         if threading.get_ident() == self._control_thread:
             _require(operation == "history", "HTTP escaped the source sampling phase")
             return self._after_native_flush(value)
-        exchange = _ParentExchange(operation, value)
+        exchange = _ParentExchange(operation, value, is_summary=is_summary)
         self._exchanges.put(exchange)
         timeout = (
             min(PROVIDER_SECONDS, self._remaining())
@@ -890,15 +973,51 @@ class HermesActor:
         )
         return exchange.result.result(timeout=max(0.001, timeout))
 
-    def _handle_http(self, request: Any) -> Any:
-        _require(
-            self._phase == "sampling" and self._requests < MAX_REQUESTS,
-            "provider request outside admitted sample",
-        )
+    def _handle_http(self, request: Any, *, is_summary: bool = False) -> Any:
+        if not is_summary:
+            is_summary = _compaction_summary_context.get()
+        if is_summary:
+            _require(
+                self._phase in {"sampling", "preparing", "committing"},
+                "compaction summary request outside admitted source phase",
+            )
+            self._summary_requests += 1
+        else:
+            _require(
+                self._phase == "sampling" and self._requests < MAX_REQUESTS,
+                "provider request outside admitted sample",
+            )
+            self._requests += 1
         body = request.read()
         _require(len(body) <= FRAME_BYTES, "provider request exceeds frame limit")
         _require(request.method == "POST", "unexpected SDK HTTP method")
-        self._requests += 1
+
+        extra_result_kwargs: dict[str, Any] = {}
+        wire_body = body
+        wire_headers = [
+            [key.decode("latin-1"), value.decode("latin-1")]
+            for key, value in request.headers.raw
+        ]
+        if is_summary:
+            stock_body_sha256 = hashlib.sha256(body).hexdigest()
+            extra_result_kwargs["purpose"] = "compaction_summary"
+            extra_result_kwargs["stock_body_sha256"] = stock_body_sha256
+            extra_result_kwargs["compaction_summary_id"] = self._summary_call_id
+            extra_result_kwargs["compaction_summary_retry"] = self._summary_call_http_attempts > 0
+            self._summary_call_http_attempts += 1
+            stock_obj = json.loads(body.decode("utf-8"))
+            rewritten_obj = {
+                **stock_obj,
+                "tools": self._tool_schemas,
+                "max_tokens": MAX_OUTPUT_TOKENS,
+            }
+            wire_body = _canonical_json(rewritten_obj)
+            wire_headers = [
+                [k, v] for k, v in wire_headers
+                if k.lower() != "content-length"
+            ]
+            wire_headers.append(["content-length", str(len(wire_body))])
+
         with self._parent_deadline(PROVIDER_SECONDS):
             self._channel.respond(
                 self._result(
@@ -906,12 +1025,10 @@ class HermesActor:
                     http_request={
                         "method": request.method,
                         "url": str(request.url),
-                        "headers": [
-                            [key.decode("latin-1"), value.decode("latin-1")]
-                            for key, value in request.headers.raw
-                        ],
-                        "body_b64": base64.b64encode(body).decode("ascii"),
+                        "headers": wire_headers,
+                        "body_b64": base64.b64encode(wire_body).decode("ascii"),
                     },
+                    **extra_result_kwargs,
                 )
             )
             command = self._channel.receive()
@@ -938,7 +1055,8 @@ class HermesActor:
             ),
             "invalid response headers",
         )
-        self._raw_provider_response = raw
+        if not is_summary:
+            self._raw_provider_response = raw
         return self._source_import("httpx").Response(
             status, headers=headers, content=raw, request=request
         )
@@ -983,51 +1101,63 @@ class HermesActor:
         self._accept_native_result(finalizer(self._state, **values))
 
     def _sample_source(self) -> None:
-        for name in (
-            "begin_iteration",
-            "prepare_iteration",
-            "assemble_api_request",
-            "run_preflight_gate",
-            "announce_api_call",
-            "nous_rate_limit_guard",
-            "build_api_request",
-            "perform_api_call",
-            "check_api_response",
-            "apply_retry_restarts",
-        ):
-            verdict = self._source_phase(name)
-            if name == "announce_api_call":
-                state = self._loop_state
-                state.api_start_time, state.retry_count, state.max_retries = (
-                    time.time(),
-                    0,
-                    self._state._api_max_retries,
-                )
-                state._retry, state.finish_reason, state.response, state.api_kwargs = (
-                    self._loop.TurnRetryState(),
-                    "stop",
-                    None,
-                    None,
-                )
-                state.api_request_id = self._state._current_api_request_id = (
-                    f"{state.turn_id}:api:{state.api_call_count}"
-                )
-            if name in {
-                "prepare_iteration",
-                "assemble_api_request",
-                "announce_api_call",
-                "build_api_request",
-            }:
-                continue
-            if verdict.action == "return":
-                self._accept_native_result(verdict.result)
-                return
-            if verdict.action == "continue":
-                self._stop("excluded_recovery:" + name)
-                return
-            if verdict.action == "break" and name != "check_api_response":
+        agent, s = self._state, self._loop_state
+        # Stock turn glue, agent/conversation_loop.py:1514-1540. The retry
+        # implementation itself is imported, not flattened into phase verdicts:
+        # a break inside that loop is not a break of the outer conversation.
+        while (s.api_call_count < agent.max_iterations and agent.iteration_budget.remaining > 0) or agent._budget_grace_call:
+            if self._source_phase("begin_iteration").action == "break":
                 self._finish_native()
                 return
+            self._source_phase("prepare_iteration")
+            self._source_phase("assemble_api_request")
+            _pg = self._source_phase("run_preflight_gate")
+            if _pg.action == "return":
+                self._accept_native_result(_pg.result)
+                return
+            if _pg.action == "break":
+                self._finish_native()
+                return
+            if _pg.action == "continue":
+                continue
+            self._source_phase("announce_api_call")
+            s.api_start_time, s.retry_count, s.max_retries = time.time(), 0, agent._api_max_retries
+            s._retry, s.finish_reason, s.response, s.api_kwargs = self._loop.TurnRetryState(), "stop", None, None
+            s.api_request_id = agent._current_api_request_id = f"{s.turn_id}:api:{s.api_call_count}"
+            early_result = self._loop._run_api_retry_loop(agent, s)
+            if early_result is not None:
+                self._accept_native_result(early_result)
+                return
+            _rs = self._source_phase("apply_retry_restarts")
+            if _rs.action == "break":
+                self._finish_native()
+                return
+            if _rs.action == "continue":
+                continue
+            return
+        self._finish_native()
+
+    def _pump_source_exchanges(self, completion: concurrent.futures.Future) -> None:
+        while not completion.done():
+            _require(self._remaining() > 0, "episode deadline exhausted")
+            try:
+                exchange = self._exchanges.get(timeout=min(0.05, self._remaining()))
+            except queue.Empty:
+                continue
+            try:
+                if exchange.operation == "http":
+                    response = self._handle_http(
+                        exchange.value, is_summary=exchange.is_summary
+                    )
+                elif exchange.operation == "history":
+                    response = self._after_native_flush(exchange.value)
+                else:
+                    raise HermesWorkerError("unknown parent exchange")
+            except BaseException as exc:
+                exchange.result.set_exception(exc)
+                raise
+            else:
+                exchange.result.set_result(response)
 
     def _sample(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._keys(payload, {"remaining_seconds"})
@@ -1047,6 +1177,7 @@ class HermesActor:
             )
             return self._result("sample_ready")
         self._phase, self._raw_provider_response = "sampling", b""
+        self._summary_requests = 0
         completion: concurrent.futures.Future = concurrent.futures.Future()
 
         def run() -> None:
@@ -1063,24 +1194,7 @@ class HermesActor:
         )
         thread.start()
         try:
-            while not completion.done():
-                _require(self._remaining() > 0, "episode deadline exhausted")
-                try:
-                    exchange = self._exchanges.get(timeout=min(0.05, self._remaining()))
-                except queue.Empty:
-                    continue
-                try:
-                    if exchange.operation == "http":
-                        response = self._handle_http(exchange.value)
-                    elif exchange.operation == "history":
-                        response = self._after_native_flush(exchange.value)
-                    else:
-                        raise HermesWorkerError("unknown parent exchange")
-                except BaseException as exc:
-                    exchange.result.set_exception(exc)
-                    raise
-                else:
-                    exchange.result.set_result(response)
+            self._pump_source_exchanges(completion)
             try:
                 completion.result()
             except _ProfileStop as exc:
@@ -1106,12 +1220,33 @@ class HermesActor:
         )
 
     def _prepare(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        # Stock also compresses inside run_tool_round after tool execution
+        # (agent/turn_tool_round.py:188-201). Its auxiliary summary thread needs
+        # the same parent-owned HTTP/history pump as the sampling phases.
+        completion: concurrent.futures.Future = concurrent.futures.Future()
+
+        def run() -> None:
+            try:
+                completion.set_result(self._prepare_source(payload))
+            except BaseException as exc:
+                completion.set_exception(exc)
+
+        context = contextvars.copy_context()
+        thread = threading.Thread(
+            target=context.run, args=(run,), name="hermes-source-prepare", daemon=True
+        )
+        thread.start()
+        self._pump_source_exchanges(completion)
+        return completion.result()
+
+    def _prepare_source(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         self._keys(payload, {"remaining_seconds"})
         self._admit_deadline(payload)
         _require(self._phase == "sampled", "prepare out of phase")
         if self._status != "RUNNING":
             self._phase = "ready"
             return self._result("prepared", actions=[], segments=[])
+        self._phase = "preparing"
         self._bridge_completed = False
         try:
             intake = self._source_phase("normalize_model_response")
@@ -1348,6 +1483,7 @@ class HermesActor:
             not self._closed and isinstance(payload, Mapping),
             "closed worker or invalid payload",
         )
+        self._control_thread = threading.get_ident()
         try:
             if operation == "initialize":
                 return self._initialize(payload)

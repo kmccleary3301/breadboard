@@ -10,9 +10,10 @@
     ]
   },
   "capture": {
-    "kind": "source_derived",
-    "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/session/turn.rs:1033-1035 handles CodexErr::ContextWindowExceeded: 'sess.set_total_tokens_full(&turn_context).await; return Err(CodexErr::ContextWindowExceeded);'. Lines 367-378 emit turn error lifecycle and break. There is no inline compaction retry for ordinary sampling overflow."
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/overflow_terminal.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. Mock provider returned context_length_exceeded response.failed event. Codex logged context window exceeded and exited with code 1 without attempting compaction, confirming terminal overflow per codex-rs/core/src/session/turn.rs:1173-1175."
   },
   "input": {
     "messages": [

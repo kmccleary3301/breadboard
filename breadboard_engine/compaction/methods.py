@@ -21,6 +21,7 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
+    Tuple,
     runtime_checkable,
 )
 
@@ -63,6 +64,11 @@ class SummaryRequest:
     model: Optional[str] = None
 
     tools: Tuple[Mapping[str, Any], ...] = ()
+    stream: bool = False
+    tool_names: Tuple[str, ...] = ()
+    request_params: Optional[Mapping[str, Any]] = None
+    request_options_declared: bool = False
+    stateless: bool = False
 
 @dataclass(frozen=True)
 class SummaryResponse:

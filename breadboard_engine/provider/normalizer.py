@@ -265,6 +265,9 @@ def normalized_result_messages(result: ProviderResult) -> List[Dict[str, Any]]:
         messages.append(message.as_dict())
     if result.reasoning_blocks:
         blocks = normalize_content(result.reasoning_blocks, role="assistant")
+        # Some runtimes also expose message-owned reasoning at result level.
+        # Do not create a second assistant turn for already-recorded blocks.
+        blocks = [block for block in blocks if not any(block in message["content"] for message in messages)]
         if blocks:
             messages.append({"role": "assistant", "content": blocks})
     return messages

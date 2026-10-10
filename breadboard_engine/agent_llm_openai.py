@@ -5304,7 +5304,26 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         name = tool_call["function"]
         args = tool_call["arguments"]
 
-        normalized = registry_from_config(getattr(self, "config", None)).resolve_name(name.lower())
+        registry = registry_from_config(getattr(self, "config", None))
+        normalized = registry.resolve_name(name.lower())
+        declared_tool = registry.tools_by_name.get(name)
+        if declared_tool is not None and declared_tool.execution.get("timeout_unit") == "milliseconds":
+            # Native tool argument units are catalog data, not an alias guess.
+            timeout_ms = args.get("timeout")
+            if timeout_ms is None:
+                timeout_ms = declared_tool.execution["default_timeout_ms"]
+            if timeout_ms < 0:
+                raise ValueError(f"Invalid timeout value: {timeout_ms}. Timeout must be a positive number.")
+            command = args["command"]
+            workdir = args.get("workdir")
+            if workdir:
+                command = f"cd -- {shlex.quote(workdir)} && (\n{command}\n)"
+            # Stock bash.ts:193-205,263-270 sends combined process output,
+            # not a serialized sandbox result or generic shell reminders.
+            command = f"(\n{command}\n) 2>&1"
+            result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout_ms / 1000.0, stream=False))
+            result["__mvi_text_output"] = result.get("stdout", "") + result.get("stderr", "")
+            return result
 
         if normalized.startswith("mcp."):
             return self._handle_mcp_tool(tool_call)

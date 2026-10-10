@@ -152,7 +152,7 @@ def build_limit(params: Params) -> Any:
 # Triggers
 # --------------------------------------------------------------------------
 
-PHASES = ("every_request", "user_turn_start")
+PHASES = ("every_request", "user_turn_start", "assistant_step_end", "user_turn_end")
 """``user_turn_start``: only when the last history message is a user message,
 i.e. before the first request after new user input."""
 
@@ -165,6 +165,7 @@ class TriggerInput:
     reason: str = "threshold"
     max_input_tokens: Optional[int] = None
     blocked: bool = False
+    checkpoint: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -221,6 +222,13 @@ class ThresholdTrigger:
             return Pressure(False, None, 0, "missing_context_window", self.severity, False)
         limit = self.limit.tokens(data.context_window, data.max_output_tokens, data.max_input_tokens)
         in_phase = self.in_phase(history)
+        if self.phase == "assistant_step_end":
+            in_phase = self.enabled
+        if data.checkpoint is not None:
+            in_phase = in_phase and (
+                self.phase == data.checkpoint
+                or self.phase == "user_turn_start" and data.checkpoint == "every_request"
+            )
         measured = self.accounting.measure(data.occupancy)
         if measured is None:
             return Pressure(False, None, limit, "no_usage", self.severity, in_phase)

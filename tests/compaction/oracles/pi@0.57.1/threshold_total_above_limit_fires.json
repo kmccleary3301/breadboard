@@ -1,0 +1,56 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "pi@0.57.1",
+  "case": "threshold_total_above_limit_fires",
+  "source": {
+    "repo": "https://github.com/badlogic/pi-mono",
+    "commit": "a9cedccdde77e9d765303463d8a6cd11c58f7a7f",
+    "package": "@mariozechner/pi-coding-agent@0.57.1",
+    "package_sha256": "8648e71d5553388ed710f1ef4165d9f090e1783e446629410c545875ac564b6f",
+    "evidence": [
+      "dist/core/compaction/compaction.js:71-73,142-146",
+      "dist/core/agent-session.js:1326-1395"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_pi.mjs",
+    "notes": "calculateContextTokens(usage) then shouldCompact(tokens, contextWindow, settings), called from the installed package (dist/core/compaction/compaction.js:71-73,142-146). The pre-prompt check reads the last assistant usage (dist/core/agent-session.js:1390)."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "earlier task"
+      },
+      {
+        "role": "assistant",
+        "content": "done"
+      },
+      {
+        "role": "user",
+        "content": "next task"
+      }
+    ],
+    "usage": {
+      "input_tokens": 180000,
+      "output_tokens": 3617,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 183617
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": null,
+    "reason": "threshold",
+    "native_settings": {}
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 183617,
+      "limit": 183616,
+      "severity": "soft"
+    }
+  }
+}

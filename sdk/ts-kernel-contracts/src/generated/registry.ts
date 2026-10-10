@@ -723,6 +723,17 @@ export const GENERATED_SCHEMA_OBJECTS = {
     },
     "additionalProperties": false,
     "properties": {
+      "compaction": {
+        "oneOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "additionalProperties": true,
+            "type": "object"
+          }
+        ]
+      },
       "completion": {
         "additionalProperties": false,
         "properties": {
@@ -1828,9 +1839,21 @@ export const GENERATED_SCHEMA_OBJECTS = {
                   "minLength": 1,
                   "type": "string"
                 },
+                "context_length": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
                 "id": {
                   "minLength": 1,
                   "type": "string"
+                },
+                "max_input_tokens": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "max_output_tokens": {
+                  "minimum": 1,
+                  "type": "integer"
                 },
                 "params": {
                   "additionalProperties": false,

@@ -40,6 +40,74 @@ def test_responses_message_conversion_simple_string():
     ]
 
 
+@pytest.mark.parametrize("summary", [False, True])
+def test_summary_history_is_complete_without_changing_ordinary_stateful_delta(summary):
+    runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    context = ProviderRuntimeContext(
+        types.SimpleNamespace(get_provider_metadata=lambda key: {"previous_response_id": "resp_old"}.get(key)),
+        {"provider_tools": {"openai": {"responses_stateful": True, "responses_use_developer_role": True}}},
+        extra={"compaction_summary": True, "compaction_stateless": True, "compaction_request_options_declared": True, "max_tokens": 32000} if summary else {},
+    )
+    messages = [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "Original task"},
+        {"role": "assistant", "content": "Original answer"},
+        {"role": "user", "content": "What did we do so far?"},
+        {"role": "user", "content": "Summarize"},
+    ]
+    payload = runtime._request_payload(model="test", messages=messages, tools=None, context=context)
+    assert [item["role"] for item in payload["input"]] == (
+        ["developer", "user", "assistant", "user", "user"] if summary else ["developer", "user", "user"]
+    )
+    assert payload.get("previous_response_id") == (None if summary else "resp_old")
+    assert ("previous_response_id" in payload) is not summary
+    assert payload.get("max_output_tokens") == (32000 if summary else None)
+    assert ("max_output_tokens" in payload) is summary
+
+
+@pytest.mark.parametrize("request_declared", [False, True])
+@pytest.mark.parametrize("state_reference", ["previous_response_id", "conversation_id"])
+def test_summary_without_stateless_opt_in_preserves_base_responses_delta(request_declared, state_reference):
+    runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    state = types.SimpleNamespace(get_provider_metadata=lambda key: "old_reference" if key == state_reference else None)
+    config = {"provider_tools": {"openai": {"responses_stateful": True}}}
+    messages = [{"role": "user", "content": "Task"}, {"role": "assistant", "content": "Answer"},
+                {"role": "user", "content": "Summarize"}]
+    base = runtime._request_payload(model="test", messages=messages, tools=None,
+                                    context=ProviderRuntimeContext(state, config))
+    summary = runtime._request_payload(model="test", messages=messages, tools=None,
+                                       context=ProviderRuntimeContext(state, config, extra={
+                                           "compaction_summary": True,
+                                           "compaction_request_options_declared": request_declared,
+                                       }))
+    assert summary == base
+    assert summary["conversation" if state_reference == "conversation_id" else state_reference] == "old_reference"
+    assert len(summary["input"]) == 1
+
+
+def test_legacy_summary_budget_does_not_add_a_responses_wire_cap():
+    from breadboard_engine.compaction.methods import SummaryRequest
+    from breadboard_engine.compaction.summary_model import ConductorSummaryModel
+    from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
+    from breadboard_engine.state.session_state import SessionState
+
+    payloads = []
+    class ProjectingRuntime(OpenAIResponsesRuntime):
+        def invoke(self, *, client, model, messages, tools, stream, context):
+            payloads.append(self._request_payload(model=model, messages=messages, tools=tools, context=context))
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="Summary")],
+                                  raw_response=None, model=model)
+
+    runtime = ProjectingRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    summarizer = ConductorSummaryModel(runtime=runtime, client=object(), model="test",
+                                      session_state=SessionState("ws", "image", {}), agent_config={})
+    # Summarize._complete already supplied this budget before request blocks
+    # existed. An absent block must not change its Responses request bytes.
+    summarizer.complete(SummaryRequest(system="Summarize", messages=({"role": "user", "content": "Task"},),
+                                      max_tokens=1234, purpose="summary"))
+    assert "max_output_tokens" not in payloads[0]
+
+
 def test_openrouter_responses_wire_surface_digest_uses_responses_converters():
     runtime = OpenAIResponsesRuntime(
         types.SimpleNamespace(provider_id="openrouter", runtime_id="openai_responses")

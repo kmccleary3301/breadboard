@@ -87,10 +87,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM31",
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
-        "packet": "ACR-20260929-pi-text-tool-results",
-        "sha256": "134055aa75c14c27318a7c021a126ff456336632122d25741a4976c53b52bf05",
+        "packet": "COMPACTION_E4_SCOPE_REQUEST",
+        "sha256": "54aaf069f42f044f3fe857df19082aad3c96f56798b0cb8afc90e7b8fdb84ecb",
         "class": "plan_mandated_evolution",
-        "ref": "AM35",
+        "ref": "AM35/AM36",
     },
     "bb.e4.lane_manifest.v1": {
         "packet": "F4",
@@ -192,10 +192,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.harness_definition.v2.schema.json": {
-        "packet": "E4-CompilerCutover",
-        "sha256": "ca43df40d62db13b643dcf2ef535a7d7a5a8cac605b8db7c63ee3aed695e1e12",
+        "packet": "COMPACTION_E4_SCOPE_REQUEST",
+        "sha256": "a177a48d331079c3945b63c74d2ba0adb845aefd7e1ae515613b4ec29f1de475",
         "class": "plan_mandated_evolution",
-        "ref": "AM31/AM32",
+        "ref": "AM31/AM32/AM36",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.effective_harness_lock.v2.schema.json": {
         "packet": "bb-xh49.1",

@@ -576,9 +576,14 @@ class SessionState:
             self._provider_messages_before_last_send = copy.deepcopy(
                 self.provider_messages
             )
+            self._compaction_records_at_last_send = len(self.compaction_state.records)
 
     def final_provider_context(self) -> List[Dict[str, Any]]:
         with self._compaction_lock:
+            if len(self.compaction_state.records) > getattr(self, "_compaction_records_at_last_send", 0):
+                # A response-end edit is newer than the last transmitted view.
+                # Persist the ledger projection, not that superseded surface.
+                return copy.deepcopy(self.compaction_state.project(self.provider_messages, None))
             if (
                 self._last_sent_provider_messages is None
                 or self._provider_messages_before_last_send is None

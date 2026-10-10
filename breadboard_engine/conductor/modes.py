@@ -268,6 +268,7 @@ def get_model_response(
     client_config: Dict[str, Any],
 ) -> Any:
     """Get response from the model with proper tool configuration."""
+    previous_turn_index = session_state.get_provider_metadata("current_turn_index")
     turn_index = len(session_state.transcript) + 1
     try:
         session_state.begin_turn(turn_index)
@@ -330,14 +331,28 @@ def get_model_response(
     except Exception:
         pass
 
-    if not send_messages:
-        send_messages.append({"role": "user", "content": stub_text})
-    elif send_messages[-1].get("role") != "user":
-        send_messages.append({"role": "user", "content": stub_text})
-    else:
-        last_content = send_messages[-1].get("content")
-        if isinstance(last_content, str) and not last_content.strip() and stub_text:
-            send_messages[-1]["content"] = stub_text
+    # Preserve the baseline request stub for text-tool prompting. Native tool
+    # results already provide continuation input and must not get an extra user.
+    # Stock native tool continuations carry the tool outputs, not a user stub.
+    # Redundant legacy assistant renderings can follow a native result; the
+    # execution trace, rather than text heuristics, identifies that case.
+    prior_tool_trace = (getattr(session_state, "turn_tool_usage", {}).get(previous_turn_index) or {}).get("tools")
+    native_tool_continuation = (
+        bool(getattr(conductor, "current_native_tools", None))
+        and bool(prior_tool_trace)
+        and session_state.get_provider_metadata("last_tool_execution_input_kind") == "native"
+        and session_state.get_provider_metadata("last_tool_execution_turn_index") == previous_turn_index
+    )
+    if not (
+        (send_messages and send_messages[-1].get("role") in {"tool", "tool_result"})
+        or native_tool_continuation
+    ):
+        if not send_messages or send_messages[-1].get("role") != "user":
+            send_messages.append({"role": "user", "content": stub_text})
+        else:
+            last_content = send_messages[-1].get("content")
+            if isinstance(last_content, str) and not last_content.strip() and stub_text:
+                send_messages[-1]["content"] = stub_text
 
     per_turn_written_text = conductor.tool_prompt_planner.plan(
         tool_prompt_mode=tool_prompt_mode,

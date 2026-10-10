@@ -14,6 +14,8 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { resolve } from "node:path";
+import crypto from "node:crypto";
+import { syncBuiltinESMExports } from "node:module";
 import { pathToFileURL } from "node:url";
 
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
@@ -64,6 +66,26 @@ const piAi = await pinnedImport("@mariozechner/pi-ai", "dist/index.js");
 // error classes come from the same ESM files the pinned SDK client throws.
 const openaiErrors = await pinnedImport("openai", "core/error.mjs");
 const openaiValues = await pinnedImport("openai", "internal/utils/values.mjs");
+const apiRegistryModule = await pinnedImport("@mariozechner/pi-ai", "dist/api-registry.js");
+const eventStreamModule = await pinnedImport("@mariozechner/pi-ai", "dist/utils/event-stream.js");
+const messagesModule = await pinnedImport("@mariozechner/pi-coding-agent", "dist/core/messages.js");
+const openaiCompletions = await pinnedImport("@mariozechner/pi-ai", "dist/providers/openai-completions.js");
+const compactionModule = await pinnedImport("@mariozechner/pi-coding-agent", "dist/core/compaction/index.js");
+const { registerApiProvider, unregisterApiProviders } = apiRegistryModule;
+const { AssistantMessageEventStream } = eventStreamModule;
+const sessionModule = await pinnedImport("@mariozechner/pi-coding-agent", "dist/core/session-manager.js");
+const { isContextOverflow } = await pinnedImport("@mariozechner/pi-ai", "dist/utils/overflow.js");
+const { Agent } = await pinnedImport("@mariozechner/pi-agent-core", "dist/index.js");
+const { buildSessionContext, getLatestCompactionEntry } = sessionModule;
+const { convertMessages } = openaiCompletions;
+const {
+  DEFAULT_COMPACTION_SETTINGS,
+  calculateContextTokens,
+  estimateContextTokens,
+  prepareCompaction,
+  compact,
+  shouldCompact,
+} = compactionModule;
 const { DefaultResourceLoader, SettingsManager, convertToLlm } = codingAgent;
 const {
   createBashTool,
@@ -288,18 +310,22 @@ function modelFromConfig(config) {
     if (!Number.isInteger(config[key]) || config[key] <= 0) fail(`model_config.${key} must be a positive integer`);
   }
   if (!isPlainObject(config.compat)) fail("model_config.compat must be an object");
+  // Stock custom-model construction, model-registry.js:362-375. The public
+  // sealed config already resolves provider, api and provider-level baseUrl.
+  const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   return {
     id: config.id,
-    name: config.name,
+    name: config.name ?? config.id,
     api: config.api,
     provider: config.provider,
     baseUrl: config.baseUrl,
-    reasoning: config.reasoning,
-    input: [...config.input],
-    cost: { ...config.cost },
-    contextWindow: config.contextWindow,
-    maxTokens: config.maxTokens,
-    compat: { ...config.compat },
+    reasoning: config.reasoning ?? false,
+    input: (config.input ?? ["text"]),
+    cost: config.cost ?? defaultCost,
+    contextWindow: config.contextWindow ?? 128000,
+    maxTokens: config.maxTokens ?? 16384,
+    headers: undefined,
+    compat: config.compat,
   };
 }
 
@@ -458,8 +484,8 @@ async function initialize(payload) {
 function llmContext(messages) {
   if (!Array.isArray(messages)) fail("messages must be a list");
   for (const message of messages) {
-    if (!isPlainObject(message) || !["user", "assistant", "toolResult"].includes(message.role)) {
-      fail("messages must be pinned user, assistant, or toolResult AgentMessages");
+    if (!isPlainObject(message) || !["user", "assistant", "toolResult", "compactionSummary"].includes(message.role)) {
+      fail("messages must be pinned AgentMessages");
     }
   }
   return {
@@ -538,6 +564,7 @@ async function projectProviderFailure(payload) {
   const errText = payload.response_body_text;
   if (!Number.isInteger(status) || status < 100 || status > 599) fail("http_status must be an HTTP status code");
   if (typeof errText !== "string") fail("response_body_text must be a string");
+  await syncSessionMessages(payload.messages, initializedState.model);
   // openai@6.26.0 client.mjs:351-353,362 (makeRequest) and :193-195
   // (makeStatusError): safeJSON(errText), message only when the body is not
   // JSON, then APIError.generate(status, errJSON, errMessage, response.headers).
@@ -547,10 +574,12 @@ async function projectProviderFailure(payload) {
   // The SDK error surfaces from client.chat.completions.create
   // (openai-completions.js:56); throwing it from onPayload (:52) reaches the
   // same pinned catch (:239-249), which builds the terminal assistant message.
-  const message = await runPinnedStream(payload.messages, () => {
+  const message = await withReplayClock(nextTimestamp(), () => runPinnedStream(payload.messages, () => {
     throw error;
-  }, new AbortController().signal);
+  }, new AbortController().signal));
   if (message.stopReason !== "error") fail("pinned provider failure did not produce an error message");
+  appendSessionEntry({ type: "message", message }, message.timestamp);
+  observedMessages.push(structuredClone(message));
   return { schema_version: PHASE_SCHEMA_VERSION, kind: "provider_failure", message };
 }
 
@@ -649,14 +678,306 @@ async function close(payload) {
   const cleanup = await closeTrackedProcessGroups();
   return { schema_version: PHASE_SCHEMA_VERSION, kind: "closed", cleanup };
 }
+// Episode-local stock SessionManager, retained by the serial framed worker.
+// Id seam: session-manager.js 0.73.1:13-20; 0.57.1:9-16.
+// Entry clock seam: 0.73.1:580-589,617-630; 0.57.1:574-583,611-624.
+const sessionManager = sessionModule.SessionManager.inMemory();
+const sessionEntries = [];
+let observedMessages = [];
+let replayClock = 1000;
+let overflowRecoveryAttempted = false;
+const NativeDate = Date;
+function nextTimestamp() { return ++replayClock; }
+async function withReplayClock(timestamp, action) {
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : [timestamp])); }
+    static now() { return timestamp; }
+  };
+  try { return await action(); }
+  finally { globalThis.Date = NativeDate; }
+}
+function appendSessionEntry(fields, timestamp) {
+  const originalUuid = crypto.randomUUID;
+  const originalDate = globalThis.Date;
+  crypto.randomUUID = () => `${sessionEntries.length.toString(16).padStart(8, "0")}-0000-0000-0000-000000000000`;
+  syncBuiltinESMExports();
+  globalThis.Date = class extends NativeDate {
+    constructor(...args) { super(...(args.length ? args : [timestamp])); }
+    static now() { return timestamp; }
+  };
+  try {
+    const id = fields.type === "message"
+      ? sessionManager.appendMessage(fields.message)
+      : sessionManager.appendCompaction(fields.summary, fields.firstKeptEntryId,
+          fields.tokensBefore, fields.details, fields.fromHook);
+    const entry = sessionManager.getEntry(id);
+    sessionEntries.push(entry);
+    return entry;
+  } finally {
+    crypto.randomUUID = originalUuid;
+    syncBuiltinESMExports();
+    globalThis.Date = originalDate;
+  }
+}
+async function syncSessionMessages(messages, model) {
+  if (messages.length < observedMessages.length
+      || observedMessages.some((m, i) => JSON.stringify(m) !== JSON.stringify(messages[i]))) {
+    fail("conductor history differs from retained Pi session context");
+  }
+  for (const original of messages.slice(observedMessages.length)) {
+    if (!["user", "assistant", "toolResult"].includes(original.role)) {
+      fail("new session messages must be stock AgentMessages");
+    }
+    // Clock seams: agent-session.js:656 (user), pi-ai openai-completions.js:46
+    // (assistant), pi-agent-core agent-loop.js:257 (toolResult).
+    // Replay event order, not BB's query-start timestamp across retries.
+    const timestamp = nextTimestamp();
+    const message = { ...original, timestamp };
+    // Stock lifecycle reset: agent-session.js:186,223-227.
+    if (message.role === "user" || (message.role === "assistant" && message.stopReason !== "error")) {
+      overflowRecoveryAttempted = false;
+    }
+    // Stock initializes usage even when the provider emits no usage chunk
+    // (0.57.1 openai-completions.js:31-47; 0.73.1:54-69).
+    if (message.role === "assistant" && message.usage === undefined) {
+      message.usage = await parseProviderUsage(undefined, timestamp, model);
+    }
+    appendSessionEntry({ type: "message", message }, timestamp);
+  }
+  observedMessages = structuredClone(messages);
+}
+// Replay only the provider transport, running the stock OpenAI stream parser.
+// Usage parsing: 0.73.1 openai-completions.js:199-200; 0.57.1:92-115.
+// Assistant clock: 0.73.1:69; 0.57.1:46.
+async function parseProviderUsage(usage, timestamp, model) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(
+    `data: ${JSON.stringify({ choices: [], usage })}\n\ndata: [DONE]\n\n`,
+    { headers: { "content-type": "text/event-stream" } },
+  );
+  try {
+    const message = await withReplayClock(timestamp, async () => {
+      const stream = openaiCompletions.streamSimpleOpenAICompletions(model,
+        { messages: [] }, { apiKey: "EMPTY" });
+      for await (const event of stream) { /* stock parser owns usage */ }
+      return stream.result();
+    });
+    if (message.stopReason === "error") fail(message.errorMessage);
+    return message.usage;
+  } finally { globalThis.fetch = originalFetch; }
+}
+async function prepareSession(payload, model) {
+  await syncSessionMessages(payload.messages, model);
+  const latest = sessionEntries.findLast((e) => e.type === "message"
+    && e.message.role === "assistant" && e.message.stopReason !== "error");
+  // The phase protocol's usage is the provider's raw OpenAI usage, not a Pi
+  // alias. Parsing it also restores the last successful response before overflow.
+  if (latest && ((payload.usage !== undefined && payload.usage !== null)
+      || (latest.message.usage === undefined
+        && (payload.reason === "threshold" || payload.checkpoint === "agent_end")))) {
+    latest.message.usage = await parseProviderUsage(payload.usage, latest.message.timestamp, model);
+  }
+  return sessionManager.getBranch();
+}
+function compactionReason(messages, settings, model) {
+  // Trigger glue: 0.57.1 agent-session.js:1326-1393;
+  // 0.73.1 agent-session.js:1376-1444. Overflow precedes threshold.
+  const assistantMessage = messages.findLast((m) => m.role === "assistant");
+  if (!settings.enabled || !assistantMessage || assistantMessage.stopReason === "aborted") return null;
+  const compactionEntry = getLatestCompactionEntry(sessionEntries);
+  const assistantIsFromBeforeCompaction = compactionEntry !== null
+    && assistantMessage.timestamp <= new NativeDate(compactionEntry.timestamp).getTime();
+  if (assistantIsFromBeforeCompaction) return null;
+  const sameModel = assistantMessage.provider === model.provider && assistantMessage.model === model.id;
+  if (sameModel && isContextOverflow(assistantMessage, model.contextWindow)) {
+    return overflowRecoveryAttempted ? null : "overflow";
+  }
+  let contextTokens;
+  if (assistantMessage.stopReason === "error") {
+    const estimate = estimateContextTokens(messages);
+    if (estimate.lastUsageIndex === null) return null;
+    const usageMsg = messages[estimate.lastUsageIndex];
+    if (compactionEntry && usageMsg.role === "assistant"
+        && usageMsg.timestamp <= new NativeDate(compactionEntry.timestamp).getTime()) return null;
+    contextTokens = estimate.tokens;
+  } else {
+    contextTokens = calculateContextTokens(assistantMessage.usage);
+  }
+  return shouldCompact(contextTokens, model.contextWindow, settings) ? "threshold" : null;
+}
+
+class CompactionPrepareSentinel extends Error {
+  constructor() {
+    super("bb-pi-0-57-1-compaction-prepare-sentinel");
+  }
+}
+
+function modelForCompaction(state, payloadConfig) {
+  if (payloadConfig) return modelFromConfig(payloadConfig);
+  if (state?.model) return state.model;
+  fail("prepare_compaction requires initialized worker or model_config");
+}
+
+async function prepareCompactionPhase(payload) {
+  if (!Array.isArray(payload?.messages)) fail("prepare_compaction requires messages");
+  const wireModel = modelForCompaction(initializedState, payload.model_config);
+  const pathEntries = await prepareSession(payload, wireModel);
+  const settings = { ...DEFAULT_COMPACTION_SETTINGS, ...payload.settings };
+  let reason = payload.reason;
+  if (payload.reason === "threshold" || payload.checkpoint === "agent_end") {
+    if (typeof payload.context_window !== "number" || payload.context_window <= 0) {
+      fail("prepare_compaction requires context_window");
+    }
+    reason = compactionReason(buildSessionContext(pathEntries).messages, settings,
+      { ...wireModel, contextWindow: payload.context_window });
+    if (reason === null) {
+      return { schema_version: PHASE_SCHEMA_VERSION, kind: "compaction_unavailable", reason: "not_triggered" };
+    }
+  }
+  if (reason === "overflow") {
+    if (overflowRecoveryAttempted) {
+      return { schema_version: PHASE_SCHEMA_VERSION, kind: "compaction_unavailable", reason: "overflow_retry_exhausted" };
+    }
+    overflowRecoveryAttempted = true;
+  }
+  const preparation = prepareCompaction(pathEntries, settings);
+  if (!preparation) {
+    return { schema_version: PHASE_SCHEMA_VERSION, kind: "compaction_unavailable", reason: "nothing_to_compact" };
+  }
+  const keptMessage = pathEntries.find((e) => e.id === preparation.firstKeptEntryId)?.message;
+  const firstKeptIndex = keptMessage
+    ? buildSessionContext(pathEntries).messages.indexOf(keptMessage) : -1;
+  // Stock call order, not token-budget arithmetic:
+  // 0.73.1 compaction.js:561-574; 0.57.1:558-571.
+  const split = preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0;
+  const callKinds = split
+    ? [...(preparation.messagesToSummarize.length ? ["history"] : []), "prefix"] : ["history"];
+  const requests = {};
+  let callIndex = 0;
+  const seamApi = "bb-pi-compaction-capture";
+  registerApiProvider({
+    api: seamApi,
+    stream: () => fail("unexpected stream call during compaction prepare"),
+    streamSimple: (_model, context, options) => {
+      requests[callKinds[callIndex++]] = {
+        messages: convertMessages(wireModel, context, wireModel.compat),
+        max_tokens: options.maxTokens,
+      };
+      return { result: async () => { throw new CompactionPrepareSentinel(); } };
+    },
+  }, seamApi);
+  const timestamp = nextTimestamp();
+  try {
+    // pi-ai stream.js:19-25 dispatches directly to the seam; no dummy key needed.
+    // Stock summary clocks: 0.73.1 compaction.js:453,601; 0.57.1:444,598.
+    await withReplayClock(timestamp, () => compact(preparation, { ...wireModel, api: seamApi }, undefined, payload.customInstructions, undefined));
+  } catch (error) {
+    if (!(error instanceof CompactionPrepareSentinel)) throw error;
+  } finally { unregisterApiProviders(seamApi); }
+  return {
+    schema_version: PHASE_SCHEMA_VERSION,
+    kind: "compaction_prepared",
+    preparation: {
+      ...preparation,
+      firstKeptIndex,
+      reason,
+      customInstructions: payload.customInstructions,
+      fileOps: {
+        read: [...preparation.fileOps.read],
+        written: [...preparation.fileOps.written],
+        edited: [...preparation.fileOps.edited],
+      },
+    },
+    summary_request: requests.history === undefined ? null : requests.history,
+    turn_prefix_request: requests.prefix === undefined ? null : requests.prefix,
+  };
+}
+
+async function finalizeCompactionPhase(payload) {
+  const prep = payload.preparation;
+  if (!prep || typeof prep !== "object") fail("finalize_compaction requires preparation");
+  const preparation = {
+    ...prep,
+    fileOps: {
+      read: new Set(prep.fileOps.read),
+      written: new Set(prep.fileOps.written),
+      edited: new Set(prep.fileOps.edited),
+    },
+  };
+  const split = prep.isSplitTurn && prep.turnPrefixMessages.length > 0;
+  const answers = split
+    ? [...(prep.messagesToSummarize.length ? [payload.summary] : []), payload.turn_prefix_summary]
+    : [payload.summary];
+  if (answers.some((text) => typeof text !== "string")) fail("each stock summary call requires its policy answer");
+  let callIndex = 0;
+  const seamApi = "bb-pi-compaction-replay";
+  registerApiProvider({
+    api: seamApi,
+    stream: () => fail("unexpected stream call during compaction finalize"),
+    streamSimple: () => {
+      const text = answers[callIndex++];
+      const stream = new AssistantMessageEventStream();
+      stream.push({ type: "done", message: {
+        role: "assistant", content: [{ type: "text", text }], stopReason: "stop",
+      } });
+      return stream;
+    },
+  }, seamApi);
+  const wireModel = modelForCompaction(initializedState, payload.model_config);
+  let result;
+  try {
+    result = await withReplayClock(nextTimestamp(), () => compact(preparation, { ...wireModel, api: seamApi }, undefined, prep.customInstructions, undefined));
+  } finally { unregisterApiProviders(seamApi); }
+  appendSessionEntry({
+    type: "compaction", summary: result.summary, firstKeptEntryId: result.firstKeptEntryId,
+    tokensBefore: result.tokensBefore, details: result.details, fromHook: false,
+  }, nextTimestamp());
+  // Stock state rebuild and overflow-only error removal:
+  // 0.73.1 agent-session.js:1543-1546,1564-1567; 0.57.1:1461-1464,1481-1485.
+  let messages = sessionManager.buildSessionContext().messages;
+  const last = messages[messages.length - 1];
+  if (prep.reason === "overflow" && last?.role === "assistant" && last.stopReason === "error") {
+    messages = messages.slice(0, -1);
+  }
+  observedMessages = structuredClone(messages);
+  let retry = false;
+  if (prep.reason === "overflow") {
+    // Stock attempts Agent.continue().catch(() => {}) after rebuilding:
+    // agent-session.js:1481-1490; pi-agent-core agent.js:247-269 rejects a
+    // retained assistant without steering/followups. Probe the actual method
+    // at the provider seam; its private transcript is never persisted.
+    const agent = new Agent({
+      initialState: { model: wireModel, messages: structuredClone(messages) }, convertToLlm,
+      streamFn: (model, context, options) => {
+        retry = true;
+        // Stock parser catches onPayload failures before network I/O (:239-249).
+        return openaiCompletions.streamSimpleOpenAICompletions(model, context, {
+          ...options, apiKey: PROVIDER_API_KEY, onPayload: () => { throw new CompactionPrepareSentinel(); },
+        });
+      },
+    });
+    await withReplayClock(replayClock, () => agent.continue().catch(() => {}));
+  }
+  return {
+    schema_version: PHASE_SCHEMA_VERSION, kind: "compaction_finalized", messages,
+    summary: result.summary, reason: prep.reason, retry,
+  };
+}
+
 
 async function executeOperation(operation, payload, signal) {
   if (operation === "initialize") return initialize(payload);
   if (operation === "project_request") return projectRequest(payload);
+  if (operation === "parse_provider_usage") {
+    const usage = await parseProviderUsage(payload.usage, replayClock, initializedState.model);
+    return { schema_version: PHASE_SCHEMA_VERSION, kind: "assistant_usage", usage };
+  }
   if (operation === "parse_streaming_json_batch") return parseStreamingJsonBatch(payload);
   if (operation === "prepare_tools") return prepareTools(payload);
   if (operation === "execute_batch") return executeBatch(payload, signal);
   if (operation === "project_provider_failure") return projectProviderFailure(payload);
+  if (operation === "prepare_compaction") return prepareCompactionPhase(payload);
+  if (operation === "finalize_compaction") return finalizeCompactionPhase(payload);
   if (operation === "close") return close(payload);
   fail(`unknown native operation: ${operation}`);
 }

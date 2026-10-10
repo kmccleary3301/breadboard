@@ -212,6 +212,9 @@ parameters:
 execution:
   blocking: true
   max_per_turn: 1
+  # OpenCode tool/bash.ts:22,65-83. Other shell catalogs retain seconds.
+  timeout_unit: milliseconds
+  default_timeout_ms: 120000
 provider_routing:
   openai:
     native_primary: true

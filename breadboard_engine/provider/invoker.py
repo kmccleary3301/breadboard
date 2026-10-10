@@ -170,7 +170,7 @@ class ProviderInvoker:
                     output_emitted=exc.output_emitted or recorder.output_emitted,
                     code=exc.safe_code,
                     category=category,
-                    retryable=exc.replay_safe and not recorder.output_emitted,
+                    retryable=exc.replay_safe and not recorder.output_emitted and not is_context_overflow(exc),
                     http_status=http_status,
                 )
             exchange = self._persist_exchange(session_state, recorder, terminal)
@@ -521,6 +521,9 @@ class ProviderInvoker:
                 and exc.replay_safe
                 and not recorder.output_emitted
                 and not _is_auth_or_policy(exc)
+                # Overflow recovery belongs to the compaction controller.
+                # Retrying an unchanged request cannot reduce its context.
+                and not is_context_overflow(exc)
             )
 
         def _can_retry_without_stream(exc: ProviderRuntimeError) -> bool:

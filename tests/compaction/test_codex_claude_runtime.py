@@ -22,9 +22,24 @@ class Runtime:
 
     def invoke(self, *, client, model, messages, tools, stream, context):
         self.models.append(model)
-        assert tools is None and not stream and context.extra["compaction_summary"]
+        assert context.extra["compaction_summary"]
+        if context.extra.get("compaction_request_params") is not None:
+            assert stream
+            if self.descriptor.provider_id == "anthropic":
+                assert [tool["name"] for tool in tools] == ["Read"]
+                assert context.extra["compaction_request_params"] == {"temperature": 1}
+            else:
+                assert tools == []
+                assert context.extra["compaction_request_params"] == {"parallel_tool_calls": False, "tool_choice": "auto"}
+        else:
+            assert tools is None and not stream
         return ProviderResult(messages=[ProviderMessage(role="assistant", content="checkpoint")],
                               raw_response=None, model=model)
+
+
+def claude_conductor(runtime):
+    runtime.descriptor = SimpleNamespace(provider_id="anthropic", default_api_variant="messages", runtime_id="anthropic_messages")
+    return SimpleNamespace(config={}, current_native_tools=[SimpleNamespace(name="Read", description="Read a file", parameters=[])])
 
 
 def session(messages, usage):
@@ -41,9 +56,10 @@ def test_controller_honors_summary_model_and_does_not_reuse_stale_usage(preset):
         "enabled": True, "preset": preset, "contextWindow": 200000, "summary_model": "summary-model",
     }})
     runtime = Runtime()
+    conductor = claude_conductor(runtime) if preset == "claude_code@2.1.63" else None
     state = session([{"role": "user", "content": "task"}, {"role": "assistant", "content": "work"}], 190000)
-    first = controller.prepare_request(state, conductor=None, runtime=runtime, client=None, model="conversation-model", turn_index=1)
-    second = controller.prepare_request(state, conductor=None, runtime=runtime, client=None, model="conversation-model", turn_index=1)
+    first = controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model="conversation-model", turn_index=1)
+    second = controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model="conversation-model", turn_index=1)
     assert runtime.models == ["summary-model"]
     assert len(state.compaction_state.records) == 1
     assert first == second
@@ -117,9 +133,10 @@ def test_claude_threshold_uses_actual_output_cap(max_output, summary_count):
         "enabled": True, "preset": "claude_code@2.1.63", "contextWindow": 200000,
     }})
     runtime = Runtime()
+    conductor = claude_conductor(runtime)
     state = session([{"role": "user", "content": "task"}, {"role": "assistant", "content": "work"}], 170000)
     state.set_provider_metadata("max_output_tokens", max_output)
-    controller.prepare_request(state, conductor=None, runtime=runtime, client=None, model="model", turn_index=1)
+    controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model="model", turn_index=1)
     assert len(runtime.models) == summary_count
 
 

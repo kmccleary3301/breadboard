@@ -54,6 +54,15 @@ pipeline:
         prompt: {file: prompt.md}
         max_tokens: null
         empty_fallback: (no summary available)
+        # Local summary prompt: compact.rs:435-453,512-575 at source.commit.
+        # Executed wire evidence: tests/compaction/oracles/codex@0.139.0/
+        # recordings/pre_turn_and_second_compaction.jsonl, requests 1 and 3.
+        request:
+          stream: true
+          tools: []
+          params:
+            parallel_tool_calls: false
+            tool_choice: auto
       place:
         kind: bridge
         prefix: {file: summary_prefix.md}

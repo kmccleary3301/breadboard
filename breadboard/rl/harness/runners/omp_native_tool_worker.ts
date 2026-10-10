@@ -22,8 +22,28 @@ let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | nu
 let reminderInjector: { transform: (context: { systemPrompt: string[]; messages: unknown[] }, date: string, cwd: string) => unknown } | null = null;
 // Conductor owns transport, so the pinned registry never sends this key.
 const WORKER_API_KEY = "omp-tool-worker-key";
-
-async function sha256File(path: string): Promise<string> {
+let workerCompactionEnabled = false;
+let compactionPkg: any = null;
+let compactionUtils: any = null;
+let compactionMethods: any = null;
+let shakePkg: any = null;
+let tokenizerPkg: any = null;
+let queuedMessagesPkg: { isTerminalTextAssistantAnswer: (message: unknown) => boolean };
+let TodoTracker: new (host: unknown) => { buildPostCompactionEagerNudges: () => Array<Record<string, unknown>> };
+let parseChunkUsage: (usage: object, model: unknown, premiumRequests: undefined, timestamp: number) => unknown;
+let createInitialAssistantMessage: (api: string, provider: string, model: string) => { usage: unknown };
+let summarizationSystemPromptText = "";
+let autoContinuePromptText = "";
+let convertToLlm: (messages: unknown[]) => unknown[];
+let computeNonMessageTokensFn: (session: unknown, tokenizer: unknown) => number;
+let streamOpenAICompletions: (
+  model: unknown,
+  context: { systemPrompt: string[]; messages: unknown[]; tools: unknown[] },
+  options: { apiKey: string; fetch: typeof fetch; maxRetries: number },
+) => AsyncIterable<{ type: string; error?: Record<string, unknown> }>;
+const COMPACTION_RECOVERY_BAND = 0.8; // session-maintenance.ts:215
+ 
+ async function sha256File(path: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", await Bun.file(path).arrayBuffer());
   return Buffer.from(digest).toString("hex");
 }
@@ -40,6 +60,30 @@ type ProcessInfo = ProcessHandle & { ppid: number; state: string };
 
 async function processTable(): Promise<Map<number, ProcessInfo>> {
   const table = new Map<number, ProcessInfo>();
+  if (process.platform === "darwin") {
+    const child = Bun.spawn(["/bin/ps", "-axo", "pid=,ppid=,pgid=,stat="], {
+      stdout: "pipe", stderr: "pipe",
+    });
+    const [output, error, status] = await Promise.all([
+      new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited,
+    ]);
+    if (status !== 0) throw new Error(`process table inspection failed: ${error}`);
+    for (const row of output.split("\n")) {
+      if (!row.trim()) continue;
+      const match = row.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\S+)\s*$/);
+      if (!match) throw new Error(`invalid process table row: ${row}`);
+      const pid = Number(match[1]);
+      const ppid = Number(match[2]);
+      const pgid = Number(match[3]);
+      if (!Number.isSafeInteger(pid) || pid <= 0 || !Number.isSafeInteger(ppid)
+        || !Number.isSafeInteger(pgid) || pgid <= 0 || table.has(pid)) {
+        throw new Error(`invalid process table identity: ${row}`);
+      }
+      table.set(pid, { pid, ppid, pgid, state: match[4] });
+    }
+    if (!table.has(process.pid)) throw new Error("process table omitted worker identity");
+    return table;
+  }
   for (const entry of await readdir("/proc")) {
     if (!/^\d+$/.test(entry)) continue;
     try {
@@ -471,6 +515,10 @@ async function initialize(payload: Record<string, any>) {
   const { AuthStorage } = await import(`${pinnedSourceRoot}/packages/ai/src/auth-storage.ts`);
   const providerModule = await import(`${pinnedSourceRoot}/packages/ai/src/providers/openai-completions.ts`);
   convertMessages = providerModule.convertMessages as typeof convertMessages;
+  parseChunkUsage = providerModule.parseChunkUsage;
+  streamOpenAICompletions = providerModule.streamOpenAICompletions;
+  ({ createInitialResponsesAssistantMessage: createInitialAssistantMessage } =
+    await import(`${pinnedSourceRoot}/packages/ai/src/providers/openai-shared.ts`));
   const schemaModule = await import(`${pinnedSourceRoot}/packages/omptype/src/json-schema.ts`);
   irToJsonSchema = schemaModule.irToJsonSchema as typeof irToJsonSchema;
   const validatorModule = await import(`${pinnedSourceRoot}/packages/ai/src/utils/validation.ts`);
@@ -478,16 +526,34 @@ async function initialize(payload: Record<string, any>) {
   const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
   const { DateCwdReminderInjector } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/date-cwd-reminder.ts`);
   reminderInjector = new DateCwdReminderInjector();
-  const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides: {
-    "retry.enabled": false, "retry.fallbackChains": {}, "compaction.enabled": false,
-    "modelLoopGuard.enabled": false, "advisor.enabled": false, "autolearn.enabled": false,
+  const compactionEnabled = payload.compaction === true;
+  workerCompactionEnabled = compactionEnabled;
+  compactionPkg = await import(`${pinnedSourceRoot}/packages/agent/src/compaction/compaction.ts`);
+  compactionUtils = await import(`${pinnedSourceRoot}/packages/agent/src/compaction/utils.ts`);
+  compactionMethods = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/compaction-methods.ts`);
+  shakePkg = await import(`${pinnedSourceRoot}/packages/agent/src/compaction/shake.ts`);
+  tokenizerPkg = await import(`${pinnedSourceRoot}/packages/agent/src/tokenizer.ts`);
+  summarizationSystemPromptText = compactionUtils.SUMMARIZATION_SYSTEM_PROMPT;
+  autoContinuePromptText = await Bun.file(`${pinnedSourceRoot}/packages/coding-agent/src/prompts/system/auto-continue.md`).text();
+  queuedMessagesPkg = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/queued-messages.ts`);
+  ({ convertToLlm } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/messages.ts`));
+  ({ TodoTracker } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/todo-tracker.ts`));
+  const contextUsageModule = await import(`${pinnedSourceRoot}/packages/coding-agent/src/modes/utils/context-usage.ts`);
+  computeNonMessageTokensFn = contextUsageModule.computeNonMessageTokens as typeof computeNonMessageTokensFn;
+  const overrides: Record<string, any> = {
+    "retry.enabled": false, "retry.fallbackChains": {},
     "autoContinue.enabled": false, "prewalk.enabled": false, "imageUrls.enabled": false,
-    "snapcompact.enabled": false, "title.refreshOnReplan": false,
+    "title.refreshOnReplan": false,
     "tools.maxTimeout": 30, "tools.artifactSpillThreshold": 32768, "edit.fuzzyMatch": true,
     "edit.fuzzyThreshold": 0.95, "edit.enforceSeenLines": true, "edit.autoRepair.enabled": false,
     "edit.blockAutoGenerated": true, "shellMinimizer.enabled": false,
-  } });
-  const manager = SessionManager.inMemory(workspace);
+  };
+  if (!compactionEnabled) {
+    overrides["compaction.enabled"] = false;
+    overrides["snapcompact.enabled"] = false;
+  }
+  const settings = await Settings.init({ cwd: workspace, agentDir: String(payload.scratch), inMemory: true, configFiles: [], overrides });
+  const manager = await withJournalMetadata(() => SessionManager.inMemory(workspace));
   const authStorage = await AuthStorage.create(":memory:");
   const modelRegistry = new ModelRegistry(authStorage, `${payload.scratch}/models.yml`, { settings });
   modelRegistry.registerProvider(advertisement.providerId, {
@@ -506,7 +572,7 @@ async function initialize(payload: Record<string, any>) {
   // preconnect; sdk.ts:4354 then returns before opening a socket.
   const nativeFetch = globalThis.fetch;
   globalThis.fetch = ((input: RequestInfo | URL, init?: RequestInit) => nativeFetch(input, init)) as typeof fetch;
-  const created = await createAgentSession({
+  const created = await withJournalMetadata(() => createAgentSession({
     cwd: workspace, agentDir: String(payload.scratch), authStorage, modelRegistry, model, thinkingLevel: "off",
     toolNames: [...TOOL_NAMES], restrictToolNames: true, allowRestrictedCustomTools: false,
     settings, sessionManager: manager, contextFiles: [], skills: [], rules: [], promptTemplates: [],
@@ -514,7 +580,7 @@ async function initialize(payload: Record<string, any>) {
     disableExtensionDiscovery: true, enableMCP: false, enableLsp: false, enableIrc: false,
     skipPythonPreflight: true, hasUI: false, interactivePrompts: false,
     rebindModelAfterDiscovery: false, getApiKey: async () => WORKER_API_KEY,
-  });
+  }));
   session = created.session;
   nativeSystemPrompt = session.agent.state.systemPrompt;
   if (!Array.isArray(nativeSystemPrompt) || !nativeSystemPrompt.length || nativeSystemPrompt.some((part) => typeof part !== "string")) {
@@ -558,17 +624,701 @@ async function initialize(payload: Record<string, any>) {
     },
   };
 }
+// The stock SessionManager owns the full episode journal, including entries
+// absent from its reduced context. Append glue: agent-session.ts:2734;
+// compaction commit: session-maintenance.ts:1859-1878.
+let journalMessageId = 0;
+let journalView: unknown[] = [];
 
-async function dispatch(operation: string, payload: Record<string, any>): Promise<Record<string, any>> {
-  if (operation === "initialize") return initialize(payload);
-  if (!session) throw new Error("worker must be initialized before phases");
+async function withJournalMetadata<T>(operation: () => T | Promise<T>, performanceClock?: () => number): Promise<T> {
+  const NativeDate = Date;
+  const randomUUID = crypto.randomUUID;
+  const randomUUIDv7 = Bun.randomUUIDv7;
+  const performanceNow = performance.now;
+  const timestamp = 1000 + journalMessageId;
+  class ReplayDate extends NativeDate {
+    constructor(value: string | number = timestamp) { super(value); }
+    static now() { return timestamp; }
+  }
+  globalThis.Date = ReplayDate as DateConstructor;
+  crypto.randomUUID = () => `00000000-0000-4000-8000-${(++journalMessageId).toString(16).padStart(12, "0")}`;
+  Bun.randomUUIDv7 = () => "00000000-0000-7000-8000-000000000000";
+  if (performanceClock) performance.now = performanceClock;
+  try { return await operation(); }
+  finally {
+    globalThis.Date = NativeDate;
+    crypto.randomUUID = randomUUID;
+    Bun.randomUUIDv7 = randomUUIDv7;
+    if (performanceClock) performance.now = performanceNow;
+  }
+}
+
+async function synchronizeHistory(messages: unknown[]): Promise<Array<Record<string, unknown>>> {
+  if (messages.length < journalView.length ||
+      journalView.some((message, index) => JSON.stringify(message) !== JSON.stringify(messages[index]))) {
+    throw new Error("OMP history diverged from the committed stock session context");
+  }
+  await withJournalMetadata(() => {
+    for (const message of messages.slice(journalView.length)) {
+      const msg = message as Record<string, unknown>;
+      if (msg.role === "compactionSummary") {
+        throw new Error("compactionSummary must originate in this episode's stock journal");
+      }
+      session.sessionManager.appendMessage(structuredClone(msg));
+    }
+  });
+  journalView = structuredClone(messages);
+  session.agent.replaceMessages(structuredClone(messages));
+  return session.sessionManager.getBranch().filter((entry: Record<string, unknown>) =>
+    entry.type === "message" || entry.type === "compaction");
+}
+
+async function shakeEntries(config: unknown): Promise<{ tokensFreed: number; toolResultsDropped: number; blocksDropped: number }> {
+  // Run stock SessionMaintenance.shake via the real SDK session. The manager is
+  // in-memory (session-manager.ts:3115-3121); its stock saveArtifact returns a
+  // deterministic counter (2128-2136), including the stock recovery link.
+  // Deterministic metadata only: session-manager.ts:99, :2302;
+  // session-migrations.ts:7; shake.ts:448. Restore clocks/ids before tool work.
+  return await withJournalMetadata(async () => {
+    session.agent.replaceMessages(session.sessionManager.buildSessionContext().messages);
+    return await session.shake("elide", { config });
+  });
+}
+class ReplaySentinelError extends Error {
+  readonly isReplaySentinel = true;
+  constructor() {
+    super("REPLAY_SENTINEL");
+  }
+}
+
+class ReplayDriver {
+  answers: string[];
+  capturedCalls: Array<{
+    messages: unknown[];
+    max_tokens?: number;
+    tool_choice?: string;
+  }> = [];
+  callIndex = 0;
+
+  constructor(answers: string[] = []) {
+    this.answers = answers;
+  }
+
+  completeImpl = async (
+    modelParam: unknown,
+    ctx: { systemPrompt?: unknown; messages: Array<Record<string, unknown>>; tools?: unknown },
+    opts: { maxTokens?: number; toolChoice?: string; reasoning?: unknown },
+  ) => {
+    const idx = this.callIndex++;
+    const targetModel = (modelParam && typeof modelParam === "object") ? modelParam : session.agent.state.model;
+    const wireMessages = convertMessages!(targetModel, ctx, (targetModel as Record<string, unknown>).compat);
+    const callRecord: { messages: unknown[]; max_tokens?: number; tool_choice?: string } = {
+      messages: wireMessages,
+      max_tokens: typeof opts?.maxTokens === "number" ? opts.maxTokens : undefined,
+    };
+    if (typeof opts?.toolChoice === "string") {
+      callRecord.tool_choice = opts.toolChoice;
+    }
+    this.capturedCalls.push(callRecord);
+    if (idx < this.answers.length) {
+      return {
+        role: "assistant",
+        content: [{ type: "text", text: this.answers[idx] }],
+        stopReason: "stop",
+        timestamp: 2000,
+      };
+    }
+    const { promise, resolve } = Promise.withResolvers<void>();
+    setTimeout(resolve, 10);
+    await promise;
+    throw new ReplaySentinelError();
+  };
+}
+
+async function buildHandoffContext(entries: Array<Record<string, unknown>>) {
+  const handoffPromptText = compactionPkg.renderHandoffPrompt(compactionPkg.AUTO_HANDOFF_THRESHOLD_FOCUS);
+  const agentMessages = session.sessionManager.buildSessionContext().messages;
+  const handoffSnapshot = [
+    ...agentMessages,
+    {
+      role: "user",
+      content: [{ type: "text", text: handoffPromptText }],
+      attribution: "agent",
+      timestamp: 1000 + agentMessages.length,
+    },
+  ];
+  // session-handoff.ts:150-157: run the stock session conversion and the
+  // agent's side-request builder, with the base rather than per-turn prompt.
+  // Pin the clock read by the stock date/cwd transform.
+  const NativeDate = Date;
+  const timestamp = NativeDate.parse(`${runtimeInputs.current_date}T12:00:00`);
+  class ReplayDate extends NativeDate {
+    constructor(value: string | number = timestamp) { super(value); }
+    static now() { return timestamp; }
+  }
+  globalThis.Date = ReplayDate as DateConstructor;
+  try {
+    const handoffLlmMessages = await session.convertMessagesToLlm(handoffSnapshot);
+    return await session.agent.buildSideRequestContext(handoffLlmMessages, nativeSystemPrompt);
+  } finally {
+    globalThis.Date = NativeDate;
+  }
+}
+function compactionCreatedRetryFit(
+  compactedMessages: Array<Record<string, unknown>>,
+  contextWindow: number,
+  compactionSettings: Record<string, unknown>,
+  headroom = false,
+): boolean {
+  const tokenizer = new tokenizerPkg.Tokenizer(session.model);
+  const nonMessageTokens = computeNonMessageTokensFn!(session, tokenizer);
+  // session-stats.ts:289-291: after compaction (unanchored), getContextUsage returns nonMessageTokens + tokenizer.countMessages(messages)
+  const providerUsageTokens = nonMessageTokens + tokenizer.countMessages(compactedMessages);
+  const storedContextTokens = nonMessageTokens + tokenizer.countMessages(compactedMessages, { excludeEncryptedReasoning: true });
+  // session-maintenance.ts:3088-3091
+  const residualTokens = compactionPkg.compactionContextTokens(providerUsageTokens, storedContextTokens);
+  // session-maintenance.ts:3039-3053 and :3088-3093.
+  const fitBudget = headroom
+    ? Math.floor(compactionPkg.resolveThresholdTokens(contextWindow, compactionSettings) * COMPACTION_RECOVERY_BAND)
+    : Math.max(0, contextWindow - compactionPkg.resolveBudgetReserveTokens(contextWindow, compactionSettings));
+  return residualTokens <= fitBudget;
+}
+
+// session-maintenance.ts:3131-3162 (#rescueCompactionDeadEnd)
+async function rescueCompactionDeadEnd(
+  contextWindow: number,
+  compactionSettings: Record<string, unknown>,
+  options: { skipElide: boolean; headroom?: boolean },
+): Promise<{ success: boolean; messages?: Array<Record<string, unknown>> }> {
+  if (options.skipElide) return { success: false };
+  const result = await shakeEntries(shakePkg.RESCUE_SHAKE_CONFIG);
+  if (result.toolResultsDropped + result.blocksDropped === 0) return { success: false };
+  const postRescueMessages = session.sessionManager.buildSessionContext().messages;
+  if (compactionCreatedRetryFit(postRescueMessages, contextWindow, compactionSettings, options.headroom)) {
+    return { success: true, messages: postRescueMessages };
+  }
+  return { success: false };
+}
+
+async function commitStockCompaction(prep: Record<string, unknown>, payload: Record<string, unknown>): Promise<void> {
+  for (const [key, value] of Object.entries(prep.settings as Record<string, unknown>)) {
+    session.settings.set(`compaction.${key}`, value);
+  }
+  const answers = [payload.summary, payload.turn_prefix_summary,
+    ...(Array.isArray(payload.followup_summaries) ? payload.followup_summaries : [])]
+    .filter((answer): answer is string => typeof answer === "string");
+  const nativeFetch = globalThis.fetch;
+  let answerIndex = 0;
+  await withJournalMetadata(async () => {
+    const replayDate = Date;
+    // Provider transport is the only replay seam. The source's real
+    // SessionMaintenance commits details, method, kept-entry IDs and tokensAfter
+    // (session-maintenance.ts:1859-1878; public entry points :775, :1561).
+    globalThis.fetch = (async () => {
+      if (answerIndex === answers.length) throw new Error("stock compaction replay answers exhausted");
+      const chunk = { id: "compaction-replay", object: "chat.completion.chunk",
+        created: 2, model: session.model.id, choices: [{
+          index: 0, delta: { role: "assistant", content: answers[answerIndex++] }, finish_reason: "stop",
+        }] };
+      globalThis.Date = replayDate;
+      return new Response(`data: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`,
+        { headers: { "content-type": "text/event-stream" } });
+    }) as typeof fetch;
+    try {
+      if (prep.method === "handoff") {
+        class HandoffDate extends replayDate {
+          constructor(value: string | number = replayDate.parse(`${runtimeInputs.current_date}T12:00:00`)) { super(value); }
+        }
+        globalThis.Date = HandoffDate as DateConstructor;
+        await session.handoff(compactionPkg.AUTO_HANDOFF_THRESHOLD_FOCUS);
+      } else {
+        await session.compact();
+      }
+    } finally { globalThis.fetch = nativeFetch; globalThis.Date = replayDate; }
+  });
+}
+
+async function prepareCompactionPhase(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!workerCompactionEnabled) {
+    return {
+      schema_version: PHASE_SCHEMA,
+      kind: "compaction_unavailable",
+      reason: "compaction_disabled",
+    };
+  }
+  const rawMessages = Array.isArray(payload.messages) ? payload.messages : [];
+  const entries = await synchronizeHistory(rawMessages);
+  const settings = {
+    ...session.settings.getGroup("compaction"),
+    ...(typeof payload.settings === "object" && payload.settings !== null ? payload.settings : {}),
+  };
+  const model = session.agent.state.model;
+  let tokenizer = new tokenizerPkg.Tokenizer(model);
+  if (typeof payload.context_window !== "number" || payload.context_window <= 0 || !Number.isFinite(payload.context_window)) {
+    throw new Error("prepare_compaction requires positive context_window");
+  }
+  const contextWindow = payload.context_window;
+  // Stock invalidates an assistant's pre-rewrite bill after a compaction
+  // (session-maintenance.ts:2465-2477), including auto-continue checkpoints.
+  const lastAssistantIndex = entries.findLastIndex(entry =>
+    entry.type === "message" && (entry.message as Record<string, unknown>).role === "assistant");
+  const lastCompactionIndex = entries.findLastIndex(entry => entry.type === "compaction");
+  const usage = lastAssistantIndex <= lastCompactionIndex ? undefined
+    : payload.usage && typeof payload.usage === "object"
+      ? parseChunkUsage(payload.usage, model, undefined, 1000 + entries.length)
+      : (entries[lastAssistantIndex].message as Record<string, unknown>).usage;
+  // Verbatim stored-context floor, session-maintenance.ts:1924-1936, :2115-2118.
+  const storedTokens = computeNonMessageTokensFn(session, tokenizer) +
+    tokenizer.countMessages(session.agent.state.messages, { excludeEncryptedReasoning: true });
+  const contextTokens = usage
+    ? compactionPkg.compactionContextTokens(compactionPkg.calculateContextTokens(usage), storedTokens)
+    : storedTokens;
+
+  const reason = typeof payload.reason === "string" ? payload.reason : "threshold";
+  // The error remains in the source journal, but checkCompaction removes it
+  // from the active context before recovery (session-maintenance.ts:2277).
+  if (reason === "overflow") {
+    const lastMessage = rawMessages.at(-1);
+    if (lastMessage && typeof lastMessage === "object" &&
+        "role" in lastMessage && lastMessage.role === "assistant" &&
+        "stopReason" in lastMessage && lastMessage.stopReason === "error") {
+      session.agent.replaceMessages(rawMessages.slice(0, -1));
+    }
+  }
+  if (reason === "threshold") {
+    if (!compactionPkg.shouldCompact(contextTokens, contextWindow, settings)) {
+      return {
+        schema_version: PHASE_SCHEMA,
+        kind: "compaction_unavailable",
+        reason: "not_triggered",
+      };
+    }
+  }
+
+  const configuredOrder = settings.methodOrder ?? compactionMethods.DEFAULT_COMPACTION_METHOD_ORDER;
+  const methods = compactionMethods.resolveCompactionMethodOrder(configuredOrder);
+  let selectedMethod: string | undefined;
+  let fallbackFromShake = false;
+  let historyRewritten = false;
+  let currentEntries = entries;
+
+  for (const candidate of methods) {
+    if (candidate === "remote") {
+      if (compactionMethods.canUseRemoteCompaction(model, compactionMethods.resolveMethodSettings(settings, candidate))) {
+        selectedMethod = candidate;
+        break;
+      }
+      continue;
+    }
+    if (candidate === "snapcompact") {
+      if (model?.input?.includes("image") === true) {
+        selectedMethod = candidate;
+        break;
+      }
+      continue;
+    }
+    if (candidate === "handoff") {
+      if (reason === "overflow") continue;
+      selectedMethod = candidate;
+      break;
+    }
+    if (candidate === "shake") {
+      const shakeConfig = {
+        ...shakePkg.DEFAULT_SHAKE_CONFIG,
+        ...(typeof settings.shake === "object" && settings.shake !== null ? settings.shake : {}),
+      };
+      const result = await shakeEntries(shakeConfig);
+      const tokensFreed = result.tokensFreed;
+      historyRewritten ||= result.toolResultsDropped + result.blocksDropped > 0;
+      currentEntries = session.sessionManager.getBranch().filter((entry: Record<string, unknown>) =>
+        entry.type === "message" || entry.type === "compaction");
+      // SDK and source imports have distinct message-cache registries; a
+      // rewritten journal needs fresh local estimates.
+      tokenizer = new tokenizerPkg.Tokenizer(model);
+      const reclaimed = result.toolResultsDropped + result.blocksDropped > 0;
+      let stillOverThreshold = false;
+      if (contextWindow > 0) {
+        const postShakeTokens = Math.max(0, contextTokens - tokensFreed);
+        const thresholdTokens = compactionPkg.resolveThresholdTokens(contextWindow, settings);
+        const recoveryBand = Math.floor(thresholdTokens * COMPACTION_RECOVERY_BAND);
+        stillOverThreshold = postShakeTokens > recoveryBand;
+      }
+      const shouldFallBack = reason !== "idle" && ((reason === "overflow" && !reclaimed) || stillOverThreshold);
+      if (!shouldFallBack) {
+        const shakenMessages = session.sessionManager.buildSessionContext().messages;
+        return {
+          schema_version: PHASE_SCHEMA,
+          kind: "compaction_prepared",
+           preparation: {
+             method: "shake",
+             tokensBefore: contextTokens,
+             shakenMessages,
+            contextWindow,
+            checkpoint: typeof payload.checkpoint === "string" ? payload.checkpoint : undefined,
+            rawMessages,
+            settings,
+             reason,
+           },
+          summary_request: null,
+          turn_prefix_request: null,
+        };
+      }
+      fallbackFromShake = true;
+      continue;
+    }
+    if (candidate === "soft") {
+      selectedMethod = candidate;
+      break;
+    }
+  }
+
+  if (selectedMethod !== "handoff" && selectedMethod !== "soft") {
+    selectedMethod = "soft";
+  }
+
+  const effectiveSettings = compactionMethods.resolveMethodSettings(settings, selectedMethod);
+  let preparation = compactionPkg.prepareCompaction(currentEntries, effectiveSettings, model, tokenizer);
+  // Automatic maintenance rescues a recent turn before abandoning preparation
+  // (session-maintenance.ts:3637-3695). Use the source's elide operation, including
+  // its artifact counter, then prepare from the rewritten journal.
+  if (!preparation && reason !== "idle" && !fallbackFromShake) {
+    const result = await shakeEntries(shakePkg.RESCUE_SHAKE_CONFIG);
+    if (result.toolResultsDropped + result.blocksDropped > 0) {
+      historyRewritten = true;
+      currentEntries = session.sessionManager.getBranch().filter((entry: Record<string, unknown>) =>
+        entry.type === "message" || entry.type === "compaction");
+      tokenizer = new tokenizerPkg.Tokenizer(model);
+      preparation = compactionPkg.prepareCompaction(currentEntries, effectiveSettings, model, tokenizer);
+    }
+  }
+  if (!preparation) {
+    const unavailable = {
+      schema_version: PHASE_SCHEMA,
+      kind: "compaction_unavailable",
+      reason: "nothing_to_compact",
+    };
+    if (!historyRewritten) return unavailable;
+    // Stock keeps an elided branch even when no summary cut becomes possible
+    // (session-maintenance.ts:3762-3771); the conductor must commit this view.
+    const messages = session.agent.state.messages;
+    journalView = structuredClone(messages);
+    return { ...unavailable, history_rewritten: true, messages };
+  }
+  const driver = new ReplayDriver([]);
+  if (selectedMethod === "handoff") {
+    const handoffContext = await buildHandoffContext(currentEntries);
+    try {
+      await compactionPkg.generateHandoffFromContext(handoffContext, model, {
+        completeImpl: driver.completeImpl,
+        streamOptions: { apiKey: WORKER_API_KEY },
+      });
+    } catch (e: unknown) {
+      if (!(e instanceof ReplaySentinelError)) throw e;
+    }
+    const firstKeptIndex = currentEntries.findIndex((e) => e.id === preparation.firstKeptEntryId);
+    return {
+      schema_version: PHASE_SCHEMA,
+      kind: "compaction_prepared",
+      preparation: {
+         method: "handoff",
+         firstKeptIndex,
+         firstKeptEntryId: preparation.firstKeptEntryId,
+         tokensBefore: preparation.tokensBefore,
+        timestamp: 1000 + currentEntries.length,
+        contextWindow,
+        checkpoint: typeof payload.checkpoint === "string" ? payload.checkpoint : undefined,
+         rawMessages,
+        settings,
+        reason,
+        fallbackFromShake,
+        fileOps: {
+          read: Array.from(preparation.fileOps.read),
+          written: Array.from(preparation.fileOps.written),
+          edited: Array.from(preparation.fileOps.edited),
+        },
+      },
+      summary_request: driver.capturedCalls[0] ?? null,
+      turn_prefix_request: null,
+    };
+  }
+
+  // selectedMethod === "soft"
+
+  try {
+    await compactionPkg.compact(preparation, model, WORKER_API_KEY, undefined, undefined, {
+      completeImpl: driver.completeImpl,
+      remoteSystemPrompt: [summarizationSystemPromptText],
+    });
+  } catch (e: unknown) {
+    if (!(e instanceof ReplaySentinelError)) throw e;
+  }
+
+  const firstKeptIndex = currentEntries.findIndex((e) => e.id === preparation.firstKeptEntryId);
+  let summaryRequest: { messages: Array<{ role: string; content: string }>; max_tokens?: number } | null = null;
+  let turnPrefixRequest: { messages: Array<{ role: string; content: string }>; max_tokens?: number } | null = null;
+  if (preparation.isSplitTurn && preparation.turnPrefixMessages && preparation.turnPrefixMessages.length > 0) {
+    if (preparation.messagesToSummarize.length > 0 || preparation.previousSummary) {
+      summaryRequest = driver.capturedCalls[0] ?? null;
+      turnPrefixRequest = driver.capturedCalls[1] ?? null;
+    } else {
+      turnPrefixRequest = driver.capturedCalls[0] ?? null;
+    }
+  } else {
+    summaryRequest = driver.capturedCalls[0] ?? null;
+  }
+
+  return {
+    schema_version: PHASE_SCHEMA,
+    kind: "compaction_prepared",
+    preparation: {
+       method: "soft",
+       firstKeptIndex,
+       firstKeptEntryId: preparation.firstKeptEntryId,
+       tokensBefore: preparation.tokensBefore,
+      timestamp: 1000 + currentEntries.length,
+      contextWindow,
+      checkpoint: typeof payload.checkpoint === "string" ? payload.checkpoint : undefined,
+       settings,
+      rawMessages,
+      reason,
+      fallbackFromShake,
+    },
+    summary_request: summaryRequest,
+    turn_prefix_request: turnPrefixRequest,
+  };
+}
+
+async function finalizeCompactionPhase(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const prep = (payload.preparation && typeof payload.preparation === "object") ? (payload.preparation as Record<string, unknown>) : null;
+  if (!prep) {
+    throw new Error("finalize_compaction requires preparation");
+  }
+  const summary = typeof payload.summary === "string" ? payload.summary : "";
+  const model = session.agent.state.model;
+  const tokenizer = new tokenizerPkg.Tokenizer(model);
+  const settings = {
+    ...session.settings.getGroup("compaction"),
+    ...(typeof prep.settings === "object" && prep.settings !== null ? prep.settings : {}),
+  };
+  const contextWindow = prep.contextWindow;
+  if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+    throw new Error("finalize_compaction requires positive context_window");
+  }
+  const isOverflow = prep.reason === "overflow";
+ 
+   let compactionResult: {
+    messages?: Array<Record<string, unknown>>;
+    compactionMessage?: Record<string, unknown>;
+    firstKeptIndex?: number;
+    summary?: string;
+  };
+
+  if (prep.method === "shake") {
+    const shaken = Array.isArray(prep.shakenMessages) ? (prep.shakenMessages as Array<Record<string, unknown>>) : [];
+    compactionResult = {
+      messages: shaken,
+    };
+  } else if (prep.method === "handoff") {
+    compactionResult = {};
+  } else if (prep.method === "soft") {
+    const entries = session.sessionManager.getBranch().filter((entry: Record<string, unknown>) =>
+      entry.type === "message" || entry.type === "compaction");
+    const preparation = compactionPkg.prepareCompaction(entries, settings, model, tokenizer);
+    if (!preparation) {
+      throw new Error("finalize_compaction could not reconstruct preparation");
+    }
+
+    const answers: string[] = [];
+    if (preparation.isSplitTurn && preparation.turnPrefixMessages && preparation.turnPrefixMessages.length > 0) {
+      if (preparation.messagesToSummarize.length > 0 || preparation.previousSummary) {
+        if (typeof payload.summary === "string") answers.push(payload.summary);
+        if (typeof payload.turn_prefix_summary === "string") answers.push(payload.turn_prefix_summary);
+      } else {
+        if (typeof payload.turn_prefix_summary === "string") answers.push(payload.turn_prefix_summary);
+      }
+    } else {
+      if (typeof payload.summary === "string") answers.push(payload.summary);
+    }
+    const followups = Array.isArray(payload.followup_summaries) ? (payload.followup_summaries as unknown[]) : [];
+    for (const f of followups) {
+      if (typeof f === "string") answers.push(f);
+    }
+
+    const driver = new ReplayDriver(answers);
+    let compactResult: Record<string, unknown> | null = null;
+    try {
+      compactResult = (await compactionPkg.compact(preparation, model, WORKER_API_KEY, undefined, undefined, {
+        completeImpl: driver.completeImpl,
+        remoteSystemPrompt: [summarizationSystemPromptText],
+      })) as Record<string, unknown>;
+    } catch (e: unknown) {
+      if (!(e instanceof ReplaySentinelError)) throw e;
+    }
+
+    if (!compactResult) {
+      const nextCall = driver.capturedCalls[answers.length];
+      return {
+        schema_version: PHASE_SCHEMA,
+        kind: "compaction_followup_request",
+        request: nextCall,
+      };
+    }
+
+    compactionResult = {};
+  } else {
+    throw new Error(`unknown compaction method: ${String(prep.method)}`);
+  }
+  let retry = true;
+  let finalMessages = compactionResult.messages;
+  if (!finalMessages) {
+    await commitStockCompaction(prep, payload);
+    const entry = session.sessionManager.getBranch().findLast(
+      (item: Record<string, unknown>) => item.type === "compaction");
+    if (!entry) throw new Error("stock maintenance did not commit a compaction");
+    compactionResult.compactionMessage = {
+      role: "compactionSummary", summary: entry.summary, shortSummary: entry.shortSummary,
+      tokensBefore: entry.tokensBefore, firstKeptEntryId: entry.firstKeptEntryId,
+      details: entry.details, method: entry.method, timestamp: Date.parse(entry.timestamp),
+    };
+    compactionResult.firstKeptIndex = session.sessionManager.getBranch()
+      .filter((item: Record<string, unknown>) => item.type === "message" || item.type === "compaction")
+      .findIndex((item: Record<string, unknown>) => item.id === entry.firstKeptEntryId);
+    compactionResult.summary = entry.summary;
+    finalMessages = session.sessionManager.buildSessionContext().messages;
+  }
+  if (isOverflow) {
+    let compactedMessages = finalMessages;
+
+    // Drop trailing assistant turn with stopReason "error" before retry check (session-maintenance.ts:4380-4392)
+    const lastMsg = compactedMessages[compactedMessages.length - 1];
+    if (lastMsg?.role === "assistant" && lastMsg.stopReason === "error") {
+      compactedMessages = compactedMessages.slice(0, -1);
+    }
+    finalMessages = compactedMessages;
+
+    let retryFits = compactionCreatedRetryFit(compactedMessages, contextWindow, settings);
+    if (!retryFits) {
+      // Rescue pass (session-maintenance.ts:4402 & 3131-3162)
+      const skipElide = Boolean(prep.fallbackFromShake || prep.method === "shake");
+      const rescueResult = await rescueCompactionDeadEnd(
+        contextWindow,
+        settings,
+        { skipElide },
+      );
+      if (rescueResult.success && rescueResult.messages) {
+        retryFits = true;
+        finalMessages = rescueResult.messages;
+      }
+    }
+    retry = retryFits;
+  }
+  let hasHeadroom = true;
+  if (!isOverflow && prep.reason !== "idle") {
+    hasHeadroom = compactionCreatedRetryFit(finalMessages, contextWindow, settings, true);
+    if (!hasHeadroom) {
+      const rescued = await rescueCompactionDeadEnd(
+        contextWindow, settings,
+        { skipElide: Boolean(prep.fallbackFromShake), headroom: true },
+      );
+      hasHeadroom = rescued.success;
+      if (rescued.messages) finalMessages = rescued.messages;
+    }
+  }
+
+  const checkpoint = prep.checkpoint ?? payload.checkpoint;
+  let continuation: Array<Record<string, unknown>> | undefined;
+  const lastAssistant = (prep.rawMessages as Array<Record<string, unknown>> | undefined)?.findLast(m => m.role === "assistant");
+  // agent-session.ts:3854-3898: a terminal text answer without an active goal
+  // does not continue. RL has no goal/task/todo tools; run the stock eager builder.
+  if (checkpoint === "agent_end" && hasHeadroom && settings.autoContinue !== false && !queuedMessagesPkg.isTerminalTextAssistantAnswer(lastAssistant)) {
+    const tracker = new TodoTracker({
+      settings: session.settings,
+      agentKind: () => session.agentKind,
+      planModeEnabled: () => session.planModeEnabled,
+      getEnabledToolNames: () => tools.map(tool => tool.name),
+    });
+    const eagerNudges = tracker.buildPostCompactionEagerNudges();
+    continuation = [
+      ...eagerNudges,
+      {
+        role: "developer",
+        content: [{ type: "text", text: autoContinuePromptText }],
+        attribution: "agent",
+        timestamp: 1000 + (Array.isArray(prep.rawMessages) ? prep.rawMessages.length : 0),
+        synthetic: true,
+      },
+    ];
+  }
+  session.agent.replaceMessages(finalMessages);
+  journalView = structuredClone(finalMessages);
+
+  return {
+    schema_version: PHASE_SCHEMA,
+    kind: "compaction_finalized",
+    messages: finalMessages,
+    compaction_message: compactionResult.compactionMessage,
+    first_kept_index: compactionResult.firstKeptIndex,
+    summary: compactionResult.summary,
+    ...(isOverflow ? { retry } : {}),
+    ...(continuation ? { continuation } : {}),
+  };
+}
+
+function typeOfInvalidHttpFailure(payload: Record<string, unknown>): boolean {
+  return typeof payload.http_status !== "number" || !Number.isInteger(payload.http_status) ||
+    typeof payload.response_body_text !== "string" || !Array.isArray(payload.messages);
+}
+
+async function dispatch(operation: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (operation === "initialize") return initialize(payload as Record<string, any>);
+  if (operation === "prepare_compaction") return prepareCompactionPhase(payload);
+  if (operation === "finalize_compaction") return finalizeCompactionPhase(payload);
+  if (operation === "project_provider_failure") {
+    if (!session || typeOfInvalidHttpFailure(payload)) {
+      throw new Error("project_provider_failure requires a session, HTTP status, body and messages");
+    }
+    const status = payload.http_status as number;
+    const body = payload.response_body_text as string;
+    const duration = payload.provider_request_duration_ms;
+    if (typeof duration !== "number" || !Number.isFinite(duration) || duration < 0) {
+      throw new Error("project_provider_failure requires recorded provider request duration");
+    }
+    // Replay stock's own subtraction (openai-completions.ts:677,1496), not
+    // a post-hoc message edit. The elapsed clock advances at transport completion.
+    let elapsed = 0;
+    return await withJournalMetadata(async () => {
+      let message: Record<string, unknown> | undefined;
+      for await (const event of streamOpenAICompletions(
+        session.agent.state.model,
+        { systemPrompt: nativeSystemPrompt, messages: payload.messages as unknown[], tools: [] },
+        { apiKey: WORKER_API_KEY, fetch: async () => {
+          elapsed = duration;
+          return new Response(body, { status });
+        }, maxRetries: 0 },
+      )) {
+        if (event.type === "error") message = event.error;
+      }
+      if (!message) throw new Error("pinned provider did not emit an error assistant");
+      return { schema_version: PHASE_SCHEMA, kind: "provider_failure", message };
+    }, () => elapsed);
+  }
+  if (operation === "parse_usage") {
+    // The stock provider starts with its exported initial usage when no chunk
+    // reports usage (openai-completions.ts:681; openai-shared.ts:3530-3547).
+    return await withJournalMetadata(() => ({
+      schema_version: PHASE_SCHEMA, kind: "assistant_usage",
+      usage: payload.usage == null
+        ? createInitialAssistantMessage(session.model.api, session.model.provider, session.model.id).usage
+        : parseChunkUsage(payload.usage as object, session.model, undefined, 1000 + journalMessageId),
+    }));
+  }
   if (operation === "project_request") {
     if (convertMessages === null) throw new Error("pinned OMP provider converter is unavailable");
     const model = session.agent.state.model;
     if (!model) throw new Error("pinned OMP session model is unavailable");
     if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
     if (reminderInjector === null) throw new Error("pinned OMP date/cwd reminder is unavailable");
-    const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: payload.messages ?? [] }, runtimeInputs.current_date, workspace), model.compat);
+    const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: convertToLlm(payload.messages as unknown[]) }, runtimeInputs.current_date, workspace), model.compat);
     return {
       schema_version: PHASE_SCHEMA,
       kind: "request",
@@ -665,12 +1415,14 @@ const decoder = new TextDecoder();
 const reader = Bun.stdin.stream().getReader();
 let buffer = new Uint8Array(0);
 function append(chunk: Uint8Array) { const next = new Uint8Array(buffer.length + chunk.length); next.set(buffer); next.set(chunk, buffer.length); buffer = next; }
-async function writeFrame(value: Record<string, any>) {
+async function writeFrame(value: Record<string, unknown>) {
   const encoded = new TextEncoder().encode(JSON.stringify(value));
   const frame = new Uint8Array(4 + encoded.length);
   new DataView(frame.buffer).setUint32(0, encoded.length, false);
   frame.set(encoded, 4);
-  await Bun.write(Bun.stdout, frame);
+  await new Promise<void>((resolve, reject) => {
+    process.stdout.write(frame, (error) => error ? reject(error) : resolve());
+  });
 }
 while (true) {
   const { value, done } = await reader.read();

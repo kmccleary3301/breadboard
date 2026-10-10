@@ -60,6 +60,9 @@ pipeline:
         prompt: {file: summary.txt}
         max_tokens: 20000
         normalize_tags: true
+        # cli.js:6110: summary disables thinking, defaults temperature to 1,
+        # and uses a streaming request with the Read tool schema.
+        request: {stream: true, tools: [Read], params: {temperature: 1}}
       place:
         kind: bridge
         prefix: {file: bridge_prefix.txt}
