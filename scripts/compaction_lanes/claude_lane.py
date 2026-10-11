@@ -35,6 +35,7 @@ PRESET = "claude_code@2.1.63"
 STOCK_PACKAGE = Path.home() / ".cache/bb-compaction-e4/pkgs/@anthropic-ai__claude-code@2.1.63/node_modules/@anthropic-ai/claude-code"
 SESSION_ID = "00000000-0000-4000-8000-000000000063"
 PROMPT = "Inspect records.txt with Read repeatedly as instructed, then finish the inspection."
+USER_ID = hashlib.sha256(b"breadboard-claude-code-2.1.63-lane").hexdigest()
 SUMMARY_PREFIX = "Your task is to create a detailed summary of the conversation so far,"
 
 
@@ -213,6 +214,7 @@ def _bb_worker(workspace: Path, scratch: Path, base_url: str, pct: float) -> Non
     broker = get_provider_broker()
     broker.set_config_api_key("anthropic", "bb-claude-lane", base_url=base_url)
     events = []
+    agent = None
     try:
         agent = AgenticCoder(str(PROFILE), str(workspace), {
             "compaction.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": pct,
@@ -223,7 +225,11 @@ def _bb_worker(workspace: Path, scratch: Path, base_url: str, pct: float) -> Non
         (scratch / "bb-result.json").write_text(json.dumps(result, default=str, indent=2) + "\n")
     finally:
         (scratch / "bb-events.json").write_text(json.dumps(events, default=str, indent=2) + "\n")
-        broker.remove_config_api_key("anthropic")
+        try:
+            if agent is not None:
+                agent.close()
+        finally:
+            broker.remove_config_api_key("anthropic")
 
 
 def _invoke(command: list[str], env: dict[str, str], cwd: Path, output: Path, timeout: int) -> dict[str, Any]:
@@ -271,20 +277,29 @@ def run_scenario(scenario: str, out: Path, pct: float = 10) -> dict[str, Any]:
     for side in ("stock", "bb"):
         scratch = out / side
         scratch.mkdir(exist_ok=True)
+        config_dir = workspace / ".claude"
+        config_dir.mkdir(exist_ok=True)
+        # Stock k1/J8 persist userID here; clone it at the source, no regex.
+        (config_dir / ".claude.json").write_text(json.dumps({"userID": USER_ID}) + "\n")
         env = {key: value for key, value in os.environ.items() if key not in {
             "CLAUDECODE", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN", "DISABLE_COMPACT", "DISABLE_AUTO_COMPACT", "DISABLE_MICROCOMPACT",
         }}
-        env.update(HOME=str(scratch / "home"), CLAUDE_CONFIG_DIR=str(scratch / "home/.claude"),
+        env.update(CLAUDE_CONFIG_DIR=str(config_dir),
                    PYTHONPATH=str(ROOT), BB_WORKSPACE_ROOT=str(ROOT), PRESERVE_SEEDED_WORKSPACE="1",
                    BREADBOARD_CREDENTIAL_STORE_PATH=str(scratch / "credentials.sqlite3"),
                    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=str(pct), CLAUDE_CODE_MAX_OUTPUT_TOKENS=str(settings["max_output_tokens"]),
                    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC="1", DISABLE_TELEMETRY="1", DISABLE_ERROR_REPORTING="1", DISABLE_AUTOUPDATER="1")
+        if side == "stock":
+            env["HOME"] = str(workspace)
+        # The BB parent retains its real HOME for the credential isolation
+        # boundary; the production stock child policy sets HOME=workspace.
+        env["CLAUDE_CODE_TMPDIR"] = str(workspace / ".breadboard/tmp")
         with ClaudeMockProvider(responses, scratch / "requests.jsonl") as mock:
             if side == "stock":
                 env.update(ANTHROPIC_API_KEY="bb-claude-lane", ANTHROPIC_BASE_URL=mock.base_url)
                 command = ["node", str(STOCK_PACKAGE / "cli.js"), "-p", PROMPT, "--model", settings["wire_model"],
-                           "--output-format", "stream-json", "--verbose", "--setting-sources", "",
-                           "--dangerously-skip-permissions", "--no-session-persistence", "--strict-mcp-config",
+                           "--output-format", "stream-json", "--verbose",
+                           "--no-session-persistence", "--strict-mcp-config",
                            "--session-id", SESSION_ID, "--debug-file", str(scratch / "debug.log")]
             else:
                 command = [sys.executable, "-m", "scripts.compaction_lanes.claude_lane", "--bb-worker",
@@ -346,8 +361,11 @@ def run_scenario(scenario: str, out: Path, pct: float = 10) -> dict[str, Any]:
     report = {"schema": "bb.compaction_lane.v1", "harness": PRESET, "scenario": scenario, "settings": settings,
               "overrides": {"CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": pct},
               "comparison_basis": "canonical JSON, sorted object keys, compact separators, ensure_ascii=False; no value normalization",
+              "environment_admission": {"cwd": str(workspace), "session_id": SESSION_ID,
+                                        "stock_user_id": USER_ID, "stock_config_dir": str(config_dir),
+                                        "source": "shared real workspace/environment and stock identity settings; no wire-value normalization"},
               "execution_admission": {"max_iterations": 8, "subprocess_timeout_seconds": 120,
-                                      "stock_permissions": "bypassPermissions", "stock_settings_sources": [],
+                                      "stock_permissions": "default", "stock_settings_sources": "stock defaults",
                                       "stock_nonessential_traffic": False},
               "stock": counts["stock"], "bb": counts["bb"], "diffs": diffs, "deviations_used": [],
               "unresolved": problems, "passed": not problems,
@@ -378,6 +396,18 @@ def main() -> None:
                   "scripts/compaction_lanes/claude_lane.py", "tests/compaction_lanes/test_claude_lane.py",
                   "breadboard_engine/provider/runtimes/anthropic.py",
                   "breadboard_engine/provider/adapters.py",
+                  "breadboard_engine/provider/anthropic_replay.py",
+                  "breadboard_engine/compilation/context_builders/claude_code.py",
+                  "breadboard_engine/compilation/context_builders/__init__.py",
+                  "breadboard_engine/execution/claude_tools.py",
+                  "breadboard_engine/execution/stock_tools.py", "breadboard_engine/execution/opencode_tools.py",
+                  "breadboard_engine/permissions/broker.py",
+                  "breadboard_engine/agent.py",
+                  "breadboard_engine/agent_llm_openai.py",
+                  "breadboard_engine/api/cli_bridge/session_runner.py",
+                  "tests/test_session_runner_pending_permissions.py",
+                  "contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json",
+                  "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
                   "breadboard_engine/conductor/model_output.py", "breadboard_engine/conductor/modes.py",
                   "breadboard_engine/conductor/prompt_planner.py", "breadboard_engine/provider/normalizer.py",
                   "breadboard_engine/provider/contract_messages.py",
@@ -388,7 +418,8 @@ def main() -> None:
                   "breadboard_engine/compaction/controller.py", "breadboard_engine/compaction/primitives/chat_reducers.py",
                   "breadboard_engine/compaction/presets/claude_code@2.1.63.yaml",
                   "tests/compaction/test_codex_claude_runtime.py", "docs/guides/CONTEXT_COMPACTION.md",
-              ],
+              ] + sorted(path.relative_to(ROOT).as_posix() for path in
+                         (ROOT / "implementations/tools/defs_claude_code_2_1_63").glob("*.yaml")),
               "tests_run": [{"command": f"BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. {sys.executable} -m scripts.compaction_lanes.claude_lane --out {out} --pct {args.pct}",
                              "tail": f"Lane {'passed' if all(result['passed'] for result in reports) else 'failed'}; see per-scenario counts, diffs and terminal evidence"}],
               "lane_results": reports, "deviations_used": [],
@@ -422,6 +453,62 @@ def main() -> None:
                    "fix": "Count all recorded summary requests and reject failed/missing long-session terminals",
                    "citations": ["scripts/compaction_lanes/claude_lane.py::summary_request_count",
                                  "scripts/compaction_lanes/claude_lane.py::long_session_terminal_problems"]},
+                  {"defect": "Dated profile baseline omits stock context and advertises outdated tool schemas",
+                   "fix": "Profile-selected live pinned startup/current context and isolated source-native 18-tool catalog; BB requests remain independent",
+                   "citations": ["breadboard_engine/compilation/context_builders/claude_code.py::build_context",
+                                 "breadboard_engine/compilation/context_builders/claude_code.py::build_request",
+                                 "implementations/tools/defs_claude_code_2_1_63", "tests/test_e4_target_packages.py"]},
+                  {"defect": "Startup context hook and conductor append the user prompt twice",
+                   "fix": "Modify the original canonical user at the hook boundary; return no extra user turn",
+                   "citations": ["breadboard_engine/compilation/context_builders/claude_code.py::build_context",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_startup_context_hook_preserves_one_original_user_message"]},
+                  {"defect": "Manual compact/probe restoration changes stock attachments and consumes skill reminders",
+                   "fix": "Keep the same stock turn paused; replay genuine BB SDK responses and finish automatic SG6/ne restoration through the selected summary port",
+                   "citations": ["pinned stock cli.js:2207-2211,6110",
+                                 "breadboard_engine/execution/claude_tools.py::complete_auto_compaction",
+                                 "breadboard_engine/compilation/context_builders/claude_code.py::accept_response",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_native_stock_response_transport_round_trips_actual_sdk_message"]},
+                  {"defect": "Opaque standalone BB session IDs are rejected by stock's UUID-only admission",
+                   "fix": "Keep explicit UUIDs unchanged; derive a stable native UUID5 from the existing BB admission",
+                   "citations": ["breadboard_engine/agent.py::_admit_standalone_run",
+                                 "breadboard_engine/execution/claude_tools.py::get_claude_tool_session",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_native_cli_identity_is_stable_and_preserves_explicit_uuid"]},
+                  {"defect": "Grouped ordinary continuation leaks a private Responses-only batch marker into canonical Messages history",
+                   "fix": "Disable that marker for the selected native Anthropic replay capability, without relaxing canonical DTOs",
+                   "citations": ["breadboard_engine/conductor/model_output.py::process_model_output",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_production_tool_continuation_never_injects_empty_user_when_prompts_suppressed"]},
+                  {"defect": "Native correlated tool replay passes runtime admission but fails persisted provider-exchange schema",
+                   "fix": "Exact provider/version/scope-tagged messages payload dispatch; preserve all generic replay restrictions",
+                   "citations": ["contracts/kernel/schemas/bb.provider_exchange.v2.schema.json#/$defs/provider_replay_payload_dispatch",
+                                 "breadboard_engine/provider/anthropic_replay.py::replay_messages",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_exchange_schema_admits_only_exact_native_tool_replay_tags"]},
+                  {"defect": "Long-lived agents retain Claude CLI/proxy/pipe readers until interpreter exit",
+                   "fix": "Register every native sidecar with its owning agent and share explicit stock-tool shutdown across Claude/OpenCode; wake paused transitions and join readers",
+                   "citations": ["breadboard_engine/execution/stock_tools.py", "breadboard_engine/agent.py::close",
+                                 "breadboard_engine/agent_llm_openai.py::close_stock_tools",
+                                 "breadboard_engine/execution/claude_tools.py::close",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_agent_close_releases_all_real_claude_sidecar_resources"]},
+                  {"defect": "Pending UI prompts and late provider/HTTP responses can strand shutdown readers or lose its wakeup",
+                   "fix": "Reject pending permission waits through the broker, reject late registration, synchronize event rearming with close, and retain failed cleanup for retry",
+                   "citations": ["breadboard_engine/permissions/broker.py::cancel_pending_requests",
+                                 "breadboard_engine/execution/claude_tools.py::close",
+                                 "breadboard_engine/execution/claude_tools.py::release_main_response",
+                                 "breadboard_engine/execution/stock_tools.py::close_stock_sessions",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_close_cancels_real_pending_permission_and_closes_every_resource",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_cancelled_broker_rejects_late_permission_registration_without_waiting",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_failed_stock_cleanup_retains_session_for_retry"]},
+                  {"defect": "Remote agent close calls an undefined helper; completed or failed CLI sessions skip agent disposal",
+                   "fix": "Use the existing Ray get path and a shared idempotent session-scoped cleanup hook for stop and terminal lifecycle exit, retaining agents for interactive follow-ups",
+                   "citations": ["breadboard_engine/agent.py::close",
+                                 "breadboard_engine/api/cli_bridge/session_runner.py::_close_agent",
+                                 "breadboard_engine/api/cli_bridge/session_runner.py::_run",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_remote_agent_close_waits_for_existing_ray_shutdown",
+                                 "tests/test_session_runner_pending_permissions.py::test_terminal_session_closes_agent_once_and_later_stop_does_not_repeat",
+                                 "tests/test_session_runner_pending_permissions.py::test_completed_run_keeps_agent_for_followup_until_session_stop"]},
+                  {"defect": "Permission cancellation before session publication dereferences an absent state",
+                   "fix": "Treat an absent session as having no pending waits to cancel",
+                   "citations": ["breadboard_engine/permissions/broker.py::cancel_pending_requests",
+                                 "tests/compaction_lanes/test_claude_lane.py::test_permission_cancellation_without_session_is_harmless"]},
               ],
               "unresolved": [item for result in reports for item in result["unresolved"]],
               "rerun_command": f"BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. {sys.executable} -m scripts.compaction_lanes.claude_lane --out {out} --pct {args.pct}"}

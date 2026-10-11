@@ -1,0 +1,113 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: read
+name: read
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Read a file or directory from the local filesystem. If the path does not exist, an error is returned.
+
+
+  Usage:
+
+  - The filePath parameter should be an absolute path.
+
+  - By default, this tool returns up to 2000 lines from the start of the file.
+
+  - The offset parameter is the line number to start from (1-indexed).
+
+  - To read later sections, call this tool again with a larger offset.
+
+  - Use the grep tool to find specific content in large files or files with long lines.
+
+  - If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.
+
+  - Contents are returned with each line prefixed by its line number as `<line>: <content>`. For example, if a file
+  has contents "foo\n", you will receive "1: foo\n". For directories, entries are returned one per line (without
+  line numbers) with a trailing `/` for subdirectories.
+
+  - Any line longer than 2000 characters is truncated.
+
+  - Call this tool in parallel when you know there are multiple files you want to read.
+
+  - Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
+
+  - This tool can read image files and PDFs and return them as file attachments.
+
+  '
+parameters:
+- name: filePath
+  required: true
+  schema: &id001
+    description: The absolute path to the file or directory to read
+    type: string
+  type: string
+  description: The absolute path to the file or directory to read
+- name: offset
+  required: false
+  schema: &id002
+    description: The line number to start reading from (1-indexed)
+    type: number
+  type: number
+  description: The line number to start reading from (1-indexed)
+- name: limit
+  required: false
+  schema: &id003
+    description: The maximum number of lines to read (defaults to 2000)
+    type: number
+  type: number
+  description: The maximum number of lines to read (defaults to 2000)
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: read
+      description: 'Read a file or directory from the local filesystem. If the path does not exist, an error is
+        returned.
+
+
+        Usage:
+
+        - The filePath parameter should be an absolute path.
+
+        - By default, this tool returns up to 2000 lines from the start of the file.
+
+        - The offset parameter is the line number to start from (1-indexed).
+
+        - To read later sections, call this tool again with a larger offset.
+
+        - Use the grep tool to find specific content in large files or files with long lines.
+
+        - If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.
+
+        - Contents are returned with each line prefixed by its line number as `<line>: <content>`. For example,
+        if a file has contents "foo\n", you will receive "1: foo\n". For directories, entries are returned one per
+        line (without line numbers) with a trailing `/` for subdirectories.
+
+        - Any line longer than 2000 characters is truncated.
+
+        - Call this tool in parallel when you know there are multiple files you want to read.
+
+        - Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.
+
+        - This tool can read image files and PDFs and return them as file attachments.
+
+        '
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          filePath: *id001
+          offset: *id002
+          limit: *id003
+        required:
+        - filePath
+        additionalProperties: false
+      strict: false

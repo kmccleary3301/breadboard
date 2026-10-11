@@ -1784,3 +1784,94 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
             durable_reconfigure=lambda _config: None,
         )
     await service.stop_session(response.session_id); await record.event_queue.put(None); await record.dispatcher_task
+
+
+class _LifecycleAgent:
+    def __init__(self, native_semantics=None, *, fail=False):
+        self._local_mode = True
+        self.config = {"tools": {"native_semantics": native_semantics}} if native_semantics else {}
+        self.tasks = []
+        self.close_calls = 0
+        self.returned = threading.Event()
+        self.fail = fail
+
+    def run_task(self, task, **kwargs):
+        assert self.close_calls == 0, "A follow-up reached an already closed agent"
+        self.tasks.append(task)
+        self.returned.set()
+        if self.fail:
+            raise RuntimeError("agent execution failed")
+        return {"completion_summary": {"completed": True}}
+
+    def close(self):
+        self.close_calls += 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native_semantics", [None, "claude_code_2_1_63", "opencode_1_2_17"])
+async def test_terminal_session_closes_agent_once_and_later_stop_does_not_repeat(monkeypatch, native_semantics):
+    runner = _runner("terminal-cleanup")
+    runner.session.metadata["cli_session_kind"] = "oneshot"
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(native_semantics)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    await runner._run()
+    assert runner.session.status == SessionStatus.COMPLETED
+    assert agent.tasks == ["task"]
+    assert agent.close_calls == 1
+    await runner.stop()
+    await runner.stop()
+    assert agent.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_session_closes_default_agent_once(monkeypatch):
+    runner = _runner("failed-cleanup")
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(fail=True)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    await runner._run()
+    assert runner.session.status == SessionStatus.FAILED
+    assert agent.close_calls == 1
+    await runner.stop()
+    assert agent.close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native_semantics", [None, "claude_code_2_1_63", "opencode_1_2_17"])
+async def test_completed_run_keeps_agent_for_followup_until_session_stop(monkeypatch, native_semantics):
+    runner = _runner("followup-cleanup")
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(native_semantics)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    runner._start_authority.set()
+    runner._task = asyncio.create_task(runner._run())
+    try:
+        assert await asyncio.to_thread(agent.returned.wait, 2)
+        await asyncio.wait_for(runner._input_queue.join(), timeout=2)
+        assert not runner._task.done()
+        assert agent.close_calls == 0
+        followup = TurnRecord(
+            input_id="input-followup", turn_id="turn-followup", client_message_id="message-followup",
+            content="follow-up", attachments=(), original_disposition="started", state="active")
+        runner.session.turns_by_id[followup.turn_id] = followup
+        runner.session.active_turn_id = followup.turn_id
+        agent.returned.clear()
+        await runner.enqueue_input(followup.content, input_id=followup.input_id, turn_id=followup.turn_id)
+        assert await asyncio.to_thread(agent.returned.wait, 2)
+        await asyncio.wait_for(runner._input_queue.join(), timeout=2)
+        assert agent.tasks == ["task", "follow-up"]
+        assert agent.close_calls == 0
+        await runner.stop()
+        assert runner._task.done()
+        assert agent.close_calls == 1
+        await runner.stop()
+        assert agent.close_calls == 1
+    finally:
+        await runner.stop()

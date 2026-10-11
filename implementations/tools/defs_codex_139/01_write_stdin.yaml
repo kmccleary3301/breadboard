@@ -1,0 +1,55 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: write_stdin
+name: write_stdin
+description: Writes characters to an existing unified exec session and returns recent output.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: chars
+  type: string
+  required: false
+  schema: &id001
+    type: string
+    description: Bytes to write to stdin. Defaults to empty, which polls without writing.
+- name: max_output_tokens
+  type: number
+  required: false
+  schema: &id002
+    type: number
+    description: Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.
+- name: session_id
+  type: number
+  required: true
+  schema: &id003
+    type: number
+    description: Identifier of the running unified exec session.
+- name: yield_time_ms
+  type: number
+  required: false
+  schema: &id004
+    type: number
+    description: Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls
+      wait 5000-300000 ms by default.
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: write_stdin
+      description: Writes characters to an existing unified exec session and returns recent output.
+      strict: false
+      parameters:
+        type: object
+        properties:
+          chars: *id001
+          max_output_tokens: *id002
+          session_id: *id003
+          yield_time_ms: *id004
+        required:
+        - session_id
+        additionalProperties: false

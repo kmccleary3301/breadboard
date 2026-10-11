@@ -1,9 +1,9 @@
-# Catalog refresh 2026-10-09: identical to opencode_1-2-17_e4_9-10-2026.yaml plus the harness's native
-# context compaction (preset opencode@1.2.17, native default settings) and the model window.
+# Native OpenCode 1.2.17 model envelope, tool execution and compaction.
+# Earlier dated profiles and immutable E4 target assets remain unchanged.
 # OpenCode E4 reference config
 # Captured against OpenCode 1.2.17 and calibrated using the canonical MVI replay lane.
 # Catalog refreshed 2026-09-10; the profile name below retains the capture-era date.
-# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Pinned stock OpenCode supplies dynamic systems/catalogs and executes native tools.
 # Scenario-specific OpenCode replay lanes remain available under `agent_configs/misc/`.
 # Local reference material lives under `../config/e4_targets/opencode/1.2.17/`.
 #
@@ -25,6 +25,9 @@
 version: 2
 profile:
   name: opencode-1.2.17-e4-2026-03-06
+session:
+  # prompt.ts:716-723 returns a failed assistant without deleting its native session.
+  failed_turn_continues: true
 workspace:
   # The public OpenCode lane is still a direct-workspace harness even though BreadBoard can
   # support mirrors and other indirection. That directness is part of the product feel.
@@ -45,6 +48,12 @@ providers:
     params:
       temperature: 0.2
       top_p: 0.9
+  # provider.ts:1242-1295 selects this native title/small model.
+  - id: openai/gpt-5-nano
+    max_input_tokens: 272000
+    max_output_tokens: 32000
+    adapter: openai_responses
+    params: {}
   stream_responses: true
 prompts:
   # OpenCode relies on a persistent compiled system prompt plus environment context.
@@ -54,17 +63,27 @@ prompts:
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   packs:
     base:
-      system: ../config/e4_targets/opencode/1.2.17/prompts/system.md
+      system: ../implementations/system_prompts/opencode_1_2_17_codex_header.prompt.md
       plan: ../config/e4_targets/opencode/1.2.17/prompts/plan.md
       builder: ../config/e4_targets/opencode/1.2.17/prompts/builder.md
   environment:
     enabled: true
     format: opencode
     file_limit: 200
+    # session/system.ts:29-53; the stock directory tree is disabled.
+    include_tree: false
+    files_tag: directories
+    include_model_identity: true
     # The environment format is a real part of the harness identity. Readers should interpret
     # this as "how the world is rendered to the model", not as an incidental SDK setting.
   tool_prompt_synthesis:
     enabled: false
+  initial_context:
+    module: breadboard_engine.compilation.context_builders.opencode_stock
+    callable: build_context
+  summary_projection:
+    module: breadboard_engine.compilation.context_builders.opencode_stock
+    callable: build_summary_projection
   injection:
     system_order:
     - '@pack(base).system'
@@ -85,6 +104,18 @@ provider_tools:
   api_variant: responses
   responses_use_developer_role: true
   tool_choice: auto
+  # OpenCode transform.ts:688-695,720-722,759-763; SDK uses full history.
+  openai:
+    responses_stateful: false
+    responses_use_developer_role: true
+    tool_choice: auto
+    responses_developer_content: string
+    responses_group_tool_results: true
+    responses_preserve_tool_call_items: true
+    responses_max_output_tokens_from_context: true
+    store: false
+    reasoning: {effort: medium, summary: auto}
+    session_params: {prompt_cache_key: '{session_id}'}
 features:
   # This top-level dossier is intentionally not a todo/taskboard showcase lane.
   # More specialized replay configs under `misc/` can freeze those narrower surfaces.
@@ -97,61 +128,58 @@ completion:
   # OpenCode is comfortable with content-only completion. The public dossier keeps that visible
   # so a reader can see this harness is less "must call finish tool" and more "end naturally".
   allow_zero_tool_completion: true
+  # Stock assistant text is persisted without a BreadBoard completion suffix.
+  append_response_marker: false
   build_guard:
     require_run_shell: false
     require_successful_tests: false
 loop:
-  # The top-level dossier keeps the visible loop minimal:
-  #
-  # +-------------------+
-  # | plan (light)      |
-  # +-------------------+
-  #           |
-  #           v
-  # +-------------------+
-  # | build             |
-  # +-------------------+
-  #
-  # The richer replay personalities live in the specialized misc configs, but the public
-  # OpenCode door should still expose the general two-stage shape.
-  #
-  # That is a deliberate tradeoff:
-  # - top-level file = substrate and public identity
-  # - misc replay lane = individual narrow equivalence trophies
+  # Stock default root agent is build; no BB-only plan preamble.
   sequence:
-  - mode: plan
   - mode: build
 modes:
-- name: plan
-  prompt: ''
-  tools_enabled:
-  - read_file
-  - list_dir
-  tools_disabled: []
 - name: build
   prompt: ''
   tools_enabled:
   - '*'
   tools_disabled: []
 tools:
+  # One unmodified stock executor per BB session; no legacy tool aliases.
+  native_semantics: opencode_1_2_17
+  group_native_calls_by_turn: true
+  native_concurrent_prompts: true
+  # The digest-pinned source sidecar runs in the local workspace process.
+  native_local_only: true
+  # Native bash/tmux may allocate a terminal through the admitted launch policy.
+  pty: true
+  stock_worktree_read_only: true
+  stock_lsp_root:
+    path: ~/.cache/bb-compaction-e4/pkgs/opencode-lsp-1.2.17
+    digest: 2b27ba95b4a5f4968141f3c353f0e4abd8e1e9be1572b8e0d99292604ffa7478
+  # Digest-verified source installation, read-only in the native tool sandbox.
+  stock_read_only_roots:
+  - path: ~/.cache/bb-compaction-e4/pkgs/opencode-darwin-arm64@1.2.17/package
+    digest: 10c0bd72c60867d8ecdd37ba70a812076e1e8e2a9e5a3971ea4a728ebf4e836d
+  - path: ~/.cache/bb-compaction-e4/pkgs/opencode-lsp-1.2.17
+    digest: 2b27ba95b4a5f4968141f3c353f0e4abd8e1e9be1572b8e0d99292604ffa7478
   registry:
     # This path points at the tracked OpenCode-compatible tool-definition catalog.
     # The file keeps the public surface explicit through `include` while avoiding
     # inlining every schema blob.
     paths:
-    - ../implementations/tools/defs_oc
+    - ../implementations/tools/defs_opencode_1_2_17
+    # registry.ts:103-124,147-151, CLI GPT tool surface.
     include:
+    - question
     - bash
-    - write
-    #
-    # This top-level OpenCode dossier intentionally stays narrow at the visible-tool layer.
-    # The wider replay lanes in `misc/` add scenario-specific tools as needed, but this file
-    # keeps the public front door interpretable.
-    #
-    # A reader should infer:
-    # - `defs_oc` is the wider OpenCode-compatible schema catalog
-    # - this top-level dossier is not claiming every single OpenCode tool at once
-    # - the specialized replay lanes are where those narrower surfaces are frozen
+    - read
+    - glob
+    - grep
+    - task
+    - webfetch
+    - todowrite
+    - skill
+    - apply_patch
 enhanced_tools:
   # This is where the "BreadBoard plus polish" layer becomes visible:
   # validation, patch splitting, and LSP integration are explicit instead of
@@ -186,8 +214,8 @@ enhanced_tools:
       # This is one of the clearest examples of BreadBoard exposing the "how" of a harness:
       # you can see exactly why a multi-file patch would be split instead of guessing.
   lsp_integration:
-    enabled: true
-    # OpenCode's polished coding UX depends heavily on these enriched editor/runtime behaviors.
+    # Stock owns LSP for this native executor, not BB's local wrapper.
+    enabled: false
 guardrails:
   # Guardrails are composed from tracked baseline files plus OpenCode-specific overrides.
   #

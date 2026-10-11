@@ -18,6 +18,10 @@ let irToJsonSchema: ((ir: unknown, options?: Record<string, unknown>) => Record<
 let validateToolArguments: ((tool: unknown, call: { type: "toolCall"; id: string; name: string; arguments: unknown }) => Record<string, unknown>) | null = null;
 let workspace = "";
 let runtimeInputs: Record<string, string> = {};
+// Stock renders the process-local calendar date of the request instant
+// (sdk.ts:3460-3463, :4152-4156 via utils/local-date.ts:2-7). The admitted
+// message_timestamp_ms is that instant; the date is observed in this process.
+let currentDate = "";
 let convertMessages: ((model: any, context: any, compat: any) => unknown[]) | null = null;
 let reminderInjector: { transform: (context: { systemPrompt: string[]; messages: unknown[] }, date: string, cwd: string) => unknown } | null = null;
 // Conductor owns transport, so the pinned registry never sends this key.
@@ -177,17 +181,17 @@ function exactRecord(value: unknown, label: string, required: readonly string[],
 }
 
 function requireRuntimeInputs(value: unknown): Record<string, string> {
-  const input = exactRecord(
-    value,
-    "runtime_inputs",
-    ["cwd", "home", "current_date", "package_dir"],
-  );
+  const names = ["cwd", "home", "message_timestamp_ms", "package_dir"];
+  const input = exactRecord(value, "runtime_inputs", names);
   const typed: Record<string, string> = {};
-  for (const name of ["cwd", "home", "current_date", "package_dir"]) {
+  for (const name of names) {
     if (typeof input[name] !== "string" || !input[name]) {
       throw new Error(`runtime_inputs.${name} must be a non-empty string`);
     }
     typed[name] = input[name] as string;
+  }
+  if (!/^\d{13}$/.test(typed.message_timestamp_ms) || !Number.isSafeInteger(Number(typed.message_timestamp_ms))) {
+    throw new Error("runtime_inputs.message_timestamp_ms must be a 13-digit epoch millisecond string");
   }
   return typed;
 }
@@ -487,6 +491,7 @@ async function initialize(payload: Record<string, any>) {
     "packages/coding-agent/src/prompts/system/system-prompt.md": "6f4854f0e80a3a0931c9b34bda8a8d7e6f90d15ec4dfa7567c5f7019b02feca7",
     "packages/coding-agent/src/prompts/system/personalities/default.md": "2c8bd4f78b9223f33c4d38044256f1285acbfb932eaad42d1cc5a3e2fc64dbd3",
     "packages/coding-agent/src/session/date-cwd-reminder.ts": "57d5a86126d78e332af182fa0d70165e0a3719a70b55296121cfd4d1c291a709",
+    "packages/coding-agent/src/utils/local-date.ts": "a4950542abd04a81b58a2607d459bbffe4a450bb76832056d1b91de0e8ae728e",
     "packages/coding-agent/src/prompts/system/date-cwd-reminder.md": "624bf012a8960a5546eb5b555e63221a87612a3dcd608f84976c66ab48a92769",
     "packages/ai/src/providers/openai-completions.ts": "8492ebc5f6fc0e024a310f13aa00487f7f41d34dd28f3e91a29633b88610cd60",
     "packages/omptype/src/json-schema.ts": "827b4718ab1c92bce0156e44749e25843024c445b2fd32ce6ed9f574e1408cf7",
@@ -526,6 +531,8 @@ async function initialize(payload: Record<string, any>) {
   const { SessionManager } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/session-manager.ts`);
   const { DateCwdReminderInjector } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/session/date-cwd-reminder.ts`);
   reminderInjector = new DateCwdReminderInjector();
+  const { formatLocalCalendarDate } = await import(`${pinnedSourceRoot}/packages/coding-agent/src/utils/local-date.ts`);
+  currentDate = formatLocalCalendarDate(new Date(Number(runtimeInputs.message_timestamp_ms)));
   const compactionEnabled = payload.compaction === true;
   workerCompactionEnabled = compactionEnabled;
   compactionPkg = await import(`${pinnedSourceRoot}/packages/agent/src/compaction/compaction.ts`);
@@ -616,6 +623,7 @@ async function initialize(payload: Record<string, any>) {
     tool_schemas: tools.map((tool: any) => ({ type: "function", function: { name: tool.name, description: boundedDescriptions[tool.name], parameters: parametersFor(tool) } })),
     bootstrap: {
       ...runtimeInputs,
+      current_date: currentDate,
       consumer_id: "breadboard.oh-my-pi.v18.1.17",
       workspace,
       source_commit: pinnedSourceRoot.split("-").at(-1),
@@ -751,7 +759,7 @@ async function buildHandoffContext(entries: Array<Record<string, unknown>>) {
   // agent's side-request builder, with the base rather than per-turn prompt.
   // Pin the clock read by the stock date/cwd transform.
   const NativeDate = Date;
-  const timestamp = NativeDate.parse(`${runtimeInputs.current_date}T12:00:00`);
+  const timestamp = NativeDate.parse(`${currentDate}T12:00:00`);
   class ReplayDate extends NativeDate {
     constructor(value: string | number = timestamp) { super(value); }
     static now() { return timestamp; }
@@ -827,7 +835,7 @@ async function commitStockCompaction(prep: Record<string, unknown>, payload: Rec
     try {
       if (prep.method === "handoff") {
         class HandoffDate extends replayDate {
-          constructor(value: string | number = replayDate.parse(`${runtimeInputs.current_date}T12:00:00`)) { super(value); }
+          constructor(value: string | number = replayDate.parse(`${currentDate}T12:00:00`)) { super(value); }
         }
         globalThis.Date = HandoffDate as DateConstructor;
         await session.handoff(compactionPkg.AUTO_HANDOFF_THRESHOLD_FOCUS);
@@ -1318,7 +1326,7 @@ async function dispatch(operation: string, payload: Record<string, unknown>): Pr
     if (!model) throw new Error("pinned OMP session model is unavailable");
     if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
     if (reminderInjector === null) throw new Error("pinned OMP date/cwd reminder is unavailable");
-    const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: convertToLlm(payload.messages as unknown[]) }, runtimeInputs.current_date, workspace), model.compat);
+    const messages = convertMessages(model, reminderInjector.transform({ systemPrompt: nativeSystemPrompt, messages: convertToLlm(payload.messages as unknown[]) }, currentDate, workspace), model.compat);
     return {
       schema_version: PHASE_SCHEMA,
       kind: "request",

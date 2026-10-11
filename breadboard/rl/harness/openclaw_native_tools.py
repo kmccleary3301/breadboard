@@ -15,6 +15,16 @@ continuation (resource-loader:10122,10189); stock-classified length overflow
 instead compacts and retries through the existing conductor reopen path
 (resource-loader:10090-10109,10183-10187). The worker retains the source counter
 across both refused requests and zero-output length responses.
+
+The runtime-only provider_exchanges capability admits stock's post-compaction
+memory indexing. A digest-checked loader exposes the unchanged stock hook
+(compact-BvznzvKp.mjs:235-267). The worker mirrors its source message ledger into
+stock SQLite and retains the source manager across turns. Each embeddings fetch
+suspends until the bound production policy transport returns the actual status
+and body. Only header names enter replay traces; real credentials travel through
+private initialization and are supplied on the wire by the policy transport.
+Compaction-disabled configurations never initialize this path. A rejected
+exchange follows stock's own skip-on-failure path, with no replacement vectors.
 """
 from __future__ import annotations
 

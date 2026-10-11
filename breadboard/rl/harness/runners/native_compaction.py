@@ -18,11 +18,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Literal
 
+from breadboard_engine.compilation.contracts import canonical_sha256
+
 from breadboard.rl.harness.runners.base import FrozenJsonObject, freeze_json_object, thaw_json
 
 WorkerPhase = Callable[[str, Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
 # Sends one frozen summary request to the policy; returns (response, receipt).
 SummaryExchange = Callable[[FrozenJsonObject], Awaitable[tuple[Mapping[str, Any], Any]]]
+ProviderExchange = Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
 # Dependent summary requests a source issues after its first summaries.
 MAX_FOLLOWUP_REQUESTS = 2
 
@@ -71,6 +74,7 @@ async def compact_history(
     phase: WorkerPhase,
     exchange: SummaryExchange,
     trace_requests: list[dict[str, Any]],
+    provider_exchange: ProviderExchange | None = None,
 ) -> CompactedHistory | None:
     """Run native maintenance; retain reported rewrites even without a summary."""
     payload: dict[str, Any] = {
@@ -135,6 +139,11 @@ async def compact_history(
         finalized = await phase("finalize_compaction", {
             **finalize_payload, "followup_summaries": list(followups),
         })
+    if finalized.get("kind") == "compaction_finalized" and provider_exchange is not None:
+        await drain_provider_exchanges(
+            phase=phase, exchange=provider_exchange, trace_requests=trace_requests,
+            checkpoint=checkpoint,
+        )
     if finalized.get("kind") != "compaction_finalized":
         return None
     retry = finalized.get("retry", True)
@@ -169,6 +178,32 @@ async def compact_history(
         messages=compacted, event=event, retry=retry,
         continuation=continuation, reason=finalized_reason,
     )
+
+
+async def drain_provider_exchanges(
+    *, phase: WorkerPhase, exchange: ProviderExchange,
+    trace_requests: list[dict[str, Any]], checkpoint: str,
+) -> None:
+    """Resume private HTTP responses; retain only their public trace projection."""
+    result = await phase("drain_provider_exchanges", {"checkpoint": checkpoint})
+    while result.get("kind") == "provider_exchange":
+        request = result["request"]
+        response = await exchange(request)
+        trace_requests.append({
+            "_provider_exchange": request["provider_exchange"],
+            "checkpoint": checkpoint,
+            "request": dict(request),
+            "response": (
+                {"error": dict(response["error"])} if "error" in response else {
+                    "status_code": response["status_code"],
+                    "body_b64": response["body_b64"],
+                    "headers_digest": canonical_sha256(response["headers"]),
+                }
+            ),
+        })
+        result = await phase("drain_provider_exchanges", {"response": response, "checkpoint": checkpoint})
+    if result.get("kind") != "provider_exchanges_drained":
+        raise ValueError("native provider exchange did not drain")
 
 
 async def _summarize(

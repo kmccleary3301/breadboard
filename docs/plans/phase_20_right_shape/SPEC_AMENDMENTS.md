@@ -544,3 +544,27 @@ review gates; it does not authorize runtime or recipient acceptance.
 - Post-change hashes are pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `COMPACTION_E4_SCOPE_REQUEST` and ref `AM36`.
 - Absent fields keep existing behavior. Existing dated configs and target revisions are unchanged; compaction ships only in new dated configs and new `-rN` target revisions.
 - No new schema ID, lane, grader rule or evidence cap is authorized; the freeze baseline is unchanged.
+
+## Amendment 37 - 2026-10-10 - Request-keyed approvals for native concurrent prompts
+
+**Authorization and defect:** Stock OpenCode 1.2.17 and oh-my-opencode 3.10.0 sessions raise simultaneous permission and question prompts: a background child prompt and a root prompt can be pending at once. Under those dated profiles, the permission broker already demultiplexes the replies by request ID. The product Session authority held one pending approval, so it rejected the root reply while the child was pending ("approval does not match the pending request"). Reproduced by `tests/compaction/test_opencode_stock_cross_turn_permission.py`.
+
+**Scope:**
+- `bb.payload.product_session.lifecycle.v1` `sessionStarted` (both branches) gains the optional `concurrent_approvals` with `const: true`. The service writes it only when the frozen session configuration declares the capability `tools.native_concurrent_prompts: true` (Amendment 38); the harness identity is never consulted. When it is set, replay keys pending approvals by `request_id`. A new request may arrive while other approvals are pending, but a duplicate pending ID is rejected. Requests resolve in any order, and an unknown or stale ID is rejected. `bb.session.v1` `pending_approval` reports the oldest pending ID.
+- The post-change hash is pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `E4_NATIVE_CONCURRENT_APPROVALS` and ref `AM37`. The hand-written SDK `SessionStartedPayload` types gain the same optional field.
+- If the field is absent, the single-approval behavior, events, read model and error strings are unchanged. No new schema ID, read-model field, lane, grader rule or evidence cap is authorized, and the freeze baseline is unchanged.
+
+## Amendment 38 - 2026-10-11 - Stock-executor capabilities and ports for dated E4 engine profiles
+
+**Authorization and defect:** Kyle McCleary's 2026-10-10 step-4 instruction ("fixing the four dated engine profiles") requires the dated Codex 0.139.0, Claude Code 2.1.63, OpenCode 1.2.17 and oh-my-opencode 3.10.0 profiles to send the same requests as stock and to run every advertised tool with stock semantics. The closed v2 config surface could not select a pinned stock executor, its prompt and request ports, or the stock behaviour those runtimes need: concurrent native prompts, local-only placement, pseudo-terminals, failed turns that leave the session open, and restoring the compaction ledger on resume. The step-4 lanes reproduce each gap in `scripts/compaction_lanes/`.
+
+**Scope:**
+- `bb.agent_config_surface.v2` gains optional members:
+  - `tools.native_semantics`, the pinned `tools.stock_*` executor inputs and `tools.group_native_calls_by_turn`;
+  - the strict capabilities `tools.native_concurrent_prompts`, `tools.native_local_only`, `tools.pty` and `session.failed_turn_continues`, each defaulting to false;
+  - `prompts.initial_context`, `prompts.summary_projection` and the `prompts.environment` include flags;
+  - `providers.openai` Responses flags, `providers.anthropic.request_layout`/`native_tool_result_replay`/`preserve_tool_names`, per-model image, web-search and truncation capabilities, and `providers.session_uuid_version`;
+  - `resume.snapshot_path` and `resume.restore_compaction_state`.
+- Behaviour switches read capabilities only. `native_semantics` selects the stock executor and its wire serialization, never other behaviour. Callable ports are restricted to `breadboard_engine.compilation.context_builders.*`.
+- The post-change hash is pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `COMPACTION_E4_SCOPE_REQUEST` and ref `AM35/AM36/AM38`. Only the generated TypeScript declaration, registry and Node validator change alongside it.
+- Absent members keep existing behaviour byte-identical. The `*_9-10-2026` profiles and existing target revisions are unchanged. No new schema ID, lane, grader rule or evidence cap is authorized, and the freeze baseline is unchanged.

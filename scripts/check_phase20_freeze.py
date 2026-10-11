@@ -88,9 +88,9 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
     },
     "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json": {
         "packet": "COMPACTION_E4_SCOPE_REQUEST",
-        "sha256": "54aaf069f42f044f3fe857df19082aad3c96f56798b0cb8afc90e7b8fdb84ecb",
+        "sha256": "5dc8ce8aa1ff0cf9e31050aa7f44e31b06c07c9ccb19391d1dbadfb78954c3d9",
         "class": "plan_mandated_evolution",
-        "ref": "AM35/AM36",
+        "ref": "AM35/AM36/AM38",
     },
     "bb.e4.lane_manifest.v1": {
         "packet": "F4",
@@ -144,10 +144,10 @@ TIGHTENING_ALLOWLIST: dict[str, dict[str, str]] = {
         "ref": "AM26/AM27/AM28/AM31",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.lifecycle.v1.schema.json": {
-        "packet": "bb-lrmt",
-        "sha256": "512790b2cd64e085c78051f9b44eb3eb35d21295df80f83db2371de215b5183a",
+        "packet": "E4_NATIVE_CONCURRENT_APPROVALS",
+        "sha256": "71f2fdef7852deb8abbfd41dfc1982b83fa026b47ce152556f0574a563edfb96",
         "class": "plan_mandated_evolution",
-        "ref": "AM28/AM31",
+        "ref": "AM28/AM31/AM37",
     },
     "https://breadboard.dev/contracts/public/schemas/bb.payload.product_session.annotation.v1.schema.json": {
         "packet": "DSH-W9",

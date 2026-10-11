@@ -1,0 +1,61 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: lsp_symbols
+name: lsp_symbols
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: Get symbols from file (document) or search across workspace. Use scope='document' for file outline,
+  scope='workspace' for project-wide symbol search.
+parameters:
+- name: filePath
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: scope
+  required: true
+  schema: &id002
+    default: document
+    type: string
+    enum:
+    - document
+    - workspace
+  type: string
+- name: query
+  required: false
+  schema: &id003
+    type: string
+  type: string
+- name: limit
+  required: false
+  schema: &id004
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: lsp_symbols
+      description: Get symbols from file (document) or search across workspace. Use scope='document' for file outline,
+        scope='workspace' for project-wide symbol search.
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          filePath: *id001
+          scope: *id002
+          query: *id003
+          limit: *id004
+        required:
+        - filePath
+        - scope
+        additionalProperties: false
+      strict: false

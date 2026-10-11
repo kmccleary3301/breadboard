@@ -66,6 +66,7 @@ class ProviderExchangeRecorder:
             stream=stream,
             messages=self.request.messages,
             tools=self.request.tools,
+            _tool_api_variant=self.request._tool_api_variant,
         )
 
     def rebind_provider(self, provider: ProviderIdentity) -> None:
@@ -153,6 +154,7 @@ class ProviderExchangeRecorder:
 
             arguments_json: Optional[str] = None
             parsed_arguments: Any = None
+            raw_arguments: Optional[str] = None
             if kind == "tool_call_end":
                 argument_values = [
                     payload_dict[key]
@@ -164,26 +166,27 @@ class ProviderExchangeRecorder:
                     )
                     if key in payload_dict
                 ]
-                if not argument_values:
-                    raise ProviderContractError(
-                        "tool_call_end requires explicit arguments"
-                    )
-                normalized_arguments: List[Tuple[str, Any]] = []
-                for raw_arguments in argument_values:
-                    parsed = (
-                        json.loads(raw_arguments)
-                        if isinstance(raw_arguments, str)
-                        else raw_arguments
-                    )
-                    normalized_arguments.append((canonical_json(parsed), parsed))
-                if any(
-                    encoded != normalized_arguments[0][0]
-                    for encoded, _ in normalized_arguments[1:]
-                ):
-                    raise ProviderContractError(
-                        "completed tool argument aliases disagree"
-                    )
-                arguments_json, parsed_arguments = normalized_arguments[0]
+                raw_arguments = payload_dict.get("raw_arguments")
+                if raw_arguments is not None:
+                    if argument_values:
+                        raise ProviderContractError("raw tool arguments cannot include parsed JSON arguments")
+                else:
+                    if not argument_values:
+                        raise ProviderContractError("tool_call_end requires explicit arguments")
+                    normalized_arguments: List[Tuple[str, Any]] = []
+                    for argument_value in argument_values:
+                        parsed = (
+                            json.loads(argument_value)
+                            if isinstance(argument_value, str)
+                            else argument_value
+                        )
+                        normalized_arguments.append((canonical_json(parsed), parsed))
+                    if any(
+                        encoded != normalized_arguments[0][0]
+                        for encoded, _ in normalized_arguments[1:]
+                    ):
+                        raise ProviderContractError("completed tool argument aliases disagree")
+                    arguments_json, parsed_arguments = normalized_arguments[0]
 
             delta = (
                 _coalesce_text_fields(
@@ -206,6 +209,7 @@ class ProviderExchangeRecorder:
                 delta=delta,
                 arguments_json=arguments_json,
                 arguments=parsed_arguments,
+                raw_arguments=raw_arguments,
             )
             _validate_event_lifecycle(
                 [*self.events, event], require_closed=False

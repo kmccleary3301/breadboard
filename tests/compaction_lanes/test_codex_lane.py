@@ -44,6 +44,70 @@ def test_missing_requests_fail():
     assert compare_requests([], [request])[0]["bb_present"]
 
 
+@pytest.mark.parametrize("side", ["stock", "bb"])
+def test_exec_chunk_guard_rejects_a_malformed_side(side):
+    body = {"input": [
+        {"type": "function_call", "name": "exec_command", "call_id": "c", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c",
+         "output": "Chunk ID: 05a38f\nWall time: 0.1234 seconds\nProcess exited with code 0\nOutput:\nready\n"},
+    ]}
+    stock, bb = record(json.dumps(body)), record(json.dumps(body))
+    malformed = stock if side == "stock" else bb
+    malformed["json"]["input"][1]["output"] = malformed["json"]["input"][1]["output"].replace("05a38f", "05A38F")
+    with pytest.raises(ValueError, match=side + ".*codex_exec_chunk_id"):
+        compare_requests([stock], [bb])
+
+
+@pytest.mark.parametrize("side", ["stock", "bb"])
+@pytest.mark.parametrize("wall", ["0.1", "-0.1234", "NaN", "01.0000"])
+def test_exec_wall_guard_rejects_a_malformed_side(side, wall):
+    body = {"input": [
+        {"type": "function_call", "name": "write_stdin", "call_id": "c", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c",
+         "output": "Chunk ID: 05a38f\nWall time: 0.1234 seconds\nProcess exited with code 0\nOutput:\nready\n"},
+    ]}
+    stock, bb = record(json.dumps(body)), record(json.dumps(body))
+    malformed = stock if side == "stock" else bb
+    malformed["json"]["input"][1]["output"] = malformed["json"]["input"][1]["output"].replace("0.1234", wall)
+    with pytest.raises(ValueError, match=side + ".*codex_exec_wall_time"):
+        compare_requests([stock], [bb])
+
+
+def test_exec_metadata_guards_count_per_request_and_leave_body_strict():
+    body = {"input": [
+        {"type": "function_call", "name": "exec_command", "call_id": "c", "arguments": "{}"},
+        {"type": "function_call_output", "call_id": "c",
+         "output": "Chunk ID: 05a38f\nWall time: 0.1234 seconds\nProcess exited with code 0\nOutput:\nWall time: user text\n"},
+    ]}
+    stock = record(json.dumps(body))
+    bb = deepcopy(stock)
+    bb["json"]["input"][1]["output"] = bb["json"]["input"][1]["output"].replace("05a38f", "abcdef").replace("0.1234", "12.0000")
+    counts = []
+    assert compare_requests([stock], [bb], counts) == []
+    assert counts == [{"request": 0, "stock": {"codex_exec_chunk_id": 1, "codex_exec_wall_time": 1},
+                      "bb": {"codex_exec_chunk_id": 1, "codex_exec_wall_time": 1}}]
+    bb["json"]["input"][1]["output"] += " "
+    assert compare_requests([stock], [bb])
+    body["input"][0]["name"] = "update_plan"
+    stock = record(json.dumps(body))
+    bb = deepcopy(stock)
+    bb["json"]["input"][1]["output"] = bb["json"]["input"][1]["output"].replace("05a38f", "abcdef")
+    assert compare_requests([stock], [bb])
+
+
+def test_injected_process_ids_are_finite_and_allocation_mismatch_fails():
+    from scripts.compaction_lanes.codex_lane import StockProcessIds, validate_process_allocations
+    source = StockProcessIds([1000, 99999])
+    assert source() == 1000
+    assert source() == 99999
+    with pytest.raises(ValueError, match="exhausted"):
+        source()
+    validate_process_allocations([1000, 99999], {"allocation_count": 2, "draw_count": 2})
+    for state in ({"allocation_count": 1, "draw_count": 1}, {"allocation_count": 2, "draw_count": 3}):
+        with pytest.raises(ValueError, match="allocation mismatch"):
+            validate_process_allocations([1000, 99999], state)
+
+
 def test_settings_derive_limit_from_production_preset():
     config = settings(16000)
     assert config["production_window"] == 272000
@@ -58,7 +122,11 @@ def test_script_covers_requested_lifecycles():
     assert len(script) == 5
     assert script[0]["usage"]["total_tokens"] > limit
     assert script[2]["usage"]["total_tokens"] > limit
-    assert scenario_script(SCENARIOS[1], limit)[0]["name"] == "shell_command"
+    mid = scenario_script(SCENARIOS[1], limit)
+    assert [item.get("name") for item in mid[:2]] == ["exec_command", "write_stdin"]
+    assert json.loads(mid[0]["arguments"])["tty"] is True
+    assert mid[1]["session_id_from_output"] is True
+    assert len(mid) == 4
     assert scenario_script(SCENARIOS[2], limit)[0]["error"] == "context_length_exceeded"
 
 
@@ -113,6 +181,92 @@ def test_responses_summary_projection_preserves_main_bytes(summary, tools):
             expected["tools"] = []
     assert body == expected
     assert json.dumps(body, sort_keys=True, separators=(",", ":")) == json.dumps(expected, sort_keys=True, separators=(",", ":"))
+
+
+@pytest.mark.parametrize("generation", [0, 1, 2])
+@pytest.mark.parametrize("summary", [False, True])
+def test_profile_envelope_derives_identity_and_keeps_null_fields(generation, summary):
+    from types import SimpleNamespace
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+    from breadboard_engine.compaction.state import CompactionRecord, CompactionState
+    from breadboard_engine.state.session_state import SessionState
+    root = "019a0000-0000-7000-8000-000000000001"
+    state = SessionState(".", "lane", {})
+    state.set_provider_metadata("installation_id", "installation")
+    state.compaction_state = CompactionState([
+        CompactionRecord(f"record-{index}", index, "summary", "threshold", "2026-10-10", 100, 0,
+                         first_kept_index=0)
+        for index in range(generation)
+    ])
+    configured = {"provider_tools": {"openai": {
+        "responses_stateful": False, "include_reasoning": False,
+        "request_params": {"reasoning": None, "text": None, "include": [], "store": False,
+                           "parallel_tool_calls": False, "tool_choice": "auto"},
+        "session_params": {"prompt_cache_key": "{session_id}"},
+        "client_metadata_session": {"x-codex-installation-id": "{installation_id}",
+                                    "x-codex-window-id": "{session_id}:{compaction_boundary_count}"},
+    }}}
+    context = ProviderRuntimeContext(state, configured, session_id=root,
+        extra={"compaction_summary": summary, "compaction_request_params": {"tool_choice": "none"}})
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    body = runtime.project_request_body(model="model", messages=[{"role": "user", "content": "task"}],
+                                        tools=[] if summary else None, stream=True, context=context)
+    assert body["prompt_cache_key"] == root
+    assert body["client_metadata"] == {"x-codex-installation-id": "installation",
+                                       "x-codex-window-id": f"{root}:{generation}"}
+    assert body["reasoning"] is None and body["text"] is None
+    assert body["include"] == [] and body["store"] is False
+    assert body["parallel_tool_calls"] is False
+    assert body["tool_choice"] == ("none" if summary else "auto")
+
+
+def test_window_generation_rehydrates_resumed_compactions_and_starts_new_at_zero():
+    from breadboard_engine.compaction import CompactionContext, CompactionState, ProjectionTarget, load_compaction_config
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+    from breadboard_engine.state.session_state import SessionState
+    state = SessionState(".", "lane", {})
+    state.compaction_state = CompactionState()
+    root = "019a0000-0000-7000-8000-000000000001"
+    context = ProviderRuntimeContext(state, {}, session_id=root, extra={})
+    def window():
+        return OpenAIResponsesRuntime._session_param("{session_id}:{compaction_boundary_count}", context)
+    messages = [{"role": "user", "content": "task"}]
+    settings = load_compaction_config({"enabled": True}).settings
+    for count in range(2):
+        assert window() == f"{root}:{count}"
+        compaction = CompactionContext(messages, state.compaction_state, settings, "threshold",
+                                      ProjectionTarget("openai", "responses", "gpt-5.5"), 16000, 100,
+                                      clock=lambda: "2026-10-10")
+        state.compaction_state.append(
+            compaction.new_record(method="summary", summary="checkpoint", first_kept_index=0,
+                                  summary_messages=[{"role": "user", "content": "checkpoint"}]), messages)
+    assert window() == f"{root}:2"
+    resumed = SessionState(".", "resumed", {})
+    resumed.compaction_state = CompactionState.from_list(state.compaction_state.to_list())
+    context.session_state = resumed
+    assert window() == f"{root}:2"
+    context.session_state = SessionState(".", "new", {})
+    assert window() == f"{root}:0"
+
+
+def test_configured_metadata_reaches_mock_through_real_sdk(tmp_path):
+    from types import SimpleNamespace
+    from openai import OpenAI
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    context = ProviderRuntimeContext(
+        SimpleNamespace(get_provider_metadata=lambda key: None),
+        {"provider_tools": {"openai": {"include_reasoning": False,
+                                     "client_metadata": {"installation": "shared"}}}},
+        extra={},
+    )
+    with EngineMockProvider(script=scenario_script(SCENARIOS[0], 14400)[:1],
+                            record_path=tmp_path / "requests.jsonl") as provider:
+        with OpenAI(api_key="lane", base_url=provider.base_url + "/v1") as client:
+            runtime.invoke(client=client, model="gpt-5.5",
+                           messages=[{"role": "user", "content": "task"}],
+                           tools=None, stream=True, context=context)
+        assert provider.engine.recorded_requests[0]["json"]["client_metadata"] == {"installation": "shared"}
 
 
 @pytest.mark.parametrize("stream", [False, True])
@@ -175,5 +329,54 @@ def test_other_http_status_still_allows_explicit_overflow():
 @pytest.mark.skipif(not BINARY.is_file(), reason="pinned Codex binary is unavailable")
 def test_live_stock_and_production_engine_bytes(tmp_path: Path):
     report = run_lane(tmp_path)
-    assert report["deviations_used"] == []
+    assert {item["name"] for item in report["deviations_used"]} == {"codex_exec_chunk_id", "codex_exec_wall_time"}
     assert report["passed"], str(tmp_path / "lane_report.json")
+    # A fresh production entrypoint resumes the ledger, so the second summary
+    # reads the first boundary rather than the original assistant history.
+    recordings = tmp_path / "pre_turn_and_second_compaction" / "bb" / "requests.jsonl"
+    bodies = [json.loads(line)["json"] for line in recordings.read_text().splitlines()]
+    second_summary = json.dumps(bodies[3]["input"], ensure_ascii=False)
+    assert "Summary of turn 1." in second_summary
+    assert "Turn 1 answer." not in second_summary
+    assert "Turn 3 prompt" not in second_summary
+
+
+@pytest.mark.parametrize("consumer", ["select", "reduce", None])
+def test_pending_exclusion_alone_registers_production_sampling_phase(monkeypatch, consumer):
+    from breadboard_engine.compaction import CompactionContext, CompactionState, ProjectionTarget
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.methods import SummaryResponse
+    from breadboard_engine.compaction import presets
+    document = presets.load_preset_document("codex@0.139.0")
+    stage = document["pipeline"]["stages"][0]
+    stage["place"]["restore_context_placements"] = {}
+    stage["select"]["exclude_pending_user_on"] = []
+    stage["reduce"]["exclude_pending_user_on"] = []
+    if consumer is not None:
+        stage[consumer]["exclude_pending_user_on"] = ["pre_turn"]
+    monkeypatch.setattr(presets, "load_preset_document", lambda _: document)
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "codex@0.139.0", "contextWindow": 16000}})
+    assert controller.tracks_sampling_phase is (consumer is not None)
+    messages = [{"role": "user", "content": "previous task"},
+                {"role": "assistant", "content": "previous answer"},
+                {"role": "user", "content": "pending prompt"}]
+    calls = []
+    class Summary:
+        def complete(self, request):
+            calls.append(request)
+            return SummaryResponse("checkpoint")
+    # The same registration gates populate phase and boundary in the loop.
+    if controller.tracks_sampling_phase:
+        controller.sampling_phase = "pre_turn"
+        controller.pending_user_index = len(messages) - 1
+    context = CompactionContext(messages, CompactionState(), controller.settings, "threshold",
+                                ProjectionTarget("openai", "responses", "gpt-5.5"), 16000, 14500,
+                                summarizer=Summary(), sampling_phase=controller.sampling_phase,
+                                pending_user_index=controller.pending_user_index)
+    step = controller.recipe.pipeline.stages["summary"].step
+    selection = step.selector.select(context)
+    if consumer == "select":
+        assert len(messages) - 1 not in selection.summarize
+        assert messages[-1] not in selection.details["retained_messages"]
+    step.reducer.reduce(context, selection)
+    assert (messages[-1] not in calls[0].messages) is (consumer == "reduce")

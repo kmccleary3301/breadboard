@@ -299,6 +299,25 @@ def get_model_response(
         )
     else:
         send_messages = copy.deepcopy(session_state.provider_messages)
+    stock_request = None
+    if (conductor.config.get("tools") or {}).get("native_semantics") in {
+        "opencode_1_2_17", "oh_my_opencode_3_10_0",
+    }:
+        from ..execution.opencode_tools import prepare_stock_turn, stock_system_messages
+
+        stock_request = prepare_stock_turn(conductor, session_state)
+        session_state.set_provider_metadata("opencode_stock_request", stock_request)
+        # Stock supplies dynamic prompts/catalogs, never the BB conversation.
+        send_messages = stock_system_messages(stock_request) + [
+            message for message in send_messages
+            if message.get("role") not in {"system", "developer"}
+        ]
+        from ..compilation.context_builders.opencode_stock import (
+            project_inflight_current_user, project_inflight_tool_arguments, project_inflight_tool_outputs,
+        )
+        send_messages = project_inflight_current_user(session_state, stock_request, send_messages)
+        send_messages = project_inflight_tool_arguments(stock_request, send_messages)
+        send_messages = project_inflight_tool_outputs(stock_request, send_messages)
     requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
         {
@@ -520,6 +539,10 @@ def get_model_response(
                 conductor.current_text_based_tools = text_based_tools
         except Exception:
             tools_schema = None
+    if stock_request is not None:
+        from ..execution.opencode_tools import stock_tool_schema
+
+        tools_schema = stock_tool_schema(stock_request)
     if tools_schema:
         try:
             record_tool_schema_snapshot(
@@ -842,8 +865,8 @@ def get_model_response(
 
     runtime_context.extra["stream_retry_observer"] = _record_stream_retry
 
-    result, _ = conductor.provider_invoker.invoke(
-        runtime=runtime,
+    try:
+        result, _ = conductor.provider_invoker.invoke(runtime=runtime,
         client=client,
         model=model,
         send_messages=send_messages,
@@ -853,8 +876,16 @@ def get_model_response(
         session_state=session_state,
         markdown_logger=markdown_logger,
         turn_index=turn_index,
-        route_id=getattr(conductor, "_current_route_id", None),
-    )
+        route_id=getattr(conductor, "_current_route_id", None),)
+    except Exception as exc:
+        if stock_request is not None:
+            from ..execution.opencode_tools import submit_stock_overflow
+            submit_stock_overflow(conductor, session_state, exc)
+        raise
+    if stock_request is not None:
+        from ..execution.opencode_tools import submit_stock_response
+
+        submit_stock_response(conductor, session_state, result)
 
     if (conductor.config.get("features", {}) or {}).get("response_normalizer"):
         normalized_events = normalize_provider_result(result)
@@ -963,6 +994,16 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
                     conductor.yaml_tools, provider_id
                 )
             )
+            if (
+                (conductor.config.get("tools") or {}).get("native_semantics") == "codex_0_139"
+                and getattr(conductor, "_codex_agent_depth", 0) >= (conductor.config.get("agents") or {}).get("max_depth", 1)
+            ):
+                # spec_plan.rs:304-312,698,849-856: at the v1 depth limit
+                # collaboration and its empty deferred search are absent.
+                native_tools = [
+                    tool for tool in native_tools
+                    if tool.name not in {"multi_agent_v1", "tool_search"}
+                ]
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools

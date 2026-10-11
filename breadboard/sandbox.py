@@ -82,6 +82,89 @@ class DevSandboxV2:
     def get_workspace(self) -> str:
         return self.workspace
 
+    def codex_set_process_id_generator(self, generator: Any, thread_id: str | None = None) -> None:
+        """Install an explicit generator for a thread, or the next created thread."""
+        if not callable(generator):
+            raise TypeError("Process ID generator must be callable")
+        managers = getattr(self, "_codex_exec_managers", {})
+        if thread_id in managers:
+            managers[thread_id].set_process_id_generator(generator)
+        elif thread_id is None and managers:
+            raise RuntimeError("Specify a thread when installing a generator after thread creation")
+        elif thread_id is None:
+            self._codex_pending_process_id_generator = generator
+        else:
+            if not hasattr(self, "_codex_process_id_generators"):
+                self._codex_process_id_generators = {}
+            self._codex_process_id_generators[thread_id] = generator
+
+    def codex_process_id_generator_state(self, thread_id: str | None = None) -> Dict[str, int]:
+        managers = getattr(self, "_codex_exec_managers", {})
+        if thread_id is not None:
+            manager = managers.get(thread_id)
+            return manager.process_id_generator_state() if manager else {"allocation_count": 0, "draw_count": 0}
+        state = dict(getattr(self, "_codex_closed_generator_state", {"allocation_count": 0, "draw_count": 0}))
+        for manager in managers.values():
+            for key, value in manager.process_id_generator_state().items():
+                state[key] += value
+        return state
+
+    def _codex_exec_manager_for_thread(self, thread_id: str | None, truncation_policy: Dict[str, Any]):
+        from breadboard_engine.execution.codex_exec import CodexExecManager
+
+        if not hasattr(self, "_codex_exec_managers"):
+            self._codex_exec_managers = {}
+        if thread_id not in self._codex_exec_managers:
+            generators = getattr(self, "_codex_process_id_generators", {})
+            generator = generators.pop(thread_id, None)
+            if generator is None and hasattr(self, "_codex_pending_process_id_generator"):
+                generator = self._codex_pending_process_id_generator
+                del self._codex_pending_process_id_generator
+            self._codex_exec_managers[thread_id] = CodexExecManager(
+                self.workspace, truncation_policy=truncation_policy,
+                protected_paths=self._protected_credential_paths, process_id=generator,
+            )
+        manager = self._codex_exec_managers[thread_id]
+        manager.truncation_policy = truncation_policy
+        return manager
+
+    def codex_exec_command(self, args: Dict[str, Any], thread_id: str | None, truncation_policy: Dict[str, Any]) -> Dict[str, Any]:
+        return self._codex_exec_manager_for_thread(thread_id, truncation_policy).exec_command(args, thread_id)
+
+    def codex_write_stdin(self, args: Dict[str, Any], thread_id: str | None, truncation_policy: Dict[str, Any]) -> Dict[str, Any]:
+        from breadboard_engine.execution.codex_exec import text_output
+
+        manager = getattr(self, "_codex_exec_managers", {}).get(thread_id)
+        if manager is None:
+            return text_output(f"write_stdin failed: Unknown process id {args['session_id']}", error=True)
+        manager.truncation_policy = truncation_policy
+        return manager.write_stdin(args)
+
+    def codex_close_exec_sessions(self, thread_id: str | None) -> None:
+        manager = getattr(self, "_codex_exec_managers", {}).pop(thread_id, None)
+        if manager is None:
+            return
+        manager.close()
+        if not hasattr(self, "_codex_closed_generator_state"):
+            self._codex_closed_generator_state = {"allocation_count": 0, "draw_count": 0}
+        for key, value in manager.process_id_generator_state().items():
+            self._codex_closed_generator_state[key] += value
+
+    def codex_view_image(self, args: Dict[str, Any], supports_original_detail: bool = False) -> Dict[str, Any]:
+        from breadboard_engine.execution.codex_exec import view_image
+
+        return view_image(self.workspace, args, supports_original_detail=supports_original_detail,
+                          protected_paths=self._protected_credential_paths)
+
+    def codex_apply_patch(self, args: Dict[str, Any], truncation_policy: Dict[str, Any]) -> Dict[str, Any]:
+        from breadboard_engine.execution.codex_exec import intercept_patch, text_output
+
+        result = intercept_patch(
+            [], Path(self.workspace), truncation_policy, None, workspace=Path(self.workspace),
+            protected_paths=self._protected_credential_paths, direct_patch=args["input"],
+        )
+        return text_output(result["output"], error=result["error"])
+
     def provider_environment_is_clean(self) -> bool:
         """Report the provider-credential invariant without exposing names or values."""
         return not provider_credential_values()
@@ -297,10 +380,11 @@ class DevSandboxV2:
         env: Optional[Dict[str, str]] = None,
         stream: bool = True,
         shell: bool = True,
+        explicit_zero_timeout: bool = False,
     ):
         return self.run_shell(
             cmd,
-            timeout=timeout or 30,
+            timeout=(30 if timeout is None else timeout) if explicit_zero_timeout else (timeout or 30),
             env=env,
             stream=stream,
             stdin_data=stdin_data,

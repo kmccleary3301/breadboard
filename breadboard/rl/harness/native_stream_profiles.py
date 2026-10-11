@@ -104,6 +104,9 @@ class NativeStreamProfile:
     compaction_summary_system_prompt: str | None = None
     # Whether the source runs its own compaction inside its execution loop.
     compaction_in_source: bool = False
+    # Source-owned HTTP exchanges beyond the ordinary model turn. Capability
+    # registration is runtime-only and does not alter any target's compiled IR.
+    provider_exchanges: frozenset[str] = frozenset()
 
 
 def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
@@ -147,6 +150,10 @@ def _pi_0_57_1_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]
 
 
 def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+    # The worker observes the stock process-local date of the admitted instant.
+    current_date = bootstrap.get("current_date")
+    if type(current_date) is not str or not current_date:
+        raise ValueError("native stream bootstrap missing or invalid 'current_date'")
     return omp_semantics.OMPSemanticsState(
         task=task,
         system_prompt=system_prompt,
@@ -154,6 +161,7 @@ def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> A
         worker=bootstrap.get("worker"),
         capability_denials=bootstrap.get("capability_denials"),
         cwd=bootstrap.get("cwd"),
+        current_date=current_date,
     )
 
 
@@ -327,7 +335,8 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         episode_timeout_seconds=120,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error", "aborted"}),
-        runtime_input_names=("cwd", "home", "current_date", "package_dir"),
+        # sdk.ts:3460-3463 renders formatLocalCalendarDate() of the request instant.
+        runtime_input_names=("cwd", "home", "message_timestamp_ms", "package_dir"),
         package_subpath="node_modules/@oh-my-pi/pi-coding-agent",
         state_module=omp_semantics,
         state_factory=_omp_state,
@@ -381,6 +390,9 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         provider_failure_terminates=True,
         implements_compaction_phases=True,
         compaction_model_window_field="contextWindow",
+        # compact-BvznzvKp.mjs:235-267 invokes stock session memory indexing.
+        # Lazy construction keeps compaction-off profiles dormant.
+        provider_exchanges=frozenset({"embeddings"}),
         # The worker runs exported AgentSession.runCompactionWork:
         # resource-loader-Bu_pVD2t.mjs:9952-10073 owns request/summary budgets,
         # instructions, invalid-summary retry and source history replacement.

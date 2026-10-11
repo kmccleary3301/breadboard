@@ -97,6 +97,9 @@ def test_plugin_native_overflow_summarizes_before_deferred_hook(usage, limit, ch
     else:
         details.update(overflow_tokens=210000, overflow_limit=limit)
     error = ProviderRuntimeError("provider operation failed", details=details)
+    # Public bounds are redacted, while the in-memory SDK cause retains the
+    # native classifier's actual provider wording.
+    error.__cause__ = RuntimeError(f"prompt is too long: 210000 tokens > {limit} maximum")
     controller = CompactionController({"compaction": {
         "enabled": True, "preset": "oh-my-opencode@3.10.0", "contextWindow": 200000,
     }})

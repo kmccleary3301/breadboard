@@ -4,8 +4,11 @@ import json
 import re
 import shlex
 import time
+import threading
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from .authority import (
@@ -46,6 +49,11 @@ class PermissionBroker:
         self, config: Optional[Mapping[str, Any]] = None, *, policy_pack: Any | None = None
     ) -> None:
         self._policy_pack = policy_pack
+        self._pending_lock = threading.RLock()
+        self._response_condition = threading.Condition(self._pending_lock)
+        self._concurrent_routes: Dict[tuple[int, str], deque] = {}
+        self._concurrent_readers: set[int] = set()
+        self._concurrent_counter = 0
         self.configure(config, policy_pack=policy_pack)
 
     def configure(
@@ -447,6 +455,14 @@ class PermissionBroker:
         session_state.set_provider_metadata(self.STATE_KEY, state)
         return f"permission_{counter}"
 
+    def _next_concurrent_permission_id(self, session_state) -> str:
+        with self._pending_lock:
+            state = self._permission_state(session_state)
+            self._concurrent_counter = max(self._concurrent_counter, int(state.get("counter") or 0)) + 1
+            state["counter"] = self._concurrent_counter
+            session_state.set_provider_metadata(self.STATE_KEY, state)
+            return f"permission_{self._concurrent_counter}"
+
     def _queue_get(self, queue: Any, *, timeout_s: Optional[float]) -> Any:
         if queue is None:
             raise RuntimeError("permission queue missing")
@@ -459,6 +475,41 @@ class PermissionBroker:
                 return queue.get(True, timeout_s)
             except TypeError:
                 return queue.get()
+
+    def _concurrent_queue_get(self, queue: Any, request_id: str, *, timeout_s: Optional[float]) -> Any:
+        """Keep one queue reader and route replies to their registered waiter."""
+        queue_key = id(queue)
+        key = (queue_key, request_id)
+        deadline = time.monotonic() + timeout_s if timeout_s is not None else None
+        while True:
+            with self._response_condition:
+                replies = self._concurrent_routes[key]
+                if replies:
+                    return replies.popleft()
+                remaining = None if deadline is None else deadline - time.monotonic()
+                if remaining is not None and remaining <= 0:
+                    raise PermissionRequestTimeoutError("permission request timed out")
+                if queue_key in self._concurrent_readers:
+                    self._response_condition.wait(remaining)
+                    continue
+                self._concurrent_readers.add(queue_key)
+            routed = False
+            try:
+                item = self._queue_get(queue, timeout_s=remaining)
+                if isinstance(item, dict):
+                    destination = (item.get("request_id") or item.get("requestId") or
+                                   item.get("permission_id") or item.get("permissionId") or item.get("id"))
+                    with self._response_condition:
+                        route = self._concurrent_routes.get((queue_key, str(destination)))
+                        if route is not None:
+                            route.append(item)
+                            routed = True
+            finally:
+                with self._response_condition:
+                    self._concurrent_readers.discard(queue_key)
+                    self._response_condition.notify_all()
+            if not routed:
+                return item
 
     def _emit_permission_event(self, session_state, event_type: str, payload: Dict[str, Any]) -> None:
         try:
@@ -500,8 +551,123 @@ class PermissionBroker:
             return f"{head} {sub} *"
         return f"{head} *"
 
-    def _request_permissions(self, session_state, requests: List[PermissionRequest]) -> List[tuple[PermissionRequest, str]]:
-        request_id = self._next_permission_id(session_state)
+    def request_stock_question(self, session_state: Any, question: Dict[str, Any]) -> Optional[List[List[str]]]:
+        """Carry stock OpenCode answers through the existing approval queue."""
+        queue = session_state.get_provider_metadata("permission_queue")
+        if queue is None:
+            return None
+        request_id = self._next_concurrent_permission_id(session_state)
+        metadata = {"stock_kind": "opencode_question", "stock_request": question}
+        items = [
+            {"item_id": f"{request_id}_item_{index}", "category": "question",
+             "pattern": info["question"], "metadata": {**metadata, "question": info}}
+            for index, info in enumerate(question["questions"], start=1)
+        ]
+        payload = {"event_version": 1, "request_id": request_id, "id": request_id,
+                   "category": "question", "metadata": metadata, "items": items}
+        with self._pending_lock:
+            state = self._permission_state(session_state)
+            if state.get("cancelled") or self._stock_request_cancelled(state, payload):
+                return None
+            pending = state.setdefault("pending", {})
+            pending[request_id] = payload
+            self._concurrent_routes[(id(queue), request_id)] = deque()
+            session_state.set_provider_metadata(self.STATE_KEY, state)
+        self._emit_permission_event(session_state, "permission_request", payload)
+        answers = None
+        try:
+            while True:
+                item = self._concurrent_queue_get(queue, request_id, timeout_s=self._decision_timeout_s)
+                if not isinstance(item, dict):
+                    continue
+                if (item.get("request_id") or item.get("permission_id") or item.get("id")) != request_id:
+                    continue
+                if item.get("answers") is not None:
+                    candidate = item["answers"]
+                    if not isinstance(candidate, list) or not all(
+                        isinstance(answer, list) and all(isinstance(value, str) for value in answer)
+                        for answer in candidate
+                    ):
+                        raise ValueError("Stock question answers must be an array of string arrays")
+                    answers = candidate
+                break
+        finally:
+            with self._pending_lock:
+                self._concurrent_routes.pop((id(queue), request_id), None)
+                state = self._permission_state(session_state)
+                state.setdefault("pending", {}).pop(request_id, None)
+                session_state.set_provider_metadata(self.STATE_KEY, state)
+            self._emit_permission_event(
+                session_state, "permission_response",
+                {"event_version": 1, "request_id": request_id, "id": request_id,
+                 "response": "once" if answers is not None else "reject", "answers": answers},
+            )
+        return answers
+
+    def request_stock_tool_permission(self, session_state: Any, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Relay a genuine Claude SDK permission prompt without auto-granting it."""
+        if session_state.get_provider_metadata("permission_queue") is None:
+            raise PermissionDeniedError("No permission response channel is active")
+        tool_name = request["tool_name"]
+        tool_input = request["input"]
+        normalized = self._build_request(SimpleNamespace(name=tool_name, arguments=tool_input))
+        permission = normalized or PermissionRequest("tool", tool_name, {})
+        permission.metadata.update(stock_kind="claude_permission", stock_request=request)
+        if self._policy_denies(permission) or self._resolve_action(permission) == "deny":
+            return {"behavior": "deny", "message": "Permission denied by configured policy"}
+        native_response: Dict[str, Any] = {}
+        decision = self._request_permissions(session_state, [permission], native_response=native_response)[0][1]
+        if decision not in {"once", "always"}:
+            return {"behavior": "deny", "message": "User denied permission"}
+        updated_input = native_response.get("updated_input", tool_input)
+        response = {"behavior": "allow", "updatedInput": updated_input}
+        if decision == "always" and request.get("permission_suggestions"):
+            # cli.js:12505 UV6 applies VN and bh to these native updates;
+            # cli.js:331 persists their stock-selected destination via hm.
+            response["updatedPermissions"] = request["permission_suggestions"]
+        return response
+
+    def cancel_pending_requests(self, session_state: Any) -> None:
+        """Reject pending prompts and stop admitting waits for this session."""
+        if session_state is None:
+            return
+        with self._pending_lock:
+            state = self._permission_state(session_state)
+            state["cancelled"] = True
+            pending_ids = tuple(state.get("pending", {}))
+            session_state.set_provider_metadata(self.STATE_KEY, state)
+        queue = session_state.get_provider_metadata("permission_queue")
+        if queue is not None:
+            for request_id in pending_ids:
+                queue.put({"request_id": request_id, "response": "reject"})
+
+    @staticmethod
+    def _stock_request_cancelled(state: Mapping[str, Any], payload: Mapping[str, Any]) -> bool:
+        cancelled = state.get("cancelled_stock_requests", ())
+        if not cancelled:
+            return False
+        request = (payload.get("metadata") or {}).get("stock_request")
+        return isinstance(request, dict) and request.get("id") in cancelled
+
+    def cancel_stock_requests(self, session_state: Any, request_ids: Sequence[str]) -> None:
+        """Reject only these native prompts, including registrations racing abort."""
+        if session_state is None:
+            return
+        with self._pending_lock:
+            state = self._permission_state(session_state)
+            cancelled = set(state.get("cancelled_stock_requests", ()))
+            cancelled.update(request_ids)
+            state["cancelled_stock_requests"] = sorted(cancelled)
+            pending_ids = tuple(request_id for request_id, payload in state.get("pending", {}).items()
+                                if self._stock_request_cancelled(state, payload))
+            session_state.set_provider_metadata(self.STATE_KEY, state)
+        queue = session_state.get_provider_metadata("permission_queue")
+        if queue is not None:
+            for request_id in pending_ids:
+                queue.put({"request_id": request_id, "response": "reject"})
+
+    def _request_permissions(self, session_state, requests: List[PermissionRequest], *, native_response: Optional[Dict[str, Any]] = None, concurrent: bool = False) -> List[tuple[PermissionRequest, str]]:
+        request_id = self._next_concurrent_permission_id(session_state) if concurrent else self._next_permission_id(session_state)
 
         items: List[Dict[str, Any]] = []
         item_ids: List[str] = []
@@ -538,11 +704,18 @@ class PermissionBroker:
             base_meta.setdefault("batch_size", len(items))
             payload.setdefault("metadata", base_meta)
 
-        state = self._permission_state(session_state)
-        pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
-        pending[request_id] = payload
-        state["pending"] = pending
-        session_state.set_provider_metadata(self.STATE_KEY, state)
+        with self._pending_lock:
+            state = self._permission_state(session_state)
+            if state.get("cancelled") or self._stock_request_cancelled(state, payload):
+                return [(request, "reject") for request in requests]
+            pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+            pending[request_id] = payload
+            state["pending"] = pending
+            session_state.set_provider_metadata(self.STATE_KEY, state)
+            if concurrent:
+                queue = session_state.get_provider_metadata("permission_queue")
+                if queue is not None:
+                    self._concurrent_routes[(id(queue), request_id)] = deque()
 
         self._emit_permission_event(session_state, "permission_request", payload)
         for req in requests:
@@ -563,19 +736,25 @@ class PermissionBroker:
                         remaining = max(0.0, end_at - time.time())
                         if remaining <= 0:
                             raise PermissionRequestTimeoutError("permission request timed out")
-                    item = self._queue_get(queue, timeout_s=remaining)
+                    item = (self._concurrent_queue_get(queue, request_id, timeout_s=remaining) if concurrent
+                            else self._queue_get(queue, timeout_s=remaining))
                     parsed = self._parse_permission_response_item(item, request_id=request_id, item_ids=item_ids)
                     if parsed is None:
                         continue
                     response_map = parsed
+                    if native_response is not None and isinstance(item, dict):
+                        native_response.update(item)
                     break
         finally:
             # Always clear pending requests so reconnecting UIs don't get stuck.
-            state = self._permission_state(session_state)
-            pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
-            pending.pop(request_id, None)
-            state["pending"] = pending
-            session_state.set_provider_metadata(self.STATE_KEY, state)
+            with self._pending_lock:
+                if concurrent and queue is not None:
+                    self._concurrent_routes.pop((id(queue), request_id), None)
+                state = self._permission_state(session_state)
+                pending = state.get("pending") if isinstance(state.get("pending"), dict) else {}
+                pending.pop(request_id, None)
+                state["pending"] = pending
+                session_state.set_provider_metadata(self.STATE_KEY, state)
 
         response_payload = {
             "event_version": 1,

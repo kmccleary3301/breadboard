@@ -737,6 +737,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "completion": {
         "additionalProperties": false,
         "properties": {
+          "append_response_marker": {
+            "type": "boolean"
+          },
           "allow_content_only_completion": {
             "type": "boolean"
           },
@@ -886,6 +889,40 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "dossier": {
         "additionalProperties": true,
         "description": "Non-normative dossier commentary (L7). Generators, loaders, and validators MUST NOT read this field.",
+        "type": "object"
+      },
+      "e4_target": {
+        "additionalProperties": false,
+        "description": "Sealed references for compiler-verified target derivation.",
+        "properties": {
+          "target_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "index_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "inputs_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "runtime_ref": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "lock_ref": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_id",
+          "index_ref",
+          "inputs_ref",
+          "runtime_ref",
+          "lock_ref"
+        ],
         "type": "object"
       },
       "enhanced_tools": {
@@ -1587,9 +1624,59 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "prompts": {
         "additionalProperties": false,
         "properties": {
+          "initial_context": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "module",
+              "callable"
+            ],
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "callable": {
+                "const": "build_context"
+              },
+              "developer_instructions": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "summary_projection": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "module",
+              "callable"
+            ],
+            "properties": {
+              "module": {
+                "type": "string",
+                "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+              },
+              "callable": {
+                "const": "build_summary_projection"
+              }
+            }
+          },
           "environment": {
             "additionalProperties": false,
             "properties": {
+              "include_tree": {
+                "type": "boolean"
+              },
+              "include_model_identity": {
+                "type": "boolean"
+              },
+              "files_tag": {
+                "type": "string",
+                "minLength": 1
+              },
               "enabled": {
                 "type": "boolean"
               },
@@ -1660,6 +1747,13 @@ export const GENERATED_SCHEMA_OBJECTS = {
             },
             "type": "object"
           },
+          "renderer_id": {
+            "enum": [
+              "breadboard.prompt-assembly.v1",
+              "breadboard.prompt-assembly.verbatim.v1"
+            ],
+            "type": "string"
+          },
           "tool_prompt_mode": {
             "minLength": 1,
             "type": "string"
@@ -1679,9 +1773,144 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "provider_tools": {
         "additionalProperties": false,
         "properties": {
+          "openai": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "responses_stateful": {
+                "type": "boolean"
+              },
+              "responses_message_type": {
+                "type": "boolean"
+              },
+              "responses_message_phase": {
+                "type": "boolean"
+              },
+              "responses_namespaces": {
+                "type": "boolean"
+              },
+              "responses_custom_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "responses_tool_search": {
+                "type": "boolean"
+              },
+              "responses_preserve_tool_call_items": {
+                "type": "boolean"
+              },
+              "responses_tool_output_items": {
+                "type": "boolean"
+              },
+              "responses_deferred_tools": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "responses_hosted_outputs": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "web_search_call"
+                  ]
+                }
+              },
+              "responses_developer_content": {
+                "enum": [
+                  "string",
+                  "blocks"
+                ]
+              },
+              "responses_use_developer_role": {
+                "type": "boolean"
+              },
+              "responses_group_tool_results": {
+                "type": "boolean"
+              },
+              "responses_max_output_tokens_from_context": {
+                "type": "boolean"
+              },
+              "include_reasoning": {
+                "type": "boolean"
+              },
+              "include": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "store": {
+                "type": "boolean"
+              },
+              "reasoning": {
+                "type": "object"
+              },
+              "tool_choice": {
+                "type": [
+                  "string",
+                  "object"
+                ]
+              },
+              "request_params": {
+                "type": "object"
+              },
+              "session_params": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "client_metadata": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "client_metadata_session": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            }
+          },
           "anthropic": {
             "additionalProperties": false,
             "properties": {
+              "native_tool_result_replay": {
+                "type": "boolean"
+              },
+              "preserve_tool_names": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                }
+              },
+              "request_layout": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "module",
+                  "callable"
+                ],
+                "properties": {
+                  "module": {
+                    "type": "string",
+                    "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+                  },
+                  "callable": {
+                    "const": "build_request"
+                  },
+                  "response_callable": {
+                    "const": "accept_response"
+                  }
+                }
+              },
               "max_output_tokens": {
                 "minimum": 0,
                 "type": "integer"
@@ -1824,9 +2053,26 @@ export const GENERATED_SCHEMA_OBJECTS = {
         },
         "type": "object"
       },
+      "resume": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "snapshot_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "restore_compaction_state": {
+            "type": "boolean"
+          }
+        }
+      },
       "providers": {
         "additionalProperties": false,
         "properties": {
+          "session_uuid_version": {
+            "type": "integer",
+            "const": 7
+          },
           "default_model": {
             "minLength": 1,
             "type": "string"
@@ -1835,6 +2081,35 @@ export const GENERATED_SCHEMA_OBJECTS = {
             "items": {
               "additionalProperties": false,
               "properties": {
+                "supports_image_detail_original": {
+                  "type": "boolean"
+                },
+                "web_search_tool_type": {
+                  "enum": [
+                    "text",
+                    "text_and_image"
+                  ]
+                },
+                "tool_output_truncation": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "mode",
+                    "limit"
+                  ],
+                  "properties": {
+                    "mode": {
+                      "enum": [
+                        "bytes",
+                        "tokens"
+                      ]
+                    },
+                    "limit": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                },
                 "adapter": {
                   "minLength": 1,
                   "type": "string"
@@ -1948,9 +2223,133 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "schema_version": {
         "const": "bb.agent_config_surface.v2"
       },
+      "session": {
+        "additionalProperties": false,
+        "properties": {
+          "failed_turn_continues": {
+            "type": "boolean",
+            "default": false
+          }
+        },
+        "type": "object"
+      },
       "tools": {
         "additionalProperties": false,
         "properties": {
+          "native_semantics": {
+            "enum": [
+              "codex_0_139",
+              "opencode_1_2_17",
+              "oh_my_opencode_3_10_0",
+              "claude_code_2_1_63"
+            ]
+          },
+          "native_concurrent_prompts": {
+            "type": "boolean",
+            "default": false
+          },
+          "native_local_only": {
+            "type": "boolean",
+            "default": false
+          },
+          "pty": {
+            "type": "boolean",
+            "default": false
+          },
+          "group_native_calls_by_turn": {
+            "type": "boolean"
+          },
+          "stock_binary": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stock_plugin_root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stock_package": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stock_permission_mode": {
+            "type": "string",
+            "minLength": 1
+          },
+          "stock_timeout": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "stock_config": {
+            "type": "object"
+          },
+          "stock_worktree_read_only": {
+            "type": "boolean"
+          },
+          "stock_lsp_root": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "digest"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "digest": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            }
+          },
+          "stock_read_only_roots": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "path",
+                "digest"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "digest": {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                }
+              }
+            }
+          },
+          "stock_session_imports": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "info",
+                "messages"
+              ],
+              "properties": {
+                "info": {
+                  "type": "object"
+                },
+                "messages": {
+                  "type": "array",
+                  "maxItems": 0
+                }
+              }
+            }
+          },
+          "stock_environment": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "aliases": {
             "oneOf": [
               {
@@ -3085,7 +3484,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
       "surface_schema_version": {
         "enum": [
           "bb.agent_config_surface.v1",
-          "bb.agent_config_surface.v2"
+          "bb.agent_config_surface.v2",
+          "bb.harness_definition.v1",
+          "bb.harness_definition.v2"
         ]
       },
       "resolved_summary": {
@@ -9794,6 +10195,861 @@ export const GENERATED_SCHEMA_OBJECTS = {
     ],
     "$comment": "Supersedes bb.e4.support_claim.v3 for new claims. V4 moves exact-scope identity (config_id, lane_id, target_family, target_version, run_id, provider_model, sandbox_mode) exclusively under scope; root duplicates are rejected by additionalProperties=false."
   },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",
+    "title": "BreadBoard E4 executable target configuration V2",
+    "description": "Closed target-owned input, policy and materialization declarations. The declarations are admission data; they do not by themselves assert that a renderer, policy or capability is executable.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "target_id",
+      "semantic_revision",
+      "renderer",
+      "prompt",
+      "tools",
+      "policy",
+      "inputs",
+      "materialization",
+      "required_capabilities"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.target_config.v2"
+      },
+      "target_id": {
+        "$ref": "#/$defs/identifier"
+      },
+      "semantic_revision": {
+        "const": "bb.e4.target-semantics.v2"
+      },
+      "renderer": {
+        "$ref": "#/$defs/renderer"
+      },
+      "prompt": {
+        "$ref": "#/$defs/prompt"
+      },
+      "tools": {
+        "$ref": "#/$defs/tools"
+      },
+      "policy": {
+        "$ref": "#/$defs/policy"
+      },
+      "inputs": {
+        "$ref": "#/$defs/inputs"
+      },
+      "materialization": {
+        "$ref": "#/$defs/materialization"
+      },
+      "required_capabilities": {
+        "$ref": "#/$defs/required_capabilities"
+      }
+    },
+    "$defs": {
+      "identifier": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+      },
+      "relative_path": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*\\\\)(?!.*:)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+$"
+      },
+      "selector": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+      },
+      "renderer_selector": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?:[A-Za-z0-9][A-Za-z0-9_.:@/-]*)(?:\\.v[0-9]+|[-_.][0-9]+(?:\\.[0-9]+)*)$"
+      },
+      "renderer": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "selector",
+          "revision"
+        ],
+        "properties": {
+          "selector": {
+            "$ref": "#/$defs/renderer_selector"
+          },
+          "revision": {
+            "$ref": "#/$defs/renderer_selector"
+          }
+        }
+      },
+      "prompt": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "dynamic_fields"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "asset"
+            ]
+          },
+          {
+            "required": [
+              "source"
+            ]
+          }
+        ],
+        "properties": {
+          "asset": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "source": {
+            "$ref": "#/$defs/identifier"
+          },
+          "dynamic_fields": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      },
+      "tools": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "ordered",
+          "surface_asset"
+        ],
+        "properties": {
+          "ordered": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "surface_asset": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "normalization": {
+            "$ref": "#/$defs/normalization"
+          }
+        }
+      },
+      "normalization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "aliases"
+        ],
+        "properties": {
+          "aliases": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/identifier"
+            },
+            "propertyNames": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      },
+      "policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "provider",
+          "action",
+          "execution",
+          "observations",
+          "authority",
+          "claim_exclusions"
+        ],
+        "properties": {
+          "revision": {
+            "const": "bb.e4.target-policy.v2"
+          },
+          "provider": {
+            "$ref": "#/$defs/provider_policy"
+          },
+          "action": {
+            "$ref": "#/$defs/action_policy"
+          },
+          "execution": {
+            "$ref": "#/$defs/execution_policy"
+          },
+          "observations": {
+            "$ref": "#/$defs/observations_policy"
+          },
+          "authority": {
+            "$ref": "#/$defs/authority_policy"
+          },
+          "claim_exclusions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "deviations": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "surface",
+                "stock",
+                "breadboard",
+                "reason",
+                "authority"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "surface": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "stock": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "breadboard": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "authority": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      },
+      "provider_policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "api",
+          "stream",
+          "samples",
+          "provider_attempts",
+          "fallback",
+          "compaction",
+          "request_timeout_seconds"
+        ],
+        "properties": {
+          "api": {
+            "$ref": "#/$defs/selector"
+          },
+          "stream": {
+            "type": "boolean"
+          },
+          "samples": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "provider_attempts": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "fallback": {
+            "type": "boolean"
+          },
+          "compaction": {
+            "type": "boolean"
+          },
+          "request_timeout_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        }
+      },
+      "action_policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "protocol",
+          "decoder",
+          "repair",
+          "argument_processors",
+          "aliases",
+          "decode_entire_batch_before_dispatch",
+          "require_nonempty_calls",
+          "malformed",
+          "empty_reply",
+          "max_consecutive_format_errors"
+        ],
+        "properties": {
+          "protocol": {
+            "$ref": "#/$defs/selector"
+          },
+          "decoder": {
+            "$ref": "#/$defs/selector"
+          },
+          "repair": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+          },
+          "argument_processors": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/selector"
+            }
+          },
+          "aliases": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/identifier"
+            },
+            "propertyNames": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "decode_entire_batch_before_dispatch": {
+            "type": "boolean"
+          },
+          "require_nonempty_calls": {
+            "type": "boolean"
+          },
+          "malformed": {
+            "$ref": "#/$defs/selector"
+          },
+          "empty_reply": {
+            "$ref": "#/$defs/selector"
+          },
+          "max_consecutive_format_errors": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Null delegates error termination to the selected source consumer.",
+            "minimum": 0
+          }
+        }
+      },
+      "execution_policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "scheduler",
+          "history_commit",
+          "terminal_policy",
+          "bounded_controls"
+        ],
+        "properties": {
+          "scheduler": {
+            "$ref": "#/$defs/selector"
+          },
+          "history_commit": {
+            "$ref": "#/$defs/selector"
+          },
+          "terminal_policy": {
+            "$ref": "#/$defs/selector"
+          },
+          "bounded_controls": {
+            "$ref": "#/$defs/bounded_controls"
+          }
+        }
+      },
+      "bounded_controls": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "max_model_calls",
+          "episode_wall_seconds",
+          "single_tool_wall_seconds",
+          "raw_evidence_bytes_per_outcome",
+          "max_active_episodes",
+          "samples_per_call"
+        ],
+        "properties": {
+          "max_model_calls": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "episode_wall_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "single_tool_wall_seconds": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "raw_evidence_bytes_per_outcome": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "max_active_episodes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "samples_per_call": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "observations_policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "renderer",
+          "preserve_raw_outcome",
+          "preserve_model_render",
+          "commit_at_source_boundary"
+        ],
+        "properties": {
+          "renderer": {
+            "$ref": "#/$defs/selector"
+          },
+          "preserve_raw_outcome": {
+            "type": "boolean"
+          },
+          "preserve_model_render": {
+            "type": "boolean"
+          },
+          "commit_at_source_boundary": {
+            "type": "boolean"
+          }
+        }
+      },
+      "authority_policy": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "workspace_root",
+          "containment",
+          "interaction",
+          "network_tools",
+          "subagents"
+        ],
+        "properties": {
+          "workspace_root": {
+            "type": "string",
+            "minLength": 1
+          },
+          "containment": {
+            "$ref": "#/$defs/selector"
+          },
+          "interaction": {
+            "$ref": "#/$defs/selector"
+          },
+          "network_tools": {
+            "type": "boolean"
+          },
+          "subagents": {
+            "type": "boolean"
+          }
+        }
+      },
+      "inputs": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "fields",
+          "order"
+        ],
+        "properties": {
+          "revision": {
+            "const": "bb.e4.target-inputs.v2"
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/input_field"
+            }
+          },
+          "order": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          }
+        }
+      },
+      "input_field": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "required",
+          "producer",
+          "lifetime",
+          "source_ref",
+          "omission",
+          "value_schema"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "producer": {
+            "enum": [
+              "operator",
+              "bootstrap",
+              "runtime"
+            ]
+          },
+          "lifetime": {
+            "enum": [
+              "build",
+              "episode",
+              "turn"
+            ]
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1
+          },
+          "omission": {
+            "enum": [
+              "required",
+              "missing",
+              "null",
+              "default"
+            ]
+          },
+          "value_schema": {
+            "$ref": "#/$defs/value_schema"
+          },
+          "default": {}
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "omission": {
+                  "const": "required"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "required": {
+                  "const": true
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "omission": {
+                  "enum": [
+                    "missing",
+                    "null",
+                    "default"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "required": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "omission": {
+                  "const": "default"
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "default"
+              ]
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "default"
+              ]
+            },
+            "then": {
+              "properties": {
+                "omission": {
+                  "const": "default"
+                }
+              }
+            }
+          }
+        ]
+      },
+      "value_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "oneOf": [
+              {
+                "enum": [
+                  "string",
+                  "integer",
+                  "number",
+                  "boolean",
+                  "object",
+                  "array",
+                  "null"
+                ]
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "string",
+                    "integer",
+                    "number",
+                    "boolean",
+                    "object",
+                    "array",
+                    "null"
+                  ]
+                }
+              }
+            ]
+          },
+          "minLength": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxLength": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "maxItems": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "minimum": {
+            "type": "number"
+          },
+          "maximum": {
+            "type": "number"
+          },
+          "enum": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true
+          },
+          "items": {
+            "$ref": "#/$defs/value_schema"
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/$defs/value_schema"
+            },
+            "propertyNames": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "required": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/identifier"
+            }
+          },
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "array"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "type": "array",
+                      "contains": {
+                        "const": "array"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "required": [
+                "items"
+              ]
+            }
+          },
+          {
+            "if": {
+              "anyOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "const": "object"
+                    }
+                  }
+                },
+                {
+                  "properties": {
+                    "type": {
+                      "type": "array",
+                      "contains": {
+                        "const": "object"
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "then": {
+              "required": [
+                "properties",
+                "additionalProperties"
+              ],
+              "properties": {
+                "additionalProperties": {
+                  "const": false
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "required": [
+                "required"
+              ]
+            },
+            "then": {
+              "required": [
+                "properties"
+              ]
+            }
+          }
+        ]
+      },
+      "materialization": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "revision",
+          "assets",
+          "order"
+        ],
+        "properties": {
+          "revision": {
+            "const": "bb.e4.target-materialization.v2"
+          },
+          "assets": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/materialized_asset"
+            }
+          },
+          "order": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/relative_path"
+            }
+          }
+        }
+      },
+      "materialized_asset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "role",
+          "required",
+          "source_ref"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "role": {
+            "enum": [
+              "config",
+              "prompt",
+              "tool_surface",
+              "bootstrap",
+              "license",
+              "runtime",
+              "source",
+              "input"
+            ]
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "source_ref": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required_capabilities": {
+        "type": "array",
+        "minItems": 1,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_.-]*\\.v[0-9]+$"
+        }
+      }
+    }
+  },
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json": {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json",
@@ -10000,6 +11256,169 @@ export const GENERATED_SCHEMA_OBJECTS = {
                 "null"
               ]
             }
+          }
+        }
+      }
+    }
+  },
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json",
+    "title": "BreadBoard E4 target descriptor V2",
+    "description": "Closed descriptor for a byte-verified E4 target package. Runtime meaning is declared by the referenced target configuration; this descriptor does not grant executable capabilities.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "target_id",
+      "family",
+      "version",
+      "execution",
+      "overlay",
+      "assets"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "bb.e4.target.v2"
+      },
+      "target_id": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.@/-]*$"
+      },
+      "family": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z0-9][a-z0-9_.-]*$"
+      },
+      "version": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._+-]*$"
+      },
+      "execution": {
+        "$ref": "#/$defs/execution"
+      },
+      "overlay": {
+        "$ref": "#/$defs/overlay"
+      },
+      "assets": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "$ref": "#/$defs/asset"
+        }
+      }
+    },
+    "$defs": {
+      "relative_path": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^(?!/)(?!.*\\\\)(?!.*:)(?!.*(?:^|/)\\.{1,2}(?:/|$)).+$"
+      },
+      "identifier": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:@/-]*$"
+      },
+      "execution": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "config_asset",
+          "tool_surface_asset"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "system_prompt_asset"
+            ]
+          },
+          {
+            "required": [
+              "system_prompt_source"
+            ]
+          }
+        ],
+        "properties": {
+          "config_asset": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "system_prompt_asset": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "system_prompt_source": {
+            "$ref": "#/$defs/identifier"
+          },
+          "tool_surface_asset": {
+            "$ref": "#/$defs/relative_path"
+          }
+        }
+      },
+      "overlay": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "overlay_id",
+          "argv",
+          "settings"
+        ],
+        "properties": {
+          "overlay_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "argv": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "value"
+              ],
+              "properties": {
+                "name": {
+                  "$ref": "#/$defs/identifier"
+                },
+                "value": {
+                  "type": [
+                    "string",
+                    "number",
+                    "boolean",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      },
+      "asset": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "properties": {
+          "path": {
+            "$ref": "#/$defs/relative_path"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "bytes": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -15299,6 +16718,171 @@ export const GENERATED_SCHEMA_OBJECTS = {
         }
       },
       "tool": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/legacy_tool"
+          },
+          {
+            "$ref": "#/$defs/responses_function"
+          },
+          {
+            "$ref": "#/$defs/responses_namespace"
+          },
+          {
+            "$ref": "#/$defs/responses_custom"
+          },
+          {
+            "$ref": "#/$defs/responses_tool_search"
+          },
+          {
+            "$ref": "#/$defs/responses_web_search"
+          }
+        ]
+      },
+      "responses_function": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "name",
+          "parameters"
+        ],
+        "properties": {
+          "type": {
+            "const": "function"
+          },
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": {
+            "$ref": "#/$defs/legacy_tool/properties/description"
+          },
+          "parameters": {
+            "$ref": "#/$defs/legacy_tool/properties/parameters"
+          },
+          "strict": {
+            "type": "boolean"
+          },
+          "defer_loading": {
+            "type": "boolean"
+          }
+        }
+      },
+      "responses_namespace": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "name",
+          "tools"
+        ],
+        "properties": {
+          "type": {
+            "const": "namespace"
+          },
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": {
+            "$ref": "#/$defs/legacy_tool/properties/description"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/responses_function"
+            }
+          }
+        }
+      },
+      "responses_web_search": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "web_search"
+          },
+          "external_web_access": {
+            "type": "boolean"
+          },
+          "search_content_types": {
+            "type": "array",
+            "items": {
+              "enum": [
+                "text",
+                "image"
+              ]
+            }
+          }
+        }
+      },
+      "responses_custom": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "name",
+          "format"
+        ],
+        "properties": {
+          "type": {
+            "const": "custom"
+          },
+          "name": {
+            "$ref": "#/$defs/identifier"
+          },
+          "description": {
+            "$ref": "#/$defs/legacy_tool/properties/description"
+          },
+          "format": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "syntax",
+              "definition"
+            ],
+            "properties": {
+              "type": {
+                "const": "grammar"
+              },
+              "syntax": {
+                "const": "lark"
+              },
+              "definition": {
+                "$ref": "#/$defs/legacy_tool/properties/description"
+              }
+            }
+          }
+        }
+      },
+      "responses_tool_search": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "execution",
+          "description",
+          "parameters"
+        ],
+        "properties": {
+          "type": {
+            "const": "tool_search"
+          },
+          "execution": {
+            "const": "client"
+          },
+          "description": {
+            "$ref": "#/$defs/legacy_tool/properties/description"
+          },
+          "parameters": {
+            "$ref": "#/$defs/legacy_tool/properties/parameters"
+          }
+        }
+      },
+      "legacy_tool": {
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -15333,9 +16917,35 @@ export const GENERATED_SCHEMA_OBJECTS = {
           "role",
           "content"
         ],
+        "dependentSchemas": {
+          "phase": {
+            "properties": {
+              "role": {
+                "const": "assistant"
+              }
+            }
+          },
+          "_provider_tool_batch": {
+            "properties": {
+              "role": {
+                "const": "assistant"
+              }
+            }
+          }
+        },
         "properties": {
           "message_id": {
             "$ref": "#/$defs/identifier"
+          },
+          "phase": {
+            "enum": [
+              "commentary",
+              "final_answer"
+            ]
+          },
+          "_provider_tool_batch": {
+            "type": "integer",
+            "minimum": 0
           },
           "role": {
             "enum": [
@@ -15361,6 +16971,9 @@ export const GENERATED_SCHEMA_OBJECTS = {
           },
           {
             "$ref": "#/$defs/media_block"
+          },
+          {
+            "$ref": "#/$defs/codex_image_url_block"
           },
           {
             "$ref": "#/$defs/thinking_block"
@@ -15422,6 +17035,36 @@ export const GENERATED_SCHEMA_OBJECTS = {
           }
         }
       },
+      "codex_image_url_block": {
+        "description": "Native Codex user image URL passthrough; runtime execution requires the configured Codex native semantics gate.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "kind",
+          "uri",
+          "detail"
+        ],
+        "properties": {
+          "type": {
+            "const": "media"
+          },
+          "kind": {
+            "const": "codex_image_url"
+          },
+          "uri": {
+            "type": "string"
+          },
+          "detail": {
+            "enum": [
+              "auto",
+              "low",
+              "high",
+              "original"
+            ]
+          }
+        }
+      },
       "thinking_block": {
         "type": "object",
         "additionalProperties": false,
@@ -15463,9 +17106,39 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "required": [
           "type",
           "call_id",
-          "name",
-          "arguments_json",
-          "arguments"
+          "name"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "arguments_json",
+              "arguments"
+            ],
+            "not": {
+              "required": [
+                "raw_arguments"
+              ]
+            }
+          },
+          {
+            "required": [
+              "raw_arguments"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "arguments_json"
+                  ]
+                },
+                {
+                  "required": [
+                    "arguments"
+                  ]
+                }
+              ]
+            }
+          }
         ],
         "properties": {
           "type": {
@@ -15484,6 +17157,10 @@ export const GENERATED_SCHEMA_OBJECTS = {
           },
           "arguments": {
             "$ref": "#/$defs/canonical_json"
+          },
+          "raw_arguments": {
+            "type": "string",
+            "maxLength": 65536
           }
         }
       },
@@ -15538,7 +17215,407 @@ export const GENERATED_SCHEMA_OBJECTS = {
           }
         }
       },
+      "anthropic_tool_result_replay_payload": {
+        "$comment": "Lossless stock user messages; runtime also binds every native result to canonical call_id/content/is_error in order.",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "messages"
+        ],
+        "properties": {
+          "messages": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "content"
+              ],
+              "properties": {
+                "role": {
+                  "const": "user"
+                },
+                "content": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "type"
+                    ],
+                    "properties": {
+                      "type": {
+                        "type": "string"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "openai_responses_tool_replay_payload": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "call_id",
+              "name",
+              "arguments"
+            ],
+            "properties": {
+              "type": {
+                "const": "function_call"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "name": {
+                "$ref": "#/$defs/identifier"
+              },
+              "arguments": {
+                "type": "string"
+              },
+              "namespace": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "call_id",
+              "name",
+              "input"
+            ],
+            "properties": {
+              "type": {
+                "const": "custom_tool_call"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "name": {
+                "$ref": "#/$defs/identifier"
+              },
+              "input": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "type",
+              "call_id",
+              "execution",
+              "arguments"
+            ],
+            "properties": {
+              "type": {
+                "const": "tool_search_call"
+              },
+              "call_id": {
+                "$ref": "#/$defs/identifier"
+              },
+              "execution": {
+                "type": "string"
+              },
+              "arguments": {
+                "$ref": "#/$defs/canonical_json"
+              },
+              "status": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "openai_responses_tool_output_replay_payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "call_id",
+          "output"
+        ],
+        "properties": {
+          "type": {
+            "const": "function_call_output"
+          },
+          "call_id": {
+            "$ref": "#/$defs/identifier"
+          },
+          "output": {
+            "type": "array",
+            "items": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "image_url"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "input_image"
+                    },
+                    "image_url": {
+                      "type": "string"
+                    },
+                    "detail": {
+                      "enum": [
+                        "auto",
+                        "low",
+                        "high",
+                        "original"
+                      ]
+                    }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "type",
+                    "text"
+                  ],
+                  "properties": {
+                    "type": {
+                      "const": "input_text"
+                    },
+                    "text": {
+                      "type": "string"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      },
+      "openai_responses_hosted_replay_payload": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type"
+        ],
+        "properties": {
+          "type": {
+            "const": "web_search_call"
+          },
+          "status": {
+            "type": "string"
+          },
+          "action": {
+            "oneOf": [
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "search"
+                  },
+                  "query": {
+                    "type": "string"
+                  },
+                  "queries": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "open_page"
+                  },
+                  "url": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "find_in_page"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  }
+                }
+              },
+              {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "other"
+                  }
+                }
+              }
+            ]
+          }
+        }
+      },
+      "provider_replay_payload_dispatch": {
+        "if": {
+          "required": [
+            "provider_id",
+            "schema_version",
+            "replay_scope"
+          ],
+          "properties": {
+            "provider_id": {
+              "const": "anthropic"
+            },
+            "schema_version": {
+              "const": "anthropic.messages.tool_result.v1"
+            },
+            "replay_scope": {
+              "const": "same_provider"
+            }
+          }
+        },
+        "then": {
+          "properties": {
+            "payload": {
+              "$ref": "#/$defs/anthropic_tool_result_replay_payload"
+            }
+          }
+        },
+        "else": {
+          "if": {
+            "required": [
+              "provider_id",
+              "schema_version",
+              "replay_scope"
+            ],
+            "properties": {
+              "provider_id": {
+                "enum": [
+                  "openai",
+                  "openrouter"
+                ]
+              },
+              "schema_version": {
+                "const": "openai.responses.tools.v1"
+              },
+              "replay_scope": {
+                "const": "same_provider"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "payload": {
+                "$ref": "#/$defs/openai_responses_tool_replay_payload"
+              }
+            }
+          },
+          "else": {
+            "if": {
+              "required": [
+                "provider_id",
+                "schema_version",
+                "replay_scope"
+              ],
+              "properties": {
+                "provider_id": {
+                  "enum": [
+                    "openai",
+                    "openrouter"
+                  ]
+                },
+                "schema_version": {
+                  "const": "openai.responses.tool_output.v1"
+                },
+                "replay_scope": {
+                  "const": "same_provider"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "payload": {
+                  "$ref": "#/$defs/openai_responses_tool_output_replay_payload"
+                }
+              }
+            },
+            "else": {
+              "if": {
+                "required": [
+                  "provider_id",
+                  "schema_version",
+                  "replay_scope"
+                ],
+                "properties": {
+                  "provider_id": {
+                    "enum": [
+                      "openai",
+                      "openrouter"
+                    ]
+                  },
+                  "schema_version": {
+                    "const": "openai.responses.hosted.v1"
+                  },
+                  "replay_scope": {
+                    "const": "same_provider"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "payload": {
+                    "$ref": "#/$defs/openai_responses_hosted_replay_payload"
+                  }
+                }
+              },
+              "else": {
+                "properties": {
+                  "payload": {
+                    "$ref": "#/$defs/provider_replay_payload"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
       "provider_replay": {
+        "$ref": "#/$defs/provider_replay_payload_dispatch",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -15566,11 +17643,12 @@ export const GENERATED_SCHEMA_OBJECTS = {
             ]
           },
           "payload": {
-            "$ref": "#/$defs/provider_replay_payload"
+            "type": "object"
           }
         }
       },
       "provider_replay_block": {
+        "$ref": "#/$defs/provider_replay_payload_dispatch",
         "type": "object",
         "additionalProperties": false,
         "required": [
@@ -15602,7 +17680,7 @@ export const GENERATED_SCHEMA_OBJECTS = {
             ]
           },
           "payload": {
-            "$ref": "#/$defs/provider_replay_payload"
+            "type": "object"
           }
         }
       },
@@ -15865,9 +17943,39 @@ export const GENERATED_SCHEMA_OBJECTS = {
               "kind",
               "content_index",
               "message_id",
-              "call_id",
-              "arguments_json",
-              "arguments"
+              "call_id"
+            ],
+            "oneOf": [
+              {
+                "required": [
+                  "arguments_json",
+                  "arguments"
+                ],
+                "not": {
+                  "required": [
+                    "raw_arguments"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "raw_arguments"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "arguments_json"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "arguments"
+                      ]
+                    }
+                  ]
+                }
+              }
             ],
             "properties": {
               "sequence": {
@@ -15892,6 +18000,10 @@ export const GENERATED_SCHEMA_OBJECTS = {
               },
               "arguments": {
                 "$ref": "#/$defs/canonical_json"
+              },
+              "raw_arguments": {
+                "type": "string",
+                "maxLength": 65536
               }
             }
           }
@@ -15949,6 +18061,12 @@ export const GENERATED_SCHEMA_OBJECTS = {
         "properties": {
           "message_id": {
             "$ref": "#/$defs/identifier"
+          },
+          "phase": {
+            "enum": [
+              "commentary",
+              "final_answer"
+            ]
           },
           "role": {
             "const": "assistant"
@@ -21227,8 +23345,10 @@ const GENERATED_SCHEMA_ALIASES: Record<string, readonly string[]> = {
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v2.schema.json": ["bb.e4.support_claim.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v3.schema.json": ["bb.e4.support_claim.v3.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.support_claim.v4.schema.json": ["bb.e4.support_claim.v4.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json": ["bb.e4.target_config.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v1.schema.json": ["bb.e4.target_coverage.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_coverage.v2.schema.json": ["bb.e4.target_coverage.v2.schema.json"],
+  "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json": ["bb.e4.target.v2.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json": ["bb.effective_config_graph.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json": ["bb.effective_model_role_lock.v1.schema.json"],
   "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": ["bb.effective_operation_policy.v1.schema.json"],

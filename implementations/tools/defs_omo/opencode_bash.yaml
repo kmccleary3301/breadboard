@@ -11,6 +11,7 @@ execution:
   # OpenCode tool/bash.ts:22,65-83; the plugin delegates this native tool.
   timeout_unit: milliseconds
   default_timeout_ms: 120000
+  explicit_zero_timeout: true
 provider_routing:
   openai:
     native_primary: true

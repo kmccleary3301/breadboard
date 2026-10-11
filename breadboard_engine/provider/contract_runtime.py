@@ -156,10 +156,14 @@ def sanitize_provider_result(result: ProviderResult) -> ProviderResult:
                 if call.name is not None
                 else None
             )
-            call.parsed_arguments = _model_authored(call.parsed_arguments)
-            canonical_arguments = canonical_json(call.parsed_arguments)
-            call.arguments = canonical_arguments
-            call.arguments_json = canonical_arguments
+            if call.raw_arguments is not None:
+                call.raw_arguments = _model_text(call.raw_arguments)
+                call.arguments = call.raw_arguments
+            else:
+                call.parsed_arguments = _model_authored(call.parsed_arguments)
+                canonical_arguments = canonical_json(call.parsed_arguments)
+                call.arguments = canonical_arguments
+                call.arguments_json = canonical_arguments
             call.raw = _portable_provider_payload(call.raw)
     result.raw_response = _portable_provider_payload(result.raw_response)
     result.usage = (

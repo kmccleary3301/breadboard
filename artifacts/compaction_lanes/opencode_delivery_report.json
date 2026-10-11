@@ -1,0 +1,4073 @@
+{
+  "files_changed": [
+    "agent_configs/README.md",
+    "agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+    "agent_configs/opencode_1-2-17_e4_10-9-2026.yaml",
+    "breadboard_engine/agent_llm_openai.py",
+    "breadboard_engine/compaction/controller.py",
+    "breadboard_engine/compaction/methods.py",
+    "breadboard_engine/compaction/params.py",
+    "breadboard_engine/compaction/presets/__init__.py",
+    "breadboard_engine/compaction/presets/oh-my-opencode@3.10.0.yaml",
+    "breadboard_engine/compaction/presets/opencode@1.2.17.yaml",
+    "breadboard_engine/compaction/primitives/chat_reducers.py",
+    "breadboard_engine/compaction/primitives/message_reduction.py",
+    "breadboard_engine/compaction/primitives/triggers.py",
+    "breadboard_engine/compaction/summary_model.py",
+    "breadboard_engine/conductor/loop.py",
+    "breadboard_engine/conductor/model_output.py",
+    "breadboard_engine/conductor/modes.py",
+    "breadboard_engine/conductor/tool_executor.py",
+    "breadboard_engine/provider/contract_messages.py",
+    "breadboard_engine/provider/runtimes/openai/responses.py",
+    "breadboard_engine/state/session_state.py",
+    "contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json",
+    "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
+    "docs/guides/CONTEXT_COMPACTION.md",
+    "implementations/tools/defs_oc/opencode_bash.yaml",
+    "implementations/tools/defs_omo/opencode_bash.yaml",
+    "scripts/compaction_lanes/opencode_lane.py",
+    "scripts/compaction_oracles/capture_opencode.ts",
+    "tests/compaction/oracles/oh-my-opencode@3.10.0/todo_preservation_summary_contributor.json",
+    "tests/compaction/test_opencode_integration.py",
+    "tests/compaction_lanes/test_opencode_lane.py",
+    "tests/test_e4_target_packages.py",
+    "breadboard_engine/compaction/oh_my_opencode.py",
+    "breadboard_engine/compaction/opencode.py",
+    "breadboard_engine/compilation/context_builders/opencode_stock.py",
+    "artifacts/compaction_lanes/native-stock-defects/recovery_timer_prune_race.json",
+    "artifacts/compaction_lanes/opencode_delivery_report.json"
+  ],
+  "tests_run": [
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py -k 'native_prune_fence or overflow_preserves_descriptors' -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-native-prune-fence-r1",
+      "tail": "11 passed, 204 deselected in 0.18s",
+      "basetemp_removed": true
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py -k 'native_prune_fence or overflow_preserves_descriptors' -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-native-prune-fence-r2",
+      "tail": "12 passed, 204 deselected in 0.20s",
+      "basetemp_removed": true
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py -k 'bb_sidecar or bb_oracle_archives or stock_oracle or stock_timeout_attempt or native_prune_fence or overflow_preserves_descriptors' -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-symmetric-native-oracle-r1",
+      "tail": "28 passed, 196 deselected in 6.43s",
+      "basetemp_removed": true
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness oh-my-opencode --scenario overflow --out artifacts/compaction_lanes/omo-symmetric-native-overflow-proof-r3",
+      "tail": "stock/BB 11 requests, 3 compactions, 3 summary requests; diff_count0; passedtrue; exit0; 49.71s"
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness opencode --scenario all --out artifacts/compaction_lanes/opencode-symmetric-final-proof-r4 && env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness oh-my-opencode --scenario all --out artifacts/compaction_lanes/omo-symmetric-final-proof-r4",
+      "tail": "All nine scenarios passed; every diff_count=0 and unresolved=[]; exit0; 714.98s",
+      "per_scenario_counts": [
+        {
+          "harness": "opencode",
+          "scenario": "auto_prune",
+          "counts": {
+            "stock": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 2
+            },
+            "bb": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 2
+            }
+          }
+        },
+        {
+          "harness": "opencode",
+          "scenario": "overflow",
+          "counts": {
+            "stock": {
+              "requests": 5,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            },
+            "bb": {
+              "requests": 5,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            }
+          }
+        },
+        {
+          "harness": "opencode",
+          "scenario": "final_threshold",
+          "counts": {
+            "stock": {
+              "requests": 3,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            },
+            "bb": {
+              "requests": 3,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "auto_prune",
+          "counts": {
+            "stock": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 2
+            },
+            "bb": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 2
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "overflow",
+          "counts": {
+            "stock": {
+              "requests": 11,
+              "compactions": 3,
+              "summary_requests": 3,
+              "requests_with_pruned_output": 2
+            },
+            "bb": {
+              "requests": 11,
+              "compactions": 3,
+              "summary_requests": 3,
+              "requests_with_pruned_output": 2
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "final_threshold",
+          "counts": {
+            "stock": {
+              "requests": 3,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            },
+            "bb": {
+              "requests": 3,
+              "compactions": 1,
+              "summary_requests": 1,
+              "requests_with_pruned_output": 0
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "delegate_prune",
+          "counts": {
+            "stock": {
+              "requests": 11,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 3
+            },
+            "bb": {
+              "requests": 11,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 3
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "plugin_error",
+          "counts": {
+            "stock": {
+              "requests": 5,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 0
+            },
+            "bb": {
+              "requests": 5,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 0
+            }
+          }
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "delegate_idle",
+          "counts": {
+            "stock": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 0
+            },
+            "bb": {
+              "requests": 9,
+              "compactions": 2,
+              "summary_requests": 2,
+              "requests_with_pruned_output": 0
+            }
+          }
+        }
+      ]
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py tests/compaction/test_opencode_integration.py tests/test_e4_target_packages.py tests/providers/test_provider_runtime_responses.py tests/compaction/test_oracle_cases.py tests/compaction/test_event_view.py -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-final-owned-contracts-r2",
+      "tail": "618 passed, 9 skipped in 21.12s",
+      "basetemp_removed": true,
+      "skips": "Nine opt-in real production cases, exercised by the separate successful CLI sweep"
+    }
+  ],
+  "lane_results": [
+    {
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "report": "artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        },
+        {
+          "request": 5,
+          "tie_groups": 0
+        },
+        {
+          "request": 6,
+          "tie_groups": 0
+        },
+        {
+          "request": 7,
+          "tie_groups": 0
+        },
+        {
+          "request": 8,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/opencode_1-2-17_e4_10-9-2026.yaml",
+        "profile_sha256": "fde0b52bd6d2c5bb67ee91d181ce2c553e7ea7a810636f72b02dfa13d3e8c365",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {
+          "temperature": 0.2,
+          "top_p": 0.9
+        },
+        "preset": "opencode@1.2.17",
+        "deferred_recovery_attempts": 0,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "opencode",
+      "scenario": "overflow",
+      "report": "artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 5,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 5,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/opencode_1-2-17_e4_10-9-2026.yaml",
+        "profile_sha256": "fde0b52bd6d2c5bb67ee91d181ce2c553e7ea7a810636f72b02dfa13d3e8c365",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {
+          "temperature": 0.2,
+          "top_p": 0.9
+        },
+        "preset": "opencode@1.2.17",
+        "deferred_recovery_attempts": 0,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "report": "artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 3,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 3,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/opencode-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/opencode_1-2-17_e4_10-9-2026.yaml",
+        "profile_sha256": "fde0b52bd6d2c5bb67ee91d181ce2c553e7ea7a810636f72b02dfa13d3e8c365",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {
+          "temperature": 0.2,
+          "top_p": 0.9
+        },
+        "preset": "opencode@1.2.17",
+        "deferred_recovery_attempts": 0,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "report": "artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        },
+        {
+          "request": 5,
+          "tie_groups": 0
+        },
+        {
+          "request": 6,
+          "tie_groups": 0
+        },
+        {
+          "request": 7,
+          "tie_groups": 0
+        },
+        {
+          "request": 8,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 3,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [
+              {
+                "session_id": "ses_ed6ac1c8fffeSlkT8LUO9wHjbN",
+                "time_created": 1791694736524,
+                "message_ids": [
+                  "msg_129540c8c002QYQWKblFTJlAwb",
+                  "msg_129540c8b002vTRFLVQAvC1WgR"
+                ]
+              },
+              {
+                "session_id": "ses_ed6ac1c8fffeSlkT8LUO9wHjbN",
+                "time_created": 1791694736528,
+                "message_ids": [
+                  "msg_129540c90003JIhw4jy4LmRDCg",
+                  "msg_129540c90001fkdyK3X0DIBNEJ"
+                ]
+              }
+            ],
+            "requests": 16,
+            "compactions": 3,
+            "error": "Traceback (most recent call last):\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 741, in run_stock\n    result = api(\"POST\", \"/session/\" + session_id + \"/message\", {\n        \"model\": {\"providerID\": \"openai\", \"modelID\": settings[\"model\"]},\n        \"parts\": [{\"type\": \"text\", \"text\": \"\\n\" + turn[\"prompt\"]}]})\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 525, in api\n    with urllib.request.urlopen(request, timeout=180) as response:\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 189, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1323, in do_open\n    r = h.getresponse()\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 1459, in getresponse\n    response.begin()\n    ~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 355, in begin\n    self.headers = self.msg = parse_headers(self.fp)\n                              ~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 253, in parse_headers\n    headers = _read_headers(fp)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 226, in _read_headers\n    line = fp.readline(_MAXLINE + 1)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/socket.py\", line 723, in readinto\n    return self._sock.recv_into(b)\n           ~~~~~~~~~~~~~~~~~~~~^^^\nTimeoutError: timed out\n",
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          },
+          {
+            "attempt": 2,
+            "control_flow_ties": [
+              {
+                "session_id": "ses_ed6ac1c8fffeSlkT8LUO9wHjbN",
+                "time_created": 1791694932877,
+                "message_ids": [
+                  "msg_129570b8d003q9WyN9CEWFDzs5",
+                  "msg_129570b8d001os8eQG4bzgw3GQ"
+                ]
+              }
+            ],
+            "requests": 16,
+            "compactions": 3,
+            "error": "Traceback (most recent call last):\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 741, in run_stock\n    result = api(\"POST\", \"/session/\" + session_id + \"/message\", {\n        \"model\": {\"providerID\": \"openai\", \"modelID\": settings[\"model\"]},\n        \"parts\": [{\"type\": \"text\", \"text\": \"\\n\" + turn[\"prompt\"]}]})\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 525, in api\n    with urllib.request.urlopen(request, timeout=180) as response:\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 189, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1323, in do_open\n    r = h.getresponse()\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 1459, in getresponse\n    response.begin()\n    ~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 355, in begin\n    self.headers = self.msg = parse_headers(self.fp)\n                              ~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 253, in parse_headers\n    headers = _read_headers(fp)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 226, in _read_headers\n    line = fp.readline(_MAXLINE + 1)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/socket.py\", line 723, in readinto\n    return self._sock.recv_into(b)\n           ~~~~~~~~~~~~~~~~~~~~^^^\nTimeoutError: timed out\n",
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-2/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-2/stock_requests.jsonl"
+            }
+          },
+          {
+            "attempt": 3,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-3/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/stock_attempts/attempt-3/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/auto_prune/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "report": "artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        },
+        {
+          "request": 5,
+          "tie_groups": 0
+        },
+        {
+          "request": 6,
+          "tie_groups": 0
+        },
+        {
+          "request": 7,
+          "tie_groups": 0
+        },
+        {
+          "request": 8,
+          "tie_groups": 0
+        },
+        {
+          "request": 9,
+          "tie_groups": 0
+        },
+        {
+          "request": 10,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 2,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [
+              {
+                "session_id": "ses_ed6a56d11ffe5HooET0oNuMVsf",
+                "time_created": 1791695174423,
+                "message_ids": [
+                  "msg_1295abb17003lnwAgjlWkZhELn",
+                  "msg_1295abb17001TIB721yrB2aPK1"
+                ]
+              }
+            ],
+            "requests": 14,
+            "compactions": 4,
+            "error": "Stock exhausted the identical scripted provider responses",
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          },
+          {
+            "attempt": 2,
+            "control_flow_ties": [],
+            "requests": 11,
+            "compactions": 3,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/stock_attempts/attempt-2/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/stock_attempts/attempt-2/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 11,
+            "compactions": 3,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/overflow/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [
+          {
+            "session_id": "ses_ed6a56d11ffe5HooET0oNuMVsf",
+            "event_type": "message.part.updated",
+            "call_ids": [
+              "call_overflow_seed_0",
+              "call_overflow_seed_1",
+              "call_overflow_seed_2",
+              "call_overflow_seed_3",
+              "call_overflow_seed_4",
+              "call_overflow_seed_5"
+            ],
+            "native_parts": {
+              "call_overflow_seed_5": {
+                "id": "prt_1295af0cd001Z6d77Uxiys0M0p",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695191271
+              },
+              "call_overflow_seed_4": {
+                "id": "prt_1295af0cc001yNEl5TVr6nf1WB",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695191271
+              },
+              "call_overflow_seed_3": {
+                "id": "prt_1295af0cb001jnHwUSszZv8atT",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695191272
+              },
+              "call_overflow_seed_2": {
+                "id": "prt_1295af0ca001JGxJqld18c6cgN",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "ad336f02219f8ba29af3d2f2ab6bb8a42af08055d9dc0d18d29da5e0aa316d84",
+                "compacted": 1791695191272
+              },
+              "call_overflow_seed_1": {
+                "id": "prt_1295af0c80015Md5WJxgnthyyO",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695191272
+              },
+              "call_overflow_seed_0": {
+                "id": "prt_1295af0c5002YCYbwCq6xU4s9r",
+                "messageID": "msg_1295ae66e001K1tifaA68Nw2tO",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695191272
+              }
+            },
+            "next_error_delivery": "Only after these genuine native prune events",
+            "source": "packages/opencode/src/session/prompt.ts:716"
+          }
+        ],
+        "bb": [
+          {
+            "session_id": "ses_ed6a56d11ffe5HooET0oNuMVsf",
+            "event_type": "message.part.updated",
+            "call_ids": [
+              "call_overflow_seed_0",
+              "call_overflow_seed_1",
+              "call_overflow_seed_2",
+              "call_overflow_seed_3",
+              "call_overflow_seed_4",
+              "call_overflow_seed_5"
+            ],
+            "native_parts": {
+              "call_overflow_seed_5": {
+                "id": "prt_1295b498d0025uTIleO4bofIyD",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695216873
+              },
+              "call_overflow_seed_4": {
+                "id": "prt_1295b498d001tsht6AOPVsGb4l",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695216873
+              },
+              "call_overflow_seed_3": {
+                "id": "prt_1295b498c001GVaHmK6rIrlB1f",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695216873
+              },
+              "call_overflow_seed_2": {
+                "id": "prt_1295b498a001bTY59kA2LzFOf7",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "ad336f02219f8ba29af3d2f2ab6bb8a42af08055d9dc0d18d29da5e0aa316d84",
+                "compacted": 1791695216873
+              },
+              "call_overflow_seed_1": {
+                "id": "prt_1295b4989001DQSIZkKCqCGisD",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695216874
+              },
+              "call_overflow_seed_0": {
+                "id": "prt_1295b4986002bnj8UB9Fqiu1tb",
+                "messageID": "msg_1295b3d76001XKUNMBU4lP2zhb",
+                "tool": "bash",
+                "output_sha256": "372716892c155707f6b7ddf97db49db1a039b3c5e52a3a2d1771df1e8a68397f",
+                "compacted": 1791695216874
+              }
+            },
+            "next_error_delivery": "Only after these genuine native prune events",
+            "source": "packages/opencode/src/session/prompt.ts:716"
+          }
+        ]
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      },
+      "native_partial_recovery": {
+        "call_ids": [
+          "call_overflow_seed_6",
+          "call_overflow_seed_7",
+          "call_overflow_seed_8",
+          "call_overflow_seed_9",
+          "call_overflow_seed_10",
+          "call_overflow_seed_11"
+        ],
+        "native_output_sizes": {
+          "stock": {
+            "call_overflow_seed_6": 179,
+            "call_overflow_seed_7": 179,
+            "call_overflow_seed_8": 179,
+            "call_overflow_seed_9": 179,
+            "call_overflow_seed_10": 179,
+            "call_overflow_seed_11": 179
+          },
+          "bb": {
+            "call_overflow_seed_6": 179,
+            "call_overflow_seed_7": 179,
+            "call_overflow_seed_8": 179,
+            "call_overflow_seed_9": 179,
+            "call_overflow_seed_10": 179,
+            "call_overflow_seed_11": 179
+          }
+        },
+        "native_outputs_byte_equal": true,
+        "native_output_sha256": {
+          "stock": {
+            "call_overflow_seed_6": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_7": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_8": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_9": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_10": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_11": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4"
+          },
+          "bb": {
+            "call_overflow_seed_6": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_7": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_8": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_9": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_10": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4",
+            "call_overflow_seed_11": "eafb7554cb29a86ebaf7b78257291ea0425a446c5f6742551c15aa5461d664b4"
+          }
+        },
+        "root_session_ids": {
+          "stock": "ses_ed6a56d11ffe5HooET0oNuMVsf",
+          "bb": "ses_ed6a56d11ffe5HooET0oNuMVsf"
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "final_threshold",
+      "report": "artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 3,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 3,
+            "compactions": 1,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/final_threshold/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_prune",
+      "report": "artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/lane_report.json",
+      "note": "Re-proved after the completed-list ownership fix: RuntimeGeneratedIDs substitutes notification.completed_list only when the request's raw prompt_cache_key equals that side's genuine native root session ID (stock injects the notification only into the parent session, manager.ts:1359-1367); a non-root request carrying the notification is not substituted and keeps a strict diff. This lane emits no completed-list notification; the remaining runtime-ID positions are unchanged. Supersedes artifacts/compaction_lanes/omo-symmetric-final-proof-r4/delegate_prune/lane_report.json.",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 3
+        },
+        "bb": {
+          "requests": 11,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 3
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [
+        {
+          "name": "opencode_runtime_generated_ids",
+          "source": "Guard only source runtime IDs, proven by each side's genuine native API.\n\nSources: background-task.ts:80-91; manager.ts:156; id/id.ts:49-74;\ncompaction-context-injector/hook.ts:63-67; task-history.ts:61-73.\nCompleted-list notification: manager.ts:1255-1287; internal-initiator-marker.ts:1-10.\n",
+          "mapping": {
+            "stock": {
+              "bg_bdca27b3": "<runtime-bg-0>",
+              "ses_ed695cdb3ffeQ2tW8Al9tFawxT": "<runtime-session-0>"
+            },
+            "bb": {
+              "bg_198cab63": "<runtime-bg-0>",
+              "ses_ed6956807ffeso4KTDYz2zZ2kO": "<runtime-session-0>"
+            }
+          },
+          "counts_per_position": {
+            "stock": {
+              "delegated.prompt_cache_key": 1,
+              "background_output.session_hint": 2,
+              "background_output.bg_meta": 2,
+              "background_output.session_ref": 2,
+              "background_output.session": 2,
+              "background_output.bg_ref": 2,
+              "background_output.bg": 2,
+              "summary.active_recent": 2
+            },
+            "bb": {
+              "delegated.prompt_cache_key": 1,
+              "background_output.session_hint": 2,
+              "background_output.bg_meta": 2,
+              "background_output.session_ref": 2,
+              "background_output.session": 2,
+              "background_output.bg_ref": 2,
+              "background_output.bg": 2,
+              "summary.active_recent": 2
+            }
+          },
+          "completed_notification_provenance": {
+            "stock": {},
+            "bb": {}
+          },
+          "provenance": {
+            "stock": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/stock_result.json#native_evidence",
+            "bb": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/bb_result.json#native_evidence"
+          }
+        }
+      ],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        },
+        {
+          "request": 5,
+          "tie_groups": 0
+        },
+        {
+          "request": 6,
+          "tie_groups": 0
+        },
+        {
+          "request": 7,
+          "tie_groups": 0
+        },
+        {
+          "request": 8,
+          "tie_groups": 0
+        },
+        {
+          "request": 9,
+          "tie_groups": 0
+        },
+        {
+          "request": 10,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 11,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 11,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "report": "artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 5,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 5,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-symmetric-final-proof-r4/plugin_error/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    },
+    {
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "report": "artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/lane_report.json",
+      "note": "Re-proved after the completed-list ownership fix: RuntimeGeneratedIDs substitutes notification.completed_list only when the request's raw prompt_cache_key equals that side's genuine native root session ID (stock injects the notification only into the parent session, manager.ts:1359-1367); a non-root request carrying the notification is not substituted and keeps a strict diff. completed_list substituted on 2 root-owned requests per side. Supersedes artifacts/compaction_lanes/omo-symmetric-final-proof-r4/delegate_idle/lane_report.json.",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "unresolved": [],
+      "deviations_used": [
+        {
+          "name": "opencode_runtime_generated_ids",
+          "source": "Guard only source runtime IDs, proven by each side's genuine native API.\n\nSources: background-task.ts:80-91; manager.ts:156; id/id.ts:49-74;\ncompaction-context-injector/hook.ts:63-67; task-history.ts:61-73.\nCompleted-list notification: manager.ts:1255-1287; internal-initiator-marker.ts:1-10.\n",
+          "mapping": {
+            "stock": {
+              "bg_c2e1ccf2": "<runtime-bg-0>",
+              "ses_ed696975affeizhoNMdHMqbOkh": "<runtime-session-0>"
+            },
+            "bb": {
+              "bg_dd0e358d": "<runtime-bg-0>",
+              "ses_ed6963703ffemNSHHISBLHvbBs": "<runtime-session-0>"
+            }
+          },
+          "counts_per_position": {
+            "stock": {
+              "delegated.prompt_cache_key": 1,
+              "background_output.session_hint": 3,
+              "background_output.bg_meta": 3,
+              "background_output.session_ref": 3,
+              "background_output.session": 3,
+              "background_output.bg_ref": 3,
+              "background_output.bg": 3,
+              "notification.completed_list": 2,
+              "summary.active_recent": 2
+            },
+            "bb": {
+              "delegated.prompt_cache_key": 1,
+              "background_output.session_hint": 3,
+              "background_output.bg_meta": 3,
+              "background_output.session_ref": 3,
+              "background_output.session": 3,
+              "background_output.bg_ref": 3,
+              "background_output.bg": 3,
+              "notification.completed_list": 2,
+              "summary.active_recent": 2
+            }
+          },
+          "completed_notification_provenance": {
+            "stock": {
+              "<system-reminder>\n[ALL BACKGROUND TASKS COMPLETE]\n\n**Completed:**\n- `bg_c2e1ccf2`: Delegated inspection\n\nUse `background_output(task_id=\"<id>\")` to retrieve each result.\n</system-reminder>\n<!-- OMO_INTERNAL_INITIATOR -->": {
+                "native_user_id": "msg_129697c32001o2s0LWXYrWj1iJ",
+                "tasks": [
+                  {
+                    "background_id": "bg_c2e1ccf2",
+                    "call_id": "call_delegated",
+                    "child_id": "ses_ed696975affeizhoNMdHMqbOkh",
+                    "child_completion_ids": [
+                      "msg_1296968a9001ijVhxnnXES8x7y"
+                    ]
+                  }
+                ]
+              }
+            },
+            "bb": {
+              "<system-reminder>\n[ALL BACKGROUND TASKS COMPLETE]\n\n**Completed:**\n- `bg_dd0e358d`: Delegated inspection\n\nUse `background_output(task_id=\"<id>\")` to retrieve each result.\n</system-reminder>\n<!-- OMO_INTERNAL_INITIATOR -->": {
+                "native_user_id": "msg_12969dc89001XzRfLUGok8T6h3",
+                "tasks": [
+                  {
+                    "background_id": "bg_dd0e358d",
+                    "call_id": "call_delegated",
+                    "child_id": "ses_ed6963703ffemNSHHISBLHvbBs",
+                    "child_completion_ids": [
+                      "msg_12969c8ff0017pO1RIIy7KY2xc"
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          "provenance": {
+            "stock": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/stock_result.json#native_evidence",
+            "bb": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/bb_result.json#native_evidence"
+          }
+        },
+        {
+          "name": "opencode_created_time_tie_order",
+          "source": "Guard stock message-v2.ts:740's ORDER BY time_created DESC collision.\n\nNative records establish the tie, message identities and BB creation order.\nOnly tied slots move. The entire resulting request must otherwise match.\nTool assistants move as a contiguous calls-then-results slice, validated\nagainst genuine native call IDs, names, input arguments and output.\n",
+          "counts_per_request": [
+            {
+              "request": 6,
+              "tie_groups": 1,
+              "groups": [
+                {
+                  "stock_created": 1791696141657,
+                  "stock_message_ids": [
+                    "msg_129697d59003dLeH1Y6GidREQL",
+                    "msg_129697d59001xtFoNS056lD2U6"
+                  ],
+                  "bb_message_ids": [
+                    "msg_12969de860020vkQ49AYmn3Dq2",
+                    "msg_12969de85001rc0WVK7DvMlRQj"
+                  ],
+                  "bb_created": [
+                    1791696166534,
+                    1791696166533
+                  ],
+                  "request_slots": [
+                    3,
+                    4,
+                    5
+                  ]
+                }
+              ]
+            }
+          ],
+          "provenance": {
+            "stock": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/stock_result.json#native_evidence.messages",
+            "bb": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/bb_result.json#native_evidence.messages"
+          }
+        }
+      ],
+      "tie_group_count_per_request": [
+        {
+          "request": 0,
+          "tie_groups": 0
+        },
+        {
+          "request": 1,
+          "tie_groups": 0
+        },
+        {
+          "request": 2,
+          "tie_groups": 0
+        },
+        {
+          "request": 3,
+          "tie_groups": 0
+        },
+        {
+          "request": 4,
+          "tie_groups": 0
+        },
+        {
+          "request": 5,
+          "tie_groups": 0
+        },
+        {
+          "request": 6,
+          "tie_groups": 1
+        },
+        {
+          "request": 7,
+          "tie_groups": 0
+        },
+        {
+          "request": 8,
+          "tie_groups": 0
+        }
+      ],
+      "stock_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/stock_attempts/attempt-1/stock_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/stock_attempts/attempt-1/stock_requests.jsonl"
+            }
+          }
+        ],
+        "bb_runs": 1,
+        "comparison_max_bb_runs": 5
+      },
+      "bb_sidecar_oracle_selection": {
+        "rule": "Select the oracle from native records, never request bytes or counts.\n\nA tie involving a native summary or compaction part can alter boundary\nreconstruction/control flow (message-v2.ts:740). Ordinary text replay\nties use only the separately guarded request-order deviation.\n",
+        "max_attempts": 5,
+        "selected_attempt": 1,
+        "attempts": [
+          {
+            "attempt": 1,
+            "control_flow_ties": [],
+            "requests": 9,
+            "compactions": 2,
+            "error": null,
+            "artifacts": {
+              "result": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/bb_attempts/attempt-1/bb_result.json",
+              "requests": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/bb_attempts/attempt-1/bb_requests.jsonl",
+              "session_store": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/bb_attempts/attempt-1/bb_session_store"
+            }
+          }
+        ],
+        "native_source": "BB sidecar's own unmodified stock records; message-v2.ts:740 time-tie defect",
+        "rejection_signals": [
+          "Native tie containing a summary assistant or compaction part"
+        ],
+        "bytes_or_counts_can_reject": false
+      },
+      "native_prune_fences": {
+        "stock": [],
+        "bb": []
+      },
+      "settings": {
+        "profile": "/Users/kylemccleary/projects/breadboard-compaction-e4-engine/agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml",
+        "profile_sha256": "4b8e637dcbe4cf3f6688cf99449f66428aa1eb2bbdf73892aebda447e7997c3c",
+        "model_id": "openai/gpt-5.1-codex-mini",
+        "model": "gpt-5.1-codex-mini",
+        "max_output_tokens": 32000,
+        "params": {},
+        "preset": "oh-my-opencode@3.10.0",
+        "deferred_recovery_attempts": 2,
+        "tools": [
+          "question",
+          "bash",
+          "read",
+          "glob",
+          "grep",
+          "task",
+          "webfetch",
+          "todowrite",
+          "skill",
+          "apply_patch",
+          "lsp_goto_definition",
+          "lsp_find_references",
+          "lsp_symbols",
+          "lsp_diagnostics",
+          "lsp_prepare_rename",
+          "lsp_rename",
+          "ast_grep_search",
+          "ast_grep_replace",
+          "session_list",
+          "session_read",
+          "session_search",
+          "session_info",
+          "background_output",
+          "background_cancel",
+          "look_at",
+          "skill_mcp",
+          "interactive_bash",
+          "websearch_web_search_exa",
+          "grep_app_searchGitHub",
+          "context7_resolve-library-id",
+          "context7_query-docs"
+        ],
+        "source_api_authentication": {
+          "mode": "HTTP Basic authentication on both source serve processes",
+          "username": "opencode",
+          "stock_password": "Fixed isolated fixture credential; not a provider credential",
+          "bb_password": "Production sidecar's generated isolated credential",
+          "configuration_fact_not_deviation": true,
+          "source": [
+            "packages/opencode/src/cli/cmd/serve.ts:14-15",
+            "packages/opencode/src/cli/cmd/web.ts:36-37",
+            "src/shared/opencode-server-auth.ts:8-17",
+            "src/shared/opencode-http-api.ts:68-72"
+          ],
+          "unauthenticated_behavior": "Native aggressive PATCH returns false without a password; the plugin falls through to summarize"
+        },
+        "overrides": {
+          "contextWindow": {
+            "production": 400000,
+            "lane": 64000
+          },
+          "max_input_tokens": {
+            "production": 272000,
+            "lane": 64000
+          },
+          "lsp": {
+            "stock": false,
+            "bb_stock_executor": false,
+            "reason": "equal local tool isolation; stock owns LSP, not the legacy BB wrapper"
+          },
+          "stock_environment": {
+            "OPENCODE_DISABLE_DEFAULT_PLUGINS": "1",
+            "OPENCODE_DISABLE_PROJECT_CONFIG": "1"
+          }
+        }
+      }
+    }
+  ],
+  "deviations_used": [
+    {
+      "name": "opencode_created_time_tie_order",
+      "lanes": [
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "delegate_idle",
+          "report": "artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/lane_report.json"
+        }
+      ]
+    },
+    {
+      "name": "opencode_runtime_generated_ids",
+      "lanes": [
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "delegate_prune",
+          "report": "artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_prune/delegate_prune/lane_report.json"
+        },
+        {
+          "harness": "oh-my-opencode",
+          "scenario": "delegate_idle",
+          "report": "artifacts/compaction_lanes/omo-ownership-proof-r1/delegate_idle/delegate_idle/lane_report.json"
+        }
+      ]
+    }
+  ],
+  "defects_found_and_fixed": [
+    {
+      "defect": "Lane SSE observer missed genuine prior-turn native prune events by routing a workspace symlink to a separate stock Instance",
+      "root_fix": "Physical workspace in the authenticated event subscription header, not any request DTO normalization",
+      "code": "scripts/compaction_lanes/opencode_lane.py:NativePruneFence.__init__",
+      "negative_test": "tests/compaction_lanes/test_opencode_lane.py:test_native_prune_fence_routes_symlink_to_the_source_instance",
+      "evidence": {
+        "log": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/stock_attempts/attempt-1/stock_runtime/data/opencode/log/2026-10-11T043924.log:612-638,761-768",
+        "database": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/stock_attempts/attempt-1/stock_runtime/data/opencode/opencode.db#part",
+        "native_pruned_call_ids": [
+          "call_overflow_seed_0",
+          "call_overflow_seed_1",
+          "call_overflow_seed_2",
+          "call_overflow_seed_3",
+          "call_overflow_seed_4",
+          "call_overflow_seed_5"
+        ]
+      },
+      "independent_review": "OpenCodeToolsReview: CLEAN, confidence 0.93; static only"
+    },
+    {
+      "defect": "Baseline OpenCode Responses requests differed in input, output cap, cache owner, reasoning/store and native tool catalog",
+      "before_evidence": "artifacts/compaction_lanes/opencode-baseline-20261010/final_threshold/lane_report.json:/diffs",
+      "root_fix": "Dated profile selects genuine stock initial context/catalog and explicit source-faithful Responses settings; production converter preserves grouped call/output slices and exact argument strings",
+      "citations": [
+        "agent_configs/opencode_1-2-17_e4_10-9-2026.yaml#provider_tools.openai",
+        "agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml#provider_tools.openai",
+        "breadboard_engine/compilation/context_builders/opencode_stock.py:38",
+        "breadboard_engine/provider/runtimes/openai/responses.py:68,237-278,1420-1436"
+      ]
+    },
+    {
+      "defect": "Native pruning and final-answer pressure were attached to the wrong lifecycle boundaries",
+      "root_fix": "Preset-declared user_turn_end prune and assistant_step_end threshold; final persisted snapshots retain completed-turn pruning; summaries do not opportunistically prune newly eligible outputs",
+      "citations": [
+        "breadboard_engine/compaction/presets/opencode@1.2.17.yaml:35,65",
+        "breadboard_engine/compaction/controller.py:269-277,314-317",
+        "tests/compaction/test_opencode_integration.py:147-218"
+      ]
+    },
+    {
+      "defect": "Overflow replay reminders leaked into canonical summary history or survived genuine history advancement",
+      "root_fix": "Ephemeral request-only native current-user overlay, expiring when canonical history advances; original native user text retained",
+      "citations": [
+        "breadboard_engine/compilation/context_builders/opencode_stock.py:198",
+        "tests/compaction/test_opencode_integration.py:418-452"
+      ]
+    },
+    {
+      "defect": "Production OMO recovery could wait for a summary after native handled truncation, or fail to serve an additional genuine queued source summary",
+      "root_fix_owner": "OpenCodeToolsSurgeon",
+      "root_fix": "Genuine native source recovery outcomes govern pending state; PATCHed outputs project by call ID into copied request DTOs; additional genuine summaries use the production provider path; dedicated strict session.failed_turn_continues admits only validated failed interactive exchanges",
+      "citations": [
+        "agent_configs/README.md#Stock defects and native recovery ownership",
+        "breadboard_engine/compaction/controller.py",
+        "breadboard_engine/compilation/context_builders/opencode_stock.py",
+        "breadboard_engine/execution/opencode_tools.py",
+        "tests/compaction/test_opencode_stock_recovery_handled.py"
+      ],
+      "peer_exercised_proof": "OpenCodeToolsSurgeon: 24 passed, artifact://19229; no fabricated stock continuation"
+    }
+  ],
+  "unresolved": [],
+  "independent_review": {
+    "reviewer": "OpenCodeToolsReview",
+    "verdict": "CLEAN",
+    "scope": "Created-time native tool-slice guard, raw request-session ownership, live native evidence on foreground timeout, authenticated stock configuration, native prune fence and four genuine human turns; native physical-directory routing regression; symmetric native-only BB selector, fresh archived attempt storage and raw selected artifacts (FF9C/EA30 CLEAN); one-line admission-failure observation fixture expectation (2C74 CLEAN)",
+    "tests_run_by_reviewer": false
+  },
+  "configuration_facts": {
+    "authenticated_stock_serve": true,
+    "not_a_deviation": true,
+    "source": "agent_configs/README.md",
+    "natural_partial_overflow": "artifacts/compaction_lanes/native-stock-defects/recovery_timer_prune_race.json",
+    "no_production_timer_or_prune_changes": true
+  },
+  "stock_defects": [
+    "artifacts/compaction_lanes/native-stock-defects/prompt_async_missing_parts.json",
+    "artifacts/compaction_lanes/native-stock-defects/recovery_timer_prune_race.json"
+  ],
+  "branch": "feat/compaction-e4-engine",
+  "commits": [],
+  "failed_scenario_runs": [
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness oh-my-opencode --scenario overflow --out artifacts/compaction_lanes/omo-native-prune-fence-proof-r1",
+      "tail": "stock requests=4, compactions=0; BB not run; native prune-complete timeout; exit 1; 198.03s",
+      "report": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/lane_report.json",
+      "oracle_retried": false,
+      "cause": "Observer /var workspace alias created a different native Instance from physical serve cwd /private/var",
+      "native_evidence": {
+        "log": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/stock_attempts/attempt-1/stock_runtime/data/opencode/log/2026-10-11T043924.log:612-638,761-768",
+        "database": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/stock_attempts/attempt-1/stock_runtime/data/opencode/opencode.db#part",
+        "native_pruned_call_ids": [
+          "call_overflow_seed_0",
+          "call_overflow_seed_1",
+          "call_overflow_seed_2",
+          "call_overflow_seed_3",
+          "call_overflow_seed_4",
+          "call_overflow_seed_5"
+        ]
+      }
+    },
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness oh-my-opencode --scenario overflow --out artifacts/compaction_lanes/omo-native-prune-fence-proof-r2",
+      "tail": "stock 11 requests/3 summaries; BB 17 requests/4 summaries; first10 requests exact; exit1; 223.66s",
+      "report": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r2/overflow/lane_report.json",
+      "native_sidecar_control_ties": [
+        {
+          "session_id": "ses_ed6b803f8ffewIbZUA5h18og9m",
+          "time_created": 1791693983084,
+          "message_ids": [
+            "msg_129488d6c003UcsZ5NPSqgNRUm",
+            "msg_129488d6c001nXpx3b6Jvo1tsd"
+          ]
+        }
+      ],
+      "decision": "Main approved the same native-only control-flow selector on the BB sidecar, bounded5 attempts, all recorded; serving additional genuine summaries remains unchanged"
+    }
+  ],
+  "oracle_policy": {
+    "same_native_selector_on_both_sides": true,
+    "max_attempts_per_side": 5,
+    "rejection_evidence": "A native timestamp tie containing a summary assistant or a compaction part in that side's own stock records",
+    "byte_count_or_error_divergence_can_reject": false,
+    "all_five_tied_attempts_fail": true,
+    "production_behavior_modified_for_ties": false,
+    "bb_attempt_freshness": "Archive the closed lane-owned product/native session store, preserving exact evidence; new process and fresh Service state root, same physical workspace and genuine stock-created session ID"
+  },
+  "supplementary_lane_proofs": [
+    {
+      "report": "artifacts/compaction_lanes/omo-symmetric-native-overflow-proof-r3/overflow/lane_report.json",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "diffs": [],
+      "passed": true,
+      "native_recovered_outputs_byte_equal": true,
+      "native_recovered_output_sizes": {
+        "stock": {
+          "call_overflow_seed_6": 179,
+          "call_overflow_seed_7": 179,
+          "call_overflow_seed_8": 179,
+          "call_overflow_seed_9": 179,
+          "call_overflow_seed_10": 179,
+          "call_overflow_seed_11": 179
+        },
+        "bb": {
+          "call_overflow_seed_6": 179,
+          "call_overflow_seed_7": 179,
+          "call_overflow_seed_8": 179,
+          "call_overflow_seed_9": 179,
+          "call_overflow_seed_10": 179,
+          "call_overflow_seed_11": 179
+        }
+      }
+    }
+  ],
+  "failed_check_runs": [
+    {
+      "command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py tests/compaction/test_opencode_integration.py tests/test_e4_target_packages.py tests/providers/test_provider_runtime_responses.py tests/compaction/test_oracle_cases.py tests/compaction/test_event_view.py -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-final-owned-contracts-r1",
+      "tail": "1 failed, 617 passed, 9 skipped in 21.55s",
+      "failure": "Admission-failure observation expected-dict omitted new native_prune_fences:[]; original exception and shutdown assertions passed",
+      "fixed_in": "tests/compaction_lanes/test_opencode_lane.py:test_queued_driver_preserves_observations_without_swallowing_admission_failure",
+      "independent_review": "OpenCodeToolsReview 2C74 CLEAN",
+      "basetemp_removed": true,
+      "output": "artifact://19280"
+    }
+  ],
+  "rerun_command": "env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m pytest tests/compaction_lanes/test_opencode_lane.py tests/compaction/test_opencode_integration.py tests/test_e4_target_packages.py tests/providers/test_provider_runtime_responses.py tests/compaction/test_oracle_cases.py tests/compaction/test_event_view.py -q -p no:cacheprovider -W ignore --basetemp=/tmp/OpenCodeLane-rerun-contracts && env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness opencode --scenario all --out artifacts/compaction_lanes/opencode-rerun-proof && env BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python scripts/compaction_lanes/opencode_lane.py --harness oh-my-opencode --scenario all --out artifacts/compaction_lanes/omo-rerun-proof",
+  "rerun_notes": [
+    "Use fresh evidence directories; existing attempt results are intentionally never overwritten.",
+    "After reading pytest results, remove only the explicit owned basetemp."
+  ],
+  "status": "complete",
+  "summary": "OpenCode and oh-my-opencode production byte lanes: all nine scenarios passed with zero unadmitted differences; 618 targeted tests passed. Mission acceptance remains with the integrator.",
+  "verification_summary": {
+    "scenarios_passed": 9,
+    "requests_per_side": 65,
+    "compactions_per_side": 16,
+    "unadmitted_differences": 0,
+    "targeted_tests_passed": 618,
+    "opt_in_pytest_skips_exercised_separately": 9
+  },
+  "risks": [
+    "Pinned stock time-created control-flow ties remain a native defect; five tied attempts on either side fail rather than masking a difference.",
+    "The source-faithful handled-truncation prompt_async missing-parts dead end remains stock behavior, not a repaired or fabricated continuation."
+  ],
+  "superseded_diagnostic_lane_runs": [
+    {
+      "report": "artifacts/compaction_lanes/omo-baseline-20261010/auto_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": false,
+      "diff_count": 9,
+      "unresolved": [
+        {
+          "classification": "daily-driving outside compaction",
+          "defect": "Local LSPEnhancedSandbox wraps LocalActorProxy remotely; serialization recursion prevents native shell execution.",
+          "evidence": "breadboard_engine/conductor/components.py:579-585; /tmp/opencode-e4-lanes-r4/auto_prune/bb_result.json",
+          "equal_override": "stock lsp:false; BB enhanced_tools.lsp_integration.enabled:false",
+          "approved_by": "Main"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r1/final_threshold/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 2,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r2/auto_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 691, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 680, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 460, in run_bb\n    result = agent.run_task(\"\\n\" + turn[\"prompt\"], max_iterations=40, stream=True, event_emitter=receive, context=context)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent.py\", line 519, in run_task\n    return self.agent.run_agentic_loop(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n        \"\",\n        ^^^\n    ...<15 lines>...\n        provider_profile=provider_profile,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/lib/python3.13/site-packages/ray/util/tracing/tracing_helper.py\", line 487, in _resume_span\n    return method(self, *_args, **_kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 6521, in run_agentic_loop\n    for message in build_initial_context(\n                   ~~~~~~~~~~~~~~~~~~~~~^\n        self, session_state, context, fresh=not resume_has_system,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        user_message=enhanced_user_msg,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ):\n    ^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/compilation/context_builders/__init__.py\", line 29, in build_initial_context\n    return callback(owner, state, run_context, fresh=fresh, user_message=user_message)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/compilation/context_builders/opencode_stock.py\", line 41, in build_context\n    native_request = prepare_stock_initial_user(owner, state)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 896, in prepare_stock_initial_user\n    request = session.user(stock_user_parts(raw_user[\"content\"]))\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 521, in user\n    return self.wait_pending()\n           ~~~~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 494, in wait_pending\n    self.check_alive()\n    ~~~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 428, in check_alive\n    raise StockExecutionError(self.failure or \"Stock OpenCode session is closed\")\nbreadboard_engine.execution.opencode_tools.StockExecutionError: Unknown root agent Hephaestus (Deep Agent)\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 7
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r3/auto_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r3/delegate_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_prune",
+      "counts": {
+        "stock": {
+          "requests": 18,
+          "compactions": 3,
+          "requests_with_pruned_output": 3
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 725, in <module>\n    out = out.resolve()\n    ^^^^^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 712, in main\n    fields = []\n    \n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 433, in run_stock\n    result = api(\"POST\", \"/session/\" + session_id + \"/message\", {\n        \"model\": {\"providerID\": \"openai\", \"modelID\": settings[\"model\"]},\n        \"parts\": [{\"type\": \"text\", \"text\": \"\\n\" + turn[\"prompt\"]}]})\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 372, in api\n    with urllib.request.urlopen(request, timeout=180) as response:\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 189, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1323, in do_open\n    r = h.getresponse()\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 1459, in getresponse\n    response.begin()\n    ~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 355, in begin\n    self.headers = self.msg = parse_headers(self.fp)\n                              ~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 253, in parse_headers\n    headers = _read_headers(fp)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 226, in _read_headers\n    line = fp.readline(_MAXLINE + 1)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/socket.py\", line 723, in readinto\n    return self._sock.recv_into(b)\n           ~~~~~~~~~~~~~~~~~~~~^^^\nTimeoutError: timed out\n"
+        },
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 863, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 852, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 456, in run_bb\n    raise ValueError(\"The stock run must supply its real sessionID before BB starts\")\nValueError: The stock run must supply its real sessionID before BB starts\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 11
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r3/final_threshold/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-closeout-r3/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 7,
+          "compactions": 3,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-deferred-recovery-r1/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 4,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 7,
+          "compactions": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-deferred-recovery-r2/auto_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-deferred-recovery-r2/delegate_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_prune",
+      "counts": {
+        "stock": {
+          "requests": 7,
+          "compactions": 0,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 7,
+          "compactions": 0,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "unconsumed_responses": 5
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 5
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-deferred-recovery-r2/final_threshold/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-deferred-recovery-r2/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 3,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 3,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-diagnostic-r3/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 3,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 713, in run_bb_queued_session\n    checkpoint = await asyncio.to_thread(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^\n        wait_stock_idle_checkpoint, native.api, session_id, base_url,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        following, turns[0][\"autonomous_responses\"][-1][\"text\"])\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/threads.py\", line 26, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 529, in wait_stock_idle_checkpoint\n    evidence = native_session_evidence(api, session_id)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 514, in native_session_evidence\n    children = api(\"GET\", \"/session/\" + session_id + \"/children\")\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 624, in api\n    self.check_alive()\n    ~~~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 587, in check_alive\n    raise StockExecutionError(self.failure or \"Stock OpenCode session is closed\")\nbreadboard_engine.execution.opencode_tools.StockExecutionError: Stock OpenCode session is closed\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1560, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1547, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url,\n                    args.stock_session_id, args.out / \"effective_episode_profile.json\",\n                    sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 786, in run_bb\n    return asyncio.run(run_bb_queued_session(\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n        settings, workspace, base_url, stock_session_id,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        materialize_episode_profile(settings, overrides, episode_profile_path)))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 196, in run\n    return runner.run(main)\n           ~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 119, in run\n    return self._loop.run_until_complete(task)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/base_events.py\", line 725, in run_until_complete\n    return future.result()\n           ~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 745, in run_bb_queued_session\n    \"events\": [event.model_dump(mode=\"json\") for event in record.event_log] if record is not None else [],\n               ^^^^^^^^^^^^^^^^\nAttributeError: 'SessionEvent' object has no attribute 'model_dump'\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 6
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-proof-r1/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1514, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1503, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 746, in run_bb\n    return asyncio.run(run_bb_queued_session(\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n        settings, workspace, base_url, stock_session_id, overrides))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 196, in run\n    return runner.run(main)\n           ~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 119, in run\n    return self._loop.run_until_complete(task)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/base_events.py\", line 725, in run_until_complete\n    return future.result()\n           ~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 662, in run_bb_queued_session\n    await service.create_session(\n    ...<2 lines>...\n        session_id=session_id)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/api/cli_bridge/service.py\", line 2524, in create_session\n    return await self._create_session(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    ...<8 lines>...\n    )\n    ^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/api/cli_bridge/service.py\", line 2610, in _create_session\n    retained_request_overrides = retained_runtime_overrides(\n        request.overrides, reject_unsupported=True\n    )\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/api/cli_bridge/runtime_emission.py\", line 365, in retained_runtime_overrides\n    raise ValueError(\n        f\"session override cannot be retained across restart: {joined}\"\n    )\nValueError: session override cannot be retained across restart: compaction.contextWindow, enhanced_tools.lsp_integration.enabled, providers.models[0].max_input_tokens, tools.stock_config, tools.stock_environment, tools.stock_session_imports\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 8
+        },
+        {
+          "side": "bb",
+          "unconsumed_auxiliary_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-proof-r2/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 3,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1531, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1518, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url,\n                    args.stock_session_id, args.out / \"effective_episode_profile.json\",\n                    sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 760, in run_bb\n    return asyncio.run(run_bb_queued_session(\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n        settings, workspace, base_url, stock_session_id,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        materialize_episode_profile(settings, overrides, episode_profile_path)))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 196, in run\n    return runner.run(main)\n           ~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 119, in run\n    return self._loop.run_until_complete(task)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/base_events.py\", line 725, in run_until_complete\n    return future.result()\n           ~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 700, in run_bb_queued_session\n    checkpoint = await asyncio.to_thread(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^\n        wait_stock_idle_checkpoint, native.api, session_id, base_url,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        following, turns[0][\"autonomous_responses\"][-1][\"text\"])\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/threads.py\", line 26, in to_thread\n    return await loop.run_in_executor(None, func_call)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/concurrent/futures/thread.py\", line 59, in run\n    result = self.fn(*self.args, **self.kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 529, in wait_stock_idle_checkpoint\n    evidence = native_session_evidence(api, session_id)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 514, in native_session_evidence\n    children = api(\"GET\", \"/session/\" + session_id + \"/children\")\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 624, in api\n    self.check_alive()\n    ~~~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 587, in check_alive\n    raise StockExecutionError(self.failure or \"Stock OpenCode session is closed\")\nbreadboard_engine.execution.opencode_tools.StockExecutionError: Stock OpenCode session is closed\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 6
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-proof-r4/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 0,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 5,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1553, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1540, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url,\n                    args.stock_session_id, args.out / \"effective_episode_profile.json\",\n                    sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 779, in run_bb\n    return asyncio.run(run_bb_queued_session(\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^\n        settings, workspace, base_url, stock_session_id,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n        materialize_episode_profile(settings, overrides, episode_profile_path)))\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 196, in run\n    return runner.run(main)\n           ~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/runners.py\", line 119, in run\n    return self._loop.run_until_complete(task)\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/asyncio/base_events.py\", line 725, in run_until_complete\n    return future.result()\n           ~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 716, in run_bb_queued_session\n    events = [event.model_dump(mode=\"json\") for event in record.event_log]\n              ^^^^^^^^^^^^^^^^\nAttributeError: 'SessionEvent' object has no attribute 'model_dump'\nQueued observation failed: AttributeError: 'SessionEvent' object has no attribute 'model_dump'\n"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-proof-r5/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 5,
+      "unresolved": [
+        {
+          "deviation_guard": "Runtime ID position substitution counts differ"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegate-idle-engine-proof-r6/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-delegated-r1/delegate_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_prune",
+      "counts": {
+        "stock": {
+          "requests": 12,
+          "compactions": 2,
+          "requests_with_pruned_output": 4
+        },
+        "bb": {
+          "requests": 1,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 685, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 674, in main\n    result = run_bb(args.harness, args.scenario, args.out / \"workspace\", args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 469, in run_bb\n    raise RuntimeError(f\"Production turn {index} failed: {result.get('completion_summary')}\")\nRuntimeError: Production turn 0 failed: {'completed': False, 'reason': 'run_loop_exception', 'error': {'type': 'runtime', 'message': 'run_loop_error'}}\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 11
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/auto_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/delegate_idle/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_idle",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/delegate_prune/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "delegate_prune",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 3
+        },
+        "bb": {
+          "requests": 11,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 3
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/final_threshold/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 4
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-final-serial-proof/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r1/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 4,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1882, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1867, in main\n    result = run_stock(args.harness, args.scenario, args.workspace, args.out / \"stock_runtime\", args.base_url, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 757, in run_stock\n    prune_fences.append(fence.wait())\n                        ~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 652, in wait\n    raise TimeoutError(\"Native prune-complete events did not arrive\")\nTimeoutError: Native prune-complete events did not arrive\n"
+        },
+        {
+          "side": "bb",
+          "error": "No successful tie-free stock oracle; BB not run"
+        },
+        {
+          "side": "stock",
+          "unconsumed_responses": 7
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-native-prune-fence-proof-r2/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 17,
+          "compactions": 4,
+          "summary_requests": 4,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": false,
+      "diff_count": 2,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Source idle/completed checkpoint did not match the scripted phase"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-diagnostic-r6/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1254, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1243, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 594, in run_bb\n    original_invoke = agent.agent.provider_invoker.invoke\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'NoneType' object has no attribute 'provider_invoker'\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 5
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-diagnostic-r7/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-final-r8/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-proof-r1/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 12,
+          "compactions": 0,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1117, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1104, in main\n    result = run_stock(args.harness, args.scenario, args.workspace, args.out / \"stock_runtime\", args.base_url, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 550, in run_stock\n    raise TimeoutError(f\"Stock scripted session did not finish: remaining={remaining}, status={status}, last={last}\")\nTimeoutError: Stock scripted session did not finish: remaining=0, status={'type': 'retry', 'attempt': 7, 'message': 'Mock provider script exhausted', 'next': 1791679323050}, last={'role': 'assistant', 'time': {'created': 1791679068744}, 'parentID': 'msg_12864fa47001sx8OvPkSmhvReV', 'modelID': 'gpt-5.1-codex-mini', 'providerID': 'openai', 'mode': 'Sisyphus (Ultraworker)', 'agent': 'Sisyphus (Ultraworker)', 'path': {'cwd': '/private/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/bb-opencode-lane-lnubuobx', 'root': '/'}, 'cost': 0, 'tokens': {'input': 0, 'output': 0, 'reasoning': 0, 'cache': {'read': 0, 'write': 0}}, 'id': 'msg_12864fa48001sgarLrtvYczihJ', 'sessionID': 'ses_ed79b20fcffe1cCQIEXoJEVJgj'}\n"
+        },
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1117, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1106, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 568, in run_bb\n    raise ValueError(\"The stock run must supply its real sessionID before BB starts\")\nValueError: The stock run must supply its real sessionID before BB starts\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 5
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-proof-r2/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 4,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-proof-r3/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 0,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1225, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1214, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 608, in run_bb\n    raise RuntimeError(f\"Production turn {index} failed: {result.get('completion_summary')}\")\nRuntimeError: Production turn 0 failed: {'completed': False, 'reason': 'run_loop_exception', 'error': {'type': 'runtime', 'message': 'run_loop_error'}}\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 3
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-proof-r4/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 4,
+          "compactions": 0,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1233, in <module>\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1222, in main\n    if args.child == \"stock\":\n                 ^^^^^^^^^^^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 599, in run_bb\n    result = agent.run_task(\"\\n\" + turn[\"prompt\"], max_iterations=40, stream=True, event_emitter=receive, context=context)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent.py\", line 519, in run_task\n    return self.agent.run_agentic_loop(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n        \"\",\n        ^^^\n    ...<15 lines>...\n        provider_profile=provider_profile,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/lib/python3.13/site-packages/ray/util/tracing/tracing_helper.py\", line 487, in _resume_span\n    return method(self, *_args, **_kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 6806, in run_agentic_loop\n    raise native_turn_error\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 6759, in run_agentic_loop\n    native_session.finish_run()\n    ~~~~~~~~~~~~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/execution/opencode_tools.py\", line 881, in finish_run\n    if missing:\n            ^^^\nbreadboard_engine.execution.opencode_tools.StockExecutionError: Stock parent turn did not finish after its run-boundary abort\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-plugin-error-proof-r5/plugin_error/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "plugin_error",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Production turn 0 failed: {'completed': False, 'reason': 'run_loop_exception', 'error': {'type': 'runtime', 'message': 'run_loop_error'}}"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 3
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/omo-symmetric-native-overflow-proof-r3/overflow/lane_report.json",
+      "harness": "oh-my-opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 11,
+          "compactions": 3,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-baseline-20261010/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 3,
+      "unresolved": [
+        {
+          "classification": "daily-driving outside compaction",
+          "defect": "Local LSPEnhancedSandbox wraps LocalActorProxy remotely; serialization recursion prevents native shell execution.",
+          "evidence": "breadboard_engine/conductor/components.py:579-585; /tmp/opencode-e4-lanes-r4/auto_prune/bb_result.json",
+          "equal_override": "stock lsp:false; BB enhanced_tools.lsp_integration.enabled:false",
+          "approved_by": "Main"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r1/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 261, in run_bb\n    result = agent.run_task(\"\\n\" + turn[\"prompt\"], max_iterations=40, stream=True, event_emitter=receive, context=context)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent.py\", line 519, in run_task\n    return self.agent.run_agentic_loop(\n           ~~~~~~~~~~~~~~~~~~~~~~~~~~~^\n        \"\",\n        ^^^\n    ...<15 lines>...\n        provider_profile=provider_profile,\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n    )\n    ^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/lib/python3.13/site-packages/ray/util/tracing/tracing_helper.py\", line 487, in _resume_span\n    return method(self, *_args, **_kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 6398, in run_agentic_loop\n    system_prompt = self._append_environment_prompt(system_prompt)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/lib/python3.13/site-packages/ray/util/tracing/tracing_helper.py\", line 487, in _resume_span\n    return method(self, *_args, **_kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 4932, in _append_environment_prompt\n    env_block = self._build_opencode_environment_block(file_limit=file_limit)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/lib/python3.13/site-packages/ray/util/tracing/tracing_helper.py\", line 487, in _resume_span\n    return method(self, *_args, **_kwargs)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent_llm_openai.py\", line 4964, in _build_opencode_environment_block\n    provider, api_model = provider_router.parse_model_id(model)\n    ^^^^^^^^^^^^^^^^^^^\nValueError: too many values to unpack (expected 2)\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 464, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 454, in main\n    result = run_bb(args.harness, args.scenario, args.out / \"workspace\", args.base_url, args.stock_session_id)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 272, in run_bb\n    agent.close()\n    ~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/breadboard_engine/agent.py\", line 626, in close\n    reference = self.agent.close_stock_tools.remote()\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAttributeError: 'function' object has no attribute 'remote'\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 3
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r2/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 1,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 2,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 2
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r3/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 3
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r4/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 3,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r5/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r6/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 4,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 4,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 5
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r6/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 1
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r6/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 2,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 2,
+      "unresolved": [
+        {
+          "side": "bb",
+          "unconsumed_responses": 3
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r7/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 1,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 691, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 680, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 470, in run_bb\n    raise RuntimeError(f\"Production turn {index} failed: {result.get('completion_summary')}\")\nRuntimeError: Production turn 0 failed: {'completed': False, 'reason': 'run_loop_exception', 'error': {'type': 'runtime', 'message': 'run_loop_error'}}\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 8
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r7/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r7/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 1,
+          "compactions": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "bb",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 691, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 680, in main\n    result = run_bb(args.harness, args.scenario, args.workspace, args.base_url, args.stock_session_id, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 470, in run_bb\n    raise RuntimeError(f\"Production turn {index} failed: {result.get('completion_summary')}\")\nRuntimeError: Production turn 0 failed: {'completed': False, 'reason': 'run_loop_exception', 'error': {'type': 'runtime', 'message': 'run_loop_error'}}\n"
+        },
+        {
+          "side": "bb",
+          "unconsumed_responses": 4
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r8/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r8/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r8/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r9/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r9/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-closeout-r9/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-current-production-proof-r3/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-current-production-proof-r3/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-current-production-proof-r3/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 16,
+          "compactions": 0,
+          "summary_requests": 3,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1619, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1604, in main\n    result = run_stock(args.harness, args.scenario, args.workspace, args.out / \"stock_runtime\", args.base_url, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 580, in run_stock\n    result = api(\"POST\", \"/session/\" + session_id + \"/message\", {\n        \"model\": {\"providerID\": \"openai\", \"modelID\": settings[\"model\"]},\n        \"parts\": [{\"type\": \"text\", \"text\": \"\\n\" + turn[\"prompt\"]}]})\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 490, in api\n    with urllib.request.urlopen(request, timeout=180) as response:\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 189, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1323, in do_open\n    r = h.getresponse()\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 1459, in getresponse\n    response.begin()\n    ~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 355, in begin\n    self.headers = self.msg = parse_headers(self.fp)\n                              ~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 253, in parse_headers\n    headers = _read_headers(fp)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 226, in _read_headers\n    line = fp.readline(_MAXLINE + 1)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/socket.py\", line 723, in readinto\n    return self._sock.recv_into(b)\n           ~~~~~~~~~~~~~~~~~~~~^^^\nTimeoutError: timed out\n"
+        },
+        {
+          "side": "bb",
+          "error": "No successful tie-free stock oracle; BB not run"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 10,
+          "compactions": 0,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 0,
+          "compactions": 0,
+          "summary_requests": 0,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": false,
+      "diff_count": 1,
+      "unresolved": [
+        {
+          "side": "stock",
+          "error": "Traceback (most recent call last):\n  File \"<frozen runpy>\", line 203, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1619, in <module>\n    main()\n    ~~~~^^\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 1604, in main\n    result = run_stock(args.harness, args.scenario, args.workspace, args.out / \"stock_runtime\", args.base_url, sessions, args.mcp_relay)\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 580, in run_stock\n    result = api(\"POST\", \"/session/\" + session_id + \"/message\", {\n        \"model\": {\"providerID\": \"openai\", \"modelID\": settings[\"model\"]},\n        \"parts\": [{\"type\": \"text\", \"text\": \"\\n\" + turn[\"prompt\"]}]})\n  File \"/Users/kylemccleary/projects/breadboard-compaction-e4-engine/scripts/compaction_lanes/opencode_lane.py\", line 490, in api\n    with urllib.request.urlopen(request, timeout=180) as response:\n         ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 189, in urlopen\n    return opener.open(url, data, timeout)\n           ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/urllib/request.py\", line 1323, in do_open\n    r = h.getresponse()\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 1459, in getresponse\n    response.begin()\n    ~~~~~~~~~~~~~~^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 355, in begin\n    self.headers = self.msg = parse_headers(self.fp)\n                              ~~~~~~~~~~~~~^^^^^^^^^\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 253, in parse_headers\n    headers = _read_headers(fp)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/http/client.py\", line 226, in _read_headers\n    line = fp.readline(_MAXLINE + 1)\n  File \"/Users/kylemccleary/.local/share/uv/python/cpython-3.13.14-macos-aarch64-none/lib/python3.13/socket.py\", line 723, in readinto\n    return self._sock.recv_into(b)\n           ~~~~~~~~~~~~~~~~~~~~^^^\nTimeoutError: timed out\n"
+        },
+        {
+          "side": "bb",
+          "error": "No successful tie-free stock oracle; BB not run"
+        }
+      ],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof-r2/auto_prune/lane_report.json",
+      "harness": "opencode",
+      "scenario": "auto_prune",
+      "counts": {
+        "stock": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        },
+        "bb": {
+          "requests": 9,
+          "compactions": 2,
+          "summary_requests": 2,
+          "requests_with_pruned_output": 2
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof-r2/final_threshold/lane_report.json",
+      "harness": "opencode",
+      "scenario": "final_threshold",
+      "counts": {
+        "stock": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 3,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    },
+    {
+      "report": "artifacts/compaction_lanes/opencode-final-serial-proof-r2/overflow/lane_report.json",
+      "harness": "opencode",
+      "scenario": "overflow",
+      "counts": {
+        "stock": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        },
+        "bb": {
+          "requests": 5,
+          "compactions": 1,
+          "summary_requests": 1,
+          "requests_with_pruned_output": 0
+        }
+      },
+      "passed": true,
+      "diff_count": 0,
+      "unresolved": [],
+      "not_current_acceptance": true
+    }
+  ],
+  "auxiliary_evidence": [
+    "artifacts/compaction_lanes/omo-authenticated-native-overflow-probe/native_auth_probe_report.json",
+    "artifacts/compaction_lanes/omo-mcp-stock-order-proof/order_report.json",
+    "artifacts/compaction_lanes/omo-delegate-idle-stock-proof-r1/stock_proof.json",
+    "artifacts/compaction_lanes/opencode-native-catalog-20261010/stock_result.json",
+    "artifacts/compaction_lanes/native-stock-defects/prompt_async_missing_parts.json",
+    "artifacts/compaction_lanes/native-stock-defects/recovery_timer_prune_race.json"
+  ],
+  "production_followthrough_files_owned_by_peer": [
+    "breadboard_engine/execution/opencode_tools.py",
+    "breadboard_engine/execution/stock_tools.py",
+    "breadboard_engine/security/launch_policy.py",
+    "breadboard_engine/api/cli_bridge/service.py",
+    "breadboard_engine/api/cli_bridge/task_execution.py",
+    "breadboard_engine/api/cli_bridge/session_lifecycle.py",
+    "sdk/ts-kernel-contracts/src/generated/registry.ts",
+    "sdk/ts-kernel-contracts/src/generated/types/bb.agent_config_surface.v2.ts",
+    "tests/compilation/test_native_prompt_capabilities.py",
+    "tests/compaction/test_opencode_stock_arguments.py",
+    "tests/compaction/test_opencode_stock_omo_groups.py",
+    "tests/compaction/test_opencode_stock_lifecycle.py",
+    "tests/compaction/test_opencode_stock_pty_isolation.py",
+    "tests/compaction/test_opencode_stock_queued_compaction.py",
+    "tests/compaction/test_opencode_stock_recovery_handled.py"
+  ],
+  "files_changed_ownership_note": "Own/previous OpenCode-lane packet changes are listed in files_changed; coordinated subsequent production follow-through owned by OpenCodeToolsSurgeon is listed separately, with peer proof explicitly credited."
+}

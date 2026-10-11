@@ -607,7 +607,13 @@ class RuntimeEventProjector:
             product_session = getattr(self.session, "product_session", None)
             if (
                 product_session is None
-                or product_session.read_model.status != "running"
+                or (
+                    product_session.read_model.status != "running"
+                    and not (
+                        product_session.concurrent_approvals is True
+                        and product_session.read_model.status == "awaiting_approval"
+                    )
+                )
             ):
                 raise RuntimeProtocolError("runtime_protocol_error")
             event = product_session.compact(snapshot)

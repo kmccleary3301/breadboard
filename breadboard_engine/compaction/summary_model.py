@@ -60,6 +60,13 @@ class ConductorSummaryModel:
         self.requests_sent = 0
 
     def complete(self, request: SummaryRequest) -> SummaryResponse:
+        projection = None
+        configured = (self.agent_config.get("prompts") or {}).get("summary_projection")
+        if configured is not None:
+            from ..compilation.context_builders import load_context_callback
+
+            projection = load_context_callback(configured, "build_summary_projection")(self.session_state, self.agent_config)
+            request = projection.prepare(request)
         model = request.model or self.model
         budget = {} if request.max_tokens is None else {"max_tokens": request.max_tokens}
         tools = [copy.deepcopy(dict(tool)) for tool in request.tools]
@@ -140,4 +147,12 @@ class ConductorSummaryModel:
         )
         finish_reason = next((message.finish_reason for message in reversed(result.messages)
                               if getattr(message, "role", "assistant") == "assistant"), None)
-        return SummaryResponse(text=text, usage=result.usage, model=result.model or model, finish_reason=finish_reason)
+        response = SummaryResponse(text=text, usage=result.usage, model=result.model or model,
+                                   finish_reason=finish_reason,
+                                   provider_result=result if projection is not None else None)
+        if projection is None:
+            return response
+        continuation = projection.complete(response)
+        return SummaryResponse(text=text, usage=result.usage, model=result.model or model,
+                               finish_reason=finish_reason, provider_result=result,
+                               continuation_messages=None if continuation is None else tuple(continuation))

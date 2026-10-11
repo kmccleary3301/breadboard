@@ -95,6 +95,13 @@ class OpenAIAdapter(ProviderAdapter):
             if isinstance(provider_routing, dict)
             else {}
         )
+        # Dated native catalogs may carry a complete Responses tool, including
+        # hosted tools and namespaces that cannot be expressed as Chat functions.
+        responses_schema = provider_config.get("responses_tool_schema")
+        if isinstance(responses_schema, dict):
+            from copy import deepcopy
+
+            return deepcopy(responses_schema)
         additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
             additional_props = None
@@ -185,6 +192,13 @@ class OpenAIAdapter(ProviderAdapter):
     
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         """Create OpenAI-expected tool result message"""
+        if (isinstance(result, dict) and result.get("__mvi_native_responses_output") is True
+                and isinstance(result.get("__mvi_content_output"), list)):
+            from .contract_messages import responses_image_tool_result_message
+
+            return responses_image_tool_result_message(
+                call_id, result["__mvi_content_output"], provider_id=self.get_provider_id(),
+            )
         content: str
         if isinstance(result, dict) and isinstance(result.get("__mvi_text_output"), str):
             content = str(result["__mvi_text_output"])
@@ -214,7 +228,8 @@ class OpenRouterAdapter(OpenAIAdapter):
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         msg = super().create_tool_result_message(call_id, tool_name, result)
         # Some OpenRouter upstream providers (e.g. Azure) expect `call_id` for tool results.
-        msg["call_id"] = call_id
+        if msg.get("role") == "tool":
+            msg["call_id"] = call_id
         return msg
 
     def get_provider_id(self) -> str:
@@ -243,6 +258,11 @@ class AnthropicAdapter(ProviderAdapter):
             if isinstance(provider_routing, dict)
             else {}
         )
+        messages_schema = provider_config.get("messages_tool_schema")
+        if isinstance(messages_schema, dict):
+            from copy import deepcopy
+
+            return deepcopy(messages_schema)
 
         additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
@@ -313,8 +333,52 @@ class AnthropicAdapter(ProviderAdapter):
         # based on their actual response format
         return []
     
+    def create_tool_result_batch_message(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Bind all stock results to one lossless continuation in stock order."""
+        from .anthropic_replay import TOOL_RESULT_SCHEMA, replay_messages
+        from .contract_messages import canonical_json
+        from .contract_wire import ProviderContractError
+
+        if not isinstance(messages, list):
+            raise ProviderContractError("native tool continuation requires a message list")
+        blocks = []
+        for message in messages:
+            for native in message.get("content", []):
+                if isinstance(native, dict) and native.get("type") == "tool_result":
+                    content = native["content"]
+                    blocks.append({"type": "tool_result", "call_id": native["tool_use_id"],
+                                   "content": content if isinstance(content, str) else canonical_json(content),
+                                   "is_error": native.get("is_error", False)})
+        blocks.append({"type": "provider_replay", "provider_id": "anthropic",
+                       "schema_version": TOOL_RESULT_SCHEMA, "replay_scope": "same_provider",
+                       "payload": {"messages": messages}})
+        replay_messages(blocks)
+        return {"role": "tool", "content": blocks}
+
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         """Record a correlated tool result; the runtime encodes Anthropic wire blocks."""
+        if isinstance(result, dict) and "__claude_tool_result_messages" in result:
+            from .anthropic_replay import TOOL_RESULT_SCHEMA, replay_messages
+            from .contract_messages import canonical_json
+            from .contract_wire import ProviderContractError
+
+            messages = result["__claude_tool_result_messages"]
+            if not isinstance(messages, list):
+                raise ProviderContractError("native tool continuation requires a message list")
+            native_results = [block for message in messages for block in message.get("content", [])
+                              if isinstance(block, dict) and block.get("type") == "tool_result"]
+            if len(native_results) != 1 or native_results[0].get("tool_use_id") != call_id:
+                raise ProviderContractError("native tool continuation call id mismatch")
+            native = native_results[0]
+            content = native["content"]
+            blocks = [{"type": "tool_result", "call_id": call_id,
+                       "content": content if isinstance(content, str) else canonical_json(content),
+                       "is_error": native.get("is_error", False)},
+                      {"type": "provider_replay", "provider_id": "anthropic",
+                       "schema_version": TOOL_RESULT_SCHEMA, "replay_scope": "same_provider",
+                       "payload": {"messages": messages}}]
+            replay_messages(blocks)
+            return {"role": "tool", "content": blocks}
         if isinstance(result, dict) and isinstance(result.get("__mvi_text_output"), str):
             content = str(result["__mvi_text_output"])
         elif isinstance(result, dict):

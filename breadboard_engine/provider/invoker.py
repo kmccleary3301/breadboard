@@ -96,6 +96,12 @@ class ProviderInvoker:
             stream=bool(stream_responses),
             messages=send_messages,
             tools=list(tools_schema or []),
+            _tool_api_variant=(
+                "responses"
+                if getattr(descriptor, "default_api_variant", None) == "responses"
+                and ((runtime_context.agent_config or {}).get("provider_tools") or {}).get("api_variant") == "responses"
+                else None
+            ),
         )
         recorder = ProviderExchangeRecorder(
             correlation=correlation,

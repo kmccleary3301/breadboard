@@ -174,6 +174,14 @@ def run_main_loop(
     loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
     max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
     consecutive_empty_responses = 0
+    native_codex_goals = (
+        ((getattr(self, "config", None) or {}).get("tools") or {}).get("native_semantics")
+        == "codex_0_139"
+    )
+    if native_codex_goals:
+        from ..execution.codex_agents import begin_codex_goal, sync_codex_goal
+
+        begin_codex_goal(self, session_state)
 
     def poll_control_stop() -> bool:
         """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
@@ -211,6 +219,9 @@ def run_main_loop(
         extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Finalize loop execution by recording summary, snapshot, and return payload."""
+
+        if native_codex_goals:
+            sync_codex_goal(self, session_state)
 
         steps_taken = (step_index + 1) if step_index >= 0 else 0
         summary: Dict[str, Any] = dict(session_state.completion_summary or {})
@@ -685,6 +696,8 @@ def run_main_loop(
             # first error is raised exactly as before.
             compaction_ctrl = getattr(self, "compaction_controller", None)
             if compaction_ctrl is not None:
+                if getattr(compaction_ctrl, "tracks_sampling_phase", False) is True:
+                    compaction_ctrl.sampling_phase = "pre_turn" if step_index == 0 else "mid_turn"
                 compaction_ctrl.begin_request()
             while True:
                 try:
@@ -770,6 +783,9 @@ def run_main_loop(
                     session_state.set_provider_metadata("usage_totals", totals)
                 except Exception:
                     pass
+            if native_codex_goals:
+                sync_codex_goal(self, session_state)
+
 
             if provider_result.encrypted_reasoning:
                 for payload in provider_result.encrypted_reasoning:

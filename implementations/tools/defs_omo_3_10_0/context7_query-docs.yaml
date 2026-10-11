@@ -1,0 +1,99 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: context7_query-docs
+name: context7_query-docs
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Retrieves and queries up-to-date documentation and code examples from Context7 for any programming
+  library or framework.
+
+
+  You must call ''Resolve Context7 Library ID'' tool first to obtain the exact Context7-compatible library ID required
+  to use this tool, UNLESS the user explicitly provides a library ID in the format ''/org/project'' or ''/org/project/version''
+  in their query.
+
+
+  Do not call this tool more than 3 times per question.
+
+
+  If you know the programming language the user is working in, pass it as `language` so the results match their
+  setup.'
+parameters:
+- name: libraryId
+  required: true
+  schema: &id001
+    type: string
+    description: Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase',
+      '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve-library-id' or directly from user query in the
+      format '/org/project' or '/org/project/version'.
+  type: string
+  description: Exact Context7-compatible library ID (e.g., '/mongodb/docs', '/vercel/next.js', '/supabase/supabase',
+    '/vercel/next.js/v14.3.0-canary.87') retrieved from 'resolve-library-id' or directly from user query in the
+    format '/org/project' or '/org/project/version'.
+- name: query
+  required: true
+  schema: &id002
+    type: string
+    description: 'What to look up in the library''s documentation, scoped to a single concept. Be specific and include
+      relevant details, but keep each query to one topic — if the user''s question spans multiple distinct concepts,
+      make a separate call per concept instead of combining them, unless the question is about how the concepts
+      interact. Good: ''How to set up authentication with JWT in Express.js'' or ''React useEffect cleanup function
+      examples''. Bad (too vague): ''auth'' or ''hooks''. Bad (too broad): ''routing and auth and caching in Next.js''.
+      The query is sent to the Context7 API for processing. Do not include any sensitive or confidential information
+      such as API keys, passwords, credentials, personal data, or proprietary code in your query.'
+  type: string
+  description: 'What to look up in the library''s documentation, scoped to a single concept. Be specific and include
+    relevant details, but keep each query to one topic — if the user''s question spans multiple distinct concepts,
+    make a separate call per concept instead of combining them, unless the question is about how the concepts interact.
+    Good: ''How to set up authentication with JWT in Express.js'' or ''React useEffect cleanup function examples''.
+    Bad (too vague): ''auth'' or ''hooks''. Bad (too broad): ''routing and auth and caching in Next.js''. The query
+    is sent to the Context7 API for processing. Do not include any sensitive or confidential information such as
+    API keys, passwords, credentials, personal data, or proprietary code in your query.'
+- name: language
+  required: false
+  schema: &id003
+    description: Programming language the user is writing code in, such as 'Python', 'TypeScript', 'Go', or 'C#'.
+      Ranks code examples in that language first. Leave it out when the language is unknown or does not apply.
+    type: string
+  type: string
+  description: Programming language the user is writing code in, such as 'Python', 'TypeScript', 'Go', or 'C#'.
+    Ranks code examples in that language first. Leave it out when the language is unknown or does not apply.
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: context7_query-docs
+      description: 'Retrieves and queries up-to-date documentation and code examples from Context7 for any programming
+        library or framework.
+
+
+        You must call ''Resolve Context7 Library ID'' tool first to obtain the exact Context7-compatible library
+        ID required to use this tool, UNLESS the user explicitly provides a library ID in the format ''/org/project''
+        or ''/org/project/version'' in their query.
+
+
+        Do not call this tool more than 3 times per question.
+
+
+        If you know the programming language the user is working in, pass it as `language` so the results match
+        their setup.'
+      parameters:
+        type: object
+        properties:
+          libraryId: *id001
+          query: *id002
+          language: *id003
+        required:
+        - libraryId
+        - query
+        $schema: https://json-schema.org/draft/2020-12/schema
+        additionalProperties: false
+      strict: false

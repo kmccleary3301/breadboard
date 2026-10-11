@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import os
 from functools import cache
 from pathlib import Path
@@ -239,7 +240,8 @@ def _authority_payload(tmp_path: Path) -> dict[str, object]:
     runtime_inputs = {
         "cwd": str(tmp_path),
         "home": str(scratch / "home"),
-        "current_date": "2026-09-23",
+        # Local noon of 2026-09-23 in this process's (inherited) time zone.
+        "message_timestamp_ms": str(int(datetime.fromisoformat("2026-09-23T12:00:00").timestamp() * 1000)),
         "package_dir": str(package_dir),
     }
     return {
@@ -872,6 +874,44 @@ def test_installed_worker_renders_route_model_line_with_pinned_compat(tmp_path: 
         assert request["messages"][0] == {"role": "system", "content": initialized["system_prompt"]}
     finally:
         worker.stop()
+
+
+
+@pytest.mark.skipif(
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+@pytest.mark.parametrize(("tz", "instant_ms"), [
+    ("Pacific/Kiritimati", 1_791_633_600_000),  # 2026-10-10T12:00Z = 2026-10-11 local (+14)
+    ("Pacific/Pago_Pago", 1_791_608_400_000),  # 2026-10-10T05:00Z = 2026-10-09 local (-11)
+])
+def test_reminder_date_is_stock_local_date_of_admitted_instant(tmp_path: Path, tz: str, instant_ms: int) -> None:
+    spec = _runtime_spec()
+    stock = subprocess.run(
+        [spec.bun, "-e", "const { formatLocalCalendarDate } = await import(process.argv[1]);"
+         "console.log(formatLocalCalendarDate(new Date(Number(process.argv[2]))));",
+         f"{spec.source_root}/packages/coding-agent/src/utils/local-date.ts", str(instant_ms)],
+        env={**os.environ, "TZ": tz}, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    utc_date = datetime.fromtimestamp(instant_ms / 1000, timezone.utc).date().isoformat()
+    assert stock != utc_date
+    payload = _authority_payload(tmp_path)
+    payload["runtime_inputs"]["message_timestamp_ms"] = str(instant_ms)
+    worker = NativeToolWorker(cwd=str(tmp_path), env={"TZ": tz}, spec=spec)
+    try:
+        initialized = worker.phase("initialize", {
+            "task": "date", "model_config": _lease_model(),
+            "advertisement": {"bounded_description_policy": _description_policy(),
+                              "model_registry": _model_registry(), "capability_denials": _test_denials()},
+            **payload,
+        })
+        assert initialized["bootstrap"]["current_date"] == stock
+        request = worker.phase("project_request", {"messages": [{"role": "user", "content": "do", "timestamp": 0}]})
+    finally:
+        worker.stop()
+    reminders = re.findall(r"Today: (\d{4}-\d{2}-\d{2});", json.dumps(request["messages"]))
+    assert reminders == [stock]
 
 
 def _sample_conversation_messages() -> list[dict[str, Any]]:
@@ -1919,6 +1959,7 @@ async def test_conductor_large_tool_batch_compacts_from_stored_floor_and_matches
         action_timeout_ms=plan.effective_capabilities.limits.action_timeout_ms,
         episode_timeout_seconds=120, compaction_checkpoints=frozenset({"before_request"}),
         assistant_usage_phase="parse_usage",
+        runtime_input_names=native_stream_profiles.NATIVE_STREAM_PROFILES[omp_semantics.CONSUMER_ID].runtime_input_names,
     )
     monkeypatch.setattr(native_stream_profiles, "NATIVE_STREAM_PROFILES", {profile.consumer_id: profile})
     monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", {profile.consumer_id: profile})

@@ -976,8 +976,148 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_stream_prompt = system_prompt
         self._native_accept_truncated_stream = accept_truncated_stream
 
+    def _require_provider_exchanges(self) -> OpenAICompletionsProviderProfile:
+        target = self._target_projection
+        profile = self._profile
+        source = NATIVE_STREAM_PROFILES.get(target.renderer_id) if target is not None else None
+        if (
+            self._native_binding is None
+            or profile is None
+            or source is None
+            or not source.provider_exchanges
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchanges are not admitted",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return profile
+
+    def native_provider_configuration(self) -> Mapping[str, Any]:
+        """Private worker initialization headers; never public configuration or traces.
+
+        Source SDK clients for declared provider exchanges construct themselves from
+        these real bound headers. The transport replaces the Authorization header
+        with the profile credential on send, so worker-held values never reach the wire.
+        """
+        profile = self._require_provider_exchanges()
+        return {
+            "headers": {
+                **dict(profile.caller_headers),
+                "Authorization": "Bearer " + profile.scoped_credential,
+            }
+        }
+
+    def _stage_native_provider_exchange(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        profile = self._require_provider_exchanges()
+        source = NATIVE_STREAM_PROFILES[self._target_projection.renderer_id]
+        exchange = request.get("provider_exchange")
+        if exchange not in source.provider_exchanges:
+            raise RunnerPolicyBindingError(
+                "native provider exchange is not admitted",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        expected_url = profile.base_url.rstrip("/") + "/" + exchange
+        if (
+            set(request) != {"provider_exchange", "method", "url", "header_names", "body_b64"}
+            or request["method"] != "POST"
+            or request["url"] != expected_url
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchange route differs from its binding",
+                code="native_http_route_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        # The transport adds caller headers and the profile Authorization on send
+        # (OpenAIChatRuntime.send_native_http_request); only Content-Type is staged.
+        expected_names = sorted(
+            {"content-type", "authorization"}
+            | {name.lower() for name in profile.caller_headers}
+        )
+        header_names = request["header_names"]
+        if (
+            type(header_names) is not list
+            or any(type(name) is not str for name in header_names)
+            or sorted(name.lower() for name in header_names) != expected_names
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchange header names differ from its binding",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        try:
+            body_b64 = request["body_b64"]
+            encoded = body_b64.encode("ascii") if type(body_b64) is str else b""
+            body = base64.b64decode(encoded, validate=True)
+            if (
+                not body
+                or len(body) > _MAX_NATIVE_HTTP_REQUEST_BYTES
+                or base64.b64encode(body) != encoded
+            ):
+                raise ValueError
+            payload = json.loads(body.decode("utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {"model", "input"}
+                or type(payload["model"]) is not str
+                or not payload["model"]
+                or type(payload["input"]) is not list
+                or not payload["input"]
+                or any(type(item) is not str for item in payload["input"])
+            ):
+                raise ValueError
+        except (UnicodeDecodeError, ValueError):
+            raise RunnerProtocolError(
+                "native provider exchange body is invalid",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            ) from None
+        public_request = {
+            "model": self._observation.model_id,
+            "native_http_request": {
+                "provider_exchange": exchange,
+                "method": "POST",
+                "url": expected_url,
+                "body_b64": body_b64,
+                "header_names": sorted(name.lower() for name in header_names),
+            },
+        }
+        request_digest = canonical_sha256(public_request)
+        with self._state_lock:
+            if self._native_pending is not None or self._native_private_responses:
+                raise RunnerProtocolError(
+                    "native provider exchange is already pending",
+                    code="native_http_request_duplicate",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            if self._closed or self._closing or self._cancelled.is_set():
+                raise RunnerDependencyError(
+                    "episode provider client is closed",
+                    code="provider_client_closed",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            self._native_pending = _PendingNativeHTTPRequest(
+                method="POST",
+                url=expected_url,
+                headers=(("Content-Type", "application/json"),),
+                body=body,
+                request_payload=public_request,
+                request_digest=request_digest,
+            )
+        return public_request
+
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Admit exactly one source SDK HTTP request without exposing its headers."""
+        if isinstance(request, Mapping) and "provider_exchange" in request:
+            return self._stage_native_provider_exchange(request)
         target = self._target_projection
         profile = self._profile
         if (
@@ -1329,6 +1469,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 if (
                     self._max_requests is not None
                     and not request.compaction_summary
+                    and "provider_exchange" not in pending.request_payload["native_http_request"]
                     and self._request_attempts >= self._max_requests
                 ):
                     raise RunnerDependencyError(
@@ -1342,7 +1483,11 @@ class EpisodeOpenAICompletionsPolicyClient:
 
                 def run() -> Any:
                     with self._state_lock:
-                        if not request.compaction_summary:
+                        if (
+                            not request.compaction_summary
+                            and "provider_exchange"
+                            not in pending.request_payload["native_http_request"]
+                        ):
                             self._request_attempts += 1
                     return self._runtime.send_native_http_request(
                         client=self._transport,
@@ -1490,6 +1635,9 @@ class EpisodeOpenAICompletionsPolicyClient:
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
+        native_http = request.request_payload.get("native_http_request")
+        if isinstance(native_http, Mapping) and "provider_exchange" in native_http:
+            return await self._invoke_native_http(request)
         if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_CONSUMERS:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(

@@ -20,6 +20,11 @@ from .contract_wire import (
 from .profiles import validate_wire_model
 
 
+def _reject_native_json_constant(value):
+    # Python accepts these extensions; stock JSON.parse rejects them.
+    raise ValueError(f"Invalid JSON constant: {value}")
+
+
 @dataclass
 class ProviderToolCall:
     """Normalized provider tool call used by runtime adapters.
@@ -27,6 +32,8 @@ class ProviderToolCall:
     ``arguments`` remains the canonical JSON string consumed by existing
     execution paths. ``arguments_json`` is the same canonical spelling, while
     ``parsed_arguments`` owns the lossless JSON value used by exchange v2.
+    Native execution may opt into ``allow_raw_arguments``. Malformed JSON then
+    remains lexical text in ``raw_arguments`` and has no parsed JSON value.
     """
 
     id: Optional[str]
@@ -35,6 +42,8 @@ class ProviderToolCall:
     type: str = "function"
     raw: Any = None
     arguments_json: Optional[str] = None
+    allow_raw_arguments: bool = False
+    raw_arguments: Optional[str] = None
     parsed_arguments: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -43,6 +52,19 @@ class ProviderToolCall:
         if self.name is not None:
             self.name = _require_text(self.name, "tool name")
 
+        if self.raw_arguments is not None:
+            if not self.allow_raw_arguments or not isinstance(self.raw_arguments, str):
+                raise ProviderContractError("raw tool arguments require explicit native admission")
+            if len(self.raw_arguments) > 65536:
+                raise ProviderContractError("raw tool arguments exceed the contract bound")
+            if self.arguments is not None or self.arguments_json is not None:
+                raise ProviderContractError("raw tool arguments cannot include parsed JSON arguments")
+            self.arguments = self.raw_arguments
+            self.parsed_arguments = None
+            self.type = _require_text(self.type, "tool call type")
+            if self.type != "function":
+                raise ProviderContractError(f"unsupported tool call type: {self.type!r}")
+            return
         if self.arguments_json is not None:
             if not isinstance(self.arguments_json, str):
                 raise ProviderContractError("arguments_json must be text")
@@ -69,9 +91,20 @@ class ProviderToolCall:
             parsed = {}
         elif isinstance(self.arguments, str):
             try:
-                parsed = json.loads(self.arguments)
+                parsed = json.loads(self.arguments, parse_constant=(
+                    _reject_native_json_constant if self.allow_raw_arguments else None
+                ))
             except (TypeError, ValueError):
-                raise ProviderContractError("malformed tool call arguments") from None
+                if not self.allow_raw_arguments:
+                    raise ProviderContractError("malformed tool call arguments") from None
+                if len(self.arguments) > 65536:
+                    raise ProviderContractError("raw tool arguments exceed the contract bound")
+                self.raw_arguments = self.arguments
+                self.parsed_arguments = None
+                self.type = _require_text(self.type, "tool call type")
+                if self.type != "function":
+                    raise ProviderContractError(f"unsupported tool call type: {self.type!r}")
+                return
         else:
             parsed = _canonical_value(self.arguments)
 
@@ -88,6 +121,8 @@ class ProviderToolCall:
     def as_dict(self) -> Dict[str, Any]:
         if self.id is None or self.name is None:
             raise ProviderContractError("completed tool call requires id and name")
+        if self.raw_arguments is not None:
+            return {"call_id": self.id, "name": self.name, "raw_arguments": self.raw_arguments}
         return {
             "call_id": self.id,
             "name": self.name,
@@ -231,6 +266,11 @@ class ProviderMessage:
             result["message_id"] = _require_text(
                 self.message_id, "message_id", max_length=256
             )
+        phase = self.annotations.get("phase")
+        if phase is not None:
+            if self.role != "assistant" or phase not in ("commentary", "final_answer"):
+                raise ProviderContractError("message.phase requires an assistant commentary or final_answer")
+            result["phase"] = phase
         return result
 
 
@@ -255,6 +295,22 @@ def normalize_content(content: Any, *, role: str = "assistant") -> List[Dict[str
                 raise ProviderContractError("text block requires text")
             blocks.append({"type": "text", "text": payload["text"]})
         elif block_type == "media":
+            if block.get("kind") == "codex_image_url":
+                payload = _strict_dict(
+                    block, field_name="Codex image URL",
+                    allowed={"type", "kind", "uri", "detail"},
+                )
+                if role != "user":
+                    raise ProviderContractError("media blocks require the user role")
+                uri = payload.get("uri")
+                if not isinstance(uri, str):
+                    raise ProviderContractError("Codex image URL must be text")
+                detail = payload.get("detail", "high")
+                if detail not in {"auto", "low", "high", "original"}:
+                    raise ProviderContractError("invalid Codex image detail")
+                blocks.append({"type": "media", "kind": "codex_image_url",
+                               "uri": uri, "detail": detail})
+                continue
             payload = _strict_dict(
                 block,
                 field_name="media block",
@@ -318,6 +374,7 @@ def normalize_content(content: Any, *, role: str = "assistant") -> List[Dict[str
                     "name",
                     "arguments",
                     "arguments_json",
+                    "raw_arguments",
                     "tool_type",
                     "type_name",
                 },
@@ -336,6 +393,7 @@ def normalize_content(content: Any, *, role: str = "assistant") -> List[Dict[str
             if (
                 "arguments" not in payload
                 and "arguments_json" not in payload
+                and "raw_arguments" not in payload
             ):
                 raise ProviderContractError(
                     "tool call requires explicit arguments"
@@ -363,6 +421,8 @@ def normalize_content(content: Any, *, role: str = "assistant") -> List[Dict[str
                 arguments=payload.get("arguments"),
                 arguments_json=arguments_json,
                 type=tool_type,
+                raw_arguments=payload.get("raw_arguments"),
+                allow_raw_arguments="raw_arguments" in payload,
             )
             blocks.append({"type": "tool_call", **call.as_dict()})
         elif block_type == "tool_result":
@@ -441,6 +501,108 @@ def _sanitize_replay(replay: Mapping[str, Any]) -> Dict[str, Any]:
     replay_payload = payload.get("payload")
     if not isinstance(replay_payload, Mapping):
         raise ProviderContractError("provider replay payload must be an object")
+    if provider_id in {"openai", "openrouter"} and schema_version == "openai.responses.hosted.v1":
+        # Stock protocol/src/models.rs:869-879,1193-1220.
+        if scope != "same_provider":
+            raise ProviderContractError("hosted search requires same-provider replay")
+        hosted = _strict_dict(replay_payload, field_name="hosted search",
+                              allowed={"type", "status", "action"})
+        if hosted.get("type") != "web_search_call":
+            raise ProviderContractError("unsupported hosted replay type")
+        if "status" in hosted and not isinstance(hosted["status"], str):
+            raise ProviderContractError("hosted search status must be text")
+        if "action" in hosted:
+            action = hosted["action"]
+            if not isinstance(action, Mapping) or not isinstance(action.get("type"), str):
+                raise ProviderContractError("hosted search action requires a type")
+            fields = {"search": {"query", "queries"}, "open_page": {"url"},
+                      "find_in_page": {"url", "pattern"}, "other": set()}
+            if action["type"] not in fields:
+                raise ProviderContractError("unsupported hosted search action")
+            _strict_dict(action, field_name="hosted search action",
+                         allowed={"type", *fields[action["type"]]})
+            for field, value in action.items():
+                if field == "queries":
+                    if not isinstance(value, list) or any(not isinstance(query, str) for query in value):
+                        raise ProviderContractError("hosted search queries must be a text array")
+                elif not isinstance(value, str):
+                    raise ProviderContractError("hosted search action fields must be text")
+        canonical_json(hosted)
+        return {"provider_id": provider_id, "schema_version": schema_version,
+                "replay_scope": scope, "payload": hosted}
+    if provider_id in {"openai", "openrouter"} and schema_version == "openai.responses.tool_output.v1":
+        if scope != "same_provider":
+            raise ProviderContractError("native tool outputs require same-provider replay")
+        native = _strict_dict(
+            replay_payload, field_name="native tool output", allowed={"type", "call_id", "output"},
+        )
+        if native.get("type") != "function_call_output":
+            raise ProviderContractError("unsupported native tool output type")
+        _require_text(native.get("call_id"), "native tool output call_id", max_length=256)
+        if not isinstance(native.get("output"), list):
+            raise ProviderContractError("native tool output requires a content-item array")
+        for item in native["output"]:
+            if not isinstance(item, Mapping):
+                raise ProviderContractError("native tool content items must be objects")
+            kind = item.get("type")
+            if kind == "input_image":
+                image = _strict_dict(item, field_name="native output image",
+                                     allowed={"type", "image_url", "detail"})
+                if not isinstance(image.get("image_url"), str):
+                    raise ProviderContractError("native output image_url must be text")
+                if ("detail" in image and (not isinstance(image["detail"], str)
+                                           or image["detail"] not in {"auto", "low", "high", "original"})):
+                    raise ProviderContractError("invalid native output image detail")
+            elif kind == "input_text":
+                text = _strict_dict(item, field_name="native output text", allowed={"type", "text"})
+                if not isinstance(text.get("text"), str):
+                    raise ProviderContractError("native output text must be text")
+            else:
+                raise ProviderContractError("unsupported native tool content item")
+        canonical_json(native)
+        return {"provider_id": provider_id, "schema_version": schema_version,
+                "replay_scope": scope, "payload": native}
+    if provider_id in {"openai", "openrouter"} and schema_version == "openai.responses.tools.v1":
+        # Stock protocol/src/models.rs:807-841. This typed envelope is produced
+        # only by the explicitly selected custom/client-search runtime paths.
+        if scope != "same_provider":
+            raise ProviderContractError("native tool calls require same-provider replay")
+        kind = replay_payload.get("type")
+        if kind == "custom_tool_call":
+            required = {"type", "call_id", "name", "input"}
+        elif kind == "tool_search_call":
+            required = {"type", "call_id", "execution", "arguments"}
+        elif kind == "function_call":
+            required = {"type", "call_id", "name", "arguments"}
+        else:
+            raise ProviderContractError("unsupported native tool replay type")
+        native = _strict_dict(
+            replay_payload, field_name="native tool replay",
+            allowed=required | ({"namespace"} if kind == "function_call" else {"status"}),
+        )
+        if not required.issubset(native):
+            raise ProviderContractError("native tool replay requires its protocol fields")
+        _require_text(native["call_id"], "native tool call_id", max_length=256)
+        if "status" in native and not isinstance(native["status"], str):
+            raise ProviderContractError("native tool status must be text or omitted")
+        if kind in {"custom_tool_call", "function_call"}:
+            _require_text(native["name"], "native tool name", max_length=256)
+            field = "input" if kind == "custom_tool_call" else "arguments"
+            if not isinstance(native[field], str):
+                raise ProviderContractError(f"native tool {field} must be text")
+            if "namespace" in native and not isinstance(native["namespace"], str):
+                raise ProviderContractError("native tool namespace must be text or omitted")
+        elif not isinstance(native["execution"], str):
+            raise ProviderContractError("tool-search execution must be text")
+        canonical_json(native)
+        return {"provider_id": provider_id, "schema_version": schema_version,
+                "replay_scope": scope, "payload": native}
+    if provider_id == "anthropic" and schema_version == "anthropic.messages.tool_result.v1":
+        if scope != "same_provider" or set(replay_payload) != {"messages"}:
+            raise ProviderContractError("invalid native tool continuation envelope")
+        canonical_json(replay_payload)
+        return {"provider_id": provider_id, "schema_version": schema_version,
+                "replay_scope": scope, "payload": dict(replay_payload)}
     if set(replay_payload) - {
         "encrypted_content",
         "signature",
@@ -480,6 +642,17 @@ def _sanitize_replay(replay: Mapping[str, Any]) -> Dict[str, Any]:
 def normalize_provider_replay(replay: Mapping[str, Any]) -> Dict[str, Any]:
     """Validate and bound one provider-native replay envelope."""
     return _sanitize_replay(replay)
+
+
+def responses_image_tool_result_message(
+    call_id: str, output: List[Dict[str, Any]], *, provider_id: str = "openai",
+) -> Dict[str, Any]:
+    """Carry stock typed image output through the canonical request boundary."""
+    return {"role": "tool_result", "content": [{
+        "type": "provider_replay", "provider_id": provider_id,
+        "schema_version": "openai.responses.tool_output.v1", "replay_scope": "same_provider",
+        "payload": {"type": "function_call_output", "call_id": call_id, "output": output},
+    }]}
 
 
 @dataclass
@@ -557,6 +730,7 @@ class ProviderRequest:
     messages: List[Dict[str, Any]]
     tools: List[Dict[str, Any]]
     _wire_strict: bool = field(default=False, repr=False, compare=False)
+    _tool_api_variant: Optional[str] = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         if not isinstance(self.stream, bool):
@@ -571,7 +745,8 @@ class ProviderRequest:
             return
         self.messages = normalize_request_messages(self.messages)
         self.tools = [
-            _normalize_tool_schema(tool, index) for index, tool in enumerate(self.tools)
+            _normalize_tool_schema(tool, index, api_variant=self._tool_api_variant)
+            for index, tool in enumerate(self.tools)
         ]
 
     def as_dict(self) -> Dict[str, Any]:
@@ -634,6 +809,8 @@ def normalize_request_messages(
                 "reasoning_content",
                 "reasoning",
                 "reasoning_details",
+                "phase",
+                "_provider_tool_batch",
             },
         )
         original_role = message.get("role")
@@ -674,9 +851,13 @@ def normalize_request_messages(
                 else []
             )
         if is_tool_transport and not isinstance(content_raw, str):
-            if not blocks or any(
-                block.get("type") != "tool_result" for block in blocks
-            ):
+            if any(block.get("type") == "provider_replay" for block in blocks):
+                if not all(block.get("schema_version") == "openai.responses.tool_output.v1"
+                           and block.get("provider_id") in {"openai", "openrouter"} for block in blocks):
+                    from .anthropic_replay import replay_messages
+
+                    replay_messages(blocks)
+            elif not blocks or any(block.get("type") != "tool_result" for block in blocks):
                 raise ProviderContractError(
                     "tool-result messages require correlated tool_result content"
                 )
@@ -738,6 +919,16 @@ def normalize_request_messages(
                 }
             )
         normalized: Dict[str, Any] = {"role": role, "content": blocks}
+        phase = message.get("phase")
+        if phase is not None:
+            if role != "assistant" or phase not in ("commentary", "final_answer"):
+                raise ProviderContractError("message.phase requires an assistant commentary or final_answer")
+            normalized["phase"] = phase
+        if "_provider_tool_batch" in message:
+            batch = message["_provider_tool_batch"]
+            if role != "assistant" or type(batch) is not int or batch < 0:
+                raise ProviderContractError("message._provider_tool_batch requires an assistant nonnegative integer")
+            normalized["_provider_tool_batch"] = batch
         message_id = _coalesce_text_fields(
             message,
             ("message_id", "id"),
@@ -749,9 +940,74 @@ def normalize_request_messages(
     return result
 
 
-def _normalize_tool_schema(tool: Any, index: int) -> Dict[str, Any]:
+def _normalize_tool_schema(tool: Any, index: int, *, api_variant: Optional[str] = None) -> Dict[str, Any]:
     if not isinstance(tool, Mapping):
         raise ProviderContractError(f"request.tools[{index}] must be an object")
+    if api_variant == "responses" and "function" not in tool and tool.get("type") in {
+        "function", "namespace", "web_search", "custom", "tool_search",
+    }:
+        field_name = f"request.tools[{index}]"
+        kind = tool["type"]
+        if kind == "function":
+            function = _strict_dict(
+                tool, field_name=field_name,
+                allowed={"type", "name", "description", "parameters", "strict", "defer_loading"},
+            )
+            if not isinstance(function.get("parameters"), Mapping):
+                raise ProviderContractError(f"{field_name}.parameters must be an object")
+            if "strict" in function and not isinstance(function["strict"], bool):
+                raise ProviderContractError(f"{field_name}.strict must be boolean")
+            if "defer_loading" in function and not isinstance(function["defer_loading"], bool):
+                raise ProviderContractError(f"{field_name}.defer_loading must be boolean")
+            # Validate the function contract without changing its flat wire shape.
+            _normalize_tool_schema({
+                key: value for key, value in function.items() if key not in {"type", "defer_loading"}
+            }, index)
+        elif kind == "namespace":
+            namespace = _strict_dict(
+                tool, field_name=field_name,
+                allowed={"type", "name", "description", "tools"},
+            )
+            _require_text(namespace.get("name"), f"{field_name}.name", max_length=256)
+            if "description" in namespace:
+                _require_text(namespace["description"], f"{field_name}.description", max_length=16384)
+            children = namespace.get("tools")
+            if not isinstance(children, list):
+                raise ProviderContractError(f"{field_name}.tools must be an array")
+            for child_index, child in enumerate(children):
+                if not isinstance(child, Mapping) or child.get("type") != "function" or "function" in child:
+                    raise ProviderContractError(f"{field_name}.tools[{child_index}] must be a flat function")
+                _normalize_tool_schema(child, child_index, api_variant="responses")
+        elif kind == "custom":
+            custom = _strict_dict(tool, field_name=field_name,
+                                  allowed={"type", "name", "description", "format"})
+            _require_text(custom.get("name"), f"{field_name}.name", max_length=256)
+            if "description" in custom:
+                _require_text(custom["description"], f"{field_name}.description", max_length=16384)
+            grammar = _strict_dict(custom.get("format"), field_name=f"{field_name}.format",
+                                   allowed={"type", "syntax", "definition"})
+            if grammar.get("type") != "grammar" or grammar.get("syntax") != "lark":
+                raise ProviderContractError(f"{field_name}.format must be a lark grammar")
+            _require_text(grammar.get("definition"), f"{field_name}.format.definition", max_length=16384)
+        elif kind == "tool_search":
+            search = _strict_dict(tool, field_name=field_name,
+                                  allowed={"type", "execution", "description", "parameters"})
+            if search.get("execution") != "client":
+                raise ProviderContractError(f"{field_name}.execution must be client")
+            _require_text(search.get("description"), f"{field_name}.description", max_length=16384)
+            if not isinstance(search.get("parameters"), Mapping):
+                raise ProviderContractError(f"{field_name}.parameters must be an object")
+        else:
+            hosted = _strict_dict(
+                tool, field_name=field_name, allowed={"type", "external_web_access", "search_content_types"},
+            )
+            if "external_web_access" in hosted and not isinstance(hosted["external_web_access"], bool):
+                raise ProviderContractError(f"{field_name}.external_web_access must be boolean")
+            if "search_content_types" in hosted:
+                kinds = hosted["search_content_types"]
+                if not isinstance(kinds, list) or any(kind not in ("text", "image") for kind in kinds):
+                    raise ProviderContractError(f"{field_name}.search_content_types must list text or image")
+        return json.loads(canonical_json(dict(tool)))
     if "function" in tool:
         wrapped = _strict_dict(
             tool,

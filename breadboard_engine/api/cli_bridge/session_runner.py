@@ -125,6 +125,8 @@ class SessionRunner:
         self.agent_factory = agent_factory or self._default_factory
         self._task: Optional[asyncio.Task[None]] = None
         self._agent: Optional[Any] = None
+        self._agent_close_lock = asyncio.Lock()
+        self._agent_closed = False
         self._stop_event = asyncio.Event()
         self._resume_event = asyncio.Event()
         self._resume_event.set()
@@ -146,6 +148,7 @@ class SessionRunner:
         self._active_attachment_capabilities: Dict[str, Dict[str, Any]] = {}
         self._active_input_media: List[Dict[str, str]] = []
         self._permission_queue: Any = None
+        self._stock_input_controller: Any = None
         self.permission_authority: PermissionAuthority = (
             permission_authority or PermissionBroker()
         )
@@ -202,6 +205,14 @@ class SessionRunner:
             permission_projection=self._control_controller.rehydrate_pending_permissions,
         )
         self._lifecycle_owner = SessionLifecycleOwner(self, self._task_execution)
+
+    def bind_stock_inputs(self, submit: Callable[..., Awaitable[Any]]) -> None:
+        """Bind the stock producer to existing input admission, never user transport."""
+        from ...execution.stock_tools import native_concurrent_prompts
+        if not native_concurrent_prompts(self.prepare_runtime_config()):
+            return
+        from .stock_inputs import StockInputController
+        self._stock_input_controller = StockInputController(self, submit)
 
     def bind_durable_product_session(
         self,
@@ -896,6 +907,16 @@ class SessionRunner:
             advance_queue=False,
         )
 
+    async def _close_agent(self) -> None:
+        """Close owned agent resources once at the session boundary."""
+        async with self._agent_close_lock:
+            if self._agent_closed or self._agent is None:
+                return
+            close = getattr(self._agent, "close", None)
+            if callable(close):
+                await asyncio.to_thread(close)
+            self._agent_closed = True
+
     async def stop(
         self,
         reason: str = "operator request",
@@ -903,6 +924,7 @@ class SessionRunner:
         terminalize_admitted_turns: bool = True,
     ) -> None:
         if self._closed:
+            await self._close_agent()
             return
         async with self.session.admission_lock:
             self.session.admission_closed = True
@@ -910,6 +932,7 @@ class SessionRunner:
             self._task is None or not self._start_authority.is_set()
         )
         self._request_stop(reason)
+        await self._close_agent()
         if self._task and not self._start_authority.is_set():
             self._task.cancel()
         if self._task and not self._task.done():
@@ -1190,6 +1213,7 @@ class SessionRunner:
         turn_id: Optional[str] = None,
         module_input: ModuleInput | None = None,
         module_input_sequence: int | None = None,
+        stock_origin: dict | None = None,
         defer_execution: Optional[
             Callable[[Callable[[], Awaitable[None]]], None]
         ] = None,
@@ -1240,6 +1264,10 @@ class SessionRunner:
                 "input_id": input_id,
                 "turn_id": turn_id,
             }
+            if stock_origin is not None:
+                if self._stock_input_controller is None:
+                    raise RuntimeError("Stock-origin input requires the dated local session producer")
+                self._stock_input_controller.origins[turn_id] = stock_origin
             if module_input is not None:
                 payload["module_input"] = module_input
                 payload["module_input_sequence"] = module_input_sequence
@@ -1583,7 +1611,14 @@ class SessionRunner:
                     value = existing + [item for item in value if item not in existing]
                 overrides[key] = value
         self.request.overrides = overrides
-        self._prepared_runtime_config = apply_dotted_overrides(base_cfg, overrides)
+        prepared = apply_dotted_overrides(base_cfg, overrides)
+        from breadboard_engine.execution.stock_tools import admit_stock_execution_mode
+        admit_stock_execution_mode(
+            prepared,
+            local=bool(self.session.metadata.get("cli_force_local_mode", True))
+            or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1",
+        )
+        self._prepared_runtime_config = prepared
         if isinstance(self._model_role_lock, Mapping):
             self._prepared_runtime_config["model_role_lock"] = dict(
                 self._model_role_lock
@@ -1723,8 +1758,11 @@ class SessionRunner:
         try:
             await self._lifecycle_owner.run()
         finally:
-            await self._close_module_resources("session_terminal")
-            await self._release_generation_admission()
+            try:
+                await self._close_agent()
+            finally:
+                await self._close_module_resources("session_terminal")
+                await self._release_generation_admission()
 
     async def _terminalize_admitted_turns(
         self,

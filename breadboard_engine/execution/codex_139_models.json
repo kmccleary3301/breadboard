@@ -1,0 +1,27 @@
+{
+  "gpt-5.5": {
+    "supports_image_detail_original": true,
+    "truncation_policy": {"mode": "tokens", "limit": 10000},
+    "web_search_tool_type": "text_and_image"
+  },
+  "gpt-5.4": {
+    "supports_image_detail_original": true,
+    "truncation_policy": {"mode": "tokens", "limit": 10000},
+    "web_search_tool_type": "text_and_image"
+  },
+  "gpt-5.4-mini": {
+    "supports_image_detail_original": true,
+    "truncation_policy": {"mode": "tokens", "limit": 10000},
+    "web_search_tool_type": "text_and_image"
+  },
+  "gpt-5.3-codex": {
+    "supports_image_detail_original": true,
+    "truncation_policy": {"mode": "tokens", "limit": 10000},
+    "web_search_tool_type": "text"
+  },
+  "gpt-5.2": {
+    "supports_image_detail_original": false,
+    "truncation_policy": {"mode": "bytes", "limit": 10000},
+    "web_search_tool_type": "text"
+  }
+}

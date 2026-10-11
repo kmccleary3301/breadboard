@@ -1,0 +1,49 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: create_goal
+name: create_goal
+description: 'Create a goal only when explicitly requested by the user or system/developer instructions; do not
+  infer goals from ordinary tasks.
+
+  Set token_budget only when an explicit token budget is requested. Fails if a goal exists; use update_goal only
+  for status.'
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: objective
+  type: string
+  required: true
+  schema: &id001
+    type: string
+    description: Required. The concrete objective to start pursuing. This starts a new active goal only when no
+      goal is currently defined; if a goal already exists, this tool fails.
+- name: token_budget
+  type: integer
+  required: false
+  schema: &id002
+    type: integer
+    description: Positive token budget for the new goal. Omit unless explicitly requested.
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: create_goal
+      description: 'Create a goal only when explicitly requested by the user or system/developer instructions; do
+        not infer goals from ordinary tasks.
+
+        Set token_budget only when an explicit token budget is requested. Fails if a goal exists; use update_goal
+        only for status.'
+      strict: false
+      parameters:
+        type: object
+        properties:
+          objective: *id001
+          token_budget: *id002
+        required:
+        - objective
+        additionalProperties: false

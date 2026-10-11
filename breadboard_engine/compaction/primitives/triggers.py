@@ -166,6 +166,7 @@ class TriggerInput:
     max_input_tokens: Optional[int] = None
     blocked: bool = False
     checkpoint: Optional[str] = None
+    last_assistant_is_summary: bool = False
 
 
 @dataclass(frozen=True)
@@ -271,7 +272,48 @@ class EventCountTrigger:
         )
 
 
-TRIGGER_KINDS = {ThresholdTrigger.kind: ThresholdTrigger, EventCountTrigger.kind: EventCountTrigger}
+class PendingErrorTrigger:
+    """Arm on a parsed provider error, then recover at the final-answer checkpoint."""
+
+    kind = "pending_error"
+
+    def __init__(self, params: Params) -> None:
+        self.phase = params.choice("phase", ("assistant_step_end",))
+        self.error_parser = params.compaction_callable("error_parser")
+        self.skip_summary_last = params.bool("skip_summary_last", True)
+        self.max_attempts = params.int("max_attempts", minimum=1)
+        if self.max_attempts is None:
+            raise PresetError(f"{params.where}.max_attempts must be a positive integer")
+        params.done()
+        self.pending: Optional[Mapping[str, int]] = None
+        self.attempts = 0
+
+    def arm(self, error: Any) -> None:
+        parsed = self.error_parser(error)
+        if parsed is not None:
+            self.pending = parsed
+
+    def clear(self) -> None:
+        self.pending = None
+        self.attempts = 0
+
+    def consume(self) -> Optional[Mapping[str, int]]:
+        if self.pending is not None:
+            self.attempts += 1
+        return self.pending
+
+    def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
+        in_phase = data.checkpoint == self.phase
+        if in_phase and (
+            self.skip_summary_last and data.last_assistant_is_summary
+            or self.attempts >= self.max_attempts
+        ):
+            self.clear()
+        return Pressure(self.pending is not None and in_phase and not data.blocked,
+                        None, 0, self.kind, "soft", in_phase)
+
+
+TRIGGER_KINDS = {cls.kind: cls for cls in (ThresholdTrigger, EventCountTrigger, PendingErrorTrigger)}
 
 
 def build_trigger(params: Params) -> Any:

@@ -568,6 +568,7 @@ class OMPSemanticsState:
         case_id: str | None = None,
         capability_denials: Mapping[str, Mapping[str, Any]] | None = None,
         cwd: str | None = None,
+        current_date: str | None = None,
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
@@ -577,6 +578,8 @@ class OMPSemanticsState:
         self.request_cap = request_cap
         self.worker = worker
         self.cwd = cwd
+        # Worker-observed stock date (formatLocalCalendarDate of the admitted instant).
+        self.current_date = current_date
         self.case_id = case_id
         self.capability_denials = {
             str(key): dict(value)
@@ -981,6 +984,11 @@ class OMPSemanticsState:
             "native_stop_reason": self.native_stop_reason,
         }
         request_bodies = [dict(body) for body in requests]
+        recorded_inputs = dict(runtime_inputs)
+        if self.current_date is not None:
+            if "current_date" in recorded_inputs:
+                raise ValueError("current_date is observed at initialize, not declared")
+            recorded_inputs["current_date"] = self.current_date
         return {
             "schema_version": "bb.e4.omp-replay-trace.v1",
             "profile": "omp",
@@ -988,7 +996,7 @@ class OMPSemanticsState:
             "case_id": self.case_id,
             "request_count": len(request_bodies),
             "requests": request_bodies,
-            "runtime_inputs": dict(runtime_inputs),
+            "runtime_inputs": recorded_inputs,
             "effects": dict(effects),
             "native_responses": [dict(response) for response in self.native_responses],
             "exit": termination,

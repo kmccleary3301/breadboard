@@ -46,7 +46,8 @@
           "properties": {
             "effective_lock_hash": { "$ref": "#/$defs/sha256" },
             "task_hash": { "$ref": "#/$defs/sha256" },
-            "lineage": { "$ref": "#/$defs/lineage" }
+            "lineage": { "$ref": "#/$defs/lineage" },
+            "concurrent_approvals": { "const": true }
           }
         },
         {
@@ -63,7 +64,8 @@
             "task_hash": { "$ref": "#/$defs/sha256" },
             "module_input": { "$ref": "#/$defs/moduleInput" },
             "module_input_sequence": { "type": "integer", "minimum": 0 },
-            "lineage": { "$ref": "#/$defs/lineage" }
+            "lineage": { "$ref": "#/$defs/lineage" },
+            "concurrent_approvals": { "const": true }
           }
         }
       ]

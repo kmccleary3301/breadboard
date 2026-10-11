@@ -174,6 +174,11 @@ class SessionLifecycleOwner:
                 host._input_queue.task_done()
                 state.input_inflight = False
                 break
+            from .stock_inputs import StockInputAdmissionFailure
+            if isinstance(next_input, StockInputAdmissionFailure):
+                host._input_queue.task_done()
+                state.input_inflight = False
+                raise next_input
             await host._resume_event.wait()
             if host._stop_event.is_set():
                 host._input_queue.task_done()
@@ -284,6 +289,18 @@ class SessionLifecycleOwner:
             )
             execution_completed = bool(completion_summary.get("completed"))
             terminal_execution = one_shot or completion_reason == "final_output"
+            continue_failed_turn = (
+                result.get("_validated_failed_exchange") is True
+                and not terminal_execution and not host._stop_event.is_set()
+            )
+            stock_inputs = getattr(host, "_stock_input_controller", None)
+            if (
+                one_shot and execution_completed and stock_inputs is not None
+                and await stock_inputs.headless_should_continue()
+            ):
+                # Stock run.ts awaits its prompt until the root queue reaches
+                # idle, including genuine notifications queued before that idle.
+                terminal_execution = False
             failure_code = _safe_runtime_error_code(
                 completion_reason,
                 default="runtime_failure",
@@ -294,7 +311,7 @@ class SessionLifecycleOwner:
             with host._product_session_lock:
                 product_session = getattr(host.session, "product_session", None)
                 if product_session is None:
-                    durable_success = execution_completed or (
+                    durable_success = execution_completed or continue_failed_turn or (
                         turn_was_cancelled and not terminal_execution
                     )
                 else:
@@ -309,7 +326,7 @@ class SessionLifecycleOwner:
                         if execution_completed:
                             if terminal_execution:
                                 host.transition_product_session("complete")
-                        else:
+                        elif not continue_failed_turn:
                             host.transition_product_session(
                                 "fail",
                                 failure_code,

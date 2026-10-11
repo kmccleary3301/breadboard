@@ -1,0 +1,97 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: ast_grep_search
+name: ast_grep_search
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Search code patterns across filesystem using AST-aware matching. Supports 25 languages. Use meta-variables:
+  $VAR (single node), $$$ (multiple nodes). IMPORTANT: Patterns must be complete AST nodes (valid code). For functions,
+  include params and body: ''export async function $NAME($$$) { $$$ }'' not ''export async function $NAME''. Examples:
+  ''console.log($MSG)'', ''def $FUNC($$$):'', ''async function $NAME($$$)'''
+parameters:
+- name: pattern
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: lang
+  required: true
+  schema: &id002
+    type: string
+    enum:
+    - bash
+    - c
+    - cpp
+    - csharp
+    - css
+    - elixir
+    - go
+    - haskell
+    - html
+    - java
+    - javascript
+    - json
+    - kotlin
+    - lua
+    - nix
+    - php
+    - python
+    - ruby
+    - rust
+    - scala
+    - solidity
+    - swift
+    - typescript
+    - tsx
+    - yaml
+  type: string
+- name: paths
+  required: false
+  schema: &id003
+    type: array
+    items:
+      type: string
+  type: array
+- name: globs
+  required: false
+  schema: &id004
+    type: array
+    items:
+      type: string
+  type: array
+- name: context
+  required: false
+  schema: &id005
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: ast_grep_search
+      description: 'Search code patterns across filesystem using AST-aware matching. Supports 25 languages. Use
+        meta-variables: $VAR (single node), $$$ (multiple nodes). IMPORTANT: Patterns must be complete AST nodes
+        (valid code). For functions, include params and body: ''export async function $NAME($$$) { $$$ }'' not ''export
+        async function $NAME''. Examples: ''console.log($MSG)'', ''def $FUNC($$$):'', ''async function $NAME($$$)'''
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          pattern: *id001
+          lang: *id002
+          paths: *id003
+          globs: *id004
+          context: *id005
+        required:
+        - pattern
+        - lang
+        additionalProperties: false
+      strict: false

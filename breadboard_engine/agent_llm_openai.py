@@ -406,6 +406,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         self._retained_ctree_raw_fact_ids: tuple[str, ...] = ()
         self._multi_agent_last_wakeup_event_id = 0
 
+    def close_stock_tools(self) -> None:
+        from .execution.stock_tools import close_stock_sessions
+
+        close_stock_sessions(self)
+
     def _restore_retained_ctree(
         self, session_state: SessionState, session_id: str
     ) -> None:
@@ -497,9 +502,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
     ) -> None:
         if not session_state.can_persist_compaction():
             return
+        from .execution.stock_tools import native_concurrent_prompts
         if (
             not had_retained_product_context
             and not session_state.has_persisted_compaction()
+            and not native_concurrent_prompts(self.config)
         ):
             return
         session_state.persist_compaction_snapshot(
@@ -4935,7 +4942,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         is_git = bool(git_root)
         platform = sys.platform
         date_str = datetime.now().strftime("%a %b %d %Y")
-        tree_text = self._opencode_tree(workspace, limit=file_limit) if is_git else ""
+        env_cfg = (self.config.get("prompts") or {}).get("environment") or {}
+        tree_text = self._opencode_tree(workspace, limit=file_limit) if is_git and env_cfg.get("include_tree", True) else ""
+        files_tag = env_cfg.get("files_tag", "files")
         lines = [
             "Here is some useful information about the environment you are running in:",
             "<env>",
@@ -4944,10 +4953,15 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             f"  Platform: {platform}",
             f"  Today's date: {date_str}",
             "</env>",
-            "<files>",
+            f"<{files_tag}>",
             f"  {tree_text}",
-            "</files>",
+            f"</{files_tag}>",
         ]
+        if env_cfg.get("include_model_identity") is True:
+            # OpenCode system.ts:33,41-50; no model-name heuristics.
+            model = self.config["providers"]["default_model"]
+            provider, api_model, _route_kind = provider_router.parse_model_id(model)
+            lines.insert(0, f"You are powered by the model named {api_model}. The exact model ID is {provider}/{api_model}")
         return "\n".join(lines)
 
     @staticmethod
@@ -5304,6 +5318,23 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         name = tool_call["function"]
         args = tool_call["arguments"]
 
+        if (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139":
+            from .execution.codex_exec import execute_codex_tool
+
+            return execute_codex_tool(self, name, args)
+
+        if (self.config.get("tools") or {}).get("native_semantics") == "claude_code_2_1_63":
+            from .execution.claude_tools import execute_claude_tool
+
+            return execute_claude_tool(self, name, args, tool_call=tool_call)
+
+        if (self.config.get("tools") or {}).get("native_semantics") in {
+            "opencode_1_2_17", "oh_my_opencode_3_10_0",
+        }:
+            from .execution.opencode_tools import execute_opencode_tool
+
+            return execute_opencode_tool(self, name, args, tool_call=tool_call)
+
         registry = registry_from_config(getattr(self, "config", None))
         normalized = registry.resolve_name(name.lower())
         declared_tool = registry.tools_by_name.get(name)
@@ -5321,7 +5352,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             # Stock bash.ts:193-205,263-270 sends combined process output,
             # not a serialized sandbox result or generic shell reminders.
             command = f"(\n{command}\n) 2>&1"
-            result = self._ray_get(self.sandbox.run.remote(command, timeout=timeout_ms / 1000.0, stream=False))
+            run_options = {"timeout": timeout_ms / 1000.0, "stream": False}
+            if declared_tool.execution.get("explicit_zero_timeout") is True:
+                run_options["explicit_zero_timeout"] = True
+            result = self._ray_get(self.sandbox.run.remote(command, **run_options))
             result["__mvi_text_output"] = result.get("stdout", "") + result.get("stderr", "")
             return result
 
@@ -6442,6 +6476,12 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             meta = resume_snapshot.get("provider_metadata")
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
+            if (self.config.get("resume") or {}).get("restore_compaction_state") is True:
+                from .compaction.state import CompactionState
+                records = resume_snapshot.get("compaction_state", [])
+                if not isinstance(records, list):
+                    raise ValueError("Resume compaction_state must be a record list")
+                session_state.compaction_state = CompactionState.from_list(records)
             resume_ctree_events = resume_snapshot.get("ctree_events")
             resume_retained_raw_fact_ids = resume_snapshot.get(
                 "retained_raw_fact_ids",
@@ -6472,7 +6512,38 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state.set_provider_metadata("post_required_tool_extra_call_blocks", 0)
         if not resume_has_system:
             session_state.add_message(enhanced_system_msg)
+        if (self.config.get("tools") or {}).get("native_semantics") in {
+            "opencode_1_2_17", "oh_my_opencode_3_10_0",
+        }:
+            from .execution.stock_tools import native_concurrent_prompts
+            self._opencode_stock_input_handler = (
+                context.get("opencode_stock_input_handler") if native_concurrent_prompts(self.config) else None
+            )
+            self._opencode_stock_headless = (
+                native_concurrent_prompts(self.config)
+                and context.get("opencode_stock_headless") is True
+            )
+            stock_origin = context.get("opencode_stock_origin") if native_concurrent_prompts(self.config) else None
+            session_state.set_provider_metadata("opencode_stock_origin", stock_origin)
+            session_state.set_provider_metadata("opencode_stock_turn_origin", stock_origin)
+            session_state.set_provider_metadata(
+                "opencode_stock_raw_user", copy.deepcopy(enhanced_user_msg)
+            )
+        if (self.config.get("prompts") or {}).get("initial_context") is not None:
+            from .compilation.context_builders import build_initial_context
+            for message in build_initial_context(
+                self, session_state, context, fresh=not resume_has_system,
+                user_message=enhanced_user_msg,
+            ):
+                session_state.add_message(message)
+        if (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139":
+            from .execution.codex_agents import prepare_codex_input_message
+
+            prepare_codex_input_message(self, enhanced_user_msg)
         session_state.add_message(enhanced_user_msg)
+        compaction_ctrl = getattr(self, "compaction_controller", None)
+        if getattr(compaction_ctrl, "tracks_sampling_phase", False) is True:
+            compaction_ctrl.pending_user_index = len(session_state.provider_messages) - 1
         
         # Configure native tools and tool prompt mode
         native_pref_hint = getattr(self, "_native_preference_hint", None)
@@ -6691,6 +6762,16 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
         finally:
+            native_turn_error = None
+            if (self.config.get("tools") or {}).get("native_semantics") in {
+                "opencode_1_2_17", "oh_my_opencode_3_10_0",
+            }:
+                native_session = getattr(session_state, "_opencode_tool_session", None)
+                if native_session is not None:
+                    try:
+                        native_session.finish_run()
+                    except Exception as exc:
+                        native_turn_error = exc
             profile_client = getattr(session_state, "_episode_provider_client", None)
             if profile_client is not None:
                 try:
@@ -6734,6 +6815,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
             self._active_session_state = None
+            if native_turn_error is not None:
+                raise native_turn_error
         # Defensive: always return a dict result
         if not isinstance(run_result, dict):
             completion_summary = session_state.completion_summary or {}
@@ -6750,6 +6833,16 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "completion_summary": completion_summary,
                 "completion_reason": completion_summary.get("reason", "no_result"),
                 "completed": bool(completion_summary.get("completed", False)),
+            }
+        if (
+            (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139"
+            and getattr(self, "_codex_agent_id", None) is not None
+        ):
+            # Stock resumes the thread's Compacted rollout records, not its
+            # unprojected messages alone (rollout_reconstruction.rs:112-126).
+            run_result["_codex_session_snapshot"] = {
+                "messages": copy.deepcopy(session_state.provider_messages),
+                "compaction_state": session_state.compaction_state.to_list(),
             }
         try:
             run_dir = getattr(self.logger_v2, "run_dir", None)

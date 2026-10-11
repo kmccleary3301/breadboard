@@ -1,0 +1,14 @@
+[package]
+name = "breadboard-codex-image"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Codex a7dff904 Cargo.lock:8064-8067 and utils/image/Cargo.toml:11-14.
+[dependencies]
+image = { version = "=0.25.9", default-features = false, features = ["jpeg", "png", "gif", "webp"] }
+mime_guess = "=2.0.5"
+
+[[bin]]
+name = "breadboard-codex-image"
+path = "main.rs"

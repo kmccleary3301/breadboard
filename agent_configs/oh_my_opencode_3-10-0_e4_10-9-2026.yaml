@@ -1,9 +1,9 @@
-# Catalog refresh 2026-10-09: identical to oh_my_opencode_3-10-0_e4_9-10-2026.yaml plus the harness's native
-# context compaction (preset oh-my-opencode@3.10.0, native default settings) and the model window.
+# Native OpenCode 1.2.17 plus oh-my-opencode 3.10.0 at 5137df72.
+# Earlier dated profiles and immutable E4 target assets remain unchanged.
 # oh-my-opencode E4 reference config
 # Captured against oh-my-opencode 3.10.0 and calibrated on the Phase 8 async/subagent replay lane.
 # Catalog refreshed 2026-09-10; the profile name below retains the capture-era date.
-# This file is fully standalone by design: no `extends`, no hidden prompt refs, and no gitignored assets.
+# Pinned stock/plugin supplies dynamic systems/catalogs and executes native tools.
 # Local reference material lives under `../config/e4_targets/oh_my_opencode/3.10.0/`.
 #
 # +---------------------- oh-my-opencode dossier map ----------------------+
@@ -27,6 +27,9 @@
 version: 2
 profile:
   name: oh-my-opencode-3.10.0-e4-2026-03-06
+session:
+  # prompt.ts:716-723 returns a failed assistant without deleting its native session.
+  failed_turn_continues: true
 workspace:
   # Like OpenCode, this stays direct-workspace at the public surface.
   # The async/subagent behavior comes from orchestration policy, not from workspace indirection.
@@ -44,21 +47,61 @@ providers:
     max_output_tokens: 32000
     adapter: openai
     params: {}
+  # model-requirements.ts:15-149 and initialized stock /provider inventory.
+  # Caps are transform.maxOutputTokens; missing native input limits stay missing.
+  - id: openai/gpt-5.3-codex
+    max_input_tokens: 272000
+    max_output_tokens: 32000
+    adapter: openai_responses
+    params: {}
+  - id: openai/gpt-5.2
+    max_input_tokens: 272000
+    max_output_tokens: 32000
+    adapter: openai_responses
+    params: {}
+  - id: openai/gpt-5-nano
+    max_input_tokens: 272000
+    max_output_tokens: 32000
+    adapter: openai_responses
+    params: {}
+  - id: opencode/minimax-m2.5-free
+    max_output_tokens: 32000
+    adapter: anthropic
+    params: {}
+  - id: opencode/gpt-5-nano
+    max_input_tokens: 272000
+    max_output_tokens: 32000
+    adapter: openai_responses
+    params: {}
+  - id: opencode/big-pickle
+    max_output_tokens: 32000
+    adapter: anthropic
+    params: {}
 prompts:
   # The prompt model follows the OpenCode family pattern: durable system prompt, environment
   # context, and no ad hoc per-turn synthesized tool dump.
   tool_prompt_mode: system_compiled_and_persistent_per_turn
   packs:
     base:
-      system: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/system.md
+      system: ../implementations/system_prompts/omo_3_10_0_sisyphus.prompt.md
       plan: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/plan.md
       builder: ../config/e4_targets/oh_my_opencode/3.10.0/prompts/builder.md
   environment:
     enabled: true
     format: opencode
     file_limit: 200
+    include_tree: false
+    files_tag: directories
+    include_model_identity: true
   tool_prompt_synthesis:
     enabled: false
+  # Stock chat.message hooks transform the current input exactly once.
+  initial_context:
+    module: breadboard_engine.compilation.context_builders.opencode_stock
+    callable: build_context
+  summary_projection:
+    module: breadboard_engine.compilation.context_builders.opencode_stock
+    callable: build_summary_projection
   injection:
     system_order:
     - '@pack(base).system'
@@ -75,6 +118,18 @@ provider_tools:
   responses_use_developer_role: true
   tool_choice: auto
   responses_stateful: false
+  # Native OpenCode transform.ts:688-695,720-722,759-763.
+  openai:
+    responses_stateful: false
+    responses_use_developer_role: true
+    tool_choice: auto
+    responses_developer_content: string
+    responses_group_tool_results: true
+    responses_preserve_tool_call_items: true
+    responses_max_output_tokens_from_context: true
+    store: false
+    reasoning: {effort: medium, summary: auto}
+    session_params: {prompt_cache_key: '{session_id}'}
 features:
   # The public async/subagent lane is frozen as a build-first lane, not a planning showcase.
   plan: false
@@ -85,6 +140,7 @@ features:
 completion:
   # Like OpenCode, this harness is willing to complete naturally without a dedicated finish tool.
   allow_zero_tool_completion: true
+  append_response_marker: false
   build_guard:
     require_run_shell: false
     require_successful_tests: false
@@ -112,49 +168,62 @@ modes:
   - '*'
   tools_disabled: []
 tools:
+  # Stock executes tool hooks once, including the category-skills reminder.
+  native_semantics: oh_my_opencode_3_10_0
+  group_native_calls_by_turn: true
+  native_concurrent_prompts: true
+  # The digest-pinned source sidecar runs in the local workspace process.
+  native_local_only: true
+  # Native bash/tmux may allocate a terminal through the admitted launch policy.
+  pty: true
+  stock_worktree_read_only: true
+  stock_lsp_root:
+    path: ~/.cache/bb-compaction-e4/pkgs/opencode-lsp-1.2.17
+    digest: 2b27ba95b4a5f4968141f3c353f0e4abd8e1e9be1572b8e0d99292604ffa7478
+  stock_plugin_root: ~/.cache/bb-compaction-e4/pkgs/oh-my-opencode@3.10.0-5137df72
+  stock_read_only_roots:
+  - path: ~/.cache/bb-compaction-e4/pkgs/opencode-darwin-arm64@1.2.17/package
+    digest: 10c0bd72c60867d8ecdd37ba70a812076e1e8e2a9e5a3971ea4a728ebf4e836d
+  - path: ~/.cache/bb-compaction-e4/pkgs/oh-my-opencode@3.10.0-5137df72
+    digest: ec9c7f47c21ff078eb81231e0c0af22e8aea16b626e707f5e6d2fc128ae8e2dc
+  - path: ~/.cache/bb-compaction-e4/pkgs/opencode-lsp-1.2.17
+    digest: 2b27ba95b4a5f4968141f3c353f0e4abd8e1e9be1572b8e0d99292604ffa7478
   registry:
-    # `defs_omo` is the tracked oh-my-opencode tool catalog. The long `include` list
-    # is intentional: it lets a reader inspect the public surface without opening the
-    # defs directory first.
+    # Exact pinned native/plugin tool names. Source runtime renders live descriptions.
     paths:
-    - ../implementations/tools/defs_omo
+    - ../implementations/tools/defs_omo_3_10_0
     include:
+    - question
     - bash
     - read
     - glob
     - grep
-    - list
-    - edit
-    - write
     - task
     - webfetch
     - todowrite
-    - todoread
     - skill
-    - lsp_hover
+    - apply_patch
     - lsp_goto_definition
     - lsp_find_references
-    - lsp_document_symbols
-    - lsp_workspace_symbols
+    - lsp_symbols
     - lsp_diagnostics
-    - lsp_servers
     - lsp_prepare_rename
     - lsp_rename
-    - lsp_code_actions
-    - lsp_code_action_resolve
     - ast_grep_search
     - ast_grep_replace
-    - slashcommand
-    - background_task
+    - session_list
+    - session_read
+    - session_search
+    - session_info
     - background_output
     - background_cancel
-    - call_omo_agent
     - look_at
+    - skill_mcp
     - interactive_bash
-    - context7_resolve-library-id
-    - context7_get-library-docs
-    - websearch_exa_web_search_exa
+    - websearch_web_search_exa
     - grep_app_searchGitHub
+    - context7_resolve-library-id
+    - context7_query-docs
     #
     # This list is long on purpose. The file should let a reader grasp the public harness
     # surface at a glance:
@@ -164,12 +233,6 @@ tools:
     # - slash/skill helpers
     # - LSP and retrieval-style tools
     #
-    # Important distinctions inside this catalog:
-    # - `task`            : OpenCode-family subagent spawn surface
-    # - `background_*`    : long-running detached work handles / polling / cancel
-    # - `call_omo_agent`  : oh-my-opencode-specific agent dispatch wrapper
-    #
-    # Those are different ideas and the config should make that obvious.
   aliases: {}
 enhanced_tools:
   # The extra validation/diff layer is still visible here even though the headline feature of

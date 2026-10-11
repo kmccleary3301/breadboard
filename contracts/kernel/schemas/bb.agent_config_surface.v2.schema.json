@@ -515,6 +515,9 @@
     "completion": {
       "additionalProperties": false,
       "properties": {
+        "append_response_marker": {
+          "type": "boolean"
+        },
         "allow_content_only_completion": {
           "type": "boolean"
         },
@@ -1378,9 +1381,40 @@
     "prompts": {
       "additionalProperties": false,
       "properties": {
+        "initial_context": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module", "callable"],
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "callable": {"const": "build_context"},
+            "developer_instructions": {
+              "type": "array",
+              "items": {"type": "string"}
+            }
+          }
+        },
+        "summary_projection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["module", "callable"],
+          "properties": {
+            "module": {
+              "type": "string",
+              "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+            },
+            "callable": {"const": "build_summary_projection"}
+          }
+        },
         "environment": {
           "additionalProperties": false,
           "properties": {
+            "include_tree": {"type": "boolean"},
+            "include_model_identity": {"type": "boolean"},
+            "files_tag": {"type": "string", "minLength": 1},
             "enabled": {
               "type": "boolean"
             },
@@ -1477,9 +1511,69 @@
     "provider_tools": {
       "additionalProperties": false,
       "properties": {
+        "openai": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "responses_stateful": {"type": "boolean"},
+            "responses_message_type": {"type": "boolean"},
+            "responses_message_phase": {"type": "boolean"},
+            "responses_namespaces": {"type": "boolean"},
+            "responses_custom_tools": {"type": "array", "items": {"type": "string"}},
+            "responses_tool_search": {"type": "boolean"},
+            "responses_preserve_tool_call_items": {"type": "boolean"},
+            "responses_tool_output_items": {"type": "boolean"},
+            "responses_deferred_tools": {"type": "array", "items": {"type": "string"}},
+            "responses_hosted_outputs": {
+              "type": "array",
+              "items": {"enum": ["web_search_call"]}
+            },
+            "responses_developer_content": {"enum": ["string", "blocks"]},
+            "responses_use_developer_role": {"type": "boolean"},
+            "responses_group_tool_results": {"type": "boolean"},
+            "responses_max_output_tokens_from_context": {"type": "boolean"},
+            "include_reasoning": {"type": "boolean"},
+            "include": {"type": "array", "items": {"type": "string"}},
+            "store": {"type": "boolean"},
+            "reasoning": {"type": "object"},
+            "tool_choice": {"type": ["string", "object"]},
+            "request_params": {"type": "object"},
+            "session_params": {
+              "type": "object",
+              "additionalProperties": {"type": "string"}
+            },
+            "client_metadata": {
+              "type": "object",
+              "additionalProperties": {"type": "string"}
+            },
+            "client_metadata_session": {
+              "type": "object",
+              "additionalProperties": {"type": "string"}
+            }
+          }
+        },
         "anthropic": {
           "additionalProperties": false,
           "properties": {
+            "native_tool_result_replay": {"type": "boolean"},
+            "preserve_tool_names": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,128}$"}
+            },
+            "request_layout": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["module", "callable"],
+              "properties": {
+                "module": {
+                  "type": "string",
+                  "pattern": "^breadboard_engine\\.compilation\\.context_builders\\.[A-Za-z_][A-Za-z0-9_]*$"
+                },
+                "callable": {"const": "build_request"},
+                "response_callable": {"const": "accept_response"}
+              }
+            },
             "max_output_tokens": {
               "minimum": 0,
               "type": "integer"
@@ -1622,9 +1716,18 @@
       },
       "type": "object"
     },
+    "resume": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "snapshot_path": {"type": "string", "minLength": 1},
+        "restore_compaction_state": {"type": "boolean"}
+      }
+    },
     "providers": {
       "additionalProperties": false,
       "properties": {
+        "session_uuid_version": {"type": "integer", "const": 7},
         "default_model": {
           "minLength": 1,
           "type": "string"
@@ -1633,6 +1736,17 @@
           "items": {
             "additionalProperties": false,
             "properties": {
+              "supports_image_detail_original": {"type": "boolean"},
+              "web_search_tool_type": {"enum": ["text", "text_and_image"]},
+              "tool_output_truncation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["mode", "limit"],
+                "properties": {
+                  "mode": {"enum": ["bytes", "tokens"]},
+                  "limit": {"type": "integer", "minimum": 0}
+                }
+              },
               "adapter": {
                 "minLength": 1,
                 "type": "string"
@@ -1746,9 +1860,65 @@
     "schema_version": {
       "const": "bb.agent_config_surface.v2"
     },
+    "session": {
+      "additionalProperties": false,
+      "properties": {
+        "failed_turn_continues": {"type": "boolean", "default": false}
+      },
+      "type": "object"
+    },
     "tools": {
       "additionalProperties": false,
       "properties": {
+        "native_semantics": {"enum": ["codex_0_139", "opencode_1_2_17", "oh_my_opencode_3_10_0", "claude_code_2_1_63"]},
+        "native_concurrent_prompts": {"type": "boolean", "default": false},
+        "native_local_only": {"type": "boolean", "default": false},
+        "pty": {"type": "boolean", "default": false},
+        "group_native_calls_by_turn": {"type": "boolean"},
+        "stock_binary": {"type": "string", "minLength": 1},
+        "stock_plugin_root": {"type": "string", "minLength": 1},
+        "stock_package": {"type": "string", "minLength": 1},
+        "stock_permission_mode": {"type": "string", "minLength": 1},
+        "stock_timeout": {"type": "number", "exclusiveMinimum": 0},
+        "stock_config": {"type": "object"},
+        "stock_worktree_read_only": {"type": "boolean"},
+        "stock_lsp_root": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["path", "digest"],
+          "properties": {
+            "path": {"type": "string", "minLength": 1},
+            "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+          }
+        },
+        "stock_read_only_roots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "digest"],
+            "properties": {
+              "path": {"type": "string", "minLength": 1},
+              "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+            }
+          }
+        },
+        "stock_session_imports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["info", "messages"],
+            "properties": {
+              "info": {"type": "object"},
+              "messages": {"type": "array", "maxItems": 0}
+            }
+          }
+        },
+        "stock_environment": {
+          "type": "object",
+          "additionalProperties": {"type": "string"}
+        },
         "aliases": {
           "oneOf": [
             {

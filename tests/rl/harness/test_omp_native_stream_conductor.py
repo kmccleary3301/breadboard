@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import threading
@@ -158,13 +159,20 @@ def _archive_case(tmp_path: Path) -> tuple[Path, list[dict[str, Any]], str]:
         if isinstance(part, Mapping) and part.get("type") == "text"
         and not str(part.get("text", "")).startswith("<system-reminder>")
     )
+
+
+def _local_noon_ms(date: str) -> str:
+    """Admitted instant whose process-local calendar date is ``date``."""
+    return str(int(datetime.fromisoformat(f"{date}T12:00:00").timestamp() * 1000))
+
+
 class _OMPWorkspacePort:
     def __init__(
         self,
         workspace: Path,
         scratch: Path,
         bindings: tuple[RunnerToolBinding, ...],
-        capture_date: str,
+        message_timestamp_ms: str,
         *,
         phase_log: list[tuple[str, Mapping[str, Any]]] | None = None,
     ):
@@ -172,7 +180,7 @@ class _OMPWorkspacePort:
         self.scratch = scratch
         self.worker = NativeToolWorker(cwd=str(workspace), spec=_WORKER_SPEC)
         self.baseline: dict[str, dict[str, Any]] | None = None
-        self.capture_date = capture_date
+        self.message_timestamp_ms = message_timestamp_ms
         self.closed = False
         self.bindings = bindings
         self.phase_log = phase_log if phase_log is not None else []
@@ -187,7 +195,7 @@ class _OMPWorkspacePort:
         values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
-            "current_date": self.capture_date,
+            "message_timestamp_ms": self.message_timestamp_ms,
             "package_dir": package_dir,
         }
         assert set(input_names) == set(values)
@@ -223,7 +231,7 @@ class _OMPWorkspacePort:
         if operation == "initialize":
             assert package_subpath is not None
             runtime_inputs = self.native_runtime_inputs(
-                input_names=("cwd", "home", "current_date", "package_dir"),
+                input_names=("cwd", "home", "message_timestamp_ms", "package_dir"),
                 package_subpath=package_subpath,
             )
             phase_payload.update({
@@ -292,7 +300,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            capture_date=date_match.group(1),
+            message_timestamp_ms=_local_noon_ms(date_match.group(1)),
         )
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
@@ -377,7 +385,7 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            capture_date="2026-09-23",
+            message_timestamp_ms=_local_noon_ms("2026-09-23"),
             phase_log=phase_log,
         )
         client = EpisodeOpenAICompletionsPolicyClient(

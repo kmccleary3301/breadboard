@@ -389,6 +389,19 @@ _PROVIDER_CATALOG: dict[str, ProviderCatalogEntry] = {
     entry.provider_id: entry for entry in _PROVIDER_DEFINITIONS
 }
 
+# Opt-in stock routes are deliberately absent from the ordinary provider catalog.
+# OpenCode 1.2.17 provider/provider.ts:131-150 supplies Bearer public for free Zen
+# models; the pinned models.dev entry uses this URL and OpenAI-compatible APIs.
+_PROFILE_PROVIDER_CATALOG = {
+    "opencode": ProviderCatalogEntry(
+        provider_id="opencode", display_name="OpenCode Zen",
+        runtime_id="openai_chat", compatible_protocol="openai",
+        base_url="https://opencode.ai/zen/v1", support_tier="evidence",
+        auth_owner="none", credential_required=False, supports_native_tools=True,
+        supports_streaming=True,
+    ),
+}
+
 
 
 _CONFIG_ADAPTER_CATALOG: dict[str, ProviderCatalogEntry] = {}
@@ -419,7 +432,7 @@ def routable_provider_catalog() -> tuple[ProviderCatalogEntry, ...]:
 
 def get_provider_catalog_entry(provider_id: str) -> ProviderCatalogEntry | None:
     normalized = str(provider_id or "").strip().lower()
-    direct = _PROVIDER_CATALOG.get(normalized)
+    direct = _PROVIDER_CATALOG.get(normalized) or _PROFILE_PROVIDER_CATALOG.get(normalized)
     if direct is not None:
         return direct
     return next(

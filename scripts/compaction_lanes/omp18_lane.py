@@ -225,13 +225,15 @@ async def run_bb(workspace: Path, scratch: Path, base_url: str) -> dict[str, Any
         async def invoke_native_phase(self, operation: str, payload: Any, *, timeout_ms: int, package_subpath: str | None = None) -> Any:
             body = thaw_json(payload)
             if operation == "initialize":
-                inputs = self.native_runtime_inputs(input_names=("cwd", "home", "current_date", "package_dir"), package_subpath=package_subpath)
+                inputs = self.native_runtime_inputs(input_names=("cwd", "home", "message_timestamp_ms", "package_dir"), package_subpath=package_subpath)
                 body.update(workspace=str(workspace), scratch=str(scratch), package_dir=inputs["package_dir"], runtime_inputs=inputs)
                 body["route_classifier"]["source_root"] = self.worker.spec.source_root
             result = await asyncio.to_thread(self.worker.phase, operation, body)
             self.phase_log.append({"operation": operation, "payload": body, "result": deepcopy(result)})
             return result
-    port = Port(workspace, scratch, tuple(h.RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids) for t in grants), datetime.now(timezone.utc).date().isoformat())
+    # Same admitted instant as sandbox.py native_runtime_inputs; the worker
+    # renders its stock process-local date (both sides inherit this TZ).
+    port = Port(workspace, scratch, tuple(h.RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids) for t in grants), str(int(datetime.now(timezone.utc).timestamp() * 1000)))
     from breadboard.rl.harness.lease_envelope import RuntimeContainment
     from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
     port.containment = RuntimeContainment.ATTESTED

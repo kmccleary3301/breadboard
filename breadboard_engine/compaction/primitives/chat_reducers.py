@@ -53,6 +53,8 @@ class ChatSummary:
         self.empty_fallback = params.str("empty_fallback", None)
         self.normalize_tags = params.bool("normalize_tags", False)
         self.system_from_history = params.bool("system_from_history", False)
+        from .context_markers import sampling_phases
+        self.exclude_pending_user_on = sampling_phases(params, "exclude_pending_user_on")
         self.stream, self.tool_names, self.request_params, self.request_options_declared, self.stateless = summary_request_options(params)
         params.done()
 
@@ -69,6 +71,10 @@ class ChatSummary:
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
         view = context.projected()
+        if context.sampling_phase in self.exclude_pending_user_on:
+            if context.pending_user_index is None:
+                raise ValueError("Compaction sampling phase requires the pending user boundary")
+            view = context.state.project(context.messages[:context.pending_user_index], context.target)
         systems = ["".join(_text_parts(m.get("content"))) for m in view if m.get("role") == "system"]
         messages = [m for m in view if m.get("role") != "system"]
         if selection.replay and not selection.details:
@@ -88,11 +94,16 @@ class ChatSummary:
                                  max_tokens=self.max_tokens, purpose="summary",
                                  model=context.settings.summary_model or context.target.model,
                                  stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
-                                 request_options_declared=self.request_options_declared, stateless=self.stateless)
-        text = context.summarizer.complete(request).text
+                                 request_options_declared=self.request_options_declared, stateless=self.stateless,
+                                 context_reason=context.reason)
+        response = context.summarizer.complete(request)
+        text = response.text
         if not text and self.empty_fallback is not None:
             text = self.empty_fallback
         if self.normalize_tags:
             text = normalize_xml_summary(text)
-        return Reduction(summary=text, details={"stateless_summary": True} if self.stateless else {})
+        details = {"stateless_summary": True} if self.stateless else {}
+        if response.continuation_messages is not None:
+            details["continuation_messages"] = response.continuation_messages
+        return Reduction(summary=text, details=details)
 

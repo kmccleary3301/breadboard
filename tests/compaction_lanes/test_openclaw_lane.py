@@ -220,3 +220,318 @@ def test_caller_continuation_is_source_exact_and_not_persisted(report):
     for phase in result["bb_result"]["phases"]:
         if phase["result"]["kind"] == "compaction_finalized":
             assert marker not in json.dumps(phase["result"]["messages"])
+
+
+def test_memory_transcript_and_header_proof(report):
+    _, result = next(iter(report["lane_results"].items()))
+    assert result["logical_transcript_comparison"]["diffs"] == []
+    assert result["logical_transcript_comparison"]["checkpoints"]
+    assert result["logical_transcript_comparison"]["excluded_bookkeeping_columns"] == ["session_id", "seq", "created_at"]
+    for checkpoint in result["stock_result"]["lane_transcript_checkpoints"]:
+        assert checkpoint["columns"] == ["session_id", "seq", "event_json", "created_at"]
+    assert result["embeddings_header_names"]["stock"] == result["embeddings_header_names"]["bb"]
+    assert "fixture-key" not in json.dumps(result["bb_result"])
+    for names in result["embeddings_header_names"]["stock"]:
+        assert names == ["authorization", "content-type"]
+    if result["stock_overflow_attempts"]:
+        assert result["auxiliary_requests"]["stock"]
+        assert result["auxiliary_requests"]["stock"] == result["auxiliary_requests"]["bb"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("method", "GET"), ("path", "/v1/not-embeddings"),
+    ("raw_body_bytes", b'{"input": ["a"], "model":"x"}'.hex()),
+    ("source_header_names", ["content-type"]),
+])
+def test_embeddings_comparison_remains_byte_strict(field, value):
+    stock = {"method": "POST", "path": "/v1/embeddings",
+             "json": {"model": "x", "input": ["a"]},
+             "raw_body_bytes": b'{"model":"x","input":["a"]}'.hex(),
+             "source_header_names": ["authorization", "content-type"]}
+    bb = deepcopy(stock)
+    bb[field] = value
+    assert len(lane.compare([stock], [bb])["diffs"]) == 1
+
+
+def test_logical_transcript_preserves_content_and_parent_graph():
+    rows = [
+        {"id": "session", "type": "session"},
+        {"id": "user", "parentId": None, "type": "message", "timestamp": "2026-10-09T00:00:00Z",
+         "message": {"role": "user", "content": "a", "timestamp": 1}},
+        {"id": "meta", "parentId": "user", "type": "custom", "customType": "model-snapshot"},
+        {"id": "assistant", "parentId": "meta", "type": "message", "timestamp": "2026-10-09T00:00:00Z",
+         "message": {"role": "assistant", "content": "b", "timestamp": 2}},
+    ]
+    expected = lane.logical_transcript(rows)["messages"]
+    assert expected[1]["parent"] == 0
+    changed = deepcopy(rows)
+    changed[-1]["message"]["content"] = "b "
+    assert lane.logical_transcript(changed)["messages"] != expected
+    changed = deepcopy(rows)
+    changed[-1]["parentId"] = None
+    assert lane.logical_transcript(changed)["messages"] != expected
+    changed[-1]["parentId"] = "assistant"
+    with pytest.raises(ValueError, match="precede"):
+        lane.logical_transcript(changed)
+
+
+@pytest.mark.skipif(not os.environ.get("OPENCLAW_DIST"), reason="pinned stock indexing required")
+def test_embeddings_404_returns_to_stock_and_keeps_compaction(tmp_path):
+    report = lane.run_lane(tmp_path / "embeddings-404", ("split_turn",), embeddings_status_code=404)
+    result = report["lane_results"]["split_turn"]
+    assert result["diffs"] == []
+    assert result["logical_transcript_comparison"]["diffs"] == []
+    assert result["stock_compactions"] == result["bb_compactions"] >= 2
+    exchanges = [phase["result"]["request"] for phase in result["bb_result"]["phases"]
+                 if phase["result"]["kind"] == "provider_exchange"]
+    assert exchanges
+    logs = (tmp_path / "embeddings-404/split_turn/stock_stderr.txt").read_text()
+    assert "memory" in logs.lower()
+    assert "404" in logs
+
+
+def provider_client(tmp_path, *, caller_headers=None):
+    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    import hashlib
+    profile = h.OpenAICompletionsProviderProfile(
+        model="model-a", scoped_credential="private-policy-key",
+        base_url="http://127.0.0.1:1/v1", context_window=lane.WINDOW,
+        max_output_tokens=2048, caller_headers=caller_headers or {},
+        request_policy={"mode": "streaming", "include_usage": True,
+                        "strict_tools": None, "enable_thinking": None,
+                        **h._SUPPLIER_WIRE_POLICY["request_policy"]},
+        capabilities=dict(h._SUPPLIER_WIRE_POLICY["capabilities"]))
+    projection, semantics, manifest = h._compile_target(
+        tmp_path, profile_digest=h.profile_identity_digest(profile),
+        target_id=lane.TARGET_ID, context_window=lane.WINDOW)
+    observation = h._observation(
+        provider_id="openai", model_id="model-a", route_id="route-a",
+        credential_handle_id="credential-a", protocol_abi="responses-v1",
+        capabilities=h._policy_capabilities(request_features=sorted([
+            "json_mode", "seed", "stream_options", "streaming", *h._SUPPLIER_WIRE_POLICY["request_features"]])))
+    plan = h._plan(
+        observation=observation, semantics=semantics,
+        tools=tuple(h._tool_grant(name) for name in lane.configuration()[0]["tools"]["ordered"]),
+        policy_slot_ids=("model:model-a",), limit_updates={"max_turns": 8, "action_timeout_ms": 35000},
+        implementation_digest=h.CONDUCTOR_IMPLEMENTATION_DIGEST)
+    payload = plan.model_dump(mode="python")
+    identity = plan.base_compiled.model_dump(mode="python")
+    identity.update(manifest_digest="sha256:" + hashlib.sha256(manifest.canonical_bytes()).hexdigest(),
+                    compiler_input_digest=manifest.inputs.compiler_input_digest)
+    payload["base_compiled"] = h.c.CompiledArtifactIdentity.model_validate(identity)
+    plan = h.c.EffectiveExecutionPlan.model_validate(payload)
+    client = h.EpisodeOpenAICompletionsPolicyClient(
+        episode_id="provider-exchange-test", effective_plan_digest=plan.canonical_digest(),
+        observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
+    client.bind_compiled_plan(plan)
+    assert b"private-policy-key" not in manifest.canonical_bytes()
+    return client, plan
+
+
+def embeddings_request(*, caller=False):
+    import base64
+    return {"provider_exchange": "embeddings", "method": "POST",
+            "url": "http://127.0.0.1:1/v1/embeddings",
+            "header_names": ["authorization", "content-type"] + (["x-policy-caller"] if caller else []),
+            "body_b64": base64.b64encode(
+                b'{"model":"text-embedding-3-small","input":["User: fixture"]}').decode()}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field,value", [
+    ("url", "https://wrong.example/v1/embeddings"),
+    ("header_names", ["content-type"]),
+    ("header_names", [1, "authorization", "content-type"]),
+    ("body_b64", "not base64"),
+    ("body_b64", "e30="),
+])
+async def test_provider_exchange_rejects_unbound_values(tmp_path, field, value):
+    from breadboard.rl.harness.runners.base import RunnerProtocolError, RunnerPolicyBindingError
+    client, _ = provider_client(tmp_path)
+    request = embeddings_request()
+    request[field] = value
+    try:
+        with pytest.raises((RunnerProtocolError, RunnerPolicyBindingError)):
+            client.stage_native_http_request(request)
+    finally:
+        await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [200, 404])
+async def test_provider_exchange_uses_bound_transport_headers_and_private_response(tmp_path, monkeypatch, status):
+    import base64
+    from contextlib import contextmanager
+    import httpx
+    from breadboard_engine.compilation.contracts import canonical_sha256
+    from breadboard.rl.harness.runners.base import PolicyRuntimeInvokeRequest, freeze_json_object, thaw_json
+    from breadboard.rl.harness.runners.native_compaction import drain_provider_exchanges
+    client, plan = provider_client(tmp_path, caller_headers={"X-Policy-Caller": "private-caller"})
+    sent = []
+    body = b'{"error":{"message":"unsupported"}}' if status == 404 else b'{"data":[]}'
+
+    @contextmanager
+    def stream(method, url, **kwargs):
+        sent.append({"method": method, "url": url, **kwargs})
+        response = httpx.Response(status, headers={
+            "content-type": "application/json", "set-cookie": "private-cookie",
+            "authorization": "Bearer private-response-key",
+        }, stream=httpx.ByteStream(body), request=httpx.Request(method, url))
+        try:
+            yield response
+        finally:
+            response.close()
+
+    monkeypatch.setattr(client._transport.http_client, "stream", stream)
+    try:
+        private = client.native_provider_configuration()
+        assert private["headers"] == {"X-Policy-Caller": "private-caller",
+                                      "Authorization": "Bearer private-policy-key"}
+        public = client.stage_native_http_request(embeddings_request(caller=True))
+        result = await client.invoke(PolicyRuntimeInvokeRequest(
+            episode_id="provider-exchange-test", effective_plan_digest=plan.canonical_digest(),
+            binding_digest="sha256:" + "1" * 64, policy_slot_id="model:model-a",
+            request_digest=canonical_sha256(public),
+            request_payload=freeze_json_object(public, field_name="native request"),
+            turn=1, attempt=1))
+        response = client.take_native_http_response(result.response_digest)
+        assert response["status_code"] == status
+        assert base64.b64decode(response["body_b64"]) == body
+        resumed = []
+
+        async def phase(operation, payload):
+            assert operation == "drain_provider_exchanges"
+            if "response" in payload:
+                resumed.append(payload["response"])
+                return {"kind": "provider_exchanges_drained"}
+            return {"kind": "provider_exchange", "request": embeddings_request(caller=True)}
+
+        async def exchange(request):
+            assert request == embeddings_request(caller=True)
+            return response
+
+        trace = []
+        await drain_provider_exchanges(
+            phase=phase, exchange=exchange, trace_requests=trace, checkpoint="agent_end",
+        )
+        assert resumed == [response]
+        assert ["set-cookie", "private-cookie"] in resumed[0]["headers"]
+        assert ["authorization", "Bearer private-response-key"] in resumed[0]["headers"]
+        assert trace[0]["response"] == thaw_json(result.response_payload)["native_http_response"]
+        assert "headers" not in trace[0]["response"]
+        assert sent[0]["headers"] == [
+            ("X-Policy-Caller", "private-caller"),
+            ("Content-Type", "application/json"),
+            ("Authorization", "Bearer private-policy-key")]
+        assert sent[0]["content"] == base64.b64decode(embeddings_request()["body_b64"])
+        for secret in ("private-caller", "private-policy-key", "private-cookie", "private-response-key"):
+            assert secret not in json.dumps(public)
+            assert secret not in str(result)
+            assert secret not in json.dumps(trace)
+    finally:
+        await client.close()
+
+
+@pytest.mark.parametrize("target_id", ["openclaw@2026.9.4", lane.TARGET_ID])
+def test_runtime_exchange_capability_keeps_compiled_identity_byte_identical(tmp_path, monkeypatch, target_id):
+    from dataclasses import replace
+    from breadboard.rl.harness import native_stream_profiles
+    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    digest = "sha256:" + "1" * 64
+    _, _, before = h._compile_target(tmp_path, profile_digest=digest, target_id=target_id)
+    profiles = dict(native_stream_profiles.NATIVE_STREAM_PROFILES)
+    profiles[h.OPENCLAW_RESPONSE_CONSUMER_ID] = replace(
+        profiles[h.OPENCLAW_RESPONSE_CONSUMER_ID], provider_exchanges=frozenset())
+    monkeypatch.setattr(native_stream_profiles, "NATIVE_STREAM_PROFILES", profiles)
+    _, _, after = h._compile_target(tmp_path, profile_digest=digest, target_id=target_id)
+    assert before.canonical_bytes() == after.canonical_bytes()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(not os.environ.get("OPENCLAW_DIST"), reason="pinned stock delta timer required")
+async def test_stock_session_delta_timer_drains_on_final_numeric_turn(tmp_path, monkeypatch):
+    import asyncio
+    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    timer = tmp_path / "delta-timer.mjs"
+    proof = tmp_path / "delta-timer-proof.json"
+    # Only the real source session-delta timer is held. At classified-result
+    # delivery invoke its unchanged callback, and release the frame once the
+    # unchanged sync has begun. No sleeps, replacement indexer, or fake exchange.
+    timer.write_text(r'''
+import { pathToFileURL } from "node:url";
+import { writeFileSync } from "node:fs";
+const { MemoryIndexManager } = await import(pathToFileURL(
+  process.env.OPENCLAW_DIST + "/extensions/memory-core/manager-runtime.js"));
+const set = globalThis.setTimeout;
+const clear = globalThis.clearTimeout;
+let pending;
+const started = Promise.withResolvers();
+globalThis.setTimeout = function(callback, ms, ...args) {
+  if (ms === 5000 && callback.toString().includes("processSessionUpdateBatch")) {
+    const handle = set(() => {}, 2147483647);
+    handle.unref();
+    pending = { callback, args, handle, ms };
+    return handle;
+  }
+  return set(callback, ms, ...args);
+};
+const sync = MemoryIndexManager.prototype.sync;
+MemoryIndexManager.prototype.sync = function(params) {
+  const work = sync.call(this, params);
+  if (params?.reason === "session-delta") {
+    writeFileSync(process.env.BB_DELTA_TIMER_PROOF,
+      JSON.stringify({ delay_ms: pending.ms, reason: params.reason }));
+    started.resolve();
+  }
+  return work;
+};
+const write = process.stdout.write.bind(process.stdout);
+let fired = false;
+process.stdout.write = function(chunk, ...args) {
+  if (!fired && pending && chunk.toString().includes('"kind":"classified_result"')) {
+    fired = true;
+    clear(pending.handle);
+    pending.callback(...pending.args);
+    started.promise.then(() => write(chunk, ...args));
+    return true;
+  }
+  return write(chunk, ...args);
+};
+''')
+    create = asyncio.create_subprocess_exec
+
+    async def spawn(*args, **kwargs):
+        if args[0] == "node" and args[-1] == str(h._WORKER):
+            args = (args[0], "--import", str(timer), *args[1:])
+            kwargs["env"] = {**kwargs["env"], "BB_DELTA_TIMER_PROOF": str(proof)}
+        return await create(*args, **kwargs)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", spawn)
+    invoke = h.EpisodeOpenAICompletionsPolicyClient.invoke
+    exchange_turns = []
+
+    async def observe(client, request):
+        if h.thaw_json(request.request_payload).get("native_http_request", {}).get("provider_exchange") == "embeddings":
+            exchange_turns.append(request.turn)
+        return await invoke(client, request)
+
+    monkeypatch.setattr(h.EpisodeOpenAICompletionsPolicyClient, "invoke", observe)
+    workspace = tmp_path / "workspace"
+    lane.seed(workspace)
+    provider = lane.provider_for("split_turn", tmp_path / "requests.jsonl")
+    base = provider.start()
+    try:
+        result = await lane.run_bb(workspace, tmp_path / "compiled", base)
+    finally:
+        provider.stop()
+    assert json.loads(proof.read_text()) == {"delay_ms": 5000, "reason": "session-delta"}
+    final = [phase for phase in result["phases"] if phase["checkpoint"] == "agent_end"
+             and phase["result"]["kind"] == "provider_exchange"]
+    assert len(final) == 1
+    # The overflow retry stays inside turn4 (conductor's inner request loop);
+    # six main requests therefore end on the fifth recorded source turn.
+    assert exchange_turns[-1] == 5
+    assert all(type(turn) is int and turn > 0 for turn in exchange_turns)
+    trace = result["response"]["replay_trace"]["requests"]
+    assert any(item.get("_provider_exchange") == "embeddings"
+               and item["checkpoint"] == "agent_end" for item in trace)

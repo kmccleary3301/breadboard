@@ -177,6 +177,7 @@ recovery.source.evidence = ["src/hooks/anthropic-context-window-limit-recovery/p
 await runner.recover(recovery);
 cases.push(recovery);
 const contributor = fixture("todo_preservation_summary_contributor", "oh-my-opencode@3.10.0");
+contributor.input.stage_ids = ["summary"];
 contributor.input.messages = [user("Build features and track todos"), assistant("Working on tasks.")];
 contributor.input.usage.total_tokens = 150000;
 contributor.input.summary_responses = ["Summary including todo state and active files."];

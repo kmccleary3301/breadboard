@@ -7,7 +7,8 @@ except the profile-sealed 35-second phase timeout, cited in the report. Stock
 identity and prepared-message timestamp seams share BB's declared replay inputs;
 stock formatters, execution and control clocks remain unchanged. A fixed-length
 deterministic scratch path keeps prompt budgets independent of report location.
-Bodies are compared as canonical JSON; raw HTTP bytes remain in the recordings.
+Chat bodies compare as canonical JSON; embeddings retain strict raw byte equality.
+Private response headers only resume stock; traces retain their public digest.
 """
 from __future__ import annotations
 
@@ -70,6 +71,7 @@ def script(scenario: str) -> list[dict[str, Any]]:
 
 
 class ScenarioEngine(MockScriptEngine):
+    embeddings_status_code = 200
     def next_response(self) -> dict[str, Any]:
         if is_summary(self.recorded_requests[-1]["json"]):
             return {"type": "text", "text": "Records inspected. Continue the pending inspection.",
@@ -84,9 +86,16 @@ class LaneHandler(MockRequestHandler):
         raw = self.rfile.read(int(self.headers["Content-Length"]))
         body = json.loads(raw)
         self.server.engine.record_request("POST", self.path, dict(self.headers), raw, body)
+        if self.server.engine.embeddings_status_code != 200:
+            self._send_raw_response({
+                "status_code": self.server.engine.embeddings_status_code,
+                "headers": {"content-type": "application/json"},
+                "body": json.dumps({"error": {"message": "Embeddings unsupported by policy fixture",
+                                             "type": "invalid_request_error", "code": "not_found"}}),
+            })
+            return
         inputs = body["input"] if isinstance(body["input"], list) else [body["input"]]
-        # Fixed provider fixture, not a hidden replay filter. Auxiliary requests
-        # remain in the byte comparison and produce undeclared differences.
+        # Real mock-provider response. Stock alone validates and persists vectors.
         response = {"object": "list", "model": body["model"], "data": [
             {"object": "embedding", "index": i, "embedding": [1.0, 0.0, 0.0, 0.0]}
             for i in range(len(inputs))], "usage": {"prompt_tokens": 1, "total_tokens": 1}}
@@ -111,9 +120,10 @@ class LaneProvider(MockProvider):
         return self.base_url
 
 
-def provider_for(scenario: str, record: Path) -> MockProvider:
+def provider_for(scenario: str, record: Path, *, embeddings_status_code: int = 200) -> MockProvider:
     provider = LaneProvider()
     provider.engine = ScenarioEngine(script(scenario), record)
+    provider.engine.embeddings_status_code = embeddings_status_code
     return provider
 
 
@@ -132,6 +142,7 @@ def seed(workspace: Path) -> None:
 STOCK = r'''
 import { pathToFileURL } from "node:url";
 const input = JSON.parse(process.argv[1]);
+const providerHeaderNames = [];
 // Identity seam only: stock agent-exec-BAuhpelg.mjs:311 allocates the id;
 // BB receives the same opaque identity through declared runtime_inputs.
 const crypto = await import("node:crypto");
@@ -142,6 +153,25 @@ crypto.default.randomUUID = () => {
   return id.padStart(8, "0") + "-0000-4000-8000-" + id.padStart(12, "0");
 };
 (await import("node:module")).syncBuiltinESMExports();
+  // Stock's dispatcher-aware transport uses this exported dependency seam,
+  // not global fetch (runtime-fetch-CEXoSWzR.mjs:45-52). Observe and forward.
+  const { a: loadUndiciRuntimeDeps } = await import(
+    pathToFileURL(process.env.OPENCLAW_DIST + "/undici-runtime-n7jdZvcB.mjs"));
+  const dependencies = loadUndiciRuntimeDeps();
+  const stockFetch = dependencies.fetch;
+  dependencies.fetch = (url, options) => {
+    if (String(url) === input.base + "/v1/embeddings") {
+      providerHeaderNames.push([...new Headers(options.headers).keys()].sort());
+    }
+    return stockFetch(url, options);
+  };
+const nativeFetch = globalThis.fetch;
+globalThis.fetch = (url, options) => {
+  if (String(url) === input.base + "/v1/embeddings") {
+    providerHeaderNames.push([...new Headers(options.headers).keys()].sort());
+  }
+  return nativeFetch(url, options);
+};
 const { agentExecCommand } = await import(pathToFileURL(process.env.OPENCLAW_DIST + "/agent-exec-BAuhpelg.mjs"));
 const config = {
   agents: { defaults: { workspace: input.workspace, model: {primary: "openai/model-a"},
@@ -151,6 +181,8 @@ const config = {
   models: {providers: {openai: {baseUrl: input.base + "/v1", api: "openai-completions", apiKey: "fixture-key", models: [{id: "model-a", name: "model-a", input: ["text"], contextWindow: input.window, maxTokens: input.native.agent_exec.output_tokens}]}}},
 };
 const clockTimestamps = [];
+const transcriptCheckpoints = [];
+const transcriptCaptures = [];
 const runAgentWithDeclaredClock = async (opts, runtime) => {
   const [{ agentCommand }, { n: AgentSession }, { n: createUserTurnTranscriptRecorder },
     { n: beforeMessageWrite }, configIo] = await Promise.all([
@@ -160,6 +192,29 @@ const runAgentWithDeclaredClock = async (opts, runtime) => {
     import(pathToFileURL(process.env.OPENCLAW_DIST + "/hook-helpers-CoFqzDGy.mjs")),
     import(pathToFileURL(process.env.OPENCLAW_DIST + "/io-CfH9dYtp.mjs")),
   ]);
+  const [{ MemoryIndexManager }, accessor, { DatabaseSync }] = await Promise.all([
+    import(pathToFileURL(process.env.OPENCLAW_DIST + "/extensions/memory-core/manager-runtime.js")),
+    import(pathToFileURL(process.env.OPENCLAW_DIST + "/session-accessor-BxcCxteu.mjs")),
+    import("node:sqlite"),
+  ]);
+  const captureTranscript = async (checkpoint) => {
+    const target = await accessor.N({agentId: opts.agentId, sessionId: opts.sessionId,
+      sessionKey: opts.sessionKey}, configIo.getRuntimeConfigSnapshot());
+    const db = new DatabaseSync(accessor.j(target), {readOnly: true});
+    try {
+      transcriptCheckpoints.push({checkpoint,
+        columns: db.prepare("PRAGMA table_info(transcript_events)").all().map(row => row.name),
+        rows: db.prepare("SELECT event_json FROM transcript_events WHERE session_id = ? ORDER BY seq"
+        ).all(opts.sessionId).map(row => JSON.parse(row.event_json))});
+    } finally { db.close(); }
+  };
+  const stockSync = MemoryIndexManager.prototype.sync;
+  MemoryIndexManager.prototype.sync = function(params) {
+    if (params?.reason === "post-compaction") transcriptCaptures.push(captureTranscript("post-compaction"));
+    // Observation must not await before the unchanged stock call. That would
+    // reorder constructor catch-up relative to forced post-compaction sync.
+    return stockSync.call(this, params);
+  };
   let replayTimestamp = input.messageTimestamp;
   const stockEmit = AgentSession.prototype.emit;
   AgentSession.prototype.emit = function(event) {
@@ -188,7 +243,10 @@ const runAgentWithDeclaredClock = async (opts, runtime) => {
       cwd: opts.cwd, config: configIo.getRuntimeConfigSnapshot()},
     beforeMessageWrite, errorContext: "agent command user turn transcript",
   });
-  return agentCommand({...opts, userTurnTranscriptRecorder: recorder}, runtime);
+  const result = await agentCommand({...opts, userTurnTranscriptRecorder: recorder}, runtime);
+  await Promise.all(transcriptCaptures);
+  await captureTranscript("agent-end");
+  return result;
 };
 const result = await agentExecCommand(input.prompt, {cwd: input.workspace, isolated: true, authEnvOnly: true, json: true, model: "openai/model-a", thinking: "off"},
   {log() {}, error(...args) {console.error(...args)}, exit(code) {throw new Error("stock exit " + code)}},
@@ -203,7 +261,9 @@ await runCliWithExitFinalization({
   run: async () => {
     requestExitAfterOneShotOutput(defaultRuntime, result.exitCode);
     await closeCliResources();
-    console.log(JSON.stringify({...result, lane_clock_timestamps: clockTimestamps}));
+    console.log(JSON.stringify({...result, lane_clock_timestamps: clockTimestamps,
+      lane_transcript_checkpoints: transcriptCheckpoints,
+      lane_provider_header_names: providerHeaderNames}));
   },
   onError(error) { throw error; },
 });
@@ -267,8 +327,9 @@ async def run_bb(workspace: Path, scratch: Path, base: str) -> dict[str, Any]:
             return values
         async def invoke_native_phase(self, operation, payload, **kwargs):
             result = await super().invoke_native_phase(operation, payload, **kwargs)
-            if operation in {"prepare_compaction", "finalize_compaction"}:
-                phases.append({"operation": operation, "reason": payload.get("reason"), "result": result})
+            if operation in {"prepare_compaction", "finalize_compaction", "drain_provider_exchanges"}:
+                phases.append({"operation": operation, "reason": payload.get("reason"),
+                               "checkpoint": payload.get("checkpoint"), "result": result})
             return result
     worker = Worker(workspace, tuple(h.RunnerToolBinding(t.tool_id, t.implementation_digest, t.capability_ids) for t in tools))
     client = h.EpisodeOpenAICompletionsPolicyClient(episode_id="openclaw-lane", effective_plan_digest=plan.canonical_digest(), observation=observation,
@@ -349,7 +410,7 @@ def stock_summary_cap(body: dict[str, Any]) -> int:
 def compare(stock: list[dict[str, Any]], bb: list[dict[str, Any]]) -> dict[str, Any]:
     native, harness = configuration()
     allowed = {item["id"] for item in harness["policy"]["deviations"]}
-    tools = bb[0]["json"]["tools"]
+    tools = next((request["json"]["tools"] for request in bb if "tools" in request["json"]), None)
     diffs = []
     used = set()
     for i in range(max(len(stock), len(bb))):
@@ -357,7 +418,14 @@ def compare(stock: list[dict[str, Any]], bb: list[dict[str, Any]]) -> dict[str, 
             diffs.append({"request": i, "reason": "request count differs"})
             continue
         left, right = stock[i], bb[i]
-        if left["raw_body_bytes"] == right["raw_body_bytes"] and left["path"] == right["path"]:
+        if "/v1/embeddings" in {left["path"], right["path"]}:
+            fields = ("method", "path", "raw_body_bytes", "source_header_names")
+            if any(left.get(field) != right.get(field) for field in fields):
+                diffs.append({"request": i, "reason": "embeddings method/path/body/header names differ",
+                              "stock": {field: left.get(field) for field in fields},
+                              "breadboard": {field: right.get(field) for field in fields}})
+            continue
+        if left["raw_body_bytes"] == right["raw_body_bytes"] and left["path"] == right["path"] and left.get("method") == right.get("method"):
             continue
         a, b = deepcopy(left["json"]), deepcopy(right["json"])
         if not is_summary(a) and "tools" in a and "tools" in b:
@@ -384,14 +452,86 @@ def compare(stock: list[dict[str, Any]], bb: list[dict[str, Any]]) -> dict[str, 
                 a.pop("max_completion_tokens")
                 b.pop("max_completion_tokens")
                 used.add("compaction_summary_max_tokens")
-        if canonical(a) != canonical(b) or left["path"] != right["path"]:
+        if canonical(a) != canonical(b) or left["path"] != right["path"] or left.get("method") != right.get("method"):
             diffs.append({"request": i, "stock": a, "breadboard": b})
     return {"stock_requests": len(stock), "bb_requests": len(bb), "diffs": diffs, "deviations_used": sorted(used),
             "stock_summary_requests": sum(is_summary(r["json"]) for r in stock), "bb_summary_requests": sum(is_summary(r["json"]) for r in bb)}
 
 
 
-def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any]:
+def logical_transcript(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Message JSON and ancestry consumed by stock's reader, not DB bookkeeping."""
+    indexed = {row["id"]: row for row in rows if "id" in row}
+    if len(indexed) != len(rows):
+        raise ValueError("transcript ids must be unique and present")
+    if any(not isinstance(row["id"], str) or not row["id"] for row in rows):
+        raise ValueError("transcript id must be a nonempty opaque source id")
+    messages = [row for row in rows if row["type"] == "message"]
+    message_ids = {row["id"]: index for index, row in enumerate(messages)}
+    logical = []
+    for row in messages:
+        parent = row.get("parentId")
+        seen = {row["id"]}
+        while parent is not None and parent not in message_ids:
+            if parent in seen or parent not in indexed:
+                raise ValueError("transcript parent graph is invalid")
+            seen.add(parent)
+            parent = indexed[parent].get("parentId")
+        parent_index = message_ids.get(parent)
+        if parent_index is not None and parent_index >= message_ids[row["id"]]:
+            raise ValueError("transcript parent must precede its child")
+        datetime.fromisoformat(row["timestamp"])
+        timestamp = row["message"].get("timestamp")
+        if timestamp is not None and (not isinstance(timestamp, (int, float)) or timestamp < 0):
+            raise ValueError("source message timestamp must be nonnegative when present")
+        logical.append({"type": row["type"], "role": row["message"]["role"],
+                        "content": row["message"]["content"], "parent": parent_index})
+    return {"messages": logical, "skipped_metadata": [
+        {"type": row["type"], **({"customType": row["customType"]} if "customType" in row else {})}
+        for row in rows if row["type"] != "message"
+    ]}
+
+
+def compare_transcripts(stock_result: dict[str, Any], bb_result: dict[str, Any]) -> dict[str, Any]:
+    stock = stock_result["lane_transcript_checkpoints"]
+    bb = []
+    pending_reason = None
+    final_checkpoint = None
+    for phase in bb_result["phases"]:
+        if phase["operation"] == "finalize_compaction" and phase["result"]["kind"] == "compaction_finalized":
+            pending_reason = phase["result"]["reason"]
+        if (phase["operation"] == "drain_provider_exchanges"
+            and phase["result"]["kind"] == "provider_exchanges_drained"
+            and phase["result"]["transcript_rows"]):
+            if pending_reason == "overflow":
+                bb.append(phase)
+            pending_reason = None
+            if phase["checkpoint"] == "agent_end":
+                final_checkpoint = phase
+    if final_checkpoint is not None:
+        bb.append(final_checkpoint)
+    diffs = []
+    checkpoints = []
+    for index in range(max(len(stock), len(bb))):
+        if index >= min(len(stock), len(bb)):
+            diffs.append({"checkpoint": index, "reason": "checkpoint counts differ"})
+            continue
+        left = logical_transcript(stock[index]["rows"])
+        right = logical_transcript(bb[index]["result"]["transcript_rows"])
+        if canonical(left["messages"]) != canonical(right["messages"]):
+            diffs.append({"checkpoint": index, "stock": left["messages"], "bb": right["messages"]})
+        checkpoints.append({"checkpoint": stock[index]["checkpoint"],
+                            "stock_message_rows": len(left["messages"]),
+                            "bb_message_rows": len(right["messages"]),
+                            "stock_skipped_metadata": left["skipped_metadata"],
+                            "bb_skipped_metadata": right["skipped_metadata"]})
+    return {"diffs": diffs, "checkpoints": checkpoints,
+            "excluded_bookkeeping_columns": ["session_id", "seq", "created_at"],
+            "basis": "transcript_events.event_json message type/role/content and parent graph, resolving skipped metadata ancestors; ordering follows seq",
+            "persistence_ids_and_timestamps": "Validated as unique opaque source IDs, ordered acyclic ancestry, ISO entry timestamps and nonnegative message timestamps. Embeddings text is equal, but timestamps affect observedAt/provenance and hashSessionEntrySnapshot (sessions-MkEP_W36.mjs:692,712-728); this proves content/ancestry, not full memory-index database equivalence. Replay timestamp/user identity seam remains exact on wire."}
+
+
+def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS, *, embeddings_status_code: int = 200) -> dict[str, Any]:
     out.mkdir(parents=True, exist_ok=True)
     results = {}
     for scenario in scenarios:
@@ -400,7 +540,7 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
         scratch_key = hashlib.sha256(str(folder.resolve()).encode()).hexdigest()[:12]
         workspace = Path("/tmp/bb-oc-lane") / scratch_key / "workspace"
         seed(workspace)
-        with provider_for(scenario, folder / "stock_requests.jsonl") as provider:
+        with provider_for(scenario, folder / "stock_requests.jsonl", embeddings_status_code=embeddings_status_code) as provider:
             shared_scratch = workspace.parent / (workspace.name + "-scratch")
             try:
                 stock_result = run_stock(workspace, shared_scratch, provider.base_url)
@@ -412,12 +552,30 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
             stock_requests = deepcopy(provider.engine.recorded_requests)
         # Same absolute workspace and pristine fixture contents on both sides.
         seed(workspace)
-        with provider_for(scenario, folder / "bb_requests.jsonl") as provider:
+        with provider_for(scenario, folder / "bb_requests.jsonl", embeddings_status_code=embeddings_status_code) as provider:
             bb_result = asyncio.run(run_bb(workspace, folder / "bb", provider.base_url))
             bb_requests = deepcopy(provider.engine.recorded_requests)
+        (folder / "stock_result.json").write_text(json.dumps(stock_result, indent=2) + "\n")
+        (folder / "bb_result.json").write_text(json.dumps(bb_result, indent=2) + "\n")
+        header_names = {
+            "stock": stock_result.get("lane_provider_header_names", []),
+            "bb": [phase["result"]["request"]["header_names"] for phase in bb_result["phases"]
+                   if phase["result"]["kind"] == "provider_exchange"],
+        }
+        for side, requests in (("stock", stock_requests), ("bb", bb_requests)):
+            embeddings = [request for request in requests if request["path"] == "/v1/embeddings"]
+            if len(embeddings) != len(header_names[side]):
+                raise ValueError(f"{side} source embeddings header capture count differs: "
+                                 f"{len(header_names[side])} suspensions, {len(embeddings)} wire requests")
+            for request, names in zip(embeddings, header_names[side]):
+                request["source_header_names"] = names
+            (folder / f"{side}_requests.jsonl").write_text(
+                "".join(json.dumps(request) + "\n" for request in requests))
         result = compare(stock_requests, bb_requests)
         result.update(stock_result=stock_result, bb_result=bb_result)
         result["workspace_path"] = str(workspace)
+        result["logical_transcript_comparison"] = compare_transcripts(stock_result, bb_result)
+        result["embeddings_header_names"] = header_names
         bb_clock_timestamps = [EPISODE_TIMESTAMP_MS]
         preparation = None
         for phase in bb_result["phases"]:
@@ -429,8 +587,7 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
                 bb_clock_timestamps.append(int(datetime.fromisoformat(preparation["timestamp"]).timestamp() * 1000))
         result["clock_timestamps"] = {"stock": stock_result.get("lane_clock_timestamps", []),
                                       "bb": bb_clock_timestamps}
-        # Diagnostic only. The full-request comparison above never drops auxiliary
-        # requests, and therefore remains red for missing stock memory indexing.
+        # Diagnostic only. The full comparison never drops auxiliary exchanges.
         result["chat_payload_comparison"] = compare(
             [request for request in stock_requests if request["path"] == "/v1/chat/completions"],
             [request for request in bb_requests if request["path"] == "/v1/chat/completions"],
@@ -473,7 +630,7 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
         (folder / "lane_report.json").write_text(json.dumps(result, indent=2) + "\n")
     report = {"target": TARGET_ID, "overrides": {"model.context_window": {"target": configuration()[0]["model"]["context_window"], "both_sides": WINDOW}}, "lane_results": results,
               "rerun_command": "PYTHONPATH=. BB_WORKSPACE_ROOT=$PWD python -m scripts.compaction_lanes.openclaw_lane --out /tmp/openclaw-lane"}
-    report["comparison_basis"] = "canonical JSON, preserving string bytes, values, array order and present/absent fields; raw HTTP bodies retained"
+    report["comparison_basis"] = "Chat canonical JSON member order only; values, string bytes, array order and presence remain strict. Embeddings compare method, path, raw body bytes and source-attached header names. Raw HTTP bodies retained."
     report["limit_sources"] = {"action_timeout_ms": "native_stream_profiles.py OpenClaw profile and test_openclaw_native_stream_conductor.py:549 both use 35000; target40s is an outer admission ceiling"}
     report["declared_overlay"] = "native-config.json:advertisement.tools.exec, SHA-256 source/value guards"
     report["artifact_root"] = str(out)
@@ -488,7 +645,37 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
         "basis": "These are ordinary requests, not summaries. No deviation normalization is applied. Stock proxy clamp applies to every request; BB retains decision 2's fixed episode cap.",
         "baseline": "308b9027 breadboard_engine/provider/runtimes/openai/chat.py:572-587 delegates to profile.chat_request; provider/profiles.py:671 assigns max_output_tokens without input-dependent clamping.",
     }
+    report["production_summary_risk"] = {
+        "window": 131072, "reserve_floor": 20000, "keep_recent_tokens": 20000, "episode_output_cap": 2048,
+        "configuration": "native-config.json:17,29,33; stock agent-settings-DcI_VuTd.mjs:19-23",
+        "preparation_only_counterexample": {
+            "test": "test_openclaw_2026_9_4_compaction.py::test_summary_trace_preserves_proxy_clamp_near_production_window",
+            "stock_input_estimate": 129086, "stock_wire_output_cap": 1985,
+            "stock_total": 131071, "bb_input_with_episode_tools": 130741,
+            "bb_total_with_fixed_cap": 132789, "excess_over_window": 1717,
+        },
+        "scope": "Accepted synthetic source preparation, not an observed natural RL episode. Retention/reserve bounds do not bound the turn-prefix summary payload plus episode tools. Decision 2 keeps BB's 2048 episode cap; no central clamp added.",
+    }
     report["configuration_conflicts"] = ["target.json:57-60 still lists model.compaction=false; production harness.yaml:29 and native-config.json:21 enable it"]
+    report["provider_exchange_seam"] = {
+        "capability": "runtime-only NativeStreamProfile.provider_exchanges; compiled targets unchanged",
+        "implementation": "Digest-checked loader exposes unchanged compact-BvznzvKp.mjs:235-267; stock MemoryIndexManager remains alive across turns. Stock SQLite receives the replay ledger through replaceTranscriptEventsSync.",
+        "ordering": "Every source fetch suspension is drained at its replay checkpoint; requests retain ordered trace positions relative to chat exchanges.",
+        "headers": "Source-attached header names only, captured before transport-generated HTTP headers; credentials stay on the private initialize channel and the bound policy transport supplies actual wire auth.",
+        "failure": "Real HTTP status/body resume stock unchanged; fallback is none, stock logs/skips failed sync rather than inventing vectors.",
+        "mock_embeddings_status_code": embeddings_status_code,
+        "rl_endpoint": "[INFERENCE] The configured RL generation endpoint may reject text-embedding-3-small or /v1/embeddings. No live RL endpoint was observed. The 404 lane exercises stock's skip-on-failure behavior.",
+        "stock_observers": "Ambient and exported Undici dependency fetch observers forward unchanged calls. MemoryIndexManager.sync returns the original source promise; SQLite capture is not awaited before source execution.",
+        "r1_dormancy": "R1 seals compaction off. Manager construction and its watcher/listener/catch-up at manager-runtime.js:5905-5909 are never reached by the admitted six coding tools; session warming only occurs inside memory search (5325-5333,5392-5394), which is not admitted. Runtime capability does not enter compiled identities.",
+    }
+    report["persistence_only_gaps"] = {
+        "metadata": "BB omits caller-owned model_change, thinking_level_change, custom model-snapshot and openclaw.cache-ttl records, identified per checkpoint. They are not embeddings or chat request deviations.",
+        "indexer": "memory-core-host-engine-sessions-MkEP_W36.mjs:688-708 ignores non-message records; session-DVbOtm8K.mjs:141-189 filters message projection before every source request.",
+        "stock_writers": "resource-loader-C9uaq_Eg.mjs:989-992 writes model/thinking state; builtin-openclaw-B-H-7lKk.mjs:5114 writes model-snapshot; session-prompt-state-Dpw0ukK_.mjs:85-91 writes openclaw.cache-ttl.",
+        "stock_read_paths": "Model/thinking state is read by buildSessionContext at session-DVbOtm8K.mjs:194-201. Cache-ttl is read by builtin-openclaw-B-H-7lKk.mjs:1054-1058 and tool-result-truncation-pN0suQlO.mjs:881-898. These are real restoration/projection reads, but no request difference was observed in these single-episode lanes. Resume is not exercised.",
+        "message_timestamps": "BB's terminal overflow-refusal assistant row has no message.timestamp; stock's row does. Other present message timestamps are structurally checked and all outer entry timestamps are ISO. This field is excluded from the stated message type/role/content/parent proof; the terminal refusal never goes to a subsequent provider request.",
+        "memory_index_metadata": "Excluded timestamps are not semantically harmless for full index equivalence: source parseSessionTimestampMs at sessions-MkEP_W36.mjs:692 feeds observedAt/provenance (712-717) and hashSessionEntrySnapshot (725-728). Embeddings wire matches; memory-index database metadata/hashes may differ.",
+    }
     report["identity_seams"] = ["agent-exec-BAuhpelg.mjs:311 allocates UUID2 after stock module setup consumes UUID1; BB runtime_inputs.session_id is UUID2", "UUID sequence varies first8 and final12 digits, preserving session-accessor-BxcCxteu.mjs:2789-2792 uniqueness"]
     report["environment_normalizations"] = []
     report["clock_seams"] = {"message_timestamp_ms": EPISODE_TIMESTAMP_MS,
@@ -497,21 +684,36 @@ def run_lane(out: Path, scenarios: tuple[str, ...] = SCENARIOS) -> dict[str, Any
                             "breadboard": "declared runtime_inputs.message_timestamp_ms; worker:531,538,637,1301; semantics _source_message_timestamp",
                             "replay_offsets": "One per committed assistant/tool and completed checkpoint; HTTP error placeholders do not commit before recovery in BB (conductor.py:2799-2822). Actual stock and BB initial/continuation timestamps are reported and asserted equal.",
                             "control_clocks": "Stock Date.now, timers and deadlines are unchanged; no regex normalization"}
-    report["files_changed"] = ["scripts/compaction_lanes/openclaw_lane.py", "tests/compaction_lanes/test_openclaw_lane.py", "breadboard/rl/harness/openclaw_tool_worker.mjs", "tests/rl/harness/test_openclaw_native_stream_conductor.py", "tests/rl/harness/test_openclaw_2026_9_4_compaction.py"]
+    report["files_changed"] = [
+        "scripts/compaction_lanes/openclaw_lane.py", "tests/compaction_lanes/test_openclaw_lane.py",
+        "breadboard/rl/harness/openclaw_tool_worker.mjs", "breadboard/rl/harness/openclaw_classifier_loader.mjs",
+        "breadboard/rl/harness/openclaw_native_tools.py", "breadboard/rl/harness/native_stream_profiles.py",
+        "breadboard/rl/harness/runners/native_compaction.py", "breadboard/rl/harness/runners/conductor.py",
+        "tests/rl/harness/test_openclaw_native_stream_conductor.py",
+        "tests/rl/harness/test_openclaw_2026_9_4_compaction.py",
+    ]
+    report["integrator_changes"] = ["policy_provider.py native_provider_configuration and provider_exchange admission/transport dispatch", "chat.py summary tool_choice only when present in the source request"]
+    report["tests_run"] = []
     report["defects_found_and_fixed"] = [
         {"classification": "pre-existing E4 parity gap", "defect": "read/ls caps and skill-description budget omitted model window", "fix": "openclaw_tool_worker.mjs:makeTools,materializeSourcePrompt", "stock": "core-coding-tools-DoP9tAh3.mjs:1007,1024-1025; workspace-skill-prompt-D3wdQJbf.mjs:105-106"},
         {"classification": "pre-existing E4 parity gap", "defect": "headless initialization created templates and retained BOOTSTRAP.md", "fix": "openclaw_tool_worker.mjs:bootstrapContext,initialize_session", "stock": "agent-exec-BAuhpelg.mjs:106; builtin-openclaw-B-H-7lKk.mjs:1850-1861,1893"},
         {"classification": "pre-existing E4 parity gap", "defect": "session runtime facts used explicit scope rather than declared agent-exec scope", "fix": "openclaw_tool_worker.mjs:initialize_session", "stock": "agent-exec-BAuhpelg.mjs:388"},
         {"classification": "compaction-path defect introduced by branch", "defect": "overflow retry omitted transient internal continuation", "fix": "openclaw_tool_worker.mjs:projectSourceRequest,finalize_compaction; verified source data and normalizeMessagesForLlmBoundary formatter", "stock": "embedded-agent-CE9KzQvy.mjs:5898,5961-5967,6063-6068"},
         {"classification": "compaction-path defect introduced by branch", "defect": "SDK assistant-progress resets weakened the embedded caller's three-attempt recovery bound", "fix": "openclaw_tool_worker.mjs:admitSourceRecoveryEvents", "stock": "embedded-agent-CE9KzQvy.mjs:3093-3095,3189-3198"},
+        {"classification": "pre-existing E4 parity gap", "defect": "post-compaction stock embeddings were omitted", "fix": "Declared raw exchange through production conductor and unchanged stock memory indexing, with private bound auth and persistent source ledger", "stock": "compact-BvznzvKp.mjs:235-267; manager-runtime.js:5783-5918"},
+        {"classification": "independent-review P1", "defect": "Private provider response headers were copied into replay traces", "fix": "native_compaction.py:drain_provider_exchanges retains public status/body_b64/headers_digest; unchanged raw response privately resumes stock", "test": "test_provider_exchange_uses_bound_transport_headers_and_private_response"},
+        {"classification": "independent-review P2", "defect": "Terminal drain passed the turn list instead of the last numeric turn", "fix": "conductor.py:classify provider_exchange callback uses last RunnerTurn.turn", "test": "test_stock_session_delta_timer_drains_on_final_numeric_turn; unchanged manager-runtime.js:1872-1893 callback driven deterministically without sleeps"},
     ]
     report["deviations_used"] = sorted({deviation for result in results.values() for deviation in result["deviations_used"]})
-    report["unresolved"] = [{"scenario": name, "classification": "pre-existing E4 memory-indexing gap" if result["auxiliary_requests"]["stock"] and not result["auxiliary_requests"]["bb"] and not result["chat_payload_comparison"]["diffs"] else "request parity failure",
+    report["unresolved"] = [{"scenario": name, "classification": "lane comparison failure",
                             "diff_count": len(result["diffs"]), "auxiliary_requests": result["auxiliary_requests"],
+                            "transcript_diff_count": len(result["logical_transcript_comparison"]["diffs"]),
                             "chat_diff_count": len(result["chat_payload_comparison"]["diffs"]),
                             "stock_execution_error": result["stock_result"].get("execution_error")}
-                           for name, result in results.items() if result["diffs"] or result["stock_result"].get("execution_error")]
-    report["baseline_memory_evidence"] = "Base308b9027 openclaw_tool_worker.mjs:197-204,378 only builds coding tools and renders memory instructions; no memory-index path. The r2 sealed config does not disable default stock embeddings. Target unchanged; omission is not an admitted deviation."
+                           for name, result in results.items()
+                           if result["diffs"] or result["logical_transcript_comparison"]["diffs"]
+                           or result["stock_result"].get("execution_error")]
+    report["baseline_memory_evidence"] = "Base308b9027 openclaw_tool_worker.mjs:197-204,378 has no memory-index path. The r2 sealed config does not disable default stock indexing; the gap is now fixed without target changes."
     (out / "lane_report.json").write_text(json.dumps(report, indent=2) + "\n")
     return report
 

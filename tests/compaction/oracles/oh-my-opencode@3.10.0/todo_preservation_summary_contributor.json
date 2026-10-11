@@ -42,6 +42,9 @@
     "native_settings": {},
     "summary_responses": [
       "Summary including todo state and active files."
+    ],
+    "stage_ids": [
+      "summary"
     ]
   },
   "expect": {

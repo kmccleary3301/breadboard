@@ -239,6 +239,7 @@ export type SessionStartedPayload =
       readonly module_input?: never
       readonly module_input_sequence?: never
       readonly lineage?: SessionEventLineage
+      readonly concurrent_approvals?: true
     }
   | {
       readonly effective_lock_hash: string
@@ -246,6 +247,7 @@ export type SessionStartedPayload =
       readonly module_input: ModuleInput
       readonly module_input_sequence: number
       readonly lineage?: SessionEventLineage
+      readonly concurrent_approvals?: true
     }
 
 export type SessionInputAcceptedPayload =

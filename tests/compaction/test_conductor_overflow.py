@@ -34,10 +34,12 @@ def _run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compaction: str) -> Li
             )
         calls.append(("model", len(messages)))
         if len(messages) >= OVERFLOW_AT:
+            # Runtimes sanitize the public message but keep the SDK cause, which
+            # native classifiers (e.g. OpenCode provider/error.ts) read.
             raise ProviderRuntimeError(
                 "provider operation failed (BadRequestError)",
                 details={"code": "context_length_exceeded", "status_code": 400},
-            )
+            ) from Exception("This model's maximum context length is 1000 tokens.")
         return original(
             self, client=client, model=model, messages=messages, tools=tools, stream=stream, context=context
         )

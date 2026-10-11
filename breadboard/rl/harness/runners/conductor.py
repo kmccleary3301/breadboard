@@ -49,6 +49,7 @@ from breadboard.rl.harness.runners.native_compaction import (
     compact_history,
     compaction_context_window,
     compaction_settings,
+    drain_provider_exchanges,
 )
 from breadboard.rl.harness.runners.base import (
     ConductorToolPort,
@@ -387,9 +388,24 @@ class PolicyRuntimeBinding:
             system_prompt, tools, accept_truncated_stream=accept_truncated_stream,
         )
 
+    def native_provider_configuration(self) -> Mapping[str, Any]:
+        profile = NATIVE_STREAM_PROFILES.get(self._source_consumer_id)
+        if profile is None or not profile.provider_exchanges or self._state != "claimed":
+            raise RunnerPolicyBindingError(
+                "native provider exchanges require an active capability",
+                code="native_response_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return self._client.native_provider_configuration()
+
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         if (
             self._source_consumer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
+            and (
+                (profile := NATIVE_STREAM_PROFILES.get(self._source_consumer_id)) is None
+                or not profile.provider_exchanges
+            )
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
@@ -404,6 +420,10 @@ class PolicyRuntimeBinding:
     def take_native_http_response(self, response_digest: str) -> Mapping[str, Any]:
         if (
             self._source_consumer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
+            and (
+                (profile := NATIVE_STREAM_PROFILES.get(self._source_consumer_id)) is None
+                or not profile.provider_exchanges
+            )
             or self._state != "claimed"
             or not isinstance(self._client, NativeHTTPPolicyRuntimeClientPort)
         ):
@@ -2628,6 +2648,11 @@ class _ConductorSession:
             "model_config": thaw_json(self._binding.source_model_config),
             "advertisement": thaw_json(advertisement),
             "runtime_inputs": runtime_inputs,
+            **({
+                "provider_exchanges": sorted(profile.provider_exchanges),
+                "provider_configuration": self._binding.native_provider_configuration(),
+            } if profile.provider_exchanges
+                and self._projection.source_profile.get("compaction") is True else {}),
         })
         self._native_stream_close_callback = close_once
         bootstrap = initialized.get("bootstrap")
@@ -2700,6 +2725,16 @@ class _ConductorSession:
         last_usage: list[Any] = [None]
         last_tools: list[Any] = [None]
 
+        async def provider_exchange(request: Mapping[str, Any], turn: int) -> Mapping[str, Any]:
+            if request.get("provider_exchange") not in profile.provider_exchanges:
+                raise RunnerProtocolError(
+                    "native provider exchange capability is not admitted",
+                    code="native_response_invalid", **self._context(),
+                )
+            return await self._invoke_native_policy(
+                request, model=model, turn=turn, verify_staged_body=True,
+            )
+
         async def run_compaction(
             turn: int, *, reason: Literal["overflow", "threshold"],
             checkpoint: Literal["overflow", "before_request", "agent_end"],
@@ -2716,6 +2751,9 @@ class _ConductorSession:
                 context_window=compaction_window, settings=settings_for_compaction,
                 model_id=model.model_id, tools=tools, phase=phase,
                 exchange=summary_exchange, trace_requests=trace_requests,
+                provider_exchange=(
+                    lambda request: provider_exchange(request, turn)
+                ) if profile.provider_exchanges else None,
             )
             if compacted is None:
                 return None
@@ -2748,6 +2786,11 @@ class _ConductorSession:
                 overflow_message = None
                 request_traced = False
                 projected = await phase("project_request", {"messages": state.messages})
+                if profile.provider_exchanges and compaction_enabled:
+                    await drain_provider_exchanges(
+                        phase=phase, exchange=lambda request: provider_exchange(request, turn),
+                        trace_requests=trace_requests, checkpoint="before_request",
+                    )
                 if projected.get("kind") != "request":
                     raise RunnerProtocolError(
                         "native request projection failed",
@@ -3110,7 +3153,16 @@ class _ConductorSession:
                 model_config=thaw_json(self._binding.source_model_config),
                 session_id=self._open_request.episode_id,
             )
+            if profile.provider_exchanges and compaction_enabled:
+                payload["messages"] = state.messages
             raw_classified = await phase(profile.classify_result_phase, payload)
+            if profile.provider_exchanges and compaction_enabled:
+                await drain_provider_exchanges(
+                    phase=phase, exchange=lambda request: provider_exchange(
+                        request, self._turns[-1].turn if self._turns else 1,
+                    ),
+                    trace_requests=trace_requests, checkpoint="agent_end",
+                )
             if (
                 raw_classified.get("kind") != "classified_result"
                 or not isinstance(raw_classified.get("envelope"), Mapping)

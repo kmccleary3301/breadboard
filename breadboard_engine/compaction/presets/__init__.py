@@ -213,6 +213,7 @@ class Recipe:
     """``compact`` (compact and retry) or ``terminal`` (the overflow error ends the run)."""
     request_view: Tuple[str, ...]
     native_retention: Optional[Any] = None
+    error_classifier: Optional[Callable[[Any], bool]] = None
 
     @property
     def active(self) -> bool:
@@ -275,6 +276,7 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
     overflow = params.child(params.mapping("overflow"), "overflow")
     preset_attempts = overflow.int("max_attempts_per_turn", minimum=0)
     preset_policy = overflow.choice("policy", ("compact", "terminal"))
+    error_classifier = overflow.compaction_callable("error_classifier", None)
     overflow.done()
 
     request_view = tuple(params.list("request_view"))
@@ -329,4 +331,5 @@ def build_recipe(config: CompactionConfig, doc: Optional[Mapping[str, Any]] = No
         overflow_policy=config.overflow_policy or preset_policy,
         request_view=request_view,
         native_retention=native_retention,
+        error_classifier=error_classifier,
     )

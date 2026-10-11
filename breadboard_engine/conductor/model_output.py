@@ -84,7 +84,7 @@ def _assistant_history_message(
         history["reasoning"] = reasoning
     annotations = getattr(msg, "annotations", None)
     if isinstance(annotations, dict):
-        for field_name in ("reasoning_content", "reasoning", "reasoning_details"):
+        for field_name in ("reasoning_content", "reasoning", "reasoning_details", "phase"):
             field_value = annotations.get(field_name)
             if field_value is not None:
                 history[field_name] = field_value
@@ -148,10 +148,30 @@ def process_model_output(
     model: str,
 ) -> bool:
     msg = legacy_message_view(provider_message)
+    hosted_outputs = ((conductor.config.get("provider_tools") or {}).get("openai") or {}).get("responses_hosted_outputs", [])
+    if (
+        "web_search_call" in hosted_outputs
+        and not getattr(msg, "tool_calls", None)
+        and isinstance(msg.content, list)
+        and msg.content
+        and all(
+            isinstance(block, dict)
+            and block.get("type") == "provider_replay"
+            and block.get("provider_id") == "openai"
+            and block.get("schema_version") == "openai.responses.hosted.v1"
+            and block.get("payload", {}).get("type") == "web_search_call"
+            for block in msg.content
+        )
+    ):
+        # Stock protocol/models.rs:869-878 keeps hosted items in conversation.
+        # They are provider replay, not text, local calls, or completion signals.
+        session_state.add_message(_assistant_history_message(provider_message))
+        return False
     turn_policy = TurnPolicy.from_config(conductor.config)
     summary = getattr(session_state, "tool_usage_summary", {})
     if (
         turn_policy.allows_zero_tool_completion()
+        and (conductor.config.get("completion") or {}).get("append_response_marker", True)
         and not getattr(msg, "tool_calls", None)
     ):
         total_calls = int(summary.get("total_calls") or 0)
@@ -186,7 +206,11 @@ def process_model_output(
         )
 
     if msg.content:
-        session_state.add_message({"role": "assistant", "content": msg.content})
+        history = {"role": "assistant", "content": msg.content}
+        phase = getattr(msg, "annotations", {}).get("phase")
+        if phase is not None:
+            history["phase"] = phase
+        session_state.add_message(history)
         session_state.add_transcript_entry({"assistant": msg.content})
 
         assistant_history = session_state.get_provider_metadata("assistant_text_history", [])
@@ -799,6 +823,12 @@ def handle_native_tool_calls(
         msg,
         tool_calls=tool_calls_payload,
     )
+    native_tools = conductor.config.get("tools") or {}
+    if (native_tools.get("group_native_calls_by_turn") is True
+            and not ((conductor.config.get("provider_tools") or {}).get("anthropic") or {}).get("native_tool_result_replay")):
+        # Claude grouping is carried by native assistant/replay blocks, not a
+        # private Responses marker in canonical persisted/request messages.
+        provider_assistant_tool_message["_provider_tool_batch"] = session_state.get_provider_metadata("current_turn_index")
 
     parsed_calls: List[Any] = []
     for tc in msg.tool_calls:
@@ -806,14 +836,18 @@ def handle_native_tool_calls(
         if not fn:
             continue
         arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-        try:
-            args = (
-                json.loads(arg_str)
-                if isinstance(arg_str, str)
-                else (arg_str or {})
-            )
-        except Exception:
-            args = {}
+        if native_tools.get("native_semantics") in {"opencode_1_2_17", "oh_my_opencode_3_10_0"}:
+            # Stock owns parsing/repair. Keep even malformed JSON lexical.
+            args = arg_str
+        else:
+            try:
+                args = (
+                    json.loads(arg_str)
+                    if isinstance(arg_str, str)
+                    else (arg_str or {})
+                )
+            except Exception:
+                args = {}
         canonical_fn = conductor.agent_executor.canonical_tool_name(fn)
         raw_meta = getattr(tc, "raw", None)
         expected_output = None
@@ -1005,6 +1039,27 @@ def handle_native_tool_calls(
         results: Any,
         **_: Any,
     ) -> None:
+        native_tools = conductor.config.get("tools") or {}
+        if native_tools.get("native_semantics") == "claude_code_2_1_63" and native_tools.get("group_native_calls_by_turn"):
+            # One canonical group owns the exact stock user-message boundaries.
+            # Do not duplicate the replay payload or flatten it through fallback.
+            if not results:
+                return
+            adapter = provider_adapter_manager.get_adapter("anthropic")
+            native_messages = results[0]["out"]["__claude_tool_result_messages"]
+            message = adapter.create_tool_result_batch_message(native_messages)
+            expected = [entry["call_id"] for entry in results]
+            observed = [block["call_id"] for block in message["content"] if block["type"] == "tool_result"]
+            if observed != expected:
+                raise ValueError("Stock tool batch relay call order mismatch")
+            for entry in results:
+                ui_message = conductor.message_formatter.create_tool_result_entry(
+                    entry["fn"], entry["out"], syntax_type="openai", call_id=entry["call_id"],
+                )
+                session_state.add_message(ui_message, to_provider=False)
+            with session_state.context_mutation():
+                session_state.provider_messages.append(message)
+            return
         tool_messages_to_relay: List[Dict[str, Any]] = []
         try:
             flow_strategy = turn_policy.relay_flow()

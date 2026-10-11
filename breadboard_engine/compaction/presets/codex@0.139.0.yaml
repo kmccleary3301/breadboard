@@ -48,9 +48,15 @@ pipeline:
         features: []
         native_feature: RemoteCompactionV2
         exclude_prefix: {file: summary_prefix.md}
+        exclude_pending_user_on: [pre_turn]
+        # context-fragments/src/fragment.rs:114-127; initial context is not a task.
+        exclude_context_user_markers: &contextual_markers
+          - {start: "<environment_context>", end: "</environment_context>"}
+          - {start: "# AGENTS.md instructions for ", end: "</INSTRUCTIONS>"}
       reduce:
         kind: chat_summary
         system_from_history: true
+        exclude_pending_user_on: [pre_turn]
         prompt: {file: prompt.md}
         max_tokens: null
         empty_fallback: (no summary available)
@@ -68,3 +74,9 @@ pipeline:
         prefix: {file: summary_prefix.md}
         separator: "\n"
         replay: before
+        # compact.rs:297-307,465-506: DoNotInject+startup reinstall vs BeforeLastUserMessage.
+        restore_context_roles: [developer]
+        restore_context_user_markers: *contextual_markers
+        restore_context_placements:
+          pre_turn: after_summary
+          mid_turn: before_last_user

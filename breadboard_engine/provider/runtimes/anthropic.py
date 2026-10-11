@@ -74,6 +74,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         system_parts: List[str] = []
         converted: List[Dict[str, Any]] = []
+        layout_enabled = bool(context and ((context.agent_config.get("provider_tools") or {}).get("anthropic") or {}).get("request_layout"))
+        user_indices: List[int] = []
 
         def text_blocks(content: Any) -> List[Dict[str, Any]]:
             if isinstance(content, str):
@@ -214,6 +216,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 continue
 
             if role in {"tool", "tool_result"}:
+                if isinstance(content, list) and any(
+                    isinstance(block, dict) and block.get("type") == "provider_replay"
+                    and block.get("schema_version") == "anthropic.messages.tool_result.v1"
+                    for block in content
+                ):
+                    configuration = ((context.agent_config.get("provider_tools") or {}).get("anthropic") or {}) if context else {}
+                    if not configuration.get("native_tool_result_replay"):
+                        raise ProviderContractError("native tool continuation is not enabled")
+                    from ..anthropic_replay import replay_messages
+
+                    converted.extend(replay_messages(content))
+                    continue
                 result_blocks: List[Dict[str, Any]] = []
                 if isinstance(content, list):
                     for block in text_blocks(content):
@@ -343,6 +357,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     "user content cannot contain tool call/result blocks"
                 )
             if blocks:
+                if layout_enabled and role == "user":
+                    user_indices.append(len(converted))
                 converted.append({"role": role, "content": blocks})
 
         # Fold replayed compaction blocks into immediately following assistant turns per OMP
@@ -364,7 +380,10 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         "content": [curr["content"][0], *nxt["content"]],
                     }
                 ]
+                user_indices = [index - 1 if index > i else index for index in user_indices]
 
+        if layout_enabled:
+            context.extra["request_layout_user_indices"] = user_indices
         return (
             "\n\n".join(system_parts) if system_parts else None,
             converted,
@@ -821,6 +840,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         except Exception:
             allow_todos = True
 
+        preserved = ((agent_cfg.get("provider_tools") or {}).get("anthropic") or {}).get("preserve_tool_names", [])
         filtered: List[Dict[str, Any]] = []
         dropped: List[str] = []
         for tool in tools:
@@ -833,7 +853,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 continue
 
             lowered = name.lower()
-            if not allow_todos and lowered.startswith("todo"):
+            if not allow_todos and lowered.startswith("todo") and name not in preserved:
                 dropped.append(name)
                 continue
 
@@ -1372,6 +1392,11 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             )
         else:
             request.update(summary_params)
+        layout = anthropic_cfg.get("request_layout")
+        if layout is not None:
+            from ...compilation.context_builders import load_context_callback
+
+            request = load_context_callback(layout, "build_request")(request, context)
 
         response_metadata: Dict[str, Any] = {"stream": bool(stream)}
         if resolved_tool_choice:
@@ -1451,6 +1476,12 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     context=context,
                     metadata=metadata,
                 )
+                if layout is not None and layout.get("response_callable") is not None:
+                    from ...compilation.context_builders import load_context_callback
+                    callback = load_context_callback(
+                        {**layout, "callable": layout["response_callable"]}, layout["response_callable"]
+                    )
+                    callback(response, context)
                 return self._normalize_response(response, usage_override=usage_override)
             except ProviderRuntimeError:
                 raise

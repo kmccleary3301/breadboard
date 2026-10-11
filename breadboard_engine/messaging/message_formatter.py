@@ -45,6 +45,11 @@ class MessageFormatter:
         syntax_type: str = "",
         call_id: str | None = None,
     ) -> Dict[str, Any]:
+        if (isinstance(tool_result, dict) and tool_result.get("__mvi_native_responses_output") is True
+                and isinstance(tool_result.get("__mvi_content_output"), list)):
+            from ..provider.contract_messages import responses_image_tool_result_message
+
+            return responses_image_tool_result_message(call_id, tool_result["__mvi_content_output"])
         content = tool_result
         if isinstance(tool_result, dict):
             content = tool_result.get("output") or tool_result.get("__mvi_text_output") or tool_result

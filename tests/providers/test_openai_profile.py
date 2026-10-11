@@ -1101,24 +1101,25 @@ def test_openai_sdk_without_length_finish_reason_error_still_creates_provider(mo
 
     fake_openai.OpenAI = FakeClient
     monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    # Runtime modules hold the original singleton by value; teardown restores it
+    # instead of reloading while the fake SDK is still installed.
+    monkeypatch.setattr(sdk_bindings, "ProviderSdkBindings", sdk_bindings.ProviderSdkBindings)
+    monkeypatch.setattr(sdk_bindings, "provider_sdk_bindings", sdk_bindings.provider_sdk_bindings)
 
     reloaded_bindings = importlib.reload(sdk_bindings)
     monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
     monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
-    try:
-        assert reloaded_bindings.provider_sdk_bindings.openai is FakeClient
-        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+    assert reloaded_bindings.provider_sdk_bindings.openai is FakeClient
+    assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
 
-        runtime = _runtime()
-        client = runtime.create_client_from_profile(_profile())
-        assert isinstance(client.transport, FakeClient)
-        assert client.transport.kwargs["api_key"] == "episode-secret"
+    runtime = _runtime()
+    client = runtime.create_client_from_profile(_profile())
+    assert isinstance(client.transport, FakeClient)
+    assert client.transport.kwargs["api_key"] == "episode-secret"
 
-        direct_client = runtime.create_client(api_key="direct-secret")
-        assert isinstance(direct_client, FakeClient)
-        assert direct_client.kwargs["api_key"] == "direct-secret"
-    finally:
-        importlib.reload(sdk_bindings)
+    direct_client = runtime.create_client(api_key="direct-secret")
+    assert isinstance(direct_client, FakeClient)
+    assert direct_client.kwargs["api_key"] == "direct-secret"
 
 
 def test_missing_openai_sdk_preserves_error_projection(monkeypatch):
@@ -1126,20 +1127,19 @@ def test_missing_openai_sdk_preserves_error_projection(monkeypatch):
     from breadboard_engine.provider.runtimes.openai import streaming as streaming_module
 
     monkeypatch.setitem(sys.modules, "openai", None)
+    monkeypatch.setattr(sdk_bindings, "ProviderSdkBindings", sdk_bindings.ProviderSdkBindings)
+    monkeypatch.setattr(sdk_bindings, "provider_sdk_bindings", sdk_bindings.provider_sdk_bindings)
     reloaded_bindings = importlib.reload(sdk_bindings)
     monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
     monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
-    try:
-        assert reloaded_bindings.provider_sdk_bindings.openai is None
-        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+    assert reloaded_bindings.provider_sdk_bindings.openai is None
+    assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
 
-        runtime = _runtime()
-        with pytest.raises(ProviderRuntimeError) as exc_info:
-            runtime.create_client_from_profile(_profile())
-        assert "openai package not installed" in str(exc_info.value)
+    runtime = _runtime()
+    with pytest.raises(ProviderRuntimeError) as exc_info:
+        runtime.create_client_from_profile(_profile())
+    assert "openai package not installed" in str(exc_info.value)
 
-        with pytest.raises(ProviderRuntimeError) as exc_info_direct:
-            runtime.create_client(api_key="key")
-        assert "openai package not installed" in str(exc_info_direct.value)
-    finally:
-        importlib.reload(sdk_bindings)
+    with pytest.raises(ProviderRuntimeError) as exc_info_direct:
+        runtime.create_client(api_key="key")
+    assert "openai package not installed" in str(exc_info_direct.value)

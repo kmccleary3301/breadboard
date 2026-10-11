@@ -1,0 +1,70 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: grep
+name: grep
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Fast content search tool with safety limits (60s timeout, 256KB output). Searches file contents using
+  regular expressions. Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.). Filter files by pattern
+  with the include parameter (eg. "*.js", "*.{ts,tsx}"). Output modes: "content" shows matching lines, "files_with_matches"
+  shows only file paths (default), "count" shows match counts per file.'
+parameters:
+- name: pattern
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: include
+  required: false
+  schema: &id002
+    type: string
+  type: string
+- name: path
+  required: false
+  schema: &id003
+    type: string
+  type: string
+- name: output_mode
+  required: false
+  schema: &id004
+    type: string
+    enum:
+    - content
+    - files_with_matches
+    - count
+  type: string
+- name: head_limit
+  required: false
+  schema: &id005
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: grep
+      description: 'Fast content search tool with safety limits (60s timeout, 256KB output). Searches file contents
+        using regular expressions. Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.). Filter
+        files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}"). Output modes: "content" shows matching
+        lines, "files_with_matches" shows only file paths (default), "count" shows match counts per file.'
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          pattern: *id001
+          include: *id002
+          path: *id003
+          output_mode: *id004
+          head_limit: *id005
+        required:
+        - pattern
+        additionalProperties: false
+      strict: false

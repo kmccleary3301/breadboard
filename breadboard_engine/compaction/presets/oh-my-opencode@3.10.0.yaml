@@ -6,6 +6,11 @@ source:
   evidence:
   - src/hooks/anthropic-context-window-limit-recovery/target-token-truncation.ts:26-196
   - src/hooks/compaction-context-injector/hook.ts:7-71
+  - src/hooks/anthropic-context-window-limit-recovery/parser.ts:12-209
+  - src/hooks/anthropic-context-window-limit-recovery/recovery-hook.ts:58-167
+  - src/hooks/anthropic-context-window-limit-recovery/executor.ts:43-79
+  - src/hooks/anthropic-context-window-limit-recovery/summarize-retry-strategy.ts:111-159
+  - src/hooks/anthropic-context-window-limit-recovery/types.ts:31-43
 claim: source_golden
 native_settings:
   adapter: paths
@@ -37,6 +42,11 @@ triggers:
   enabled: true
   disable_zero_window: true
   provider_overflow: true
+- kind: pending_error
+  phase: assistant_step_end
+  error_parser: breadboard_engine.compaction.oh_my_opencode:parse_token_limit_error
+  skip_summary_last: true
+  max_attempts: 2
 target:
   threshold:
     kind: input_or_window_reserve
@@ -56,6 +66,7 @@ target:
 overflow:
   max_attempts_per_turn: 1
   policy: compact
+  error_classifier: breadboard_engine.compaction.opencode:is_context_overflow
 request_view: []
 pipeline:
   mode: sequence
@@ -76,6 +87,17 @@ pipeline:
     reduce:
       kind: mask_outputs
       placeholder: '[Old tool result content cleared]'
+  - id: deferred_recovery
+    when: {reasons: [threshold]}
+    stop_on_detail: recovered
+    select:
+      kind: largest_first_masking
+      target_ratio: 0.5
+      chars_per_token: 4
+      placeholder: '[TOOL RESULT TRUNCATED - Context limit exceeded. Original output was too large and has been truncated to recover the session. Please re-run this tool if you need the full output.]'
+    reduce:
+      kind: mask_outputs
+      placeholder: '[TOOL RESULT TRUNCATED - Context limit exceeded. Original output was too large and has been truncated to recover the session. Please re-run this tool if you need the full output.]'
   - id: summary
     accept: any
     select:

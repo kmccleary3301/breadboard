@@ -105,6 +105,7 @@ class MessageSummary:
             purpose="summary", model=context.settings.summary_model or context.target.model,
             stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
             request_options_declared=self.request_options_declared, stateless=self.stateless,
+            context_reason=context.reason,
         )).text
         return Reduction(summary=summary, details={
             "summary": True,

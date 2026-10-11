@@ -61,7 +61,7 @@ class _RecordingPort:
         values = {
             "cwd": str(self.workspace),
             "home": str(self.workspace / "home"),
-            "current_date": "2026-09-25",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": str(self.workspace / package_subpath),
         }
         return {name: values[name] for name in input_names}

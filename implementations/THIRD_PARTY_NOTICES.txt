@@ -41,6 +41,15 @@ in place of a tab. Its surrounding YAML tool declaration is BreadBoard data.
 The Apache-2.0 license and full upstream NOTICE below apply to this identified
 Codex content, subject to their terms.
 
+The dated Codex 0.139.0 native catalog in tools/defs_codex_139/ and the image
+codec implementation in ../breadboard_engine/execution/codex_image/main.rs
+are derived from Codex commit a7dff904308535e965aee87680c1fc5ef1d19eec.
+The same Apache-2.0 license and upstream NOTICE below apply to that content.
+The explicit-build helper in ../breadboard_engine/execution/codex_patch/
+also links the stock apply-patch and filesystem crates at that same revision.
+Its source-derived response formatting is covered by the same Apache-2.0
+license and upstream NOTICE.
+
 Scope limits
 ------------
 No exact upstream origin is established here for summarize.md, title.md or

@@ -1,0 +1,73 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: webfetch
+name: webfetch
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: "- Fetches content from a specified URL\n- Takes a URL and optional format as input\n- Fetches the\
+  \ URL content, converts to requested format (markdown by default)\n- Returns the content in the specified format\n\
+  - Use this tool when you need to retrieve and analyze web content\n\nUsage notes:\n  - IMPORTANT: if another tool\
+  \ is present that offers better web fetching capabilities, is more targeted to the task, or has fewer restrictions,\
+  \ prefer using that tool instead of this one.\n  - The URL must be a fully-formed valid URL\n  - HTTP URLs will\
+  \ be automatically upgraded to HTTPS\n  - Format options: \"markdown\" (default), \"text\", or \"html\"\n  - This\
+  \ tool is read-only and does not modify any files\n  - Results may be summarized if the content is very large\n"
+parameters:
+- name: url
+  required: true
+  schema: &id001
+    description: The URL to fetch content from
+    type: string
+  type: string
+  description: The URL to fetch content from
+- name: format
+  required: true
+  schema: &id002
+    description: The format to return the content in (text, markdown, or html). Defaults to markdown.
+    default: markdown
+    type: string
+    enum:
+    - text
+    - markdown
+    - html
+  type: string
+  description: The format to return the content in (text, markdown, or html). Defaults to markdown.
+- name: timeout
+  required: false
+  schema: &id003
+    description: Optional timeout in seconds (max 120)
+    type: number
+  type: number
+  description: Optional timeout in seconds (max 120)
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: webfetch
+      description: "- Fetches content from a specified URL\n- Takes a URL and optional format as input\n- Fetches\
+        \ the URL content, converts to requested format (markdown by default)\n- Returns the content in the specified\
+        \ format\n- Use this tool when you need to retrieve and analyze web content\n\nUsage notes:\n  - IMPORTANT:\
+        \ if another tool is present that offers better web fetching capabilities, is more targeted to the task,\
+        \ or has fewer restrictions, prefer using that tool instead of this one.\n  - The URL must be a fully-formed\
+        \ valid URL\n  - HTTP URLs will be automatically upgraded to HTTPS\n  - Format options: \"markdown\" (default),\
+        \ \"text\", or \"html\"\n  - This tool is read-only and does not modify any files\n  - Results may be summarized\
+        \ if the content is very large\n"
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          url: *id001
+          format: *id002
+          timeout: *id003
+        required:
+        - url
+        - format
+        additionalProperties: false
+      strict: false

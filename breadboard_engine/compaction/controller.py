@@ -56,6 +56,14 @@ class CompactionController:
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
         self._messages_len_at_last_record: Optional[int] = None
+        self.sampling_phase: Optional[str] = None
+        self.pending_user_index: Optional[int] = None
+        self.tracks_sampling_phase = any(
+            getattr(getattr(stage.step, "placement", None), "restore_context_placements", {})
+            or getattr(getattr(stage.step, "selector", None), "exclude_pending_user_on", ())
+            or getattr(getattr(stage.step, "reducer", None), "exclude_pending_user_on", ())
+            for stage in self.recipe.pipeline.stages.values()
+        )
 
     @property
     def active(self) -> bool:
@@ -207,6 +215,10 @@ class CompactionController:
                 supports_images=supports_images,
                 max_output_tokens=max_output,
             )
+        self._serve_native_summary_requests(
+            session_state, conductor=conductor, runtime=runtime, client=client,
+            model=model, turn_index=turn_index,
+        )
         return self.build_request_view(
             session_state,
             target=target,
@@ -218,13 +230,44 @@ class CompactionController:
             client=client,
         )
 
+    def _serve_native_summary_requests(
+        self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
+        model: str, turn_index: Optional[int],
+    ) -> bool:
+        """Commit genuine BB boundaries for each summary actually queued by stock."""
+        native = getattr(session_state, "_opencode_tool_session", None)
+        if native is None:
+            return False
+        served = False
+        while native.compaction_pending is not None:
+            pending = native.compaction_pending
+            _, max_output = self.resolve_model_limits(session_state, conductor, model)
+            outcome = self.compact(
+                session_state, reason="threshold", target=projection_target_for(runtime, model),
+                conductor=conductor, runtime=runtime, client=client,
+                context_window=self.resolve_context_window(
+                    conductor=conductor, session_state=session_state, model=model),
+                turn_index=turn_index,
+                supports_images=self.resolve_supports_images(conductor=conductor, model=model),
+                max_output_tokens=max_output,
+            )
+            if not outcome.compacted or native.compaction_pending is pending:
+                from ..execution.opencode_tools import StockExecutionError
+                raise StockExecutionError("Genuine BB compaction did not consume the queued stock summary")
+            served = True
+        return served
+
     def finish_assistant_step(
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
         model: str, turn_index: Optional[int],
     ) -> bool:
         """Run a declared post-response checkpoint, including terminal answers."""
+        source_compacted = self._serve_native_summary_requests(
+            session_state, conductor=conductor, runtime=runtime, client=client,
+            model=model, turn_index=turn_index,
+        )
         if not any(getattr(trigger, "phase", None) == "assistant_step_end" for trigger in self.recipe.triggers):
-            return False
+            return source_compacted
         window = self.resolve_context_window(conductor=conductor, session_state=session_state, model=model)
         max_input, max_output = self.resolve_model_limits(session_state, conductor, model)
         if not self.should_trigger_threshold(
@@ -233,15 +276,33 @@ class CompactionController:
             max_input_tokens=max_input, max_output_tokens=max_output,
             checkpoint="assistant_step_end",
         ):
-            return False
+            return source_compacted
+        pending = None
+        for trigger in self.recipe.triggers:
+            consume = getattr(trigger, "consume", None)
+            if callable(consume):
+                parsed = consume()
+                if parsed is not None:
+                    pending = parsed
         outcome = self.compact(
             session_state, reason="threshold", target=projection_target_for(runtime, model),
             conductor=conductor, runtime=runtime, client=client,
             context_window=window, turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
             max_output_tokens=max_output,
+            overflow_tokens=pending.get("overflow_tokens") if pending is not None else None,
+            overflow_limit=pending.get("overflow_limit") if pending is not None else None,
         )
-        return outcome.compacted
+        if pending is not None and any(record.details.get("recovered") for record in outcome.records):
+            for trigger in self.recipe.triggers:
+                clear = getattr(trigger, "clear", None)
+                if callable(clear):
+                    clear()
+        additional_compacted = self._serve_native_summary_requests(
+            session_state, conductor=conductor, runtime=runtime, client=client,
+            model=model, turn_index=turn_index,
+        )
+        return outcome.compacted or source_compacted or additional_compacted
 
     def finish_user_turn(
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
@@ -371,11 +432,23 @@ class CompactionController:
         # compaction and its usage would retrigger it.
         usage_fresh = len(messages) != self._messages_len_at_last_record
         metadata_input, metadata_output = self.resolve_model_limits(session_state)
+        summary_last = False
+        if checkpoint == "assistant_step_end" and any(
+            getattr(trigger, "kind", None) == "pending_error" for trigger in self.recipe.triggers
+        ) and compaction_state is not None:
+            for record in reversed(compaction_state.records):
+                if record.is_boundary and record.details.get("summary"):
+                    summary_last = not any(
+                        message.get("role") == "assistant"
+                        for message in messages[record.history_length:]
+                    )
+                    break
         data = TriggerInput(
             OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window,
             max_input_tokens=max_input_tokens if max_input_tokens is not None else metadata_input,
             max_output_tokens=max_output_tokens if max_output_tokens is not None else metadata_output,
             checkpoint=checkpoint,
+            last_assistant_is_summary=summary_last,
         )
         pressure = self.recipe.pressure(data, messages)
         return pressure is not None and pressure.fires
@@ -404,6 +477,12 @@ class CompactionController:
             # Only explicitly stateless replacements supersede provider state.
             session_state.set_provider_metadata("conversation_id", None)
             session_state.set_provider_metadata("previous_response_id", None)
+        if getattr(session_state, "_opencode_native_semantics", None) in {
+            "opencode_1_2_17", "oh_my_opencode_3_10_0",
+        }:
+            from ..execution.opencode_tools import synchronize_record
+
+            synchronize_record(session_state, record)
         self._record_event(
             session_state,
             "compaction_record_appended",
@@ -497,6 +576,7 @@ class CompactionController:
             usage_fresh=len(messages) != self._messages_len_at_last_record,
             native_retention=self.recipe.native_retention,
             prior_compactions=sum(record.is_boundary for record in state.records),
+            sampling_phase=self.sampling_phase, pending_user_index=self.pending_user_index,
             severity="hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft",
             clock=clock or _utc_now,
         )
@@ -663,19 +743,47 @@ class CompactionController:
         client: Optional[Any],
         model: str,
     ) -> bool:
-        """Compact after a context-overflow provider error.
+        """Recover through native overflow or a declared pending-error checkpoint.
 
         True means a record was appended and the caller should retry the
-        request once more. False (not an overflow, compaction inactive,
-        overflow policy ``terminal``, pass budget spent, or no method made
-        progress) means the caller re-raises ``exc`` unchanged.
+        request once more. False (no eligible recovery signal, compaction
+        inactive, terminal policy, spent budget, or no progress) means the
+        caller re-raises ``exc`` unchanged.
         """
-        if (
-            not self.active
-            or self.recipe.overflow_policy != "compact"
-            or not is_context_overflow(exc)
-            or not self.can_pass(turn_index)
-        ):
+        native = getattr(session_state, "_opencode_tool_session", None)
+        source_outcome = (session_state.get_provider_metadata("opencode_stock_recovery_outcome")
+                          if native is not None else None)
+        if source_outcome in {"handled", "error"}:
+            session_state.set_provider_metadata("opencode_stock_recovery_outcome", None)
+            for trigger in self.recipe.triggers:
+                if getattr(trigger, "kind", None) == "pending_error":
+                    trigger.clear()
+            # The failed user remains an error outcome. A native handled
+            # successor is a distinct stock-origin turn, not a retry.
+            return False
+        if self.active:
+            for trigger in self.recipe.triggers:
+                arm = getattr(trigger, "arm", None)
+                if callable(arm):
+                    arm(exc)
+        if not self.active or self.recipe.overflow_policy != "compact":
+            return False
+        classifier = self.recipe.error_classifier or is_context_overflow
+        if not classifier(exc):
+            # A source-specific error parser can arm recovery independently
+            # of native overflow. Run its existing assistant-end checkpoint
+            # before the caller terminalizes this failed provider step.
+            if not any(getattr(trigger, "pending", None) is not None
+                       for trigger in self.recipe.triggers):
+                return False
+            recovered = self.finish_assistant_step(
+                session_state, conductor=conductor, runtime=runtime,
+                client=client, model=model, turn_index=turn_index,
+            )
+            if recovered:
+                self.request_attempt += 1
+            return recovered
+        if not self.can_pass(turn_index):
             return False
         self.record_pass(turn_index)
         overflow_tokens, overflow_limit = overflow_token_bounds(exc)

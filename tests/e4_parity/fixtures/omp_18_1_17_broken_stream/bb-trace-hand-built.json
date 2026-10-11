@@ -177,6 +177,7 @@
       "cwd": "/captures/stream_fragments_broken/workspace",
       "home": "/home/capture",
       "current_date": "2026-09-23",
+      "message_timestamp_ms": "1790337600000",
       "package_dir": "/opt/omp/source/oh-my-pi-3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec/packages/coding-agent"
     },
     "effects": {},

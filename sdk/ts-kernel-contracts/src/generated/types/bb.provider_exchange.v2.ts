@@ -12,11 +12,24 @@ export type Identifier = string;
 export type ContentBlock =
   | TextBlock
   | MediaBlock
+  | CodexImageUrlBlock
   | ThinkingBlock
   | RedactedThinkingBlock
   | ToolCallBlock
   | ToolResultBlock
   | ProviderReplayBlock;
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "tool_call_block".
+ */
+export type ToolCallBlock = {
+  type: "tool_call";
+  call_id: Identifier;
+  name: Identifier;
+  arguments_json?: string;
+  arguments?: CanonicalJson;
+  raw_arguments?: string;
+} & ToolCallBlock1;
 /**
  * A finite JSON value serialized canonically by the invariant owner.
  *
@@ -32,31 +45,15 @@ export type CanonicalJson =
   | {
       [k: string]: CanonicalJson;
     };
+export type ToolCallBlock1 = {
+  [k: string]: unknown;
+};
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "provider_replay_non_null_bounded_json".
+ * via the `definition` "tool".
  */
-export type ProviderReplayNonNullBoundedJson =
-  | boolean
-  | number
-  | string
-  | ProviderReplayBoundedJson[]
-  | {
-      [k: string]: ProviderReplayBoundedJson;
-    };
-/**
- * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "provider_replay_bounded_json".
- */
-export type ProviderReplayBoundedJson =
-  | null
-  | boolean
-  | number
-  | string
-  | ProviderReplayBoundedJson[]
-  | {
-      [k: string]: ProviderReplayBoundedJson;
-    };
+export type Tool =
+  LegacyTool | ResponsesFunction | ResponsesNamespace | ResponsesCustom | ResponsesToolSearch | ResponsesWebSearch;
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
  * via the `definition` "event".
@@ -121,13 +118,7 @@ export type Event =
       delta: string;
     }
   | {
-      sequence: EventSequence;
-      kind: "tool_call_end";
-      content_index: ContentIndex;
-      message_id: Identifier;
-      call_id: Identifier;
-      arguments_json: string;
-      arguments: CanonicalJson;
+      [k: string]: unknown;
     };
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
@@ -188,6 +179,57 @@ export type BoundedExtensionJson =
  * via the `definition` "terminal_evidence_refs".
  */
 export type TerminalEvidenceRefs = string[];
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_bounded_json".
+ */
+export type ProviderReplayBoundedJson =
+  | null
+  | boolean
+  | number
+  | string
+  | ProviderReplayBoundedJson[]
+  | {
+      [k: string]: ProviderReplayBoundedJson;
+    };
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_non_null_bounded_json".
+ */
+export type ProviderReplayNonNullBoundedJson =
+  | boolean
+  | number
+  | string
+  | ProviderReplayBoundedJson[]
+  | {
+      [k: string]: ProviderReplayBoundedJson;
+    };
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "openai_responses_tool_replay_payload".
+ */
+export type OpenaiResponsesToolReplayPayload =
+  | {
+      type: "function_call";
+      call_id: Identifier;
+      name: Identifier;
+      arguments: string;
+      namespace?: string;
+    }
+  | {
+      type: "custom_tool_call";
+      call_id: Identifier;
+      name: Identifier;
+      input: string;
+      status?: string;
+    }
+  | {
+      type: "tool_search_call";
+      call_id: Identifier;
+      execution: string;
+      arguments: CanonicalJson;
+      status?: string;
+    };
 
 export interface ProviderExchangeV2 {
   schema_version: "bb.provider_exchange.v2";
@@ -232,6 +274,8 @@ export interface Request {
  */
 export interface Message {
   message_id?: Identifier;
+  phase?: "commentary" | "final_answer";
+  _provider_tool_batch?: number;
   role: "system" | "user" | "developer" | "assistant" | "tool_result";
   content: ContentBlock[];
 }
@@ -254,6 +298,18 @@ export interface MediaBlock {
   mime: string;
 }
 /**
+ * Native Codex user image URL passthrough; runtime execution requires the configured Codex native semantics gate.
+ *
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "codex_image_url_block".
+ */
+export interface CodexImageUrlBlock {
+  type: "media";
+  kind: "codex_image_url";
+  uri: string;
+  detail: "auto" | "low" | "high" | "original";
+}
+/**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
  * via the `definition` "thinking_block".
  */
@@ -271,17 +327,6 @@ export interface RedactedThinkingBlock {
 }
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "tool_call_block".
- */
-export interface ToolCallBlock {
-  type: "tool_call";
-  call_id: Identifier;
-  name: Identifier;
-  arguments_json: string;
-  arguments: CanonicalJson;
-}
-/**
- * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
  * via the `definition` "tool_result_block".
  */
 export interface ToolResultBlock {
@@ -290,39 +335,82 @@ export interface ToolResultBlock {
   content: string;
   is_error?: boolean;
 }
-/**
- * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "provider_replay_block".
- */
 export interface ProviderReplayBlock {
   type: "provider_replay";
   provider_id: string;
   schema_version: string;
   replay_scope: "same_provider" | "diagnostic";
-  payload: ProviderReplayPayload;
+  payload: {
+    [k: string]: unknown;
+  };
 }
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "provider_replay_payload".
+ * via the `definition` "legacy_tool".
  */
-export interface ProviderReplayPayload {
-  encrypted_content?: ProviderReplayNonNullBoundedJson;
-  signature?: ProviderReplayNonNullBoundedJson;
-  redacted_data?: ProviderReplayNonNullBoundedJson;
-  item_id?: string;
-  reasoning_id?: string;
-}
-/**
- * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
- * via the `definition` "tool".
- */
-export interface Tool {
+export interface LegacyTool {
   name: Identifier;
   description?: string;
-  parameters: {
-    [k: string]: CanonicalJson;
-  };
+  parameters: Parameters;
   strict?: boolean;
+}
+export interface Parameters {
+  [k: string]: CanonicalJson;
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "responses_function".
+ */
+export interface ResponsesFunction {
+  type: "function";
+  name: Identifier;
+  description?: string;
+  parameters: Parameters;
+  strict?: boolean;
+  defer_loading?: boolean;
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "responses_namespace".
+ */
+export interface ResponsesNamespace {
+  type: "namespace";
+  name: Identifier;
+  description?: string;
+  tools: ResponsesFunction[];
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "responses_custom".
+ */
+export interface ResponsesCustom {
+  type: "custom";
+  name: Identifier;
+  description?: string;
+  format: {
+    type: "grammar";
+    syntax: "lark";
+    definition: string;
+  };
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "responses_tool_search".
+ */
+export interface ResponsesToolSearch {
+  type: "tool_search";
+  execution: "client";
+  description: string;
+  parameters: Parameters;
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "responses_web_search".
+ */
+export interface ResponsesWebSearch {
+  type: "web_search";
+  external_web_access?: boolean;
+  search_content_types?: ("text" | "image")[];
 }
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
@@ -345,16 +433,128 @@ export interface Usage {
  */
 export interface AssistantMessage {
   message_id?: Identifier;
+  phase?: "commentary" | "final_answer";
   role: "assistant";
   content: ContentBlock[];
+}
+export interface ProviderReplay {
+  provider_id: string;
+  schema_version: string;
+  replay_scope: "same_provider" | "diagnostic";
+  payload: {
+    [k: string]: unknown;
+  };
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_payload".
+ */
+export interface ProviderReplayPayload {
+  encrypted_content?: ProviderReplayNonNullBoundedJson;
+  signature?: ProviderReplayNonNullBoundedJson;
+  redacted_data?: ProviderReplayNonNullBoundedJson;
+  item_id?: string;
+  reasoning_id?: string;
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "anthropic_tool_result_replay_payload".
+ */
+export interface AnthropicToolResultReplayPayload {
+  /**
+   * @minItems 1
+   */
+  messages: [
+    {
+      role: "user";
+      content: {
+        type: string;
+        [k: string]: unknown;
+      }[];
+    },
+    ...{
+      role: "user";
+      content: {
+        type: string;
+        [k: string]: unknown;
+      }[];
+    }[]
+  ];
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "openai_responses_tool_output_replay_payload".
+ */
+export interface OpenaiResponsesToolOutputReplayPayload {
+  type: "function_call_output";
+  call_id: Identifier;
+  output: (
+    | {
+        type: "input_image";
+        image_url: string;
+        detail?: "auto" | "low" | "high" | "original";
+      }
+    | {
+        type: "input_text";
+        text: string;
+      }
+  )[];
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "openai_responses_hosted_replay_payload".
+ */
+export interface OpenaiResponsesHostedReplayPayload {
+  type: "web_search_call";
+  status?: string;
+  action?:
+    | {
+        type: "search";
+        query?: string;
+        queries?: string[];
+      }
+    | {
+        type: "open_page";
+        url?: string;
+      }
+    | {
+        type: "find_in_page";
+        url?: string;
+        pattern?: string;
+      }
+    | {
+        type: "other";
+      };
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_payload_dispatch".
+ */
+export interface ProviderReplayPayloadDispatch {
+  [k: string]: unknown;
 }
 /**
  * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
  * via the `definition` "provider_replay".
  */
-export interface ProviderReplay {
+export interface ProviderReplayPayloadDispatch1 {
   provider_id: string;
   schema_version: string;
   replay_scope: "same_provider" | "diagnostic";
-  payload: ProviderReplayPayload;
+  payload: {
+    [k: string]: unknown;
+  };
+}
+/**
+ * This interface was referenced by `ProviderExchangeV2`'s JSON-Schema
+ * via the `definition` "provider_replay_block".
+ */
+export interface ProviderReplayPayloadDispatch2 {
+  type: "provider_replay";
+  provider_id: string;
+  schema_version: string;
+  replay_scope: "same_provider" | "diagnostic";
+  payload: {
+    [k: string]: unknown;
+  };
 }

@@ -10,6 +10,7 @@ from .byte_estimator import text_tokens
 from .selectors import Selection
 from .triggers import build_limit
 from .native_retention import truncate_middle
+from .context_markers import contextual_user, marker_pairs, sampling_phases
 
 
 
@@ -61,6 +62,8 @@ class UserMessagesBudget:
         self.exclude_prefix = resolve_prompt(params.value("exclude_prefix", ""), params, "exclude_prefix")
         self.features = params.list("features", [])
         self.native_feature = params.str("native_feature", None)
+        self.exclude_context_user_markers = marker_pairs(params, "exclude_context_user_markers")
+        self.exclude_pending_user_on = sampling_phases(params, "exclude_pending_user_on")
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
@@ -75,13 +78,20 @@ class UserMessagesBudget:
                 replay=tuple(i for i in range(start, len(context.messages)) if context.messages[i].get("role") == "user"),
                 details={"native": True},
             )
+        end = len(context.messages)
+        if context.sampling_phase in self.exclude_pending_user_on:
+            if context.pending_user_index is None:
+                raise ValueError("Compaction sampling phase requires the pending user boundary")
+            end = context.pending_user_index
         boundary = context.state.latest_boundary()
         previous = boundary.native.items if boundary is not None and boundary.native is not None else (
             boundary.summary_messages if boundary is not None else ()
         )
-        candidates = [(None, m) for m in previous] + list(enumerate(context.messages[start:], start))
+        candidates = [(None, m) for m in previous] + list(enumerate(context.messages[start:end], start))
         for index, message in reversed(candidates):
             if message.get("role") != "user":
+                continue
+            if contextual_user(message, self.exclude_context_user_markers):
                 continue
             content = message.get("content")
             text = content if isinstance(content, str) else "".join(
@@ -104,7 +114,7 @@ class UserMessagesBudget:
                 break
         retained.reverse()
         replay.reverse()
-        return Selection(first_kept_index=len(context.messages), summarize=tuple(range(start, len(context.messages))),
+        return Selection(first_kept_index=end, summarize=tuple(range(start, end)),
                          replay=tuple(replay), details={"retained_messages": tuple(retained)})
 
 class LatestToolOutputs:

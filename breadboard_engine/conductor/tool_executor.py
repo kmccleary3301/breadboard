@@ -299,6 +299,50 @@ def execute_agent_calls(
     policy_bypass: bool = False,
 ) -> Tuple[List[Any], int, Optional[Dict[str, Any]], Dict[str, Any]]:
     """Execute parsed agent calls with permission enforcement."""
+    tools = conductor.config.get("tools") or {}
+    if tools.get("native_semantics") == "claude_code_2_1_63" and tools.get("group_native_calls_by_turn"):
+        from ..execution.claude_tools import execute_claude_tool_batch, _texts
+
+        calls = [{
+            "id": getattr(call, "call_id", None),
+            "name": getattr(call, "provider_name", None) or call.function,
+            "input": call.arguments,
+        } for call in parsed_calls]
+        batch = execute_claude_tool_batch(conductor, calls, session_state=session_state)
+        by_id = {getattr(call, "call_id", None): call for call in parsed_calls}
+        executed = []
+        for block in batch["__claude_tool_result_blocks"]:
+            if block.get("type") != "tool_result":
+                continue
+            call = by_id[block["tool_use_id"]]
+            result = {"__claude_tool_result_blocks": [block],
+                      "__mvi_text_output": _texts(block["content"])}
+            if not executed:
+                result["__claude_tool_result_messages"] = batch["__claude_tool_result_messages"]
+            executed.append((call, result))
+            if transcript_callback:
+                transcript_callback({"tool": getattr(call, "provider_name", None) or call.function,
+                                     "result": result})
+        return executed, -1, None, {"total_calls": len(calls), "executed_calls": len(executed)}
+    if (conductor.config.get("tools") or {}).get("native_semantics") in {
+        "opencode_1_2_17", "oh_my_opencode_3_10_0",
+    }:
+        # Stock has already validated and executed the complete provider batch.
+        # Do not reinterpret names, schemas, permissions or write/shell policy.
+        executed = []
+        for call in parsed_calls:
+            payload = {
+                "function": getattr(call, "provider_name", None) or call.function,
+                "arguments": call.arguments,
+                "call_id": getattr(call, "call_id", None),
+            }
+            result = exec_func(payload)
+            executed.append((call, result))
+            if transcript_callback:
+                transcript_callback({"tool": payload["function"], "result": result})
+        return executed, -1, None, {
+            "total_calls": len(parsed_calls), "executed_calls": len(executed),
+        }
     allow_multi_bash = bool(session_state.get_provider_metadata("replay_mode"))
     previous_value = getattr(conductor.agent_executor, "allow_multiple_bash", False)
     conductor.agent_executor.allow_multiple_bash = allow_multi_bash

@@ -1,17 +1,6 @@
-# Catalog refresh 2026-10-09: identical to codex_0-139-0_gpt55_e4_9-10-2026.yaml plus the harness's native
-# context compaction (preset codex@0.139.0, native default settings) and the model window.
-# Codex CLI E4 capture/replay profile
-# Catalog refreshed 2026-09-10 from the accepted Codex CLI 0.139.0 / GPT-5.5 lane.
-# The accepted run was captured on 2026-06-30 in a read-only sandbox.
-# This standalone profile replaces the capture probe's untracked industry_coder_refs prompt path.
-#
-# +------------------------- accepted claim -------------------------+
-# | Codex CLI 0.139.0 + GPT-5.5                                     |
-# | one read-only raw capture -> BreadBoard replay -> comparator pass |
-# +------------------------------------------------------------------+
-#
-# This is a runnable BreadBoard profile, but its acceptance does not cover writes,
-# collaboration, persistent terminals, or full Codex product parity.
+# Codex CLI 0.139.0 / GPT-5.5 production profile with native compaction.
+# Source: a7dff904308535e965aee87680c1fc5ef1d19eec, models-manager/models.json.
+# Long-session acceptance is recorded by scripts/compaction_lanes/codex_lane.py.
 
 schema_version: bb.agent_config_surface.v2
 version: 2
@@ -25,47 +14,98 @@ workspace:
     path: ./agent_ws
     mode: development
 
+# session/session.rs:520-529,1049-1052 rehydrates compacted history on resume.
+resume:
+  restore_compaction_state: true
+
 providers:
   default_model: gpt-5.5
+  # protocol/src/thread_id.rs:17-21 at a7dff904: production roots are UUIDv7.
+  session_uuid_version: 7
   routing:
     disable_native_tools_on_probe_failure: true
     disable_stream_on_probe_failure: true
   models:
   - id: gpt-5.5
     adapter: openai
-    params:
-      temperature: 0.2
-      top_p: 0.9
+    params: {}
+    # models-manager/models.json: gpt-5.5.truncation_policy.
+    tool_output_truncation: {mode: tokens, limit: 10000}
+    supports_image_detail_original: true
+    web_search_tool_type: text_and_image
 
 provider_tools:
   use_native: true
-  suppress_prompts: false
+  suppress_prompts: true
   api_variant: responses
+  openai:
+    # core/src/client.rs:755-815; gpt-5.5 catalog's supported model capabilities.
+    responses_stateful: false
+    responses_message_type: true
+    # protocol/src/models.rs:739-750,765; agent/control/spawn.rs:33-40.
+    responses_message_phase: true
+    # router.rs:98-110 and protocol/models.rs:869-878.
+    responses_namespaces: true
+    responses_hosted_outputs: [web_search_call]
+    responses_custom_tools: [apply_patch]
+    responses_tool_search: true
+    responses_deferred_tools: [multi_agent_v1]
+    # protocol/src/models.rs:793-806 preserves argument strings and namespace.
+    responses_preserve_tool_call_items: true
+    # protocol/src/models.rs:FunctionCallOutputContentItem preserves native image/text output.
+    responses_tool_output_items: true
+    include_reasoning: true
+    request_params:
+      parallel_tool_calls: true
+      tool_choice: auto
+      reasoning: {effort: medium}
+      text: {verbosity: low}
+      store: false
+      include: [reasoning.encrypted_content]
+    session_params:
+      prompt_cache_key: "{session_id}"
+    client_metadata_session:
+      x-codex-installation-id: "{installation_id}"
+      x-codex-window-id: "{session_id}:{compaction_boundary_count}"
 
 prompts:
   packs:
     base:
-      # Exact source asset from the Codex `rust-v0.139.0` tag.
-      system: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-      plan: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-      builder: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-      compact: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-      tools_catalog_full: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-      tools_catalog_short: ../config/e4_targets/codex/0.139.0/prompts/gpt_5_codex_prompt.md
-  tool_prompt_mode: system_compiled_and_persistent_per_turn
+      # models-manager/models.json: gpt-5.5 template with personality_pragmatic.
+      system: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+      plan: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+      builder: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+      compact: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+      tools_catalog_full: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+      tools_catalog_short: ../breadboard_engine/compilation/context_builders/assets/codex_0_139/gpt55_instructions.md
+  tool_prompt_mode: none
+  # core/src/session/mod.rs:2752-2977: permissions/skills, then environment.
+  initial_context:
+    module: breadboard_engine.compilation.context_builders.codex
+    callable: build_context
   tool_prompt_synthesis:
     enabled: false
 
-# Preserve the accepted probe's deliberately narrow visible tool set.
+# Native tool catalog and execution: core/src/tools/spec.rs at a7dff904.
 tools:
-  mark_task_complete: true
+  mark_task_complete: false
+  native_semantics: codex_0_139
   registry:
     paths:
-    - ../implementations/tools/defs
+    - ../implementations/tools/defs_codex_139
     include:
-    - shell_command
-    - apply_patch
+    - exec_command
+    - write_stdin
     - update_plan
+    - request_user_input
+    - apply_patch
+    - view_image
+    - get_goal
+    - create_goal
+    - update_goal
+    - tool_search
+    - web_search
+    - multi_agent_v1
   aliases: {}
   dialects:
     preference:
@@ -150,7 +190,7 @@ completion:
   confidence_threshold: 0.6
   natural_finish:
     idle_turn_limit: 1
-    no_tool_turns_threshold: 2
+    no_tool_turns_threshold: 1
   primary: hybrid
   tool_finish: mark_task_complete
   provider_signals: true
@@ -162,7 +202,7 @@ completion:
 
 concurrency:
   at_most_one_of:
-  - shell_command
+  - exec_command
   groups: []
   nonblocking_tools: []
 

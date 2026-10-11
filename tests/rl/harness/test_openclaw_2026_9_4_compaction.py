@@ -844,6 +844,13 @@ def test_summary_trace_preserves_proxy_clamp_near_production_window(worker):
     assert prepared["summary_request"] is None
     assert prepared["turn_prefix_request"] == stock["captured_requests"][0]
     assert prepared["turn_prefix_request"]["max_tokens"] == 1985
+    from scripts.compaction_lanes.openclaw_lane import source_input_tokens
+    source_request = prepared["turn_prefix_request"]
+    assert source_input_tokens(source_request) == 129086
+    assert source_input_tokens({**source_request, "tools": worker.tool_schemas}) == 130741
+    assert 129086 + source_request["max_tokens"] == 131071
+    assert 130741 + worker.model_config["maxTokens"] - worker.model_config["contextWindow"] == 1717
+    assert len(json.dumps(messages, ensure_ascii=False).encode("utf-8")) < 1_048_576
     finalized = worker.request({
         "phase": "finalize_compaction", "summary": None, "turn_prefix_summary": summary,
         "preparation": prepared["preparation"],

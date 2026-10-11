@@ -18,6 +18,11 @@ const modules = new Map([
     expected: "0a8c813e535c92d03f69bc58381518ba0e6ac6e46f3adda54138c5f668340ea8",
     appended: "\nexport { buildAttemptSystemPrompt, normalizeMessagesForLlmBoundary, projectRuntimeContextFragments };\n",
   }],
+  ["openclaw:pinned-compaction-indexing", {
+    filename: "compact-BvznzvKp.mjs",
+    expected: "6cfa0661ea0a9fc56c2161aa48776bd2a2fc233a801d77dd7f678adb188957f1",
+    appended: "\nexport { runPostCompactionSessionMemorySync };\n",
+  }],
 ]);
 const dist = process.env.OPENCLAW_DIST || join(process.cwd(), "dist");
 const byUrl = new Map([...modules].map(([specifier, module]) => [
