@@ -218,6 +218,10 @@ only that root's native request IDs through the existing approval queue and
 authenticated stock replies. Child prompts and prompts from later turns remain
 independent. Agent shutdown rejects all outstanding prompts and joins their
 workers before disposing the stock instance.
+Permission acknowledgement does not prove that the authorized tool finished
+(`src/server/routes/permission.ts:38-43`, `src/tool/read.ts:45-50`).
+The cross-turn child approval test waits for the authenticated native SSE
+completion of the owned child tool part before checking its API output.
 
 Sources are OpenCode commit `715b844c2a88810b6178d7a2467c7d36ea8fb764`,
 `src/server/routes/session.ts:354-381,484-540,692-798`,
@@ -278,12 +282,19 @@ this continuation permission.
 OpenCode's native message stream orders only by millisecond creation time
 (`src/session/message-v2.ts:740`). When a summary sorts before its tied
 compaction marker, the pending-task scan can replay that marker
-(`src/session/prompt.ts:304-314`). The replay summary belongs to the latest
-synthetic continuation user, not the original marker (`prompt.ts:532`).
+(`src/session/prompt.ts:304-314`). Replay uses the latest user, not the
+original marker (`prompt.ts:532`). That user can be stock's synthetic
+continuation or a real human following an interruption.
 This also occurs inside a real `task` child. Auxiliary model calls retain
 their native child ownership; neither the parent wait nor stock is patched.
 The child regression oracle answers the authenticated assistant role and
 admits extra summaries only with the exact tied-marker/replay ancestry.
+The root checkpoint regression requires the latest finished, non-error
+summary to share its creation time with its auto-compaction parent marker
+and sort before that marker. The current unfinished summary must belong
+to the latest root user, created at or after the tie. Historical ties alone
+do not authorize another checkpoint. Captured positive evidence and the
+negative mutations use `tests/fixtures/opencode_1_2_17_root_clock_replay.json`.
 
 OMO also has a recovery re-entry race after an interrupted continuation.
 Concurrent `session.idle` handlers check pending recovery before awaiting

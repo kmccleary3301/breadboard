@@ -1,7 +1,9 @@
 """A genuine child keeps its approval channel through real BB runner turns."""
 import asyncio
+import base64
 import json
 import threading
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -68,6 +70,31 @@ def test_background_child_ui_approval_survives_parent_completion_and_next_runner
         runner._agent = agent
         condition = threading.Condition()
         approvals = []
+        native_parts = {}
+        subscriptions = {}
+        urlopen = urllib.request.urlopen
+        def subscribe(request, *args, **kwargs):
+            connection = urlopen(request, *args, **kwargs)
+            if isinstance(request, urllib.request.Request) and request.full_url.endswith("/event"):
+                stream = request.full_url
+                read_line = connection.readline
+                def observe_part(*line_args, **line_kwargs):
+                    line = read_line(*line_args, **line_kwargs)
+                    if line.startswith(b"data: "):
+                        event = json.loads(line[6:])
+                        part = event.get("properties", {}).get("part", {})
+                        if (event["type"] == "message.part.updated" and part.get("type") == "tool"
+                                and part.get("callID") == "call_child_read"):
+                            with condition:
+                                native_parts[(stream, part["sessionID"], part["id"])] = part
+                                condition.notify_all()
+                    return line
+                monkeypatch.setattr(connection, "readline", observe_part)
+                subscriptions[stream] = request.get_header("Authorization")
+            return connection
+        # Install before the native bridge subscribes, so a completion already
+        # delivered before wait_for is retained rather than a missed wakeup.
+        monkeypatch.setattr(urllib.request, "urlopen", subscribe)
         publish = runner.publish_event
         def observe(kind, payload, *args, **kwargs):
             publish(kind, payload, *args, **kwargs)
@@ -109,14 +136,29 @@ def test_background_child_ui_approval_survives_parent_completion_and_next_runner
                 assert second["completion_summary"].get("reason") != "run_loop_exception", second
             assert runner._permission_queue is retained_queue
             assert record.active_turn_id is None
+            stream = native.url + "/event"
+            assert subscriptions[stream] == "Basic " + base64.b64encode(
+                ("opencode:" + native.password).encode()).decode()
+            before = native.api("GET", "/session/" + child_session_id + "/message")
+            child_part = next(part for message in before for part in message["parts"]
+                              if part.get("callID") == "call_child_read")
+            assert child_part["sessionID"] == child_session_id and child_part["tool"] == "read"
+            part_key = (stream, child_session_id, child_part["id"])
             delivered = asyncio.run(runner.handle_command("permission_response", {
                 "request_id": child["request_id"], "response": "once",
             }))
             assert delivered["decision"] == "once"
             with native.condition:
                 assert native.condition.wait_for(lambda: not native.interaction_threads, timeout=10)
+            # permission.ts:38-43 acknowledges the reply before read.ts:45-50
+            # resumes execution. Worker exit is not native tool completion.
+            with condition:
+                assert condition.wait_for(lambda: native_parts.get(part_key, {}).get("state", {}).get(
+                    "status") == "completed", timeout=10), native_parts.get(part_key)
             messages = native.api("GET", "/session/" + child_session_id + "/message")
             read = next(part for message in messages for part in message["parts"] if part.get("callID") == "call_child_read")
+            assert read["id"] == child_part["id"]
+            assert read["messageID"] == native_parts[part_key]["messageID"]
             assert read["state"]["status"] == "completed"
             assert "child-readable content" in read["state"]["output"]
         finally:

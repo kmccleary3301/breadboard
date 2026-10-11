@@ -193,6 +193,80 @@ def _native_idle_reentry(evidence, events):
     return markers
 
 
+def _native_clock_replay(evidence, current):
+    """Match this unfinished root summary to the latest inverted checkpoint."""
+    session_id = evidence["session"]["id"]
+    messages = evidence["messages"]
+    if (current["role"] != "assistant" or current.get("summary") is not True
+            or current.get("finish") or current.get("error") or current["sessionID"] != session_id):
+        return None
+    completed = [message for message in messages
+                 if message["info"]["role"] == "assistant"
+                 and message["info"].get("summary") is True
+                 and message["info"].get("finish") and not message["info"].get("error")
+                 and message["info"]["sessionID"] == session_id]
+    if not completed:
+        return None
+    summary = completed[-1]
+    marker = next((message for message in messages
+                   if message["info"]["id"] == summary["info"]["parentID"]
+                   and message["info"]["role"] == "user"
+                   and message["info"]["sessionID"] == session_id
+                   and any(part["type"] == "compaction" and part.get("auto") is True
+                           for part in message["parts"])), None)
+    if (marker is None
+            or summary["info"]["time"]["created"] != marker["info"]["time"]["created"]
+            or messages.index(summary) >= messages.index(marker)):
+        return None
+    parent = next((message for message in reversed(messages)
+                   if message["info"]["role"] == "user" and message["info"]["sessionID"] == session_id), None)
+    if (parent is None or current["parentID"] != parent["info"]["id"]
+            or parent["info"]["time"]["created"] < marker["info"]["time"]["created"]):
+        return None
+    texts = [part for part in parent["parts"] if part["type"] == "text" and not part.get("ignored")]
+    if not texts or any(part["type"] == "compaction" for part in parent["parts"]):
+        return None
+    # compaction.ts:264-288 creates this synthetic continuation. The captured
+    # interrupted replay instead belongs to the real subsequent human user.
+    if any(part.get("synthetic") is True for part in texts):
+        if len(texts) != 1 or texts[0]["text"] != (
+                "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed."):
+            return None
+    return {"marker_id": marker["info"]["id"], "summary_id": summary["info"]["id"],
+            "replay_id": current["id"], "parent_id": parent["info"]["id"],
+            "time_created": marker["info"]["time"]["created"]}
+
+
+@pytest.mark.parametrize("mutation", [None, "unrelated_older_tie", "without_inversion", "not_latest_parent"])
+def test_native_clock_replay_requires_current_summary_ancestry(mutation):
+    from scripts.compaction_lanes.opencode_lane import stock_control_flow_ties
+    evidence = json.loads((Path(__file__).resolve().parents[1] /
+                          "fixtures/opencode_1_2_17_root_clock_replay.json").read_text())["native"]
+    messages = evidence["messages"]
+    current = next(message["info"] for message in messages
+                   if message["info"].get("summary") is True
+                   and not message["info"].get("finish") and not message["info"].get("error"))
+    summary = next(message for message in reversed(messages)
+                   if message["info"].get("summary") is True
+                   and message["info"].get("finish") and not message["info"].get("error"))
+    marker = next(message for message in messages if message["info"]["id"] == summary["info"]["parentID"])
+    if mutation == "unrelated_older_tie":
+        later = next(message["info"] for message in messages
+                     if message["info"].get("summary") is True and message["info"].get("error"))
+        later.pop("error")
+        later["finish"] = "stop"
+    elif mutation == "without_inversion":
+        messages.remove(marker)
+        messages.insert(messages.index(summary), marker)
+    elif mutation == "not_latest_parent":
+        current["parentID"] = marker["info"]["id"]
+    assert stock_control_flow_ties(evidence), "Every mutation retains the historical session-wide tie"
+    if mutation:
+        assert _native_clock_replay(evidence, current) is None
+    else:
+        assert _native_clock_replay(evidence, current)
+
+
 @pytest.mark.parametrize("missing", [
     None, "abort_event", "exhaustion_event", "reset_event", "new_marker",
     "abort_record", "original_summaries", "new_summary", "second_reset",
@@ -236,7 +310,7 @@ def test_native_idle_reentry_requires_exact_source_provenance(missing):
 
 @pytest.mark.parametrize("interrupt", [False, True])
 def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuation(omo, interrupt, monkeypatch):
-    from scripts.compaction_lanes.opencode_lane import native_session_evidence, stock_control_flow_ties
+    from scripts.compaction_lanes.opencode_lane import native_session_evidence
     native_events = []
     read_line = omo.event_connection.readline
     def observe_line(*args, **kwargs):
@@ -252,22 +326,22 @@ def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuati
 
     served_extra = 0
     tied_requests = []
+    aborted_tie = None
     def serve_native_summaries():
         nonlocal served_extra
         # Consume actual source requests, never retry a failed main response.
         while omo.compaction_pending is not None:
             queued = omo.compaction_pending
             evidence = native_session_evidence(omo.api, omo.session_id)
-            ties = stock_control_flow_ties(evidence)
             reentry = _native_idle_reentry(evidence, tuple(native_events))
             unfinished = [message["info"] for message in evidence["messages"]
                           if message["info"].get("summary") is True
                           and not message["info"].get("finish") and not message["info"].get("error")]
             assert len(unfinished) == 1
-            # prompt.ts:532 uses the latest user, not the queued compaction
-            # part's messageID. Clock-tied replay can therefore reparent the
-            # summary; retain the source predicate for this root session.
-            ties = [tie for tie in ties if tie["session_id"] == omo.session_id]
+            # The original marker can be replayed onto a synthetic continuation
+            # or the next real human user (prompt.ts:532). Require current
+            # ancestry, not a historical session-wide tie.
+            ties = _native_clock_replay(evidence, unfinished[0])
             qualified_reentry = reentry is not None and unfinished[0]["parentID"] in reentry
             assert ties or qualified_reentry, "An unqualified extra source checkpoint:\n" + json.dumps(evidence)
             if ties:
@@ -307,7 +381,13 @@ def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuati
     if interrupt:
         assert omo.pending is not None or omo.compaction_pending is not None
         if omo.compaction_pending is not None:
-            assert stock_control_flow_ties(native_session_evidence(omo.api, omo.session_id))
+            pending_evidence = native_session_evidence(omo.api, omo.session_id)
+            pending_summaries = [message["info"] for message in pending_evidence["messages"]
+                                 if message["info"].get("summary") is True
+                                 and not message["info"].get("finish") and not message["info"].get("error")]
+            assert len(pending_summaries) == 1
+            aborted_tie = _native_clock_replay(pending_evidence, pending_summaries[0])
+            assert aborted_tie is not None, json.dumps(pending_evidence)
     else:
         serve_native_summaries()
         omo.submit(response(omo, text="Both source recovery checkpoints completed."))
@@ -336,7 +416,6 @@ def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuati
         if omo.pending is not None:
             omo.submit(response(omo, text="Source recovery continuation completed."))
     evidence = native_session_evidence(omo.api, omo.session_id)
-    ties = stock_control_flow_ties(evidence)
     reentry = _native_idle_reentry(evidence, tuple(native_events))
     summaries = [message["info"] for message in evidence["messages"] if message["info"].get("summary") is True]
     completed_summaries = [info for info in summaries if info.get("finish") and not info.get("error")]
@@ -345,7 +424,7 @@ def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuati
     assert len(completed_summaries) == 2 + served_extra
     records = [record for record in omo.records if record["kind"] == "compaction"]
     assert len(records) == len(completed_summaries) + len(aborted_summaries)
-    if not ties and reentry is None:
+    if not tied_requests and aborted_tie is None and reentry is None:
         assert not tied_requests and served_extra == 0 and len(records) == 2
     else:
         assert served_extra > 0 or aborted_summaries
