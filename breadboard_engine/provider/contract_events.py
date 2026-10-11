@@ -19,11 +19,8 @@ from .contract_wire import (
     _require_text,
     _validate_canonical_argument_pair,
 )
-from .contract_messages import (
-    ProviderMessage,
-    _sanitize_replay,
-    normalize_request_messages,
-)
+from .contract_messages import ProviderMessage, _sanitize_replay
+from .contract_requests import normalize_request_messages
 
 
 @dataclass

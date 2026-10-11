@@ -53,10 +53,7 @@ class StockInputController:
 
     async def drain(self) -> None:
         async with self._drain_lock:
-            owner = getattr(self.runner._agent, "agent", None)
-            native = getattr(owner, "_opencode_tool_sessions", {}).get(self.runner.session.session_id)
-            if native is not None and not native.closed:
-                await asyncio.to_thread(native.wait_for_idle_source_input)
+            await asyncio.to_thread(self.runner.wait_for_stock_source_input)
             while True:
                 with self._lock:
                     if not self._sources:
@@ -71,13 +68,4 @@ class StockInputController:
 
     async def headless_should_continue(self) -> bool:
         await self.drain()
-        owner = getattr(self.runner._agent, "agent", None)
-        native = getattr(owner, "_opencode_tool_sessions", {}).get(self.runner.session.session_id)
-        if native is None or native.headless_idle_seen:
-            return False
-        with native.condition:
-            return any(
-                pending is not None and pending.get("stock_origin") is not None
-                and not pending.get("stock_claimed")
-                for pending in (native.pending, native.compaction_pending)
-            )
+        return self.runner.stock_source_should_continue()

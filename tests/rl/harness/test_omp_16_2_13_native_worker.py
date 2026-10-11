@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 import re
 import subprocess
+import shutil
 import pytest
+
+from tests.rl.harness.native_dependencies import require_omp, resolve_omp
 
 from breadboard.rl.harness.omp_16_2_13_native_tools import (
     ALLOWED_TOOLS,
@@ -30,7 +33,7 @@ _ROOT_ENV = os.environ.get("OMP16213_CODING_AGENT_NODE_MODULES")
 if os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1" and not _ROOT_ENV:
     pytest.fail("BB_REQUIRE_PINNED_OMP16213_NODE=1 requires OMP16213_CODING_AGENT_NODE_MODULES")
 
-_NODE_MODULES = Path(_ROOT_ENV) if _ROOT_ENV else None
+_NODE_MODULES = resolve_omp("16.2.13")
 if (
     os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1"
     and _NODE_MODULES is not None
@@ -38,13 +41,20 @@ if (
 ):
     pytest.fail(f"required pinned OMP 16.2.13 node_modules root is unavailable: {_NODE_MODULES}")
 
-pytestmark = pytest.mark.skipif(_NODE_MODULES is None, reason="OMP16213_CODING_AGENT_NODE_MODULES is unset")
 
 
 @pytest.fixture
-def worker_spec() -> PinnedNativeWorkerSpec:
-    assert _NODE_MODULES is not None
-    return PinnedNativeWorkerSpec.discover(node_modules=_NODE_MODULES)
+def stock_runtime():
+    modules = require_omp("16.2.13")
+    bun = os.environ.get("BB_BUN") or shutil.which("bun")
+    if bun is None or not Path(bun).is_file():
+        pytest.skip("Bun is unavailable for pinned OMP 16.2.13")
+    return modules
+
+
+@pytest.fixture
+def worker_spec(stock_runtime: Path) -> PinnedNativeWorkerSpec:
+    return PinnedNativeWorkerSpec.discover(node_modules=stock_runtime)
 
 
 @pytest.fixture
@@ -611,6 +621,7 @@ def test_compaction_midturn_disabled(initialized_worker):
     assert prepared["kind"] == "compaction_unavailable"
 
 
+@pytest.mark.usefixtures("stock_runtime")
 def test_conductor_tool_turn_threshold_compaction_next_main_equals_stock(tmp_path, monkeypatch):
     import asyncio
     from copy import deepcopy

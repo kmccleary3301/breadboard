@@ -2764,9 +2764,13 @@ class _ConductorSession:
                     **self._context(),
                 )
             state.messages = compacted.messages
+            continuation_start = len(state.messages)
             if compacted.continuation is not None:
                 state.resume_after_compaction(compacted.continuation)
-            await commit(0, commit_phase, turn, events=[compacted.event])
+            await commit(
+                0, commit_phase, turn,
+                events=[compacted.event, *state.messages[continuation_start:]],
+            )
             return compacted
         await commit(0, "initial", None)
         async def step(turn: int) -> RunnerTermination | None:

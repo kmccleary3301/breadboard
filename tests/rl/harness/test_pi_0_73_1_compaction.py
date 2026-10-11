@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import threading
+from typing import Any
 _LOCAL_NODE_MODULES = Path(__file__).resolve().parents[3] / "node_modules"
 if "PI_CODING_AGENT_NODE_MODULES" not in os.environ and (_LOCAL_NODE_MODULES / "@mariozechner" / "pi-coding-agent").is_dir():
     os.environ["PI_CODING_AGENT_NODE_MODULES"] = str(_LOCAL_NODE_MODULES)
@@ -78,7 +79,7 @@ from tests.rl.harness.test_pi_native_stream_conductor import (
     _PINNED_PI_ENTRYPOINT,
 )
 
-pytestmark = pytest.mark.skipif(
+_requires_stock_pi = pytest.mark.skipif(
     not _PINNED_PI_ENTRYPOINT.is_file(),
     reason="pinned Pi 0.73.1 node_modules root is unavailable",
 )
@@ -266,6 +267,7 @@ async def _run_test_episode(
     return result, sink.events
 
 
+@_requires_stock_pi
 @pytest.mark.asyncio
 async def test_overflow_compaction_disabled_terminates_policy_incomplete(tmp_path: Path):
     """When policy.provider.compaction is false (pi@0.73.1), context_length_exceeded raises RunnerDependencyError (unchanged from main)."""
@@ -279,6 +281,7 @@ async def test_overflow_compaction_disabled_terminates_policy_incomplete(tmp_pat
         # Only 1 request was sent (the initial request that overflowed)
         assert len(requests) == 1
 
+@_requires_stock_pi
 @pytest.mark.asyncio
 async def test_overflow_compaction_enabled_compacts_and_continues(tmp_path: Path):
     """When compaction is enabled (pi-r3@0.73.1), context_length_exceeded triggers compaction and retries."""
@@ -338,6 +341,7 @@ async def test_overflow_compaction_enabled_compacts_and_continues(tmp_path: Path
         assert trace_reqs[1].get("_compaction_summary") is True
 
 
+@_requires_stock_pi
 @pytest.mark.parametrize("prompt_tokens,summary_count", [(1000, 1), (120000, 2)])
 @pytest.mark.asyncio
 async def test_overflow_retry_agent_end_uses_fresh_stock_usage(
@@ -360,6 +364,7 @@ async def test_overflow_retry_agent_end_uses_fresh_stock_usage(
         assert len(requests) == 2 + summary_count
         assert trace["request_count"] == 1
 
+@_requires_stock_pi
 @pytest.mark.parametrize("finish_reason,completion_tokens,termination", [
     ("stop", 1000, RunnerTermination.ASSISTANT_COMPLETE),
     ("length", 0, RunnerTermination.POLICY_INCOMPLETE),
@@ -389,6 +394,7 @@ async def test_agent_end_overflow_respects_stock_continue(
 
 
 
+@_requires_stock_pi
 @pytest.mark.asyncio
 async def test_overflow_repeated_overflow_bounded_and_terminal(tmp_path: Path):
     """Repeated overflow after compaction falls through to the original path and raises RunnerDependencyError for Pi."""
@@ -405,6 +411,7 @@ async def test_overflow_repeated_overflow_bounded_and_terminal(tmp_path: Path):
         # Exactly 3 requests: initial (failed), summary (succeeded), retried (failed)
         assert len(requests) == 3
 
+@_requires_stock_pi
 @pytest.mark.asyncio
 async def test_request_cap_not_incremented_by_compaction(tmp_path: Path):
     """Compaction summary does not increment the agent turn request_cap counter."""

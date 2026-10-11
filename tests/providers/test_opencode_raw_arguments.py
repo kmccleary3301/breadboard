@@ -7,7 +7,7 @@ from jsonschema import Draft202012Validator
 import json
 from pathlib import Path
 
-from breadboard_engine.provider.contract_messages import ProviderToolCall
+from breadboard_engine.provider.contract_tools import ProviderToolCall
 from breadboard_engine.provider.contract_runtime import sanitize_provider_result
 from breadboard_engine.provider.contracts import (
     ProviderContractError, ProviderCorrelation, ProviderDone, ProviderExchangeRecorder,

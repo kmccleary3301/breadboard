@@ -25,6 +25,7 @@ class _Request:
 class AuxiliaryTransport:
     def __init__(self):
         self.lock = threading.RLock()
+        self.close_lock = threading.Lock()
         self.requests: set[_Request] = set()
         self.loop = None
         self.thread = None
@@ -75,7 +76,13 @@ class AuxiliaryTransport:
                 raise RuntimeError(f"Auxiliary provider cancellation did not finish: {session_id}")
 
     def close(self):
+        with self.close_lock:
+            return self._close_locked()
+
+    def _close_locked(self):
         with self.lock:
+            if self.closed:
+                return set()
             self.closed = True
             sessions = {request.session_id for request in self.requests}
         for session_id in sessions:

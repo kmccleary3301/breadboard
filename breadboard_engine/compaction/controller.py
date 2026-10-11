@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import copy
 import logging
+from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from ..execution.stock_driver import StockDriver
 
 from .methods import (
     CompactionCancelled,
@@ -37,6 +39,14 @@ logger = logging.getLogger(__name__)
 _FALLBACK_CONTEXT_WINDOW = 128_000
 
 
+@dataclass(frozen=True)
+class CompactionRequestContext:
+    """The sampling boundary of one request, never controller lifetime state."""
+
+    sampling_phase: Optional[str] = None
+    pending_user_index: Optional[int] = None
+
+
 class CompactionController:
     """Coordinates context compaction for BreadBoard conductors."""
 
@@ -56,14 +66,8 @@ class CompactionController:
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
         self._messages_len_at_last_record: Optional[int] = None
-        self.sampling_phase: Optional[str] = None
-        self.pending_user_index: Optional[int] = None
-        self.tracks_sampling_phase = any(
-            getattr(getattr(stage.step, "placement", None), "restore_context_placements", {})
-            or getattr(getattr(stage.step, "selector", None), "exclude_pending_user_on", ())
-            or getattr(getattr(stage.step, "reducer", None), "exclude_pending_user_on", ())
-            for stage in self.recipe.pipeline.stages.values()
-        )
+        self.stock_driver: Optional[StockDriver] = None
+        self.tool_schema_provider: Optional[Callable[[str], Sequence[Mapping[str, Any]]]] = None
 
     @property
     def active(self) -> bool:
@@ -187,6 +191,7 @@ class CompactionController:
         client: Optional[Any],
         model: str,
         turn_index: Optional[int],
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> List[Dict[str, Any]]:
         """Threshold-compact if due, then run the ordered request-view pass."""
         target = projection_target_for(runtime, model)
@@ -204,46 +209,36 @@ class CompactionController:
             checkpoint="every_request",
         ):
             self.compact(
-                session_state,
-                reason="threshold",
-                target=target,
-                conductor=conductor,
-                runtime=runtime,
-                client=client,
-                context_window=context_window,
-                turn_index=turn_index,
-                supports_images=supports_images,
-                max_output_tokens=max_output,
+                session_state, request_context=request_context, reason="threshold", target=target,
+                conductor=conductor, runtime=runtime, client=client,
+                context_window=context_window, turn_index=turn_index,
+                supports_images=supports_images, max_output_tokens=max_output,
             )
         self._serve_native_summary_requests(
-            session_state, conductor=conductor, runtime=runtime, client=client,
-            model=model, turn_index=turn_index,
+            session_state, request_context=request_context, conductor=conductor,
+            runtime=runtime, client=client, model=model, turn_index=turn_index,
         )
         return self.build_request_view(
-            session_state,
-            target=target,
-            runtime=runtime,
-            supports_images=supports_images,
-            turn_index=turn_index,
-            context_window=context_window,
-            conductor=conductor,
-            client=client,
+            session_state, request_context=request_context, target=target, runtime=runtime,
+            supports_images=supports_images, turn_index=turn_index,
+            context_window=context_window, conductor=conductor, client=client,
         )
 
     def _serve_native_summary_requests(
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
         model: str, turn_index: Optional[int],
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> bool:
         """Commit genuine BB boundaries for each summary actually queued by stock."""
-        native = getattr(session_state, "_opencode_tool_session", None)
-        if native is None:
+        driver = self.stock_driver
+        if driver is None or driver.pending_compaction is None:
             return False
         served = False
-        while native.compaction_pending is not None:
-            pending = native.compaction_pending
+        while (pending := driver.pending_compaction(session_state)) is not None:
             _, max_output = self.resolve_model_limits(session_state, conductor, model)
             outcome = self.compact(
-                session_state, reason="threshold", target=projection_target_for(runtime, model),
+                session_state, request_context=request_context, reason="threshold",
+                target=projection_target_for(runtime, model),
                 conductor=conductor, runtime=runtime, client=client,
                 context_window=self.resolve_context_window(
                     conductor=conductor, session_state=session_state, model=model),
@@ -251,20 +246,20 @@ class CompactionController:
                 supports_images=self.resolve_supports_images(conductor=conductor, model=model),
                 max_output_tokens=max_output,
             )
-            if not outcome.compacted or native.compaction_pending is pending:
-                from ..execution.opencode_tools import StockExecutionError
-                raise StockExecutionError("Genuine BB compaction did not consume the queued stock summary")
+            if not outcome.compacted or driver.pending_compaction(session_state) is pending:
+                raise driver.compaction_error("Genuine BB compaction did not consume the queued stock summary")
             served = True
         return served
 
     def finish_assistant_step(
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
         model: str, turn_index: Optional[int],
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> bool:
         """Run a declared post-response checkpoint, including terminal answers."""
         source_compacted = self._serve_native_summary_requests(
-            session_state, conductor=conductor, runtime=runtime, client=client,
-            model=model, turn_index=turn_index,
+            session_state, request_context=request_context, conductor=conductor,
+            runtime=runtime, client=client, model=model, turn_index=turn_index,
         )
         if not any(getattr(trigger, "phase", None) == "assistant_step_end" for trigger in self.recipe.triggers):
             return source_compacted
@@ -285,7 +280,8 @@ class CompactionController:
                 if parsed is not None:
                     pending = parsed
         outcome = self.compact(
-            session_state, reason="threshold", target=projection_target_for(runtime, model),
+            session_state, request_context=request_context, reason="threshold",
+            target=projection_target_for(runtime, model),
             conductor=conductor, runtime=runtime, client=client,
             context_window=window, turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
@@ -299,14 +295,15 @@ class CompactionController:
                 if callable(clear):
                     clear()
         additional_compacted = self._serve_native_summary_requests(
-            session_state, conductor=conductor, runtime=runtime, client=client,
-            model=model, turn_index=turn_index,
+            session_state, request_context=request_context, conductor=conductor,
+            runtime=runtime, client=client, model=model, turn_index=turn_index,
         )
         return outcome.compacted or source_compacted or additional_compacted
 
     def finish_user_turn(
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
         model: str, turn_index: Optional[int],
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> None:
         """Run stages declared at native user-turn completion, not request build."""
         if not self.active:
@@ -315,7 +312,8 @@ class CompactionController:
         if not stages:
             return
         self.compact(
-            session_state, reason="request", target=projection_target_for(runtime, model),
+            session_state, request_context=request_context, reason="request",
+            target=projection_target_for(runtime, model),
             conductor=conductor, runtime=runtime, client=client,
             context_window=self.resolve_context_window(conductor=conductor, session_state=session_state, model=model),
             turn_index=turn_index, order=stages,
@@ -332,6 +330,7 @@ class CompactionController:
         context_window: Optional[int] = None,
         conductor: Optional[Any] = None,
         client: Optional[Any] = None,
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> List[Dict[str, Any]]:
         """Build request view with optional pruning, projection, and inline imaging."""
         messages = session_state.provider_messages
@@ -342,7 +341,7 @@ class CompactionController:
         if compaction_state is None:
             compaction_state = CompactionState()
             session_state.compaction_state = compaction_state
-
+    
         max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
         steps = self.recipe.request_view if self.active else ()
         stage_ids = [step for step in steps if step in self.recipe.pipeline.stages]
@@ -360,16 +359,17 @@ class CompactionController:
                         order.append(steps[index])
                         index += 1
                     self.compact(
-                        session_state, reason="request", target=target, conductor=conductor,
-                        runtime=runtime, client=client, context_window=context_window,
-                        turn_index=turn_index, supports_images=supports_images, order=order,
-                        _request_outcomes=outcomes,
+                        session_state, request_context=request_context, reason="request",
+                        target=target, conductor=conductor, runtime=runtime, client=client,
+                        context_window=context_window, turn_index=turn_index,
+                        supports_images=supports_images, order=order, _request_outcomes=outcomes,
                     )
                 elif step == "omp_prune" and self.settings.prune.enabled:
                     context = self._context_for_pass(
-                        session_state, reason="threshold", target=target, conductor=conductor,
-                        runtime=runtime, client=client, context_window=context_window,
-                        turn_index=turn_index, supports_images=supports_images,
+                        session_state, request_context=request_context, reason="threshold",
+                        target=target, conductor=conductor, runtime=runtime, client=client,
+                        context_window=context_window, turn_index=turn_index,
+                        supports_images=supports_images,
                     )
                     prune_record = prune_tool_results(context)
                     if prune_record is not None:
@@ -477,12 +477,9 @@ class CompactionController:
             # Only explicitly stateless replacements supersede provider state.
             session_state.set_provider_metadata("conversation_id", None)
             session_state.set_provider_metadata("previous_response_id", None)
-        if getattr(session_state, "_opencode_native_semantics", None) in {
-            "opencode_1_2_17", "oh_my_opencode_3_10_0",
-        }:
-            from ..execution.opencode_tools import synchronize_record
-
-            synchronize_record(session_state, record)
+        driver = self.stock_driver
+        if driver is not None and driver.synchronize_record is not None:
+            driver.synchronize_record(session_state, record)
         self._record_event(
             session_state,
             "compaction_record_appended",
@@ -524,6 +521,7 @@ class CompactionController:
         max_output_tokens: Optional[int] = None,
         overflow_tokens: Optional[int] = None,
         overflow_limit: Optional[int] = None,
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> CompactionContext:
         """Populate the production dependencies for every ledger-producing pass."""
         messages = session_state.provider_messages
@@ -538,17 +536,10 @@ class CompactionController:
             remote_ports = self.remote_ports_for(runtime, client, target.model)
         summarizer = self.summary_model
         if summarizer is None and callable(getattr(runtime, "invoke", None)):
-            def summary_tools() -> Sequence[Mapping[str, Any]]:
-                from ..provider import provider_adapter_manager
-                native_tools = getattr(conductor, "current_native_tools", None)
-                if native_tools is None:
-                    native_tools, _ = provider_adapter_manager.filter_tools_for_provider(
-                        getattr(conductor, "yaml_tools", None) or [], target.provider,
-                    )
-                active_names = getattr(conductor, "_active_tool_names", None)
-                if active_names:
-                    native_tools = [tool for tool in native_tools if tool.name in active_names]
-                return provider_adapter_manager.translate_tools_to_native_schema(native_tools, target.provider)
+            summary_tools = (
+                (lambda: self.tool_schema_provider(target.provider))
+                if self.tool_schema_provider is not None else None
+            )
             summarizer = ConductorSummaryModel(
                 runtime=runtime, client=client, model=self.settings.summary_model or target.model,
                 session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
@@ -576,7 +567,8 @@ class CompactionController:
             usage_fresh=len(messages) != self._messages_len_at_last_record,
             native_retention=self.recipe.native_retention,
             prior_compactions=sum(record.is_boundary for record in state.records),
-            sampling_phase=self.sampling_phase, pending_user_index=self.pending_user_index,
+            sampling_phase=request_context.sampling_phase if request_context is not None else None,
+            pending_user_index=request_context.pending_user_index if request_context is not None else None,
             severity="hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft",
             clock=clock or _utc_now,
         )
@@ -601,16 +593,18 @@ class CompactionController:
         _request_outcomes: Optional[List[CompactionOutcome]] = None,
         overflow_tokens: Optional[int] = None,
         overflow_limit: Optional[int] = None,
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> CompactionOutcome:
         """Run the preset pipeline for ``reason``; record events and persist."""
         target_reason = "threshold" if reason == "request" else reason
         if target_reason not in self.recipe.targets:
             raise ValueError(f"compaction reason {reason!r} has no target; expected one of {sorted(self.recipe.targets)}")
-
+    
         resolved_target = target or ProjectionTarget("unknown", "unknown", "unknown")
         context = self._context_for_pass(
-            session_state, reason=reason, target=resolved_target, conductor=conductor,
-            runtime=runtime, client=client, context_window=context_window, turn_index=turn_index,
+            session_state, request_context=request_context, reason=reason,
+            target=resolved_target, conductor=conductor, runtime=runtime, client=client,
+            context_window=context_window, turn_index=turn_index,
             custom_instructions=custom_instructions, remote_ports=remote_ports,
             supports_images=supports_images, clock=clock, max_output_tokens=max_output_tokens,
             overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
@@ -656,7 +650,7 @@ class CompactionController:
             if failed_outcome is not None:
                 self._finish_outcome(session_state, failed_outcome, resolved_target, turn_index, reason, _request_outcomes)
             raise
-
+    
         self._finish_outcome(session_state, outcome, resolved_target, turn_index, reason, _request_outcomes)
         return outcome
 
@@ -699,12 +693,7 @@ class CompactionController:
         **kwargs: Any,
     ) -> CompactionOutcome:
         """Manual compaction entry point."""
-        return self.compact(
-            session_state,
-            reason="manual",
-            custom_instructions=instructions,
-            **kwargs,
-        )
+        return self.compact(session_state, reason="manual", custom_instructions=instructions, **kwargs)
 
     def drop_images_now(
         self,
@@ -713,9 +702,10 @@ class CompactionController:
         runtime: Optional[Any] = None,
         model: str = "unknown",
         turn_index: Optional[int] = None,
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> Optional[CompactionRecord]:
         """Manual OMP ``dropImages``: replace every image with a placeholder.
-
+    
         Appends an edit record (history itself is untouched) and returns it,
         or returns None when the history carries no images.
         """
@@ -723,7 +713,8 @@ class CompactionController:
         state: CompactionState = session_state.compaction_state
         target = projection_target_for(runtime, model)
         context = self._context_for_pass(
-            session_state, reason="manual", target=target, runtime=runtime, turn_index=turn_index,
+            session_state, request_context=request_context, reason="manual",
+            target=target, runtime=runtime, turn_index=turn_index,
         )
         record = drop_images(context)
         if record is None:
@@ -742,19 +733,21 @@ class CompactionController:
         runtime: Optional[Any],
         client: Optional[Any],
         model: str,
+        request_context: Optional[CompactionRequestContext] = None,
     ) -> bool:
         """Recover through native overflow or a declared pending-error checkpoint.
-
+    
         True means a record was appended and the caller should retry the
         request once more. False (no eligible recovery signal, compaction
         inactive, terminal policy, spent budget, or no progress) means the
         caller re-raises ``exc`` unchanged.
         """
-        native = getattr(session_state, "_opencode_tool_session", None)
-        source_outcome = (session_state.get_provider_metadata("opencode_stock_recovery_outcome")
-                          if native is not None else None)
+        driver = self.stock_driver
+        source_outcome = (
+            driver.recovery_outcome(session_state)
+            if driver is not None and driver.recovery_outcome is not None else None
+        )
         if source_outcome in {"handled", "error"}:
-            session_state.set_provider_metadata("opencode_stock_recovery_outcome", None)
             for trigger in self.recipe.triggers:
                 if getattr(trigger, "kind", None) == "pending_error":
                     trigger.clear()
@@ -777,8 +770,8 @@ class CompactionController:
                        for trigger in self.recipe.triggers):
                 return False
             recovered = self.finish_assistant_step(
-                session_state, conductor=conductor, runtime=runtime,
-                client=client, model=model, turn_index=turn_index,
+                session_state, request_context=request_context, conductor=conductor,
+                runtime=runtime, client=client, model=model, turn_index=turn_index,
             )
             if recovered:
                 self.request_attempt += 1
@@ -788,19 +781,15 @@ class CompactionController:
         self.record_pass(turn_index)
         overflow_tokens, overflow_limit = overflow_token_bounds(exc)
         outcome = self.compact(
-            session_state,
-            reason="overflow",
+            session_state, request_context=request_context, reason="overflow",
             target=projection_target_for(runtime, model),
-            conductor=conductor,
-            runtime=runtime,
-            client=client,
+            conductor=conductor, runtime=runtime, client=client,
             context_window=self.resolve_context_window(
-                conductor=conductor, session_state=session_state, model=model
+                conductor=conductor, session_state=session_state, model=model,
             ),
             turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
-            overflow_tokens=overflow_tokens,
-            overflow_limit=overflow_limit,
+            overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
         )
         if not outcome.compacted:
             return False

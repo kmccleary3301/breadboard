@@ -1,9 +1,8 @@
 BreadBoard implementation resource notices
 ==========================================
 
-These notices retain the licenses and attribution for identified OpenCode and
-Codex text in the resources below. They do not relicense BreadBoard resources
-or grant rights over other content.
+These notices retain source licenses and attribution for identified resources.
+They do not relicense BreadBoard resources or grant rights over other content.
 
 The pinned upstream revisions are comparison references, not proof of the
 original import dates or versions. Local prompt and tool bytes are unchanged
@@ -27,6 +26,12 @@ The first four compare with the corresponding `.txt` files under upstream
 byte-identical to that reference. The MIT license below applies to the
 identified OpenCode content, subject to its terms.
 
+The pinned OpenCode 1.2.17 catalogs in tools/defs_opencode_1_2_17/ and
+tools/defs_opencode_shared/ retain stock tool descriptions and schemas from
+the OpenCode 1.2.17 tool registry. Shared descriptions are also used by the
+OMO catalog. Registry metadata and native-execution annotations are local
+BreadBoard additions. The OpenCode MIT terms below apply to this content.
+
 Codex content
 -------------
 Repository: https://github.com/openai/codex
@@ -49,6 +54,142 @@ The explicit-build helper in ../breadboard_engine/execution/codex_patch/
 also links the stock apply-patch and filesystem crates at that same revision.
 Its source-derived response formatting is covered by the same Apache-2.0
 license and upstream NOTICE.
+The prompt and skill assets in
+../breadboard_engine/compilation/context_builders/assets/codex_0_139/
+also retain source text/templates from the same Codex revision and carry
+the same Apache-2.0 license and NOTICE.
+
+oh-my-opencode content and restrictions
+---------------------------------------
+Repository: https://github.com/code-yeongyu/oh-my-openagent
+Reference commit: 5137df72d8fab3fec609c82f91387db8e3b13825
+License source: LICENSE.md at that commit, reproduced below.
+
+The pinned source is NOT MIT licensed. Its own content is subject to the
+Sustainable Use License 1.0. Third-party components keep their original
+licenses. In particular, OpenCode-derived tool catalogs remain subject to
+the OpenCode MIT terms above; plugin-origin additions are not covered by MIT.
+
+Modified copies notice: BreadBoard extracted and adapted source text into
+system_prompts/omo_3_10_0_sisyphus.prompt.md and the compaction contributor in
+../breadboard_engine/compaction/presets/prompts/oh-my-opencode@3.10.0/.
+Their source owners are src/agents/sisyphus.ts,
+src/hooks/compaction-context-injector/hook.ts and src/shared/system-directive.ts.
+The catalog in tools/defs_omo_3_10_0/ retains the four OMO overrides
+glob, grep, skill and task. Six unchanged OpenCode definitions are owned
+by tools/defs_opencode_shared/. Extraction adds BreadBoard registry metadata.
+Related source-derived request text and semantics live in
+../breadboard_engine/compilation/context_builders/opencode_stock.py and
+../breadboard_engine/execution/opencode/.
+
+The license limits use and modification to internal business purposes or
+non-commercial or personal use. Distribution is allowed only free of charge
+for non-commercial purposes. This notice does not assert that BreadBoard's
+use or distribution satisfies those restrictions, or grant broader permission.
+
+Claude Code content and restrictions
+------------------------------------
+Source package: @anthropic-ai/claude-code@2.1.63
+Package source: https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz
+Package LICENSE.md, verbatim:
+© Anthropic PBC. All rights reserved. Use is subject to the Legal Agreements outlined here: https://code.claude.com/docs/en/legal-and-compliance.
+
+Source-derived resources include tools/defs_claude_code_2_1_63/,
+../config/e4_targets/claude_code/2.1.63/prompts/,
+../breadboard_engine/compaction/presets/prompts/claude_code@2.1.63/,
+and ../breadboard_engine/compilation/context_builders/claude_code.py.
+Tool descriptions/schemas and prompt fragments were captured or extracted
+from the pinned package's cli.js. BreadBoard registry metadata and request
+adapters are local modifications; the stock executable is not included.
+The older system_prompts/claude_code/ directory has historical logged
+Claude-origin text, not an established open-source license grant.
+Anthropic reserves rights; no MIT, Apache or other redistribution permission
+for proprietary Claude content is asserted here.
+
+oh-my-opencode LICENSE.md (verbatim)
+------------------------------------
+# License
+
+Portions of this software are licensed as follows:
+
+- All third party components incorporated into the oh-my-opencode Software are licensed under the original license
+  provided by the owner of the applicable component.
+- Content outside of the above mentioned files or restrictions is available under the "Sustainable Use
+  License" as defined below.
+
+## Sustainable Use License
+
+Version 1.0
+
+### Acceptance
+
+By using the software, you agree to all of the terms and conditions below.
+
+### Copyright License
+
+The licensor grants you a non-exclusive, royalty-free, worldwide, non-sublicensable, non-transferable license
+to use, copy, distribute, make available, and prepare derivative works of the software, in each case subject
+to the limitations below.
+
+### Limitations
+
+You may use or modify the software only for your own internal business purposes or for non-commercial or
+personal use. You may distribute the software or provide it to others only if you do so free of charge for
+non-commercial purposes. You may not alter, remove, or obscure any licensing, copyright, or other notices of
+the licensor in the software. Any use of the licensor's trademarks is subject to applicable law.
+
+### Patents
+
+The licensor grants you a license, under any patent claims the licensor can license, or becomes able to
+license, to make, have made, use, sell, offer for sale, import and have imported the software, in each case
+subject to the limitations and conditions in this license. This license does not cover any patent claims that
+you cause to be infringed by modifications or additions to the software. If you or your company make any
+written claim that the software infringes or contributes to infringement of any patent, your patent license
+for the software granted under these terms ends immediately. If your company makes such a claim, your patent
+license ends immediately for work on behalf of your company.
+
+### Notices
+
+You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these
+terms. If you modify the software, you must include in any modified copies of the software a prominent notice
+stating that you have modified the software.
+
+### No Other Rights
+
+These terms do not imply any licenses other than those expressly granted in these terms.
+
+### Termination
+
+If you use the software in violation of these terms, such use is not licensed, and your license will
+automatically terminate. If the licensor provides you with a notice of your violation, and you cease all
+violation of this license no later than 30 days after you receive that notice, your license will be reinstated
+retroactively. However, if you violate these terms after such reinstatement, any additional violation of these
+terms will cause your license to terminate automatically and permanently.
+
+### No Liability
+
+As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will
+not be liable to you for any damages arising out of these terms or the use or nature of the software, under
+any kind of legal claim.
+
+### Definitions
+
+The "licensor" is the entity offering these terms.
+
+The "software" is the software the licensor makes available under these terms, including any portion of it.
+
+"You" refers to the individual or entity agreeing to these terms.
+
+"Your company" is any legal entity, sole proprietorship, or other kind of organization that you work for, plus
+all organizations that have control over, are controlled by, or are under common control with that
+organization. Control means ownership of substantially all the assets of an entity, or the power to direct its
+management and policies by vote, contract, or otherwise. Control can be direct or indirect.
+
+"Your license" is the license granted to you for the software under these terms.
+
+"Use" means anything you do with the software requiring your license.
+
+"Trademark" means trademarks, service marks, and similar rights.
 
 Scope limits
 ------------

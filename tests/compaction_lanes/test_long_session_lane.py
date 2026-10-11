@@ -6,18 +6,16 @@ import os
 import pytest
 
 from breadboard.rl.harness.native_stream_profiles import PI_SUMMARIZATION_SYSTEM_PROMPT
-from scripts.compaction_lanes.long_session_lane import (
-    RpcSettleState,
-    get_target_overlay_argv,
-    build_long_session_scenario,
-    build_repeated_failure_scenario,
-    compare_recorded_requests,
-    get_target_deviations,
-    is_summary_request,
-    normalize_request_body,
-    resolve_pi_cli,
-    run_pi_0_73_1_lane,
-)
+from breadboard_engine.compaction_lanes.pi_stock import RpcSettleState
+from breadboard_engine.compaction_lanes.pi_target import get_target_overlay_argv, get_target_deviations, resolve_pi_cli
+from breadboard_engine.compaction_lanes.pi_scenarios import build_long_session_scenario, build_repeated_failure_scenario
+from breadboard_engine.compaction_lanes.pi_requests import compare_recorded_requests, is_summary_request, normalize_request_body
+from breadboard_engine.compaction_lanes.long_session_lane import run_pi_0_73_1_lane
+
+
+def wire_record(body):
+    raw = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode()
+    return {"json": body, "method": "POST", "path": "/v1/chat/completions", "raw_body_bytes": raw.hex()}
 
 
 def test_scenario_script_structure():
@@ -119,6 +117,8 @@ def test_comparison_detects_unadmitted_differences():
             "max_tokens": 2048,
         }
     }
+    stock_summary = wire_record(stock_summary["json"])
+    bb_summary = wire_record(bb_summary["json"])
 
     # Pass with admitted deviations
     passed, diffs = compare_recorded_requests(
@@ -142,6 +142,7 @@ def test_comparison_detects_unadmitted_differences():
             "max_tokens": 2048,
         }
     }
+    bb_diverged = wire_record(bb_diverged["json"])
     passed_diverged, diffs_diverged = compare_recorded_requests(
         [stock_summary],
         [bb_diverged],
@@ -171,7 +172,7 @@ def test_comparison_rejects_wrong_deviation_values(side, field, value):
     stock, bb = deepcopy(stock), deepcopy(bb)
     (bb if side == "bb" else stock)[field] = value
     passed, diffs = compare_recorded_requests(
-        [{"json": stock}], [{"json": bb}],
+        [wire_record(stock)], [wire_record(bb)],
         get_target_deviations("pi-r3@0.73.1"),
         episode_tools=tools, episode_max_tokens=2048, reserve_tokens=1000,
     )
@@ -235,7 +236,7 @@ def test_pi_package_root_is_required(monkeypatch, version, env_var):
     {"overlay": {"argv": "not an argv"}}, {"overlay": {"argv": [None]}},
 ])
 def test_invalid_overlay_argv_raises(monkeypatch, tmp_path, document):
-    import scripts.compaction_lanes.long_session_lane as lane
+    import breadboard_engine.compaction_lanes.long_session_lane as lane
     harness = tmp_path / "harness.yaml"
     harness.write_text("")
     harness.with_name("target.json").write_text(json.dumps(document))
@@ -245,7 +246,7 @@ def test_invalid_overlay_argv_raises(monkeypatch, tmp_path, document):
 
 
 def test_invalid_native_config_raises(monkeypatch, tmp_path):
-    import scripts.compaction_lanes.long_session_lane as lane
+    import breadboard_engine.compaction_lanes.long_session_lane as lane
     harness = tmp_path / "harness.yaml"
     harness.write_text("")
     harness.with_name("native-config.json").write_text("not json")
@@ -290,7 +291,7 @@ def test_rpc_settle_waits_for_final_threshold_compaction(version):
 
 
 def test_rpc_reader_errors_reach_main_thread(tmp_path):
-    from scripts.compaction_lanes.long_session_lane import run_stock_pi_rpc
+    from breadboard_engine.compaction_lanes.pi_stock import run_stock_pi_rpc
     cli = tmp_path / "malformed-rpc.js"
     cli.write_text('process.stdin.on("data", () => console.log("not json"));')
     with pytest.raises(json.JSONDecodeError):

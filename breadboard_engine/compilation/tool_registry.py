@@ -113,9 +113,8 @@ def load_tool_registry(
     tools_by_name: dict[str, RegistryTool] = {}
     alias_map = {str(key): str(value) for key, value in (aliases or {}).items()}
 
-    for path in sorted(defs_path.iterdir()):
-        if path.suffix not in {".yaml", ".yml"}:
-            continue
+    from .tool_catalogs import tool_definition_files
+    for path in tool_definition_files(defs_path):
         with open(path, "r", encoding="utf-8") as handle:
             data = yaml.safe_load(handle) or {}
         if not isinstance(data, dict):

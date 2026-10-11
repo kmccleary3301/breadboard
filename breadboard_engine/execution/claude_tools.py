@@ -8,7 +8,7 @@ the configured provider. Source citations refer to @anthropic-ai/claude-code
 from __future__ import annotations
 
 import atexit
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import os
 from pathlib import Path
@@ -18,6 +18,8 @@ import subprocess
 import threading
 import uuid
 from typing import Any, Callable
+from .local_http_proxy import LocalHTTPProxy, send_payload
+from .opencode_auxiliary import AuxiliaryCancelled, AuxiliaryTransport
 
 
 STOCK_TOOLS = (
@@ -25,7 +27,15 @@ STOCK_TOOLS = (
     "Edit", "Write", "NotebookEdit", "WebFetch", "TodoWrite", "WebSearch",
     "TaskStop", "AskUserQuestion", "Skill", "EnterPlanMode", "EnterWorktree",
 )
-DEFAULT_PACKAGE = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache/bb-compaction-e4/pkgs/@anthropic-ai__claude-code@2.1.63/node_modules/@anthropic-ai/claude-code"
+def _default_package() -> Path:
+    try:
+        home = Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except KeyError:
+        home = Path(os.environ.get("HOME") or os.path.expanduser("~"))
+    return home / ".cache/bb-compaction-e4/pkgs/@anthropic-ai__claude-code@2.1.63/node_modules/@anthropic-ai/claude-code"
+
+
+DEFAULT_PACKAGE = _default_package()
 SUMMARY_PREFIX = "Your task is to create a detailed summary of the conversation so far,"
 
 
@@ -51,12 +61,14 @@ class ClaudeToolSession:
                  environment: dict | None = None, log_path: Path | None = None,
                  session_id: str | None = None, permission_mode: str | None = None,
                  permission: Callable | None = None, mirror_auto_compaction: bool = False,
-                 cancel_permission: Callable | None = None):
+                 cancel_permission: Callable | None = None,
+                 auxiliary_transport: AuxiliaryTransport | None = None):
         manifest = json.loads((package / "package.json").read_text())
         if manifest.get("version") != "2.1.63":
             raise StockExecutionError("Claude tool executable must be version 2.1.63")
         self.timeout = timeout
         self.auxiliary = auxiliary
+        self.auxiliary_transport = auxiliary_transport or AuxiliaryTransport()
         self.permission = permission
         self.cancel_permission = cancel_permission
         self.log_path = log_path
@@ -110,13 +122,7 @@ class ClaudeToolSession:
                         if session.auxiliary is None:
                             raise StockExecutionError(f"No provider configured for Claude {kind} exchange")
                         status, headers, payload = session.auxiliary(body, dict(self.headers), self.path)
-                        self.send_response(status)
-                        for key, value in headers.items():
-                            if key.lower() not in {"content-length", "transfer-encoding", "connection", "content-encoding"}:
-                                self.send_header(key, value)
-                        self.send_header("Content-Length", str(len(payload)))
-                        self.end_headers()
-                        self.wfile.write(payload)
+                        send_payload(self, status, headers, payload)
                         return
                     response = session.respond(kind, body)
                     if isinstance(response, dict):
@@ -134,6 +140,8 @@ class ClaudeToolSession:
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
                     self.wfile.write(payload)
+                except AuxiliaryCancelled:
+                    return
                 except Exception as exc:
                     if session.closed:
                         return
@@ -145,10 +153,9 @@ class ClaudeToolSession:
                     self.end_headers()
                     self.wfile.write(payload)
 
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-        self.server.daemon_threads = False
-        self.server_thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.server_thread.start()
+        self.server = LocalHTTPProxy(Handler)
+        self.server_thread = self.server.listener
+        self.server.start()
         env = dict(os.environ if environment is None else environment)
         env.update(ANTHROPIC_BASE_URL=f"http://127.0.0.1:{self.server.server_port}",
                    ANTHROPIC_API_KEY="breadboard-local-tool-proxy",
@@ -182,8 +189,8 @@ class ClaudeToolSession:
                                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                             text=True, bufsize=1)
         except Exception:
-            self.server.shutdown()
-            self.server.server_close()
+            self.auxiliary_transport.close()
+            self.server.close()
             raise
         self.output_thread = threading.Thread(target=self._read_output, daemon=True)
         self.error_thread = threading.Thread(target=self._read_errors, daemon=True)
@@ -647,6 +654,7 @@ class ClaudeToolSession:
                     self.completed.set()
                 if self.cancel_permission is not None:
                     self.cancel_permission()
+                self.auxiliary_transport.close()
                 process = getattr(self, "process", None)
                 if process is not None and process.poll() is None:
                     process.terminate()
@@ -656,8 +664,7 @@ class ClaudeToolSession:
                         process.kill()
                         process.wait()
                 if getattr(self, "server", None) is not None:
-                    self.server.shutdown()
-                    self.server.server_close()
+                    self.server.close()
                 for thread in (self.server_thread, getattr(self, "output_thread", None), getattr(self, "error_thread", None)):
                     if thread is not None and thread is not threading.current_thread():
                         thread.join(timeout=5)
@@ -694,8 +701,8 @@ def get_claude_tool_session(conductor, *, session_state=None):
         ):
             native_session_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "breadboard/claude-code/session/" + session_id))
 
+        auxiliary_transport = AuxiliaryTransport()
         def auxiliary(body, headers, path):
-            import httpx
             from breadboard_engine.provider_broker import get_provider_broker
             with get_provider_broker().execution_material(
                 "anthropic", session_id=str(session_id or ""),
@@ -710,8 +717,10 @@ def get_claude_tool_session(conductor, *, session_state=None):
                 upstream = str(material.get("base_url") or "https://api.anthropic.com").rstrip("/")
                 outgoing = {k: v for k, v in headers.items() if k.lower() not in {"host", "content-length", "authorization", "x-api-key"}}
                 outgoing.update({"Authorization": f"Bearer {token}"} if token else {"x-api-key": key})
-                response = httpx.post(upstream + path, headers=outgoing, json=body, timeout=600)
-                return response.status_code, dict(response.headers), response.content
+                return auxiliary_transport.forward(
+                    str(session_id or ""), upstream + path, outgoing,
+                    json.dumps(body, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode(),
+                )
 
         log_dir = Path(getattr(getattr(conductor, "logger_v2", None), "run_dir", conductor.workspace))
         permission = None
@@ -719,9 +728,11 @@ def get_claude_tool_session(conductor, *, session_state=None):
         if session_state is not None and session_state.get_provider_metadata("permission_queue") is not None:
             from breadboard_engine.permissions.broker import PermissionBroker
             broker = getattr(conductor, "permission_broker", None) or PermissionBroker(conductor.config)
-            permission = lambda request: broker.request_stock_tool_permission(session_state, request)
+            from breadboard_engine.permissions.claude_permission import request_stock_tool_permission
+            permission = lambda request: request_stock_tool_permission(broker, session_state, request)
             cancel_permission = lambda: broker.cancel_pending_requests(session_state)
         session = ClaudeToolSession(str(conductor.workspace), model, auxiliary=auxiliary,
+                                   auxiliary_transport=auxiliary_transport,
                                    package=Path(tools.get("stock_package", DEFAULT_PACKAGE)),
                                    session_id=native_session_id,
                                    log_path=log_dir / "claude-tool-exchanges.jsonl",

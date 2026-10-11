@@ -38,6 +38,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTermination,
     RunnerTerminationEvent,
     RunnerToolBinding,
+    SourceEventCommitEvent,
     ToolActionTimeout,
     ToolCallEvent,
     ToolObservationEvent,
@@ -5646,6 +5647,22 @@ async def test_agent_end_compaction_continuation_controls_next_turn(
         await session.close()
     assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
     assert len(client.requests) == (2 if continues else 1)
+    source_commits = [
+        event for event in result.events if isinstance(event, SourceEventCommitEvent)
+    ]
+    boundary = next(
+        event for event in source_commits
+        if any(item.get("kind") == "compaction" for item in event.events)
+    )
+    expected_boundary = [{"kind": "compaction", "checkpoint": "agent_end"}]
+    if continues:
+        expected_boundary.append(continuation)
+    assert [thaw_json(item) for item in boundary.events] == expected_boundary
+    emitted_continuations = [
+        thaw_json(item) for event in source_commits for item in event.events
+        if item.get("synthetic") is True
+    ]
+    assert emitted_continuations == ([continuation] if continues else [])
     if continues:
         assert calls[1][-2] == continuation
         assert calls[1][-1]["role"] == "assistant"

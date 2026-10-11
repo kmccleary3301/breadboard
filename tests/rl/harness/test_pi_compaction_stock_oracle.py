@@ -27,18 +27,10 @@ from typing import Any, Mapping
 
 import pytest
 
-_NODE_MODULES_0_73_1 = Path(
-    os.environ.get(
-        "PI_CODING_AGENT_NODE_MODULES",
-        "/Users/kylemccleary/projects/breadboard-compaction-ref-20261009/node_modules",
-    )
-)
-_NODE_MODULES_0_57_1 = Path(
-    os.environ.get(
-        "PI057_CODING_AGENT_NODE_MODULES",
-        "/Users/kylemccleary/.cache/bb-compaction-e4/pkgs/@mariozechner__pi-coding-agent@0.57.1/node_modules",
-    )
-)
+from tests.rl.harness.native_dependencies import resolve_pi
+
+_NODE_MODULES_0_73_1 = resolve_pi("0.73.1")
+_NODE_MODULES_0_57_1 = resolve_pi("0.57.1")
 _WORKER_0_73_1 = (
     Path(__file__).resolve().parents[3]
     / "breadboard"

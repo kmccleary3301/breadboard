@@ -114,8 +114,10 @@ def _input(owner, args):
                 # UserInput resizes auto/low/high identically while preserving
                 # requested wire detail (protocol/src/models.rs:1085-1100).
                 image_detail = item.get("detail") or "high"
-                output = owner._ray_get(owner.sandbox.codex_view_image.remote(
-                    {"path": path, "detail": "original" if image_detail == "original" else "high"}, True))
+                from .codex_exec import codex_runtime
+
+                output = codex_runtime(owner).view_image(
+                    {"path": path, "detail": "original" if image_detail == "original" else "high"}, True)
                 if output.get("error"):
                     content.append({"type": "text", "text": output["error"]})
                     continue
@@ -175,6 +177,37 @@ class AgentRegistry:
         self.children = {}
         self.used_names = set()
         self.name_generation = 0
+        self.closed = False
+
+    def cancel(self, children=None):
+        from .codex_exec import codex_runtime
+
+        with self.condition:
+            closing = list(self.children.values()) if children is None else list(children)
+            for child in closing:
+                child.closed = True
+                child.pending.clear()
+                child.conductor.request_stop()
+            self.condition.notify_all()
+        # Kill active execution before waiting on its conductor worker.
+        for child in closing:
+            codex_runtime(child.conductor).close()
+            child.conductor.close_stock_tools()
+        return closing
+
+    def drain(self, children=None):
+        closing = list(self.children.values()) if children is None else list(children)
+        for child in closing:
+            worker = child.worker
+            if worker is not None and worker is not threading.current_thread():
+                worker.join()
+            child.status = "shutdown"
+
+    def close(self):
+        with self.condition:
+            self.closed = True
+        closing = self.cancel()
+        self.drain(closing)
 
     def nickname(self, candidates):
         def suffix():
@@ -193,11 +226,15 @@ class AgentRegistry:
         return name
 
     def reserve(self, owner):
+        if self.closed:
+            raise AgentToolError("agent registry is closed")
         limit = (owner.config.get("agents") or {}).get("max_threads", 6)
         if sum(not child.closed for child in self.children.values()) >= limit:
             raise AgentToolError("collab spawn failed: agent thread limit reached")
 
     def start(self, child):
+        if self.closed:
+            raise AgentToolError("agent registry is closed")
         if child.worker is not None and child.worker.is_alive():
             return
         child.status = "pending_init"
@@ -262,6 +299,9 @@ def _registry(owner):
         if registry is None:
             registry = AgentRegistry()
             owner._codex_agent_registry = registry
+            from .stock_tools import register_stock_session
+
+            register_stock_session(owner, registry)
         return registry
 
 
@@ -293,8 +333,7 @@ def _make_child(owner, registry, *, agent_id, parent_id, depth, nickname, config
         protected_paths=getattr(owner, "_protected_credential_paths", ()),
         admitted_workspace=Path(owner.workspace),
     )
-    # Share the admitted sandbox/permission authority, not native exec sessions:
-    # the actor keys each manager by the root session ID or _codex_agent_id.
+    # Share sandbox/permission authority, but child conductors own their adapters.
     child_owner.sandbox = owner.sandbox
     child_owner._ray_get = owner._ray_get
     child_owner.permission_authority = owner.permission_authority
@@ -431,6 +470,8 @@ def _agent_tool(owner, name, args):
     if name == "resume_agent" and depth > max_depth:
         raise AgentToolError("Agent depth limit reached. Solve the task yourself.")
     with registry.condition:
+        if registry.closed:
+            raise AgentToolError("agent registry is closed")
         child = registry.children.get(agent_id)
         if name == "resume_agent" and child is None:
             filesystem = owner._workspace_filesystem_for_persistence()
@@ -449,6 +490,7 @@ def _agent_tool(owner, name, args):
         if name == "resume_agent":
             if child.closed:
                 registry.reserve(owner)
+                child.conductor._codex_runtime = None
                 child.closed = False
                 child.status = "pending_init"
                 _save_child(child)
@@ -471,18 +513,9 @@ def _agent_tool(owner, name, args):
         for current in closing:
             closing.extend(c for c in registry.children.values()
                            if c.parent_id == current.id and not c.closed)
-        for current in closing:
-            current.closed = True
-            current.pending.clear()
-            current.conductor.request_stop()
-        registry.condition.notify_all()
+    closing = registry.cancel(closing)
+    registry.drain(closing)
     for current in closing:
-        if current.worker is not None:
-            current.worker.join()
-        current.conductor._ray_get(
-            current.conductor.sandbox.codex_close_exec_sessions.remote(current.id)
-        )
-        current.status = "shutdown"
         _save_child(current)
     return {"previous_status": previous}
 

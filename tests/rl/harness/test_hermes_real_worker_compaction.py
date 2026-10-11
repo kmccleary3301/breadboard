@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
-from scripts.compaction_lanes.hermes_lane import (
-    MockProvider, SUMMARY, TERMINAL, SOURCE, run_side, scenario_script,
+from breadboard_engine.compaction_lanes.mock_provider import MockProvider
+from breadboard_engine.compaction_lanes.hermes_lane import (
+    SUMMARY, TERMINAL, SOURCE, run_side, scenario_script,
     seed_workspace, target_profile,
 )
 

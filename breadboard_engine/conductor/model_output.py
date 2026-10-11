@@ -836,7 +836,7 @@ def handle_native_tool_calls(
         if not fn:
             continue
         arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-        if native_tools.get("native_semantics") in {"opencode_1_2_17", "oh_my_opencode_3_10_0"}:
+        if getattr(getattr(conductor, "stock_driver", None), "lexical_arguments", False):
             # Stock owns parsing/repair. Keep even malformed JSON lexical.
             args = arg_str
         else:

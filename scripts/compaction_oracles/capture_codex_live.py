@@ -27,7 +27,7 @@ from typing import Any, Dict, List
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.compaction_lanes.mock_provider import MockProvider
+from breadboard_engine.compaction_lanes.mock_provider import MockProvider
 
 CODEX_PACKAGE_DIR = Path.home() / ".cache/bb-compaction-e4/pkgs/@openai__codex@0.139.0"
 CODEX_BIN = CODEX_PACKAGE_DIR / "node_modules/.bin/codex"

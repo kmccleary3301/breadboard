@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.core import ToolDefinition
 from ..compilation.system_prompt_compiler import get_compiler
+from ..compaction.controller import CompactionRequestContext
 from ..messaging.markdown_logger import MarkdownLogger
 from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
@@ -266,6 +267,7 @@ def get_model_response(
     stream_responses: bool,
     local_tools_prompt: str,
     client_config: Dict[str, Any],
+    request_context: CompactionRequestContext | None = None,
 ) -> Any:
     """Get response from the model with proper tool configuration."""
     previous_turn_index = session_state.get_provider_metadata("current_turn_index")
@@ -296,28 +298,14 @@ def get_model_response(
             client=client,
             model=model,
             turn_index=turn_index,
+            request_context=request_context,
         )
     else:
         send_messages = copy.deepcopy(session_state.provider_messages)
+    driver = getattr(conductor, "stock_driver", None)
     stock_request = None
-    if (conductor.config.get("tools") or {}).get("native_semantics") in {
-        "opencode_1_2_17", "oh_my_opencode_3_10_0",
-    }:
-        from ..execution.opencode_tools import prepare_stock_turn, stock_system_messages
-
-        stock_request = prepare_stock_turn(conductor, session_state)
-        session_state.set_provider_metadata("opencode_stock_request", stock_request)
-        # Stock supplies dynamic prompts/catalogs, never the BB conversation.
-        send_messages = stock_system_messages(stock_request) + [
-            message for message in send_messages
-            if message.get("role") not in {"system", "developer"}
-        ]
-        from ..compilation.context_builders.opencode_stock import (
-            project_inflight_current_user, project_inflight_tool_arguments, project_inflight_tool_outputs,
-        )
-        send_messages = project_inflight_current_user(session_state, stock_request, send_messages)
-        send_messages = project_inflight_tool_arguments(stock_request, send_messages)
-        send_messages = project_inflight_tool_outputs(stock_request, send_messages)
+    if driver is not None and driver.prepare_request is not None:
+        send_messages, stock_request = driver.prepare_request(conductor, session_state, send_messages)
     requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
         {
@@ -540,9 +528,7 @@ def get_model_response(
         except Exception:
             tools_schema = None
     if stock_request is not None:
-        from ..execution.opencode_tools import stock_tool_schema
-
-        tools_schema = stock_tool_schema(stock_request)
+        tools_schema = driver.request_tools(stock_request)
     if tools_schema:
         try:
             record_tool_schema_snapshot(
@@ -878,14 +864,11 @@ def get_model_response(
         turn_index=turn_index,
         route_id=getattr(conductor, "_current_route_id", None),)
     except Exception as exc:
-        if stock_request is not None:
-            from ..execution.opencode_tools import submit_stock_overflow
-            submit_stock_overflow(conductor, session_state, exc)
+        if driver is not None and driver.submit_overflow is not None:
+            driver.submit_overflow(conductor, session_state, exc)
         raise
-    if stock_request is not None:
-        from ..execution.opencode_tools import submit_stock_response
-
-        submit_stock_response(conductor, session_state, result)
+    if driver is not None and driver.submit_response is not None:
+        driver.submit_response(conductor, session_state, result)
 
     if (conductor.config.get("features", {}) or {}).get("response_normalizer"):
         normalized_events = normalize_provider_result(result)
@@ -994,16 +977,9 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
                     conductor.yaml_tools, provider_id
                 )
             )
-            if (
-                (conductor.config.get("tools") or {}).get("native_semantics") == "codex_0_139"
-                and getattr(conductor, "_codex_agent_depth", 0) >= (conductor.config.get("agents") or {}).get("max_depth", 1)
-            ):
-                # spec_plan.rs:304-312,698,849-856: at the v1 depth limit
-                # collaboration and its empty deferred search are absent.
-                native_tools = [
-                    tool for tool in native_tools
-                    if tool.name not in {"multi_agent_v1", "tool_search"}
-                ]
+            driver = getattr(conductor, "stock_driver", None)
+            if driver is not None and driver.available_tools is not None:
+                native_tools = driver.available_tools(conductor, native_tools)
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools

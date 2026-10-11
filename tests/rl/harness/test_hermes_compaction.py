@@ -1,14 +1,20 @@
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+import pytest
 
-# Ensure pinned hermes source is available
-_HERMES_SOURCE = Path.home() / ".cache/bb-compaction-e4/hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213"
-if str(_HERMES_SOURCE) not in sys.path:
-    sys.path.insert(0, str(_HERMES_SOURCE))
+from tests.rl.harness.native_dependencies import require_hermes
 
-from agent.context_compressor import ContextCompressor
+
+@pytest.fixture
+def context_compressor():
+    source = require_hermes()
+    sys.path.insert(0, str(source))
+    try:
+        from agent.context_compressor import ContextCompressor
+        yield ContextCompressor
+    finally:
+        sys.path.remove(str(source))
 from breadboard.rl.harness.hermes_worker import HermesActor
 from breadboard.rl.harness.native_stream_profiles import HERMES_RESPONSE_CONSUMER_ID, NATIVE_STREAM_PROFILES
 
@@ -30,7 +36,7 @@ def test_hermes_stream_profile_configuration():
 
 
 
-def test_hermes_compaction_threshold_formula_parity():
+def test_hermes_compaction_threshold_formula_parity(context_compressor):
     """Verify stock Hermes threshold calculation:
     1. _effective_threshold_percent floors at 0.75 for windows < 512K:
        max(0.50, 0.75) = 0.75
@@ -40,7 +46,7 @@ def test_hermes_compaction_threshold_formula_parity():
        floored = max(96768, MINIMUM_CONTEXT_LENGTH=64000) = 96768
     """
     max_tokens = 2048
-    cc = ContextCompressor(
+    cc = context_compressor(
         model="test-model",
         threshold_percent=0.5,
         max_tokens=max_tokens,

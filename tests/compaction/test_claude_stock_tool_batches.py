@@ -6,6 +6,7 @@ import pytest
 
 from breadboard_engine.conductor.tool_executor import execute_agent_calls
 from breadboard_engine.execution.claude_tools import ClaudeToolSession
+from breadboard_engine.execution.stock_driver import resolve_stock_driver
 from breadboard_engine.provider.adapters import AnthropicAdapter
 from breadboard_engine.provider.anthropic_replay import replay_messages
 from breadboard_engine.state.session_state import SessionState
@@ -78,6 +79,7 @@ def test_full_batch_matches_independent_stock(tmp_path, second_tool, continuous)
         state._claude_tool_session = stock
         state.set_provider_metadata("usage", USAGE)
         conductor = SimpleNamespace(config=config)
+        conductor.stock_driver = resolve_stock_driver(conductor)
         parsed = [SimpleNamespace(function=call["name"], provider_name=call["name"],
                                   arguments=call["input"], call_id=call["id"]) for call in calls]
 

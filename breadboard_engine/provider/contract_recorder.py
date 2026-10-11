@@ -16,11 +16,7 @@ from .contract_wire import (
     _coalesce_text_fields,
     canonical_json,
 )
-from .contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-    ProviderRequest,
-)
+from .contract_requests import ProviderCorrelation, ProviderIdentity, ProviderRequest
 from .contract_events import (
     ProviderCancelled,
     ProviderDone,

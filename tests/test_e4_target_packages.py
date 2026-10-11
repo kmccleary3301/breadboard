@@ -162,7 +162,7 @@ def test_current_agent_configs_are_their_previous_profiles_plus_native_compactio
             # prompt.ts:238-282 SessionPrompt.loop shares only same-session requests;
             # plugin manager.ts:1359-1367 starts an independent parent prompt.
             assert current["tools"].pop("native_concurrent_prompts") is True
-            # execution/opencode_tools.py launches the local source sidecar with
+            # execution/opencode/lifecycle.py launches the local source sidecar with
             # cwd=self.workspace; remote admission must reject this placement.
             assert current["tools"].pop("native_local_only") is True
             # Native interactive_bash/tmux needs the explicit restricted PTY capability.

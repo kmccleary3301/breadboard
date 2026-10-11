@@ -13,7 +13,7 @@ import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.model_output import process_model_output
-from breadboard_engine.execution.codex_exec import CodexExecManager, truncate_output
+from breadboard_engine.execution.codex_exec import CodexExecManager, codex_runtime, truncate_output
 from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
 from breadboard_engine.state.session_state import SessionState
 
@@ -74,7 +74,7 @@ def test_selected_route_not_default_controls_production_poll(owner):
 
 
 def stock_exec_output(workspace, tmp_path, arguments):
-    from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
+    from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
 
     if not BINARY.is_file():
         pytest.skip("Pinned stock Codex package is required")
@@ -267,14 +267,14 @@ def test_patch_helper_denies_protected_credential_reads_and_writes(tmp_path, ope
 
 def test_lane_id_source_reaches_native_dispatch_and_continuation(owner):
     source = iter([2468])
-    owner._ray_get(owner.sandbox.codex_set_process_id_generator.remote(source.__next__))
+    codex_runtime(owner).set_process_id_generator(source.__next__)
     first = call(owner, "exec_command", cmd='read word; printf "%s" "$word"',
                  tty=True, login=False, yield_time_ms=250)
     assert "Process running with session ID 2468\n" in first
     last = call(owner, "write_stdin", session_id=2468, chars="continued\n")
     assert "Process exited with code 0\n" in last
     assert last.split("\nOutput:\n", 1)[1] == "continued\r\ncontinued"
-    state = owner._ray_get(owner.sandbox.codex_process_id_generator_state.remote())
+    state = codex_runtime(owner).process_id_generator_state()
     assert state == {"allocation_count": 1, "draw_count": 1}
     with pytest.raises(StopIteration):
         call(owner, "exec_command", cmd="touch exhausted-source-must-not-run", login=False)
@@ -286,7 +286,7 @@ def test_lane_id_source_reaches_native_dispatch_and_continuation(owner):
     "not a patch",
 ])
 def test_custom_apply_patch_output_equals_live_stock(owner, tmp_path, patch):
-    from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
+    from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
 
     if not BINARY.is_file():
         pytest.skip("Pinned stock Codex package is required")
@@ -313,7 +313,7 @@ def test_custom_apply_patch_output_equals_live_stock(owner, tmp_path, patch):
     assert actual == outputs[0]
     if patch.startswith("*** Begin Patch"):
         assert target.read_bytes() == b"hello\n"
-    assert owner._ray_get(owner.sandbox.codex_process_id_generator_state.remote()) == {
+    assert codex_runtime(owner).process_id_generator_state() == {
         "allocation_count": 0, "draw_count": 0,
     }
 

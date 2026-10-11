@@ -7,12 +7,12 @@ import os
 import shlex
 import signal
 import time
+from types import SimpleNamespace
 
 from PIL import Image
 import pytest
 
-from breadboard.sandbox import DevSandboxV2
-from breadboard_engine.execution.codex_exec import CodexExecManager, truncate_output
+from breadboard_engine.execution.codex_exec import CodexExecManager, CodexRuntime, truncate_output
 
 POLICY = {"mode": "bytes", "limit": 10000}
 
@@ -21,9 +21,10 @@ def manager(workspace, **kwargs):
     return CodexExecManager(str(workspace), truncation_policy=POLICY, **kwargs)
 
 
-def actor(workspace, **kwargs):
-    return DevSandboxV2.__ray_metadata__.modified_class(
-        image="", workspace=str(workspace), purge_process_environment=False, **kwargs)
+def runtime(workspace, *, protected_paths=()):
+    return CodexRuntime(SimpleNamespace(
+        workspace=str(workspace), _protected_credential_paths=protected_paths,
+    ))
 
 
 def test_allocator_reserves_uniform_range_and_redraws_collisions(tmp_path):
@@ -71,24 +72,23 @@ def test_exhausted_generator_cannot_wrap_or_launch_another_process(tmp_path):
 @pytest.mark.parametrize("child_id", [1234, 1235])
 def test_sessions_are_owned_and_closed_per_thread(tmp_path, child_id):
     # core/src/session/session.rs:992-994: one manager and 64-session cap per thread.
-    instance = actor(tmp_path)
-    instance.codex_set_process_id_generator(iter([1234]).__next__, "parent")
-    instance.codex_set_process_id_generator(iter([child_id]).__next__, "child")
+    instance = runtime(tmp_path)
+    instance.set_process_id_generator(iter([1234]).__next__, "parent")
+    instance.set_process_id_generator(iter([child_id]).__next__, "child")
     args = {"cmd": "sleep 30", "login": False, "yield_time_ms": 250}
     try:
-        assert instance.codex_exec_command(args, "parent", POLICY)["session_id"] == 1234
-        assert instance.codex_exec_command(args, "child", POLICY)["session_id"] == child_id
+        assert instance.exec_command(args, "parent", POLICY)["session_id"] == 1234
+        assert instance.exec_command(args, "child", POLICY)["session_id"] == child_id
         if child_id != 1234:
-            denied = instance.codex_write_stdin({"session_id": child_id}, "parent", POLICY)
+            denied = instance.write_stdin({"session_id": child_id}, "parent", POLICY)
             assert denied["__mvi_text_output"] == f"write_stdin failed: Unknown process id {child_id}"
-        assert len(instance._codex_exec_managers["parent"].sessions) == 1
-        assert len(instance._codex_exec_managers["child"].sessions) == 1
-        instance.codex_close_exec_sessions("parent")
-        assert instance.codex_write_stdin({"session_id": child_id, "yield_time_ms": 1}, "child", POLICY)["session_id"] == child_id
-        assert instance.codex_process_id_generator_state() == {"allocation_count": 2, "draw_count": 2}
+        assert len(instance.managers["parent"].sessions) == 1
+        assert len(instance.managers["child"].sessions) == 1
+        instance.close_thread("parent")
+        assert instance.write_stdin({"session_id": child_id, "yield_time_ms": 1}, "child", POLICY)["session_id"] == child_id
+        assert instance.process_id_generator_state() == {"allocation_count": 2, "draw_count": 2}
     finally:
-        instance.codex_close_exec_sessions("parent")
-        instance.codex_close_exec_sessions("child")
+        instance.close()
 
 
 def test_detached_setsid_descendant_does_not_hold_reader_join_forever(tmp_path):
@@ -129,8 +129,8 @@ def test_view_image_cannot_read_protected_png(tmp_path):
     workspace.mkdir()
     protected = tmp_path / "credential.png"
     Image.new("RGB", (8, 8), "red").save(protected)
-    instance = actor(workspace, protected_paths=(protected,))
-    result = instance.codex_view_image({"path": str(protected)})
+    instance = runtime(workspace, protected_paths=(protected,))
+    result = instance.view_image({"path": str(protected)})
     assert result.get("error")
     assert "__mvi_content_output" not in result
     assert "unable to locate image" in result["__mvi_text_output"]

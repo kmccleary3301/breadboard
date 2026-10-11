@@ -1,12 +1,11 @@
 """Pinned Codex client-side BM25 discovery over its deferred agent corpus."""
 from copy import deepcopy
-import hashlib
 import json
-import os
 from pathlib import Path
 import subprocess
 
 import yaml
+from .codex_native import require_native_binary
 
 # spec_plan.rs:761-778 registration order; each handler's search_info string.
 SEARCH_TEXTS = (
@@ -20,15 +19,6 @@ DEFAULT_LIMIT = 8
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def codex_search_binary() -> Path:
-    source = Path(__file__).with_suffix("")
-    digest = hashlib.sha256()
-    for filename in ("Cargo.toml", "Cargo.lock", "main.rs"):
-        digest.update((source / filename).read_bytes())
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return cache / "breadboard" / "codex-search" / digest.hexdigest() / "release" / "breadboard-codex-search"
-
-
 class CodexSearchDecodeError(ValueError):
     """A router decoding failure, before the search handler is called."""
 
@@ -39,9 +29,7 @@ def search_deferred_tools(args: dict) -> list[dict]:
     definition = yaml.safe_load((ROOT / "implementations/tools/defs_codex_139/11_multi_agent_v1.yaml").read_text())
     namespace = definition["provider_routing"]["openai"]["responses_tool_schema"]
     functions = {tool["name"]: tool for tool in namespace["tools"]}
-    binary = codex_search_binary()
-    if not binary.is_file():
-        raise RuntimeError("Codex search helper is not built; run `python scripts/build_codex_search.py` from the repository root.")
+    binary = require_native_binary("search")
     result = subprocess.run([str(binary)], input=json.dumps({
         "documents": [text for _, text in SEARCH_TEXTS],
         "arguments": args,

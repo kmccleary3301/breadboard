@@ -214,6 +214,19 @@ class SessionRunner:
         from .stock_inputs import StockInputController
         self._stock_input_controller = StockInputController(self, submit)
 
+    def wait_for_stock_source_input(self) -> None:
+        owner = getattr(self._agent, "agent", None)
+        driver = getattr(owner, "stock_driver", None)
+        if driver is not None:
+            driver.wait_for_source_input(owner, self.session.session_id)
+
+    def stock_source_should_continue(self) -> bool:
+        owner = getattr(self._agent, "agent", None)
+        driver = getattr(owner, "stock_driver", None)
+        return driver is not None and driver.source_should_continue(
+            owner, self.session.session_id,
+        )
+
     def bind_durable_product_session(
         self,
         workspace: Path,

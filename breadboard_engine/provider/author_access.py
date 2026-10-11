@@ -31,7 +31,7 @@ from breadboard.modules.transport import RequestKey
 from breadboard_engine.messaging.markdown_logger import MarkdownLogger
 
 from .contract_exchange import ProviderExchangeV2
-from .contract_messages import ProviderIdentity
+from .contract_requests import ProviderIdentity
 from .contract_runtime import (
     ProviderRuntime,
     ProviderRuntimeContext,

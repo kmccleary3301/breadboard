@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from scripts.compaction_lanes.claude_lane import (
+from breadboard_engine.compaction_lanes.claude_lane import (
     ClaudeMockProvider, PRESET, STOCK_PACKAGE, compare_requests, is_summary,
     production_settings, run_scenario, scenario_responses,
 )
@@ -18,11 +18,12 @@ def capture(body, *, raw=None, path="/v1/messages"):
     return {"method": "POST", "path": path, "json": body, "raw_body_bytes": raw.encode().hex()}
 
 
-def test_comparator_ignores_only_json_object_member_order():
+def test_comparator_rejects_undeclared_json_representation():
     left = capture({"model": "claude", "messages": [{"role": "user", "content": "é"}]})
     right = capture(left["json"], raw=json.dumps(left["json"], sort_keys=True, indent=2))
     assert left["raw_body_bytes"] != right["raw_body_bytes"]
-    assert compare_requests([left], [right]) == []
+    differences = compare_requests([left], [right])
+    assert differences[0]["stock_raw_sha256"] != differences[0]["bb_raw_sha256"]
 
 
 @pytest.mark.parametrize("changed", [
@@ -164,7 +165,7 @@ def test_summary_uses_production_route_lease_and_selected_tool_schema():
 def test_anthropic_tool_turn_summary_and_next_request_round_trip(tmp_path, result_text):
     from contextlib import contextmanager
     import anthropic
-    from scripts.compaction_lanes.claude_lane import signed_tool_response
+    from breadboard_engine.compaction_lanes.claude_lane import signed_tool_response
     from breadboard_engine.conductor.execution_records import legacy_message_view
     from breadboard_engine.conductor.model_output import _assistant_history_message
     from breadboard_engine.provider.normalizer import normalized_result_messages
@@ -259,7 +260,7 @@ def test_anthropic_tool_turn_summary_and_next_request_round_trip(tmp_path, resul
 def test_production_tool_continuation_never_injects_empty_user_when_prompts_suppressed(tmp_path, profile_name):
     import subprocess
     import sys
-    from scripts.compaction_lanes.claude_lane import ROOT, signed_tool_response
+    from breadboard_engine.compaction_lanes.claude_lane import ROOT, signed_tool_response
     workspace = tmp_path.resolve() / "workspace"
     workspace.mkdir()
     (workspace / "records.txt").write_text("record one\nrecord two\n")
@@ -333,7 +334,7 @@ def test_repeated_thinking_text_keeps_each_distinct_signature_in_order():
 def test_summary_request_count_includes_failed_and_exhausted_wire_attempts(tmp_path):
     import http.client
     from urllib.parse import urlsplit
-    from scripts.compaction_lanes.claude_lane import SUMMARY_PREFIX, summary_request_count
+    from breadboard_engine.compaction_lanes.claude_lane import SUMMARY_PREFIX, summary_request_count
     script = {"main": [], "summary": [{"type": "error", "status_code": 400, "message": "summary rejected"}]}
     with ClaudeMockProvider(script, tmp_path / "requests.jsonl") as server:
         address = urlsplit(server.base_url)
@@ -357,7 +358,7 @@ def test_summary_request_count_includes_failed_and_exhausted_wire_attempts(tmp_p
     ({}, {}),
 ])
 def test_long_session_gate_rejects_failed_or_missing_terminal_completion(stock_result, bb_result):
-    from scripts.compaction_lanes.claude_lane import long_session_terminal_problems
+    from breadboard_engine.compaction_lanes.claude_lane import long_session_terminal_problems
     assert long_session_terminal_problems(stock_result, bb_result)
     assert long_session_terminal_problems({"result": "Inspection complete.", "is_error": False}, {"completed": True}) == []
 
@@ -446,7 +447,7 @@ def test_native_cli_identity_is_stable_and_preserves_explicit_uuid(monkeypatch, 
 
 def test_remote_agent_close_waits_for_existing_ray_shutdown(monkeypatch, tmp_path):
     from breadboard_engine import agent as agent_module
-    from scripts.compaction_lanes.claude_lane import ROOT
+    from breadboard_engine.compaction_lanes.claude_lane import ROOT
     # The dated stock-sidecar profile is local-only (tools.native_local_only), so
     # the shared remote close path is exercised with a profile that admits Ray.
     profile = ROOT / "agent_configs/claude_code_2-1-63_e4_9-10-2026.yaml"
@@ -465,7 +466,7 @@ def test_remote_agent_close_waits_for_existing_ray_shutdown(monkeypatch, tmp_pat
 def test_agent_close_releases_all_real_claude_sidecar_resources(tmp_path, scenario):
     import subprocess
     import sys
-    from scripts.compaction_lanes.claude_lane import ROOT, signed_tool_response
+    from breadboard_engine.compaction_lanes.claude_lane import ROOT, signed_tool_response
     workspace = tmp_path.resolve() / "workspace"
     workspace.mkdir()
     (workspace / "records.txt").write_text("record one\nrecord two\n")
@@ -542,7 +543,7 @@ def test_close_cancels_real_pending_permission_and_closes_every_resource(tmp_pat
     import threading
     from breadboard_engine.agent import AgenticCoder
     from breadboard_engine.provider_broker import get_provider_broker
-    from scripts.compaction_lanes.claude_lane import PROFILE, signed_tool_response
+    from breadboard_engine.compaction_lanes.claude_lane import PROFILE, signed_tool_response
     pending = threading.Event()
 
     class PermissionQueue(queue.Queue):
@@ -639,13 +640,14 @@ def test_permission_cancellation_without_session_is_harmless():
 def test_cancelled_broker_rejects_late_permission_registration_without_waiting(tmp_path):
     import queue
     from breadboard_engine.permissions.broker import PermissionBroker
+    from breadboard_engine.permissions.claude_permission import request_stock_tool_permission
     from breadboard_engine.state.session_state import SessionState
     state = SessionState(workspace=str(tmp_path), image="python-dev:latest", config={})
     responses = queue.Queue()
     state.set_provider_metadata("permission_queue", responses)
     broker = PermissionBroker({})
     broker.cancel_pending_requests(state)
-    decision = broker.request_stock_tool_permission(
+    decision = request_stock_tool_permission(broker,
         state, {"tool_name": "Write", "input": {"file_path": str(tmp_path / "late.txt"), "content": "unapproved"}})
     assert decision["behavior"] == "deny"
     assert responses.empty()
@@ -680,7 +682,7 @@ def test_failed_stock_cleanup_retains_session_for_retry():
 
 def test_exchange_schema_admits_only_exact_native_tool_replay_tags():
     from jsonschema import Draft202012Validator, ValidationError
-    from scripts.compaction_lanes.claude_lane import ROOT
+    from breadboard_engine.compaction_lanes.claude_lane import ROOT
     schema = json.loads((ROOT / "contracts/kernel/schemas/bb.provider_exchange.v2.schema.json").read_text())
     validator = Draft202012Validator({"$ref": "#/$defs/provider_replay_block", "$defs": schema["$defs"]})
     replay = {

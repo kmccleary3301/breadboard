@@ -1,4 +1,7 @@
 from copy import deepcopy
+from breadboard_engine.provider.contract_wire import canonical_json as wire_json
+import json
+from breadboard_engine.compaction_lanes.request_bytes import project_guarded_values
 import json
 import os
 from pathlib import Path
@@ -7,7 +10,7 @@ import sys
 
 import pytest
 
-from scripts.compaction_lanes.omp18_lane import SCENARIOS, guarded_summary_fields, remove_fields, run_scenario
+from breadboard_engine.compaction_lanes.omp18_lane import SCENARIOS, guarded_summary_fields, run_scenario
 
 
 @pytest.mark.parametrize("scenario", SCENARIOS)
@@ -65,8 +68,8 @@ def test_summary_deviation_guard_rejects_wrong_values(side: str, field: str, val
 
 def test_raw_field_removal_preserves_other_wire_bytes() -> None:
     raw = b'{"model":"m", "tools":[{"name":"read"}],"tool_choice":"none","max_completion_tokens":2048,"messages":[{"content":"a,b"}]}'
-    assert remove_fields(raw, {"tools", "max_completion_tokens"}) == b'{"model":"m","tool_choice":"none","messages":[{"content":"a,b"}]}'
-    assert remove_fields(raw, set()) == raw
+    assert project_guarded_values(raw, {key: value for key, value in json.loads(raw).items() if key not in {"tools", "max_completion_tokens"}}) == b'{"model":"m","tool_choice":"none","messages":[{"content":"a,b"}]}'
+    assert project_guarded_values(raw, {key: value for key, value in json.loads(raw).items() if key not in set()}) == raw
 
 
 @pytest.mark.parametrize("side,field,value", [
@@ -91,8 +94,8 @@ def test_handoff_guard_retains_equal_fields_and_rejects_changes(side, field, val
     ("999999999999999999 1 1 S", 0), ("1 0 1 Ss", 1),
 ])
 def test_darwin_process_inspection_fails_closed(output: str, status: int) -> None:
-    from scripts.compaction_lanes.omp18_lane import ROOT
-    worker = (ROOT / "breadboard/rl/harness/runners/omp_native_tool_worker.ts").read_text()
+    from breadboard_engine.compaction_lanes.omp18_lane import ROOT
+    worker = (ROOT / "breadboard/rl/harness/runners/omp_18_1_17/tool_session.ts").read_text()
     function = worker.split("async function processTable()", 1)[1].split("async function descendantHandles", 1)[0]
     # Execute the production function, injecting only the external process result.
     script = "async function processTable()" + function + """
@@ -114,7 +117,7 @@ def test_darwin_process_inspection_fails_closed(output: str, status: int) -> Non
 
 @pytest.mark.skipif(not os.environ.get("BB_OMP_TEST_BUN"), reason="Bun is required")
 def test_native_rpc_writer_preserves_large_multibyte_frames() -> None:
-    from scripts.compaction_lanes.omp18_lane import ROOT
+    from breadboard_engine.compaction_lanes.omp18_lane import ROOT
     worker = (ROOT / "breadboard/rl/harness/runners/omp_native_tool_worker.ts").read_text()
     function = worker.split("async function writeFrame(", 1)[1].split("\nwhile (true)", 1)[0]
     script = "async function writeFrame(" + function + """
@@ -147,27 +150,34 @@ def test_summary_guard_rejects_boolean_integer_schema_equivalence(handoff: bool)
 
 @pytest.mark.parametrize("role", ["tool", "assistant"])
 def test_elapsed_time_normalization_is_tool_content_only(role: str) -> None:
-    from scripts.compaction_lanes.omp18_lane import canonical_json, compare_requests
-    stock = {"tools": [], "messages": [{"role": role, "content": "Record A\nWall time: 0.12 seconds"}]}
-    bb = {"tools": [], "messages": [{"role": role, "content": "Record A\nWall time: 1.23 seconds"}]}
+    from breadboard_engine.compaction_lanes.omp18_lane import compare_requests
+    call = {"role": "assistant", "content": "", "tool_calls": [{
+        "id": "call_bash", "type": "function", "function": {"name": "bash", "arguments": "{}"}}]}
+    stock = {"tools": [], "messages": [call, {"role": role, "tool_call_id": "call_bash", "content": "Record A\nWall time: 0.12 seconds"}]}
+    bb = {"tools": [], "messages": [deepcopy(call), {"role": role, "tool_call_id": "call_bash", "content": "Record A\nWall time: 1.23 seconds"}]}
     def recording(body):
-        return [{"json": body, "raw_body_bytes": canonical_json(body).hex()}]
+        return [{"json": body, "raw_body_bytes": wire_json(body).encode("utf-8").hex()}]
     substitutions = []
     diffs = compare_requests(recording(stock), recording(bb), [], [], timing_substitutions=substitutions)
     assert bool(diffs) == (role != "tool")
-    assert substitutions == [{"index": 0, "stock": int(role == "tool"), "bb": int(role == "tool")}]
+    assert {key: substitutions[0][key] for key in ("index", "stock", "bb")} == {
+        "index": 0, "stock": int(role == "tool"), "bb": int(role == "tool")}
+    assert substitutions[0]["raw_difference"]["index"] == 0
     if role == "tool":
-        bb["messages"][0]["content"] = "Record B\nWall time: 1.23 seconds"
+        assert substitutions[0]["names"] == ["omp_native_bash_elapsed_time"]
+        assert substitutions[0]["changes"]["stock"][0]["path"] == "$/messages/1/content"
+    if role == "tool":
+        bb["messages"][1]["content"] = "Record B\nWall time: 1.23 seconds"
         assert compare_requests(recording(stock), recording(bb), [], [])[0]["type"] == "byte_diff"
 
 
 def test_comparator_guards_stock_handoff_when_candidate_choice_is_wrong() -> None:
-    from scripts.compaction_lanes.omp18_lane import canonical_json, compare_requests
+    from breadboard_engine.compaction_lanes.omp18_lane import compare_requests
 
     stock = {"tools": [{"name": "read"}], "max_completion_tokens": 2048, "tool_choice": "none"}
     bb = {**deepcopy(stock), "tool_choice": "auto"}
     def recording(body):
-        return [{"json": body, "raw_body_bytes": canonical_json(body).hex()}]
+        return [{"json": body, "raw_body_bytes": wire_json(body).encode("utf-8").hex()}]
     assert compare_requests(recording(stock), recording(bb), [], []) == [{
         "index": 0, "type": "deviation_guard", "message": "Handoff tool_choice differs from stock",
     }]
@@ -177,7 +187,7 @@ def test_comparator_guards_stock_handoff_when_candidate_choice_is_wrong() -> Non
 def test_production_conductor_preserves_failed_rescue_without_counting_compaction(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from scripts.compaction_lanes import omp18_lane as lane
+    from breadboard_engine.compaction_lanes import omp18_lane as lane
 
     monkeypatch.setattr(lane, "WINDOW", 4000)
     usage = {"input_tokens": 1000, "output_tokens": 30, "total_tokens": 1030}

@@ -8,7 +8,6 @@ import threading
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
 
 from .authority import (
@@ -21,6 +20,7 @@ from .authority import (
     resolve_permission_responses,
 )
 from .policy_pack import PolicyPack
+from .session_ids import allocate_permission_id
 
 
 @dataclass
@@ -53,7 +53,6 @@ class PermissionBroker:
         self._response_condition = threading.Condition(self._pending_lock)
         self._concurrent_routes: Dict[tuple[int, str], deque] = {}
         self._concurrent_readers: set[int] = set()
-        self._concurrent_counter = 0
         self.configure(config, policy_pack=policy_pack)
 
     def configure(
@@ -449,19 +448,8 @@ class PermissionBroker:
         return state
 
     def _next_permission_id(self, session_state) -> str:
-        state = self._permission_state(session_state)
-        counter = int(state.get("counter") or 0) + 1
-        state["counter"] = counter
-        session_state.set_provider_metadata(self.STATE_KEY, state)
-        return f"permission_{counter}"
-
-    def _next_concurrent_permission_id(self, session_state) -> str:
         with self._pending_lock:
-            state = self._permission_state(session_state)
-            self._concurrent_counter = max(self._concurrent_counter, int(state.get("counter") or 0)) + 1
-            state["counter"] = self._concurrent_counter
-            session_state.set_provider_metadata(self.STATE_KEY, state)
-            return f"permission_{self._concurrent_counter}"
+            return allocate_permission_id(session_state, self.STATE_KEY)
 
     def _queue_get(self, queue: Any, *, timeout_s: Optional[float]) -> Any:
         if queue is None:
@@ -493,7 +481,6 @@ class PermissionBroker:
                     self._response_condition.wait(remaining)
                     continue
                 self._concurrent_readers.add(queue_key)
-            routed = False
             try:
                 item = self._queue_get(queue, timeout_s=remaining)
                 if isinstance(item, dict):
@@ -503,13 +490,10 @@ class PermissionBroker:
                         route = self._concurrent_routes.get((queue_key, str(destination)))
                         if route is not None:
                             route.append(item)
-                            routed = True
             finally:
                 with self._response_condition:
                     self._concurrent_readers.discard(queue_key)
                     self._response_condition.notify_all()
-            if not routed:
-                return item
 
     def _emit_permission_event(self, session_state, event_type: str, payload: Dict[str, Any]) -> None:
         try:
@@ -551,81 +535,6 @@ class PermissionBroker:
             return f"{head} {sub} *"
         return f"{head} *"
 
-    def request_stock_question(self, session_state: Any, question: Dict[str, Any]) -> Optional[List[List[str]]]:
-        """Carry stock OpenCode answers through the existing approval queue."""
-        queue = session_state.get_provider_metadata("permission_queue")
-        if queue is None:
-            return None
-        request_id = self._next_concurrent_permission_id(session_state)
-        metadata = {"stock_kind": "opencode_question", "stock_request": question}
-        items = [
-            {"item_id": f"{request_id}_item_{index}", "category": "question",
-             "pattern": info["question"], "metadata": {**metadata, "question": info}}
-            for index, info in enumerate(question["questions"], start=1)
-        ]
-        payload = {"event_version": 1, "request_id": request_id, "id": request_id,
-                   "category": "question", "metadata": metadata, "items": items}
-        with self._pending_lock:
-            state = self._permission_state(session_state)
-            if state.get("cancelled") or self._stock_request_cancelled(state, payload):
-                return None
-            pending = state.setdefault("pending", {})
-            pending[request_id] = payload
-            self._concurrent_routes[(id(queue), request_id)] = deque()
-            session_state.set_provider_metadata(self.STATE_KEY, state)
-        self._emit_permission_event(session_state, "permission_request", payload)
-        answers = None
-        try:
-            while True:
-                item = self._concurrent_queue_get(queue, request_id, timeout_s=self._decision_timeout_s)
-                if not isinstance(item, dict):
-                    continue
-                if (item.get("request_id") or item.get("permission_id") or item.get("id")) != request_id:
-                    continue
-                if item.get("answers") is not None:
-                    candidate = item["answers"]
-                    if not isinstance(candidate, list) or not all(
-                        isinstance(answer, list) and all(isinstance(value, str) for value in answer)
-                        for answer in candidate
-                    ):
-                        raise ValueError("Stock question answers must be an array of string arrays")
-                    answers = candidate
-                break
-        finally:
-            with self._pending_lock:
-                self._concurrent_routes.pop((id(queue), request_id), None)
-                state = self._permission_state(session_state)
-                state.setdefault("pending", {}).pop(request_id, None)
-                session_state.set_provider_metadata(self.STATE_KEY, state)
-            self._emit_permission_event(
-                session_state, "permission_response",
-                {"event_version": 1, "request_id": request_id, "id": request_id,
-                 "response": "once" if answers is not None else "reject", "answers": answers},
-            )
-        return answers
-
-    def request_stock_tool_permission(self, session_state: Any, request: Dict[str, Any]) -> Dict[str, Any]:
-        """Relay a genuine Claude SDK permission prompt without auto-granting it."""
-        if session_state.get_provider_metadata("permission_queue") is None:
-            raise PermissionDeniedError("No permission response channel is active")
-        tool_name = request["tool_name"]
-        tool_input = request["input"]
-        normalized = self._build_request(SimpleNamespace(name=tool_name, arguments=tool_input))
-        permission = normalized or PermissionRequest("tool", tool_name, {})
-        permission.metadata.update(stock_kind="claude_permission", stock_request=request)
-        if self._policy_denies(permission) or self._resolve_action(permission) == "deny":
-            return {"behavior": "deny", "message": "Permission denied by configured policy"}
-        native_response: Dict[str, Any] = {}
-        decision = self._request_permissions(session_state, [permission], native_response=native_response)[0][1]
-        if decision not in {"once", "always"}:
-            return {"behavior": "deny", "message": "User denied permission"}
-        updated_input = native_response.get("updated_input", tool_input)
-        response = {"behavior": "allow", "updatedInput": updated_input}
-        if decision == "always" and request.get("permission_suggestions"):
-            # cli.js:12505 UV6 applies VN and bh to these native updates;
-            # cli.js:331 persists their stock-selected destination via hm.
-            response["updatedPermissions"] = request["permission_suggestions"]
-        return response
 
     def cancel_pending_requests(self, session_state: Any) -> None:
         """Reject pending prompts and stop admitting waits for this session."""
@@ -667,7 +576,7 @@ class PermissionBroker:
                 queue.put({"request_id": request_id, "response": "reject"})
 
     def _request_permissions(self, session_state, requests: List[PermissionRequest], *, native_response: Optional[Dict[str, Any]] = None, concurrent: bool = False) -> List[tuple[PermissionRequest, str]]:
-        request_id = self._next_concurrent_permission_id(session_state) if concurrent else self._next_permission_id(session_state)
+        request_id = self._next_permission_id(session_state)
 
         items: List[Dict[str, Any]] = []
         item_ids: List[str] = []

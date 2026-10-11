@@ -1,6 +1,5 @@
-"""Exercise actual pinned plugin tools; no BB native executors or MCP replicas."""
 from __future__ import annotations
-
+from tests.compaction.test_opencode_stock_tools import omo_dependencies
 import json
 import os
 from pathlib import Path
@@ -11,13 +10,21 @@ import socket
 import urllib.error
 import urllib.request
 import uuid
-
 import pytest
-
-from breadboard_engine.execution.opencode_tools import OpenCodeToolSession, responses_payload
+from breadboard_engine.execution.opencode.session import OpenCodeToolSession
+from breadboard_engine.execution.opencode.wire import responses_payload
 from breadboard_engine.security.stock_install import stock_install_digest
-from scripts.compaction_lanes.opencode_lane import ResponsesProvider
-from tests.compaction.test_opencode_stock_tools import MODEL, binary, isolated_environment, response
+from breadboard_engine.compaction_lanes.opencode_recording import ResponsesProvider
+from tests.compaction.test_opencode_stock_tools import MODEL
+from tests.compaction.test_opencode_stock_tools import binary
+from tests.compaction.test_opencode_stock_tools import isolated_environment
+from tests.compaction.test_opencode_stock_tools import response
+from tests.compaction.test_opencode_stock_tools import hermetic_stock_config, live_mcp
+
+"""Exercise actual pinned plugin tools; no BB native executors or MCP replicas."""
+
+
+
 
 
 PLUGIN = Path.home() / ".cache/bb-compaction-e4/pkgs/oh-my-opencode@3.10.0-5137df72"
@@ -34,21 +41,17 @@ def lsp_environment():
 
 
 @pytest.fixture
-def omo(tmp_path, binary):
+def omo(tmp_path, binary, omo_dependencies):
     root = Path(os.environ.get("OPENCODE_PLUGIN_ROOT", PLUGIN)).expanduser().resolve()
     assert root == PLUGIN.resolve(), "Conformance requires the staged pinned plugin, never /tmp"
     assert stock_install_digest(root) == PLUGIN_DIGEST
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     (workspace / "sample.ts").write_text("export const answer = 42;\nconsole.log(answer);\n")
-    session = OpenCodeToolSession(
-        str(workspace), MODEL, binary=binary, plugin_root=root, timeout=120,
-        stock_config={"agent": {"title": {"disable": True}}},
-        lsp_root=LSP_PIN,
-        pty=True,
-        read_only_roots=[{"path": str(root), "digest": PLUGIN_DIGEST}],
-        environment=isolated_environment(tmp_path / "stock"),
-    )
+    session = OpenCodeToolSession(str(workspace), MODEL, binary=binary, plugin_root=root, timeout=120, stock_config=hermetic_stock_config({"agent": {"title": {"disable": True}}}), lsp_root=LSP_PIN,
+    pty=True,
+    read_only_roots=[{"path": str(root), "digest": PLUGIN_DIGEST}],
+    environment=isolated_environment(tmp_path / "stock"),)
     try:
         yield session
     finally:
@@ -72,6 +75,7 @@ def direct_omo(binary, workspace, scratch, calls, *, captured_requests=None, roo
     config = {"model": MODEL, "plugin": [(PLUGIN / "dist/index.js").as_uri()],
               "agent": {"title": {"disable": True}},
               "provider": {"openai": {"options": {"baseURL": url, "apiKey": "test"}}}}
+    config = hermetic_stock_config(config)
     env = {**os.environ, **isolated_environment(scratch), "OPENCODE_CONFIG_CONTENT": json.dumps(config),
            "OPENCODE_DISABLE_MODELS_FETCH": "1", "OPENCODE_DISABLE_AUTOUPDATE": "1"}
     env.update(lsp_environment())
@@ -117,6 +121,7 @@ def test_plugin_group_result_matches_direct_stock(omo, binary, tmp_path, name, a
     assert actual == expected[call[0]]
 
 
+@live_mcp
 def test_native_context7_call_uses_stock_remote_endpoint(omo):
     held = omo.user([{"type": "text", "text": "Resolve the React library through stock MCP."}])
     name = "context7_resolve-library-id"
@@ -239,7 +244,7 @@ def _native_clock_replay(evidence, current):
 
 @pytest.mark.parametrize("mutation", [None, "unrelated_older_tie", "without_inversion", "not_latest_parent"])
 def test_native_clock_replay_requires_current_summary_ancestry(mutation):
-    from scripts.compaction_lanes.opencode_lane import stock_control_flow_ties
+    from breadboard_engine.compaction_lanes.opencode_comparison import stock_control_flow_ties
     evidence = json.loads((Path(__file__).resolve().parents[1] /
                           "fixtures/opencode_1_2_17_root_clock_replay.json").read_text())["native"]
     messages = evidence["messages"]
@@ -310,7 +315,7 @@ def test_native_idle_reentry_requires_exact_source_provenance(missing):
 
 @pytest.mark.parametrize("interrupt", [False, True])
 def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuation(omo, interrupt, monkeypatch):
-    from scripts.compaction_lanes.opencode_lane import native_session_evidence
+    from breadboard_engine.compaction_lanes.opencode_stock import native_session_evidence
     native_events = []
     read_line = omo.event_connection.readline
     def observe_line(*args, **kwargs):
@@ -443,6 +448,7 @@ def test_plugin_error_summary_reuses_native_transition_and_interrupts_continuati
         "repo": "anomalyco/opencode", "matchCase": True,
     }, "https://mcp.grep.app"),
 ])
+@live_mcp
 def test_native_network_mcp_call_matches_direct_stock(omo, binary, tmp_path, name, args, endpoint):
     # HTTP errors are online responses, not grounds to hide a failed differential.
     try:
@@ -513,3 +519,116 @@ def test_native_interactive_bash_full_tmux_lifecycle_matches_direct_stock(omo, b
         # Only this test's explicit private socket is addressed, never the
         # user's default tmux server. Cleanup also covers assertion failures.
         subprocess.run([tmux, "-S", socket_path, "kill-server"], capture_output=True, timeout=10)
+
+
+
+
+
+@pytest.mark.parametrize("filename,content,code", [
+    ("sample.ts", "export const count: number = 'incorrect';\n", "2322"),
+    ("sample.py", "value: int = 'incorrect'\n", "reportAssignmentType"),
+])
+def test_staged_language_diagnostics_match_direct_stock(omo, binary, tmp_path, filename, content, code):
+    (Path(omo.workspace) / filename).write_text(content)
+    call = ("call_staged_diagnostics", "lsp_diagnostics", {"filePath": filename, "severity": "error"})
+    omo.user([{"type": "text", "text": "Diagnose the type error with the stock server."}])
+    omo.submit(response(omo, [call]))
+    actual = omo.result(call[0])["__mvi_text_output"]
+    assert code in actual and "assign" in actual.lower()
+    omo.submit(response(omo))
+    expected = direct_omo(binary, omo.workspace, tmp_path / "oracle", [call])
+    assert actual == expected[call[0]]
+
+
+"""Real pinned-plugin child generations and authenticated cancellation."""
+
+
+
+
+@pytest.fixture
+def delegated_session(tmp_path, binary, omo_dependencies):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    config_dir = workspace / ".opencode"
+    config_dir.mkdir()
+    (config_dir / "oh-my-opencode.json").write_text(json.dumps({
+        "agents": {name: {"model": MODEL} for name in ("multimodal-looker", "explore")},
+    }))
+    session = OpenCodeToolSession(str(workspace), MODEL, binary=binary, plugin_root=PLUGIN,
+        timeout=120, stock_config=hermetic_stock_config({"agent": {"title": {"disable": True}}}), lsp_root=LSP_PIN,
+    read_only_roots=[{"path": str(PLUGIN), "digest": PLUGIN_DIGEST}],
+    environment=isolated_environment(tmp_path / "stock"))
+    try:
+        yield session
+    finally:
+        session.close()
+
+
+
+
+
+
+def test_real_look_at_child_result_matches_direct_stock(delegated_session, binary, tmp_path):
+    session = delegated_session
+    empty_root = session.api("GET", "/session/" + session.session_id)
+    # A real, complete PNG is passed to stock's actual multimodal child prompt.
+    image = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/fN8AAAAASUVORK5CYII="
+    call = ("call_look_at", "look_at", {"image_data": image, "goal": "Describe the pixel."})
+    child = raw_descriptor(response(session, text="Image inspected through stock."))
+    with ResponsesProvider() as provider:
+        provider.engine.set_child_script(session.session_id, [child])
+        connect_auxiliary(session, provider)
+        session.user([{"type": "text", "text": "Execute this stock tool group."}])
+        session.submit(response(session, [call]))
+        actual = session.result(call[0])["__mvi_text_output"]
+        assert actual == "Image inspected through stock."
+        children = session.api("GET", "/session/" + session.session_id + "/children")
+        assert len(children) == 1 and children[0]["parentID"] == session.session_id
+        native_child = provider.engine.recorded_requests
+        assert len(native_child) == 1
+        images = [part for item in native_child[0]["json"]["input"] for part in item.get("content", [])
+                  if isinstance(part, dict) and part.get("type") == "input_image"]
+        assert len(images) == 1 and images[0]["image_url"] == "data:image/png;base64," + image
+        session.submit(response(session))
+    direct_requests = []
+    expected = direct_omo(binary, session.workspace, tmp_path / "oracle", [call],
+                          root_session=empty_root, child_script=[child], captured_requests=direct_requests)
+    assert actual == expected[call[0]]
+    direct_child = next(row for row in direct_requests if row["json"].get("prompt_cache_key") != session.session_id)
+    direct_images = [part for item in direct_child["json"]["input"] for part in item.get("content", [])
+                     if isinstance(part, dict) and part.get("type") == "input_image"]
+    assert images == direct_images
+
+
+def test_real_background_cancel_aborts_child_and_cleans_up_transport(delegated_session):
+    session = delegated_session
+    with ResponsesProvider() as provider:
+        provider.engine.set_child_script(session.session_id, [{"type": "delegated_pending"}])
+        connect_auxiliary(session, provider)
+        try:
+            session.user([{"type": "text", "text": "Keep a real background inspection running."}])
+            session.submit(response(session, [("call_delegated", "task", {
+                "subagent_type": "explore", "load_skills": [], "description": "Held inspection",
+                "prompt": "Inspect this workspace while the parent continues.", "run_in_background": True,
+            })]))
+            assert provider.engine.delegated_arrived.wait(10)
+            launched = session.result("call_delegated")["__mvi_text_output"]
+            assert "Background task launched." in launched
+            children = session.api("GET", "/session/" + session.session_id + "/children")
+            assert len(children) == 1
+            child_id = children[0]["id"]
+            assert child_id in launched
+            session.submit(response(session, [("call_cancel", "background_cancel", {"all": True})]))
+            cancelled = session.result("call_cancel")["__mvi_text_output"]
+            assert "Cancelled 1 background task(s)" in cancelled and child_id in cancelled
+            native = next(item for item in session.pending["body"]["input"]
+                          if item.get("type") == "function_call_output" and item.get("call_id") == "call_cancel")
+            assert native["output"] == cancelled
+            assert child_id not in session.api("GET", "/session/status")
+            assert not any(request.session_id == child_id for request in session.auxiliary_transport.requests)
+            session.submit(response(session))
+            session.close()
+        finally:
+            session.close()
+            provider.engine.delegated_release.set()
+        assert provider.engine.delegated_finished.wait(10)

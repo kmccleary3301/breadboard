@@ -9,7 +9,7 @@
  * (default: ~/.cache/bb-compaction-e4/pkgs/@oh-my-pi__pi-coding-agent@<version>).
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -601,4 +601,3 @@ for (const c of cases) {
 }
 
 console.log(`wrote ${cases.length} cases to ${OUT_DIR}`);
-console.log(readdirSync(OUT_DIR).join("\n"));

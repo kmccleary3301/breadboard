@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.compaction_lanes import omp16_lane as lane
+from breadboard_engine.compaction_lanes import omp16_lane as lane
 
 
 def _summary_body(*, stock: bool, short: bool = False) -> dict:

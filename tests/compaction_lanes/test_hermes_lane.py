@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.compaction_lanes.hermes_lane import SOURCE, TARGET_DIR, TERMINAL, run_scenario
+from breadboard_engine.compaction_lanes.hermes_lane import SOURCE, TARGET_DIR, TERMINAL, run_scenario
 
 pytestmark = pytest.mark.skipif(not (SOURCE / "run_agent.py").is_file(), reason="pinned Hermes source is unavailable")
 
@@ -53,7 +53,7 @@ def test_stock_and_checkpointed_worker_wire_parity(tmp_path: Path, scenario: str
 ])
 def test_summary_deviations_reject_wrong_values(side, field, value):
     from copy import deepcopy
-    from scripts.compaction_lanes.hermes_lane import summary_deviations_valid
+    from breadboard_engine.compaction_lanes.hermes_lane import summary_deviations_valid
     main = {"tools": [{"name": "read_file"}], "max_tokens": 2048}
     stock = {"messages": []}
     bb = {"messages": [], **deepcopy(main)}

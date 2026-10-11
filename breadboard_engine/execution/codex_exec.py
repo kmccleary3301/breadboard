@@ -1,7 +1,7 @@
 """Codex rust-v0.139.0 unified-exec behavior, selected by catalog configuration.
 
 References are relative to codex-rs at a7dff904308535e965aee87680c1fc5ef1d19eec.
-The process manager runs inside the workspace sandbox actor, not the conductor.
+The owning conductor closes the process manager through its stock session lifecycle.
 """
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 from ..security import ProcessIsolationUnavailable, build_restricted_process_command
+from .codex_native import NativeHelperUnavailable, require_native_binary
 
 
 def text_output(text: str, *, error: bool = False) -> dict[str, Any]:
@@ -75,6 +76,7 @@ class _Process:
     reader_closed: bool = False
     reader_thread: threading.Thread | None = None
     reader_cancel: threading.Event = field(default_factory=threading.Event)
+    terminated: bool = False
     lock: threading.Condition = field(default_factory=threading.Condition)
 
     def read_background(self) -> None:
@@ -123,19 +125,21 @@ class _Process:
                 self.reader.close()
 
     def terminate(self) -> None:
-        if self.process.poll() is None or not self.closed:
+        # EOF and the leader's exit say nothing about redirected descendants.
+        # Keep group ownership until we have sent termination and reaped the leader.
+        with self.lock:
+            if self.terminated:
+                return
             try:
                 os.killpg(self.process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-        self.process.wait()
+            self.process.wait()
+            self.terminated = True
         self.reader_cancel.set()
         if self.reader_thread is not None:
-            self.reader_thread.join(timeout=0.1)
-            if not self.reader_thread.is_alive():
-                self.close()
-        else:
-            self.close()
+            self.reader_thread.join()
+        self.close()
 
 
 def shell_argv(command: str, provided: str | None, login: bool) -> list[str]:
@@ -211,6 +215,8 @@ class CodexExecManager:
         self.process_id_allocation_count = 0
         self.process_id_draw_count = 0
         self.process_id_lock = threading.Lock()
+        self.lifecycle_lock = threading.RLock()
+        self.closed = False
         import atexit
 
         atexit.register(self.close)
@@ -279,8 +285,9 @@ class CodexExecManager:
             code = -1
         continuing = session_id if code is None else None
         if continuing is None:
-            self.sessions.pop(session_id)
             entry.terminate()
+            with self.lifecycle_lock:
+                self.sessions.pop(session_id, None)
             self.release_process_id(session_id)
         else:
             entry.last_used = self.clock()
@@ -293,15 +300,22 @@ class CodexExecManager:
                 "session_id": continuing, "__mvi_text_output": output}
 
     def exec_command(self, args: dict[str, Any], thread_id: str | None = None) -> dict:
-        # exec_command.rs:146 allocates before shell launch or patch interception.
-        session_id = self.allocate_process_id()
-        try:
-            return self._exec_command(args, thread_id, session_id)
-        finally:
-            if session_id not in self.sessions:
-                self.release_process_id(session_id)
+        # Closing excludes admission/launch, but never waits for output collection.
+        with self.lifecycle_lock:
+            if self.closed:
+                return text_output("Codex execution session is closed", error=True)
+            session_id = self.allocate_process_id()
+            try:
+                launched = self._exec_command(args, thread_id, session_id)
+            finally:
+                if session_id not in self.sessions:
+                    self.release_process_id(session_id)
+        if isinstance(launched, dict):
+            return launched
+        entry, yield_ms = launched
+        return self._result(session_id, entry, args, yield_ms)
 
-    def _exec_command(self, args: dict[str, Any], thread_id: str | None, session_id: int) -> dict:
+    def _exec_command(self, args: dict[str, Any], thread_id: str | None, session_id: int) -> dict | tuple[_Process, int]:
         argv = shell_argv(args["cmd"], args.get("shell"), args.get("login", True))
         cwd = self.workspace / (args.get("workdir") or "")
         # protocol/src/config_types.rs:233-241 defaults to All and skips excludes.
@@ -370,7 +384,7 @@ class CodexExecManager:
         self.sessions[session_id] = entry
         entry.reader_thread = threading.Thread(target=entry.read_background, daemon=True)
         entry.reader_thread.start()
-        return self._result(session_id, entry, args, max(250, min(args.get("yield_time_ms", 10000), 30000)))
+        return entry, max(250, min(args.get("yield_time_ms", 10000), 30000))
 
     def write_stdin(self, args: dict[str, Any]) -> dict:
         session_id = args["session_id"]
@@ -394,11 +408,125 @@ class CodexExecManager:
         return self._result(session_id, entry, args, yield_ms)
 
     def close(self) -> None:
-        for entry in self.sessions.values():
+        import atexit
+
+        with self.lifecycle_lock:
+            self.closed = True
+            entries = list(self.sessions.items())
+        for session_id, entry in entries:
             entry.terminate()
-        self.sessions.clear()
+            with self.lifecycle_lock:
+                self.sessions.pop(session_id, None)
         with self.process_id_lock:
             self.reserved_process_ids.clear()
+        atexit.unregister(self.close)
+
+class CodexRuntime:
+    """Conductor-owned sessions using the canonical restricted launch policy."""
+
+    def __init__(self, owner: Any) -> None:
+        self.workspace = owner.workspace
+        self.protected_paths = getattr(owner, "_protected_credential_paths", ())
+        self.managers: dict[str | None, CodexExecManager] = {}
+        self.generators: dict[str | None, Callable[[], int]] = {}
+        self.pending_generator: Callable[[], int] | None = None
+        self.closed_generator_state = {"allocation_count": 0, "draw_count": 0}
+        self.lock = threading.RLock()
+        self.closed = False
+
+    def set_process_id_generator(self, generator, thread_id=None) -> None:
+        if not callable(generator):
+            raise TypeError("Process ID generator must be callable")
+        with self.lock:
+            if self.closed:
+                raise RuntimeError("Codex execution session is closed")
+            if thread_id in self.managers:
+                self.managers[thread_id].set_process_id_generator(generator)
+            elif thread_id is None and self.managers:
+                raise RuntimeError("Specify a thread when installing a generator after thread creation")
+            elif thread_id is None:
+                self.pending_generator = generator
+            else:
+                self.generators[thread_id] = generator
+
+    def process_id_generator_state(self, thread_id=None) -> dict[str, int]:
+        with self.lock:
+            if thread_id is not None:
+                manager = self.managers.get(thread_id)
+                return manager.process_id_generator_state() if manager else {"allocation_count": 0, "draw_count": 0}
+            state = dict(self.closed_generator_state)
+            for manager in self.managers.values():
+                for key, value in manager.process_id_generator_state().items():
+                    state[key] += value
+            return state
+
+    def exec_command(self, args, thread_id, policy) -> dict:
+        with self.lock:
+            if self.closed:
+                return text_output("Codex execution session is closed", error=True)
+            if thread_id not in self.managers:
+                generator = self.generators.pop(thread_id, None)
+                if generator is None:
+                    generator, self.pending_generator = self.pending_generator, None
+                self.managers[thread_id] = CodexExecManager(
+                    self.workspace, truncation_policy=policy,
+                    protected_paths=self.protected_paths, process_id=generator,
+                )
+            manager = self.managers[thread_id]
+            manager.truncation_policy = policy
+        return manager.exec_command(args, thread_id)
+
+    def write_stdin(self, args, thread_id, policy) -> dict:
+        with self.lock:
+            manager = self.managers.get(thread_id)
+            if manager is None:
+                return text_output(f"write_stdin failed: Unknown process id {args['session_id']}", error=True)
+            manager.truncation_policy = policy
+        return manager.write_stdin(args)
+
+    def apply_patch(self, args, policy) -> dict:
+        result = intercept_patch(
+            [], Path(self.workspace), policy, None, workspace=Path(self.workspace),
+            protected_paths=self.protected_paths, direct_patch=args["input"],
+        )
+        return text_output(result["output"], error=result["error"])
+
+    def view_image(self, args, supports_original=False) -> dict:
+        return view_image(self.workspace, args, supports_original_detail=supports_original,
+                          protected_paths=self.protected_paths)
+
+    def close_thread(self, thread_id) -> None:
+        with self.lock:
+            manager = self.managers.get(thread_id)
+            if manager is not None:
+                manager.close()
+                self.managers.pop(thread_id, None)
+                for key, value in manager.process_id_generator_state().items():
+                    self.closed_generator_state[key] += value
+
+    def close(self) -> None:
+        with self.lock:
+            self.closed = True
+            for thread_id in list(self.managers):
+                self.close_thread(thread_id)
+            self.generators.clear()
+            self.pending_generator = None
+
+
+_RUNTIME_LOCK = threading.Lock()
+
+
+def codex_runtime(owner: Any) -> CodexRuntime:
+    from .stock_tools import register_stock_session
+
+    with _RUNTIME_LOCK:
+        runtime = getattr(owner, "_codex_runtime", None)
+        if runtime is None:
+            runtime = CodexRuntime(owner)
+            owner._codex_runtime = runtime
+            register_stock_session(owner, runtime)
+        return runtime
+
 
 
 def model_spec(owner: Any) -> dict[str, Any]:
@@ -445,11 +573,10 @@ def execute_codex_tool(owner: Any, name: str, args: dict[str, Any]) -> dict[str,
             thread_id = getattr(owner, "_codex_agent_id", None)
         policy = model_spec(owner)["tool_output_truncation"]
         if name == "exec_command":
-            return owner._ray_get(owner.sandbox.codex_exec_command.remote(args, thread_id, policy))
-        return owner._ray_get(owner.sandbox.codex_write_stdin.remote(args, thread_id, policy))
+            return codex_runtime(owner).exec_command(args, thread_id, policy)
+        return codex_runtime(owner).write_stdin(args, thread_id, policy)
     if name == "apply_patch":
-        return owner._ray_get(owner.sandbox.codex_apply_patch.remote(
-            args, model_spec(owner)["tool_output_truncation"]))
+        return codex_runtime(owner).apply_patch(args, model_spec(owner)["tool_output_truncation"])
     if name == "tool_search":
         from .codex_search import execute_codex_search_tool
 
@@ -464,7 +591,7 @@ def execute_codex_tool(owner: Any, name: str, args: dict[str, Any]) -> dict[str,
     if name == "view_image":
         # tools/src/image_detail.rs:6-8; protocol/openai_models.rs:380-381.
         supports_original = model_spec(owner).get("supports_image_detail_original", False)
-        return owner._ray_get(owner.sandbox.codex_view_image.remote(args, supports_original))
+        return codex_runtime(owner).view_image(args, supports_original)
     if name.startswith("multi_agent_v1.") or name in {"get_goal", "create_goal", "update_goal"}:
         from .codex_agents import execute_codex_agent_tool
 
@@ -472,27 +599,16 @@ def execute_codex_tool(owner: Any, name: str, args: dict[str, Any]) -> dict[str,
     # tools/router.rs routes unknown names without treating shell aliases as commands.
     return text_output(f"unsupported call: {name}", error=True)
 
-def codex_patch_binary() -> Path:
-    import hashlib
-
-    source = Path(__file__).with_name("codex_patch")
-    digest = hashlib.sha256()
-    for name in ("Cargo.toml", "Cargo.lock", "main.rs"):
-        digest.update((source / name).read_bytes())
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return cache / "breadboard" / "codex-patch" / digest.hexdigest() / "release" / "breadboard-codex-patch"
-
-
 def intercept_patch(argv: list[str], cwd: Path, truncation_policy: dict[str, Any], max_output_tokens: int | None,
                     *, workspace: Path | None = None, protected_paths: tuple[str | os.PathLike[str], ...] = (),
                     spawn_error: int | None = None, direct_patch: str | None = None) -> dict[str, Any]:
     # Stock core/tools/handlers/apply_patch.rs:509-611 and pinned stock crate.
     import json
 
-    binary = codex_patch_binary()
-    if not binary.is_file():
-        return {"intercepted": True, "error": True,
-                "output": "Codex patch helper is not built; run `python scripts/build_codex_patch.py` from the repository root."}
+    try:
+        binary = require_native_binary("patch")
+    except NativeHelperUnavailable as exc:
+        return {"intercepted": True, "error": True, "output": str(exc)}
     try:
         isolated_argv, environment = build_restricted_process_command(
             [str(binary)], workspace=workspace if workspace is not None else cwd,
@@ -509,17 +625,6 @@ def intercept_patch(argv: list[str], cwd: Path, truncation_policy: dict[str, Any
     return json.loads(completed.stdout)
 
 
-def codex_image_binary() -> Path:
-    import hashlib
-
-    source = Path(__file__).with_name("codex_image")
-    digest = hashlib.sha256()
-    for name in ("Cargo.toml", "Cargo.lock", "main.rs"):
-        digest.update((source / name).read_bytes())
-    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return cache / "breadboard" / "codex-image" / digest.hexdigest() / "release" / "breadboard-codex-image"
-
-
 def view_image(workspace: str, args: dict[str, Any], *, supports_original_detail: bool = False,
                protected_paths: tuple[str | os.PathLike[str], ...] = ()) -> dict[str, Any]:
     """view_image.rs:120-191,223-237; utils/image/src/lib.rs:55-195."""
@@ -532,12 +637,10 @@ def view_image(workspace: str, args: dict[str, Any], *, supports_original_detail
             f"got `{detail}`", error=True,
         )
     path = Path(os.path.abspath(Path(workspace) / args["path"]))
-    binary = codex_image_binary()
-    if not binary.is_file():
-        return text_output(
-            "Codex image helper is not built; run `python scripts/build_codex_image.py` from the repository root.",
-            error=True,
-        )
+    try:
+        binary = require_native_binary("image")
+    except NativeHelperUnavailable as exc:
+        return text_output(str(exc), error=True)
     original = supports_original_detail and detail == "original"
     try:
         command, environment = build_restricted_process_command(

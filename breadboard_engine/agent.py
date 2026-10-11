@@ -486,19 +486,11 @@ class AgenticCoder:
             context = _admit_standalone_run(self.config, self.workspace_dir)
 
         model = self._select_model()
-        if native_concurrent_prompts(self.config) and context.get("opencode_stock_origin") is not None:
-            from .execution.opencode_tools import StockExecutionError
-            source = context["opencode_stock_origin"]
-            native = getattr(self.agent, "_opencode_tool_sessions", {}).get(context["session_id"])
-            if native is None or not any(
-                pending is not None and pending.get("stock_origin") == source
-                for pending in (native.pending, native.compaction_pending)
-            ):
-                raise StockExecutionError("Stock-origin turn does not own the native parent request")
-            source_model = source["model"]
-            model = source_model["providerID"] + "/" + source_model["modelID"]
-            if model not in {entry["id"] for entry in self.config["providers"]["models"]}:
-                raise StockExecutionError(f"Unroutable stock parent model {model}")
+        stock_driver = getattr(self.agent, "stock_driver", None)
+        if stock_driver is not None:
+            source_model = stock_driver.source_model(self.agent, context)
+            if source_model is not None:
+                model = source_model
         loop_cfg = self.config.get('loop') or {}
         steps = int(
             max_iterations

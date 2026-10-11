@@ -55,7 +55,7 @@
     },
     "oh-my-pi-r3@16.2.13": {
       "descriptor": "oh_my_pi/16.2.13-r3/target.json",
-      "sha256": "2b36cc3b48eac4a54e34d6cb984be5f234d1c29df8e8d6cf151eef70bdfa5274"
+      "sha256": "7e4b685a8c58fe478ae991b6832c143de3adc46c86484e40bad1e1da152595f3"
     },
     "oh-my-pi-r2@18.1.17": {
       "descriptor": "oh_my_pi/18.1.17-r2/target.json",
@@ -63,7 +63,7 @@
     },
     "openclaw-r2@2026.9.4": {
       "descriptor": "openclaw/2026.9.4-r2/target.json",
-      "sha256": "3ab11b2b0aadc6a160e93bde9d80a8051b39be8ae52035362d7cef62ad90b430"
+      "sha256": "535d1914c5a9ba23410dc7a84ef42b90af0e90198131d0ba520a7c8ddd75514c"
     },
     "hermes-agent-r2@2026.9.11": {
       "descriptor": "hermes_agent/2026.9.11-r2/target.json",

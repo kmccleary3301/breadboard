@@ -382,6 +382,10 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
             admitted_workspace=admitted_workspace,
         )
+        from .execution.stock_driver import resolve_stock_driver, summary_tool_schema
+        self.stock_driver = resolve_stock_driver(self)
+        self.compaction_controller.stock_driver = self.stock_driver
+        self.compaction_controller.tool_schema_provider = lambda provider: summary_tool_schema(self, provider)
         self.permission_authority: PermissionAuthority = self.permission_broker
         self._model_role_lock = (
             dict(self.config.get("model_role_lock"))
@@ -409,7 +413,11 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
     def close_stock_tools(self) -> None:
         from .execution.stock_tools import close_stock_sessions
 
-        close_stock_sessions(self)
+        driver = getattr(self, "stock_driver", None)
+        if driver is not None:
+            driver.close(self)
+        else:
+            close_stock_sessions(self)
 
     def _restore_retained_ctree(
         self, session_state: SessionState, session_id: str
@@ -5318,22 +5326,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         name = tool_call["function"]
         args = tool_call["arguments"]
 
-        if (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139":
-            from .execution.codex_exec import execute_codex_tool
-
-            return execute_codex_tool(self, name, args)
-
-        if (self.config.get("tools") or {}).get("native_semantics") == "claude_code_2_1_63":
-            from .execution.claude_tools import execute_claude_tool
-
-            return execute_claude_tool(self, name, args, tool_call=tool_call)
-
-        if (self.config.get("tools") or {}).get("native_semantics") in {
-            "opencode_1_2_17", "oh_my_opencode_3_10_0",
-        }:
-            from .execution.opencode_tools import execute_opencode_tool
-
-            return execute_opencode_tool(self, name, args, tool_call=tool_call)
+        driver = getattr(self, "stock_driver", None)
+        if driver is not None:
+            return driver.execute(self, name, args, tool_call=tool_call)
 
         registry = registry_from_config(getattr(self, "config", None))
         normalized = registry.resolve_name(name.lower())
@@ -6512,23 +6507,9 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
         session_state.set_provider_metadata("post_required_tool_extra_call_blocks", 0)
         if not resume_has_system:
             session_state.add_message(enhanced_system_msg)
-        if (self.config.get("tools") or {}).get("native_semantics") in {
-            "opencode_1_2_17", "oh_my_opencode_3_10_0",
-        }:
-            from .execution.stock_tools import native_concurrent_prompts
-            self._opencode_stock_input_handler = (
-                context.get("opencode_stock_input_handler") if native_concurrent_prompts(self.config) else None
-            )
-            self._opencode_stock_headless = (
-                native_concurrent_prompts(self.config)
-                and context.get("opencode_stock_headless") is True
-            )
-            stock_origin = context.get("opencode_stock_origin") if native_concurrent_prompts(self.config) else None
-            session_state.set_provider_metadata("opencode_stock_origin", stock_origin)
-            session_state.set_provider_metadata("opencode_stock_turn_origin", stock_origin)
-            session_state.set_provider_metadata(
-                "opencode_stock_raw_user", copy.deepcopy(enhanced_user_msg)
-            )
+        driver = self.stock_driver
+        if driver is not None and driver.prepare_input is not None:
+            driver.prepare_input(self, session_state, context, enhanced_user_msg)
         if (self.config.get("prompts") or {}).get("initial_context") is not None:
             from .compilation.context_builders import build_initial_context
             for message in build_initial_context(
@@ -6536,14 +6517,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 user_message=enhanced_user_msg,
             ):
                 session_state.add_message(message)
-        if (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139":
-            from .execution.codex_agents import prepare_codex_input_message
-
-            prepare_codex_input_message(self, enhanced_user_msg)
         session_state.add_message(enhanced_user_msg)
-        compaction_ctrl = getattr(self, "compaction_controller", None)
-        if getattr(compaction_ctrl, "tracks_sampling_phase", False) is True:
-            compaction_ctrl.pending_user_index = len(session_state.provider_messages) - 1
         
         # Configure native tools and tool prompt mode
         native_pref_hint = getattr(self, "_native_preference_hint", None)

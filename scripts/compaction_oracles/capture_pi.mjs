@@ -17,7 +17,7 @@
  * are checked byte for byte against the package (written with --write-prompts).
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -434,4 +434,3 @@ rmSync(OUT_DIR, { recursive: true, force: true });
 mkdirSync(OUT_DIR, { recursive: true });
 for (const c of cases) writeFileSync(join(OUT_DIR, `${c.case}.json`), JSON.stringify(c, null, 2) + "\n");
 console.log(`wrote ${cases.length} cases to ${OUT_DIR}`);
-console.log(readdirSync(OUT_DIR).join("\n"));

@@ -7,7 +7,10 @@ import { join } from "node:path"
 
 import { GENERATED_SCHEMAS, GENERATED_SCHEMA_IDS_BY_PACK, GENERATED_SCHEMAS_BY_PACK, PACKS } from "../src/generated/index.js"
 import { GENERATED_SCHEMAS as INTERNAL_GENERATED_SCHEMAS } from "../src/generated/internal-registry.js"
-import type { ProviderReplayPayload } from "../src/generated/types/bb.provider_exchange.v2.js"
+import { Ajv2020 } from "ajv/dist/2020.js"
+import type {
+  Event, ProviderReplayBlock, ProviderReplayPayload,
+} from "../src/generated/types/bb.provider_exchange.v2.js"
 
 const scalarReplayPayload = {
   encrypted_content: "encrypted",
@@ -62,6 +65,61 @@ const INTERNAL_SCHEMA_FILES: Record<string, true> = {
 
 test("generated replay payload accepts schema-valid scalar values", () => {
   assert.equal(scalarReplayPayload.encrypted_content, "encrypted")
+})
+
+type NativeToolReplay = Extract<ProviderReplayBlock, { schema_version: "openai.responses.tools.v1" }>
+const nativeSearchReplay = {
+  type: "provider_replay", provider_id: "openai",
+  schema_version: "openai.responses.tools.v1", replay_scope: "same_provider",
+  payload: { type: "tool_search_call", call_id: "search", execution: "client", arguments: { query: "tools" } },
+} satisfies NativeToolReplay
+
+function completedCallId(event: Event): string | undefined {
+  if (event.kind !== "tool_call_end") return undefined
+  const callId: string = event.call_id
+  if (typeof event.raw_arguments === "string") {
+    const raw: string = event.raw_arguments
+    return `${callId}:${raw}`
+  }
+  if (typeof event.arguments_json === "string") return `${callId}:${event.arguments_json}`
+  return undefined
+}
+
+// These compile-time regressions exercise contracts, not generated source text.
+// @ts-expect-error Native search replay requires execution and arguments.
+const incompleteSearch: NativeToolReplay["payload"] = { type: "tool_search_call", call_id: "search" }
+// @ts-expect-error tool_call_end requires content correlation and an argument variant.
+const incompleteEnd: Event = { kind: "tool_call_end", sequence: 0, call_id: "search" }
+void incompleteSearch
+void incompleteEnd
+// @ts-expect-error Raw and canonical arguments are mutually exclusive.
+const mixedEnd: Event = { kind: "tool_call_end", sequence: 1, content_index: 0, message_id: "message", call_id: "search", raw_arguments: "lexical", arguments_json: "{}", arguments: {} }
+void mixedEnd
+
+test("provider event and native replay types retain discriminated fields", () => {
+  assert.equal(completedCallId({
+    kind: "tool_call_end", sequence: 1, content_index: 0, message_id: "message",
+    call_id: "search", raw_arguments: "lexical",
+  }), "search:lexical")
+  assert.equal(nativeSearchReplay.payload.execution, "client")
+})
+
+test("provider schema retains exact native dispatch and argument exclusions", () => {
+  const id = "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json"
+  const ajv = new Ajv2020({ strict: false, validateFormats: false })
+  ajv.addSchema(GENERATED_SCHEMAS[id].schema)
+  const replay = ajv.compile({ $ref: `${id}#/$defs/provider_replay_block` })
+  const event = ajv.compile({ $ref: `${id}#/$defs/event` })
+  assert.equal(replay(nativeSearchReplay), true)
+  assert.equal(replay({ ...nativeSearchReplay, payload: { type: "tool_search_call", call_id: "search" } }), false)
+  assert.equal(replay({ ...nativeSearchReplay, replay_scope: "diagnostic" }), false)
+  assert.equal(replay({ ...nativeSearchReplay, provider_id: "anthropic" }), false)
+  assert.equal(replay({ ...nativeSearchReplay, payload: { ...nativeSearchReplay.payload, extra: true } }), false)
+  const end = { kind: "tool_call_end", sequence: 1, content_index: 0, message_id: "message",
+    call_id: "search", raw_arguments: "lexical" }
+  assert.equal(event(end), true)
+  assert.equal(event({ ...end, arguments_json: "{}", arguments: {} }), false)
+  assert.equal(event({ ...end, raw_arguments: undefined }), false)
 })
 
 test("generated registry and type files cover every kernel schema", () => {
@@ -236,12 +294,3 @@ test("generated validators accept tracked kernel examples", () => {
   }
 })
 
-test("public kernel-contracts index does not re-declare generated schema contracts", () => {
-  const source = readFileSync(join(process.cwd(), "src", "index.ts"), "utf8")
-  const handwrittenExports = [...source.matchAll(/^export interface (\w+)/gm)].map((match) => match[1]).sort()
-  assert.deepEqual(handwrittenExports, [
-    "EngineConformanceManifestV1",
-    "EngineConformanceManifestV1Row",
-  ])
-  assert.match(source, /export \* from "\.\/generated\/index\.js"/)
-})

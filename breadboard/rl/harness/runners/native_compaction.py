@@ -172,7 +172,7 @@ async def compact_history(
     continuation: list[Any] | None = None
     if continuation_raw is not None:
         if not isinstance(continuation_raw, list) or not continuation_raw:
-            raise WorkerPhaseError("compaction continuation must be a non-empty list of messages")
+            raise ValueError("compaction continuation must be a non-empty list of messages")
         continuation = list(continuation_raw)
     return CompactedHistory(
         messages=compacted, event=event, retry=retry,

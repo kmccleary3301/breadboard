@@ -16,11 +16,7 @@ from .contract_wire import (
     _validate_provider_exchange_v2_wire,
     _validate_provider_replay_wire,
 )
-from .contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-    ProviderRequest,
-)
+from .contract_requests import ProviderCorrelation, ProviderIdentity, ProviderRequest
 from .contract_events import (
     ProviderCancelled,
     ProviderDone,

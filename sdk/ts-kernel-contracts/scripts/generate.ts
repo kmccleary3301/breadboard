@@ -2,6 +2,7 @@ import { compile } from "json-schema-to-typescript"
 import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, dirname, join, relative } from "node:path"
 import { fileURLToPath } from "node:url"
+import { providerExchangeTypeSchema } from "./provider-exchange-types.js"
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 const REPO_ROOT = join(PACKAGE_ROOT, "..", "..")
@@ -80,7 +81,10 @@ function generatedHeader(sourceRel: string): string {
 async function emitTypes(entries: SchemaEntry[]): Promise<void> {
   for (const entry of entries) {
     const sourcePath = join(SCHEMA_DIR, entry.filename)
-    let output = await compile({ ...entry.schema, title: entry.typeName }, entry.typeName, {
+    const typeSchema = entry.filename === "bb.provider_exchange.v2.schema.json"
+      ? providerExchangeTypeSchema(entry.schema)
+      : entry.schema
+    let output = await compile({ ...typeSchema, title: entry.typeName }, entry.typeName, {
       cwd: SCHEMA_DIR,
       bannerComment: "",
       declareExternallyReferenced: true,

@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 
 from breadboard_engine.agent_llm_openai import OpenAIConductor
-from scripts.compaction_lanes import codex_lane
-from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
+from breadboard_engine.compaction_lanes import codex_lane
+from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
 from tests.compaction.test_codex_agent_tools import owner, value
 from tests.compaction.test_codex_tool_search import DiscoveryHandler, SearchSpawnHandler, USAGE
 

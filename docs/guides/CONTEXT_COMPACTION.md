@@ -126,13 +126,18 @@ The dated gpt-5.5 profile advertises stock's eleven upfront tools, among them
 the custom-grammar `apply_patch`, client `tool_search`, text-and-image
 `web_search` and original-detail `view_image`. `multi_agent_v1` is deferred,
 and the model discovers it through `tool_search`. Build the native helpers
-before daily driving: `python scripts/build_codex_image.py`,
-`python scripts/build_codex_patch.py` and `python scripts/build_codex_search.py`.
-Each builds `--locked` from a committed `Cargo.lock`. A missing helper fails
+before daily driving: `python -m breadboard_engine.execution.codex_native build all`.
+All three helpers share one Cargo workspace and committed lockfile; builds use
+`--locked`. Sources ship with the wheel, so this command also works outside the
+checkout. Set `BREADBOARD_CODEX_PATCH_BINARY`, `BREADBOARD_CODEX_IMAGE_BINARY` or
+`BREADBOARD_CODEX_SEARCH_BINARY` to use a prebuilt helper instead. A missing helper fails
 with its build command; nothing runs cargo at runtime, and there's no Pillow
 fallback. Exec/PTY, patch and image helpers launch through BreadBoard's
-restricted command builder and keep the protected credential paths. Native
-image outputs use the closed `openai.responses.tool_output.v1` carrier only
+restricted command builder and keep the protected credential paths.
+Conductor-owned execution adapters register with the stock-session lifecycle.
+Root shutdown cancels and drains child conductors and their command groups,
+including background descendants whose leader exited and closed its output.
+Native image outputs use the closed `openai.responses.tool_output.v1` carrier only
 when `responses_tool_output_items: true`. Source citations are in
 `implementations/tools/README.md`. Run the lane with
 `python -m scripts.compaction_lanes.codex_lane --out <dir> --window 16000`. Its
@@ -770,7 +775,7 @@ in rank order with `defer_loading: true` and no `output_schema`. The discovered
 namespace travels in `tool_search_output.tools`, not in later request catalogs.
 Typed search call/output replay preserves arguments, execution and status;
 response item IDs are not replayed. Build the scorer explicitly with
-`python scripts/build_codex_search.py`, as with the native patch/image helpers.
+`python -m breadboard_engine.execution.codex_native build search`, as with the native patch/image helpers.
 The production dispatcher remains gated by `native_semantics: codex_0_139`.
 
 Router decoding failures remain distinct internally, but invalid unsigned limits

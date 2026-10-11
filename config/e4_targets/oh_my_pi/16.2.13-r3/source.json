@@ -24,5 +24,18 @@
     "excluded_members": [],
     "notes": "All 5 wire tools captured verbatim from request 0; identical across all 57 packet requests"
   },
-  "native_loop": "Oh My Pi 16.2.13 agent-loop semantics executed by BreadBoard Omp16213SemanticsState; upstream process is not invoked"
+  "native_loop": "Oh My Pi 16.2.13 agent-loop semantics executed by BreadBoard Omp16213SemanticsState; upstream process is not invoked",
+  "compaction_support": {
+    "snapcompact_text_only": "unsupported",
+    "automatic_text_only_behavior": "Stock automatic maintenance warns that snapcompact needs a vision-capable active model and selects context-full auto-compaction instead. This is the pinned stock fallback, not snapcompact image-format support or a BreadBoard substitute.",
+    "manual_text_only_behavior": "Explicit manual snapcompact rejects locally on a text-only model rather than silently making a provider-backed summary.",
+    "source_package": "@oh-my-pi/pi-coding-agent@16.2.13",
+    "source_commit": "5356713eae60e67ee64d9b02e3b5e377d248ee7f",
+    "evidence": [
+      "src/session/agent-session.ts:11303-11319 (automatic action selection and text-only fallback)",
+      "src/session/agent-session.ts:8980-8995 (manual local-only rejection)",
+      "tests/compaction/oracles/omp@16.2.13/summary_snapcompact_text_only_fallback.json",
+      "scripts/compaction_oracles/capture_omp.ts:580-590"
+    ]
+  }
 }

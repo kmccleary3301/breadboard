@@ -174,14 +174,10 @@ def run_main_loop(
     loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
     max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
     consecutive_empty_responses = 0
-    native_codex_goals = (
-        ((getattr(self, "config", None) or {}).get("tools") or {}).get("native_semantics")
-        == "codex_0_139"
-    )
-    if native_codex_goals:
-        from ..execution.codex_agents import begin_codex_goal, sync_codex_goal
-
-        begin_codex_goal(self, session_state)
+    driver = getattr(self, "stock_driver", None)
+    if driver is not None and driver.begin_turn is not None:
+        driver.begin_turn(self, session_state)
+    pending_user_index = len(session_state.provider_messages) - 1
 
     def poll_control_stop() -> bool:
         """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
@@ -220,8 +216,8 @@ def run_main_loop(
     ) -> Dict[str, Any]:
         """Finalize loop execution by recording summary, snapshot, and return payload."""
 
-        if native_codex_goals:
-            sync_codex_goal(self, session_state)
+        if driver is not None and driver.complete_turn is not None:
+            driver.complete_turn(self, session_state)
 
         steps_taken = (step_index + 1) if step_index >= 0 else 0
         summary: Dict[str, Any] = dict(session_state.completion_summary or {})
@@ -695,9 +691,12 @@ def run_main_loop(
             # compaction.max_passes_per_turn; with compaction disabled the
             # first error is raised exactly as before.
             compaction_ctrl = getattr(self, "compaction_controller", None)
+            from ..compaction.controller import CompactionRequestContext
+            request_context = CompactionRequestContext(
+                sampling_phase="pre_turn" if step_index == 0 else "mid_turn",
+                pending_user_index=pending_user_index,
+            )
             if compaction_ctrl is not None:
-                if getattr(compaction_ctrl, "tracks_sampling_phase", False) is True:
-                    compaction_ctrl.sampling_phase = "pre_turn" if step_index == 0 else "mid_turn"
                 compaction_ctrl.begin_request()
             while True:
                 try:
@@ -721,6 +720,7 @@ def run_main_loop(
                         stream_responses,
                         local_tools_prompt,
                         client_config,
+                        request_context=request_context,
                     )
                     try:
                         session_state.record_lifecycle_event(
@@ -759,6 +759,7 @@ def run_main_loop(
                         runtime=runtime,
                         client=client,
                         model=model,
+                        request_context=request_context,
                     ):
                         continue
                     raise
@@ -783,8 +784,8 @@ def run_main_loop(
                     session_state.set_provider_metadata("usage_totals", totals)
                 except Exception:
                     pass
-            if native_codex_goals:
-                sync_codex_goal(self, session_state)
+            if driver is not None and driver.complete_turn is not None:
+                driver.complete_turn(self, session_state)
 
 
             if provider_result.encrypted_reasoning:
@@ -1037,6 +1038,7 @@ def run_main_loop(
                 if compaction_ctrl.finish_assistant_step(
                     session_state, conductor=self, runtime=runtime, client=client,
                     model=model, turn_index=turn_index,
+                    request_context=request_context,
                 ):
                     reopened_completed_answer = completed
                     completed = False
@@ -1045,6 +1047,7 @@ def run_main_loop(
                     compaction_ctrl.finish_user_turn(
                         session_state, conductor=self, runtime=runtime, client=client,
                         model=model, turn_index=turn_index,
+                        request_context=request_context,
                     )
             if completed:
                 break

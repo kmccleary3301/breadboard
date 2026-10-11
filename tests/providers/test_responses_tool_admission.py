@@ -3,7 +3,8 @@ import uuid
 import pytest
 
 from breadboard_engine.agent import _admit_standalone_run
-from breadboard_engine.provider.contract_messages import ProviderContractError, ProviderRequest
+from breadboard_engine.provider.contract_wire import ProviderContractError
+from breadboard_engine.provider.contract_requests import ProviderRequest
 
 
 FUNCTION = {"type": "function", "name": "exec_command", "description": "Execute a command.", "parameters": {"type": "object", "properties": {}}, "strict": False}
@@ -126,7 +127,7 @@ def test_sealed_summary_cap_wins_over_episode_binding():
 ])
 def test_startup_hook_schema_rejects_unapproved_imports_and_fields(changes):
     import yaml
-    from scripts.compaction_lanes.codex_lane import PROFILE
+    from breadboard_engine.compaction_lanes.codex_lane import PROFILE
     from breadboard_engine.compilation.v2_loader import _validate_v2
     config = yaml.safe_load(PROFILE.read_text())
     config["prompts"]["initial_context"].update(changes)
@@ -136,7 +137,7 @@ def test_startup_hook_schema_rejects_unapproved_imports_and_fields(changes):
 
 def test_startup_hook_schema_admits_repo_callback_and_developer_role_text():
     import yaml
-    from scripts.compaction_lanes.codex_lane import PROFILE
+    from breadboard_engine.compaction_lanes.codex_lane import PROFILE
     from breadboard_engine.compilation.v2_loader import _validate_v2
     config = yaml.safe_load(PROFILE.read_text())
     config["prompts"]["initial_context"]["developer_instructions"] = ["Native role instructions."]

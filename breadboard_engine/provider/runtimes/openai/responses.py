@@ -454,8 +454,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     elif kind == "tool_search_call":
                         # context.rs:289-294; models.rs:692-698.
                         result = json.loads(output["output"])
-                        output = {"type": "tool_search_output", "call_id": output["call_id"],
-                                  "status": result["status"], "execution": result["execution"], "tools": result["tools"]}
+                        # Hook denials are ordinary tool errors, not search outputs.
+                        hook_error = isinstance(result, dict) and "error" in result and "status" not in result
+                        if not hook_error:
+                            output = {"type": "tool_search_output", "call_id": output["call_id"],
+                                      "status": result["status"], "execution": result["execution"], "tools": result["tools"]}
                     converted.append(output)
                 continue
 

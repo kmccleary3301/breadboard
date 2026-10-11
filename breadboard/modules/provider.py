@@ -21,11 +21,7 @@ from breadboard_engine.provider.contract_exchange import (
     ProviderExchangeV2,
     encode_provider_exchange,
 )
-from breadboard_engine.provider.contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-    ProviderRequest,
-)
+from breadboard_engine.provider.contract_requests import ProviderCorrelation, ProviderIdentity, ProviderRequest
 
 from .author import AttemptId, GenerationId, InstanceId, RequestId, WorkId, WorkerSessionId
 from .transport import RequestKey, WireProtocolError

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.compaction_lanes.mock_provider import MockProvider
+from breadboard_engine.compaction_lanes.mock_provider import MockProvider
 
 
 def test_openai_responses_sse_and_recording(tmp_path: Path):

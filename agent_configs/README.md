@@ -10,8 +10,8 @@ Each `2026-10-09` profile is its `2026-09-10` predecessor plus the harness's own
 | Claude Code | `claude_code_2-1-63_e4_10-9-2026.yaml` | Claude Code 2.1.63 capture package | `claude_code@2.1.63`, window 200000 (`cli.js` default) | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
 | OpenCode | `opencode_1-2-17_e4_10-9-2026.yaml` | OpenCode 1.2.17 | `opencode@1.2.17`, window 400000, input 272000, output 32000 (bundled models.dev snapshot) | Runnable standalone BreadBoard dossier for the accepted static-package/replay surface. |
 | oh-my-opencode | `oh_my_opencode_3-10-0_e4_10-9-2026.yaml` | oh-my-opencode 3.10.0 at commit `5137df72d8fab3fec609c82f91387db8e3b13825` | `oh-my-opencode@3.10.0`, same limits as OpenCode | Runnable standalone BreadBoard dossier for the frozen Phase 8 async/subagent replay surface. |
-| Oh My Pi | `oh_my_pi_16-2-13_e4_9-10-2026.yaml` | `@oh-my-pi/pi-coding-agent@16.2.13` at commit `5356713eae60e67ee64d9b02e3b5e377d248ee7f` | target revision `oh-my-pi-r3@16.2.13` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
-| Pi | `pi_0-57-1_e4_9-10-2026.yaml` | `@mariozechner/pi-coding-agent@0.57.1` | target revision `pi-r4@0.57.1` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
+| Oh My Pi | `oh_my_pi_16-2-13_e4_9-10-2026.yaml` | `@oh-my-pi/pi-coding-agent@16.2.13` at commit `5356713eae60e67ee64d9b02e3b5e377d248ee7f` | baseline target `oh-my-pi@16.2.13` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
+| Pi | `pi_0-57-1_e4_9-10-2026.yaml` | `@mariozechner/pi-coding-agent@0.57.1` | baseline target `pi@0.57.1` | `bb.e4.target_config.v1` catalog projection. Load the canonical installed target package; do not pass this file to the BreadBoard agent-config CLI. |
 
 ## Run and inspect
 

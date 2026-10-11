@@ -12,7 +12,8 @@ import copy
 from dataclasses import replace
 
 from ...compaction.methods import SummaryRequest, SummaryResponse
-from ...execution.opencode_tools import StockExecutionError, prepare_stock_initial_user
+from ...execution.opencode.wire import StockExecutionError
+from ...execution.opencode.driver import prepare_stock_initial_user
 
 
 def _last_user_content(request: dict):

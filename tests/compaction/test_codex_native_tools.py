@@ -234,7 +234,8 @@ def test_image_output_reaches_responses_without_string_conversion(tmp_path):
     from breadboard_engine.messaging.message_formatter import MessageFormatter
     from breadboard_engine.provider.runtime import OpenAIResponsesRuntime
     from breadboard_engine.provider.runtime import ProviderRuntimeContext
-    from breadboard_engine.provider.contract_messages import normalize_request_messages, ProviderContractError
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+    from breadboard_engine.provider.contract_wire import ProviderContractError
     from breadboard_engine.state.session_state import SessionState
 
     config = {"provider_tools": {"openai": {"responses_tool_output_items": True}}}
@@ -257,7 +258,7 @@ def test_image_output_reaches_responses_without_string_conversion(tmp_path):
 
 def test_router_native_image_carrier_preserves_identity_and_scalar_wire(tmp_path):
     from breadboard_engine.provider.adapters import OpenRouterAdapter
-    from breadboard_engine.provider.contract_messages import normalize_request_messages
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
     from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
     from breadboard_engine.state.session_state import SessionState
 
@@ -332,9 +333,9 @@ def test_regular_content_marker_keeps_other_profiles_legacy_wire(tmp_path):
     {"type": "arbitrary", "text": "x"},
 ])
 def test_native_image_carrier_rejects_non_stock_items(item):
-    from breadboard_engine.provider.contract_messages import (
-        normalize_request_messages, responses_image_tool_result_message, ProviderContractError,
-    )
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+    from breadboard_engine.provider.contract_wire import ProviderContractError
 
     with pytest.raises(ProviderContractError):
         normalize_request_messages([responses_image_tool_result_message("image-call", [item])])
@@ -361,13 +362,14 @@ def test_namespace_dispatch_and_replay_are_profile_gated():
 
 
 def test_missing_image_helper_fails_with_explicit_build_command(tmp_path, monkeypatch):
-    from breadboard_engine.execution import codex_exec
 
     path = tmp_path / "test.png"
     path.write_bytes(b"not-decoded-when-helper-missing")
-    monkeypatch.setattr(codex_exec, "codex_image_binary", lambda: tmp_path / "missing-helper")
+    from breadboard_engine.execution import codex_native
+
+    monkeypatch.setattr(codex_native, "native_binary", lambda helper: tmp_path / "missing-helper")
     assert view_image(str(tmp_path), {"path": "test.png"})["__mvi_text_output"] == (
-        "Codex image helper is not built; run `python scripts/build_codex_image.py` from the repository root."
+        "Codex image helper is not built; run `python -m breadboard_engine.execution.codex_native build image`."
     )
 
 
@@ -375,7 +377,7 @@ def test_resized_image_request_bytes_equal_live_stock(tmp_path):
     # This executes the real pinned Codex binary's view_image, not a codec mock.
     import hashlib
     from PIL import Image
-    from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
+    from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
 
     if not BINARY.is_file():
         pytest.skip("Pinned @openai/codex@0.139.0 stock package is required")

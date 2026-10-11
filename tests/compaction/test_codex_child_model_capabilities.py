@@ -4,7 +4,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from scripts.compaction_lanes.codex_lane import EngineMockProvider
+from breadboard_engine.compaction_lanes.codex_lane import EngineMockProvider
 from tests.compaction.test_codex_agent_tools import owner, value
 from breadboard_engine.execution.codex_agents import STOCK_MODEL_INFO
 
@@ -69,5 +69,6 @@ def test_empty_depth_filtered_catalog_stays_empty_on_lazy_rebuild(owner):
         assert conductor.current_native_tools == []
     assert conductor.config["tools"]["registry"]["include"] == ["multi_agent_v1", "tool_search"]
     conductor.config["tools"].pop("native_semantics")
-    assert conductor._setup_native_tools("gpt-5.5", True) is True
-    assert {tool.name for tool in conductor.current_native_tools} == {"multi_agent_v1", "tool_search"}
+    # The selected driver is immutable for an admitted conductor lifetime.
+    assert conductor._setup_native_tools("gpt-5.5", True) is False
+    assert conductor.current_native_tools == []

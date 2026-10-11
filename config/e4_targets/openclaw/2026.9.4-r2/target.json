@@ -56,7 +56,7 @@
       },
       {
         "name": "model.compaction",
-        "value": false
+        "value": true
       },
       {
         "name": "tools.exec_yield_ms",

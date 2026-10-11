@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, EngineResponsesHandler, run_stock
-from scripts.compaction_lanes import codex_lane
+from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, EngineResponsesHandler, run_stock
+from breadboard_engine.compaction_lanes import codex_lane
 from tests.compaction.test_codex_agent_tools import owner
 
 USAGE = {"input_tokens": 100, "output_tokens": 10, "total_tokens": 110}

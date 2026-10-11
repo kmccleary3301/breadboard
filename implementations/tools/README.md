@@ -43,11 +43,11 @@ through canonical terminal records and continuation requests, using stock's
 closed action variants (`protocol/src/models.rs:869-879,1193-1220`).
 
 Build the native image codec explicitly before using `view_image`:
-`python scripts/build_codex_image.py`. This runs a locked release build with
+`python -m breadboard_engine.execution.codex_native build image`. This runs a locked release build with
 stock-pinned Rust image dependencies. Missing helpers return that build command
 as a visible error; tools do not compile helpers or substitute Python codecs.
 
-Before using `exec_command` or custom `apply_patch`, also run `python scripts/build_codex_patch.py`.
+Before using `exec_command` or custom `apply_patch`, also run `python -m breadboard_engine.execution.codex_native build patch`.
 The locked helper links the revision-pinned stock apply-patch parser and executor,
 including heredoc and `cd` interception; it never relies on an `apply_patch` found
 on PATH. Command sessions, image decoding (including metadata checks), and the
@@ -71,8 +71,8 @@ IDs cannot access another thread's sessions. Post-exit output draining is bounde
 even when a detached descendant keeps stdout open. Production IDs are uniform
 integers in `[1000, 100000)` with collision redraws. Request-capture lanes may
 install a strict source before the first allocation through
-`codex_set_process_id_generator(source, thread_id=None)` and inspect
-`codex_process_id_generator_state()`; exhaustion is an error, not wraparound.
+`codex_runtime(owner).set_process_id_generator(source, thread_id=None)` and inspect
+`codex_runtime(owner).process_id_generator_state()`; exhaustion is an error, not wraparound.
 Every `exec_command`, including patch interception and completed commands,
 allocates an ID; `write_stdin` does not.
 

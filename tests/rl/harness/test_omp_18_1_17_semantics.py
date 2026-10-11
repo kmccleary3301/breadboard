@@ -31,7 +31,7 @@ from breadboard.rl.harness.runners.omp_semantics import (
     run_tool_batch,
     schedule_tool_calls,
 )
-from tests.rl.harness.test_omp_18_1_17_native_worker import _differential_bun, _differential_source_root
+from tests.rl.harness.omp_18_1_17_test_support import _differential_bun, _differential_source_root
 
 
 def test_hashline_tag_is_xxh32_low16_and_trailing_display_space_insensitive() -> None:

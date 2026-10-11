@@ -7,7 +7,7 @@ import subprocess
 
 import pytest
 
-from scripts.compaction_lanes import openclaw_lane as lane
+from breadboard_engine.compaction_lanes import openclaw_lane as lane
 
 
 def record(body):
@@ -291,7 +291,7 @@ def test_embeddings_404_returns_to_stock_and_keeps_compaction(tmp_path):
 
 
 def provider_client(tmp_path, *, caller_headers=None):
-    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    from tests.rl.harness import openclaw_native_stream_test_support as h
     import hashlib
     profile = h.OpenAICompletionsProviderProfile(
         model="model-a", scoped_credential="private-policy-key",
@@ -436,7 +436,7 @@ async def test_provider_exchange_uses_bound_transport_headers_and_private_respon
 def test_runtime_exchange_capability_keeps_compiled_identity_byte_identical(tmp_path, monkeypatch, target_id):
     from dataclasses import replace
     from breadboard.rl.harness import native_stream_profiles
-    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    from tests.rl.harness import openclaw_native_stream_test_support as h
     digest = "sha256:" + "1" * 64
     _, _, before = h._compile_target(tmp_path, profile_digest=digest, target_id=target_id)
     profiles = dict(native_stream_profiles.NATIVE_STREAM_PROFILES)
@@ -451,7 +451,7 @@ def test_runtime_exchange_capability_keeps_compiled_identity_byte_identical(tmp_
 @pytest.mark.skipif(not os.environ.get("OPENCLAW_DIST"), reason="pinned stock delta timer required")
 async def test_stock_session_delta_timer_drains_on_final_numeric_turn(tmp_path, monkeypatch):
     import asyncio
-    from tests.rl.harness import test_openclaw_native_stream_conductor as h
+    from tests.rl.harness import openclaw_native_stream_test_support as h
     timer = tmp_path / "delta-timer.mjs"
     proof = tmp_path / "delta-timer-proof.json"
     # Only the real source session-delta timer is held. At classified-result

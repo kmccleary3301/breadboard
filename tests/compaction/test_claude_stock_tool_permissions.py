@@ -7,6 +7,7 @@ import pytest
 
 from breadboard_engine.execution.claude_tools import ClaudeToolSession
 from breadboard_engine.permissions.broker import PermissionBroker
+from breadboard_engine.permissions.claude_permission import request_stock_tool_permission
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -63,7 +64,7 @@ def test_stock_permissions_relay_operator_allow_and_reject(tmp_path):
     # The BB auto_allow option must never auto-answer a genuine stock prompt.
     broker = PermissionBroker({"options": {"mode": "auto_allow"}})
     stock = ClaudeToolSession(str(tmp_path), MODEL, timeout=45,
-        permission=lambda request: broker.request_stock_tool_permission(state, request))
+        permission=lambda request: request_stock_tool_permission(broker, state, request))
     try:
         accepted = tmp_path / "accepted.txt"
         stock.execute("Write", {"file_path": str(accepted), "content": "operator approved"})
@@ -96,7 +97,7 @@ def test_stock_always_permission_uses_stock_rule_for_matching_calls(tmp_path, to
     broker = PermissionBroker({})
 
     def permit(request):
-        response = broker.request_stock_tool_permission(state, request)
+        response = request_stock_tool_permission(broker, state, request)
         controls.append(response)
         return response
 
@@ -134,7 +135,7 @@ def test_stock_question_receives_real_updated_input(tmp_path):
     state.set_provider_metadata("permission_queue", responses)
     broker = PermissionBroker({})
     stock = ClaudeToolSession(str(tmp_path), MODEL, timeout=45,
-        permission=lambda request: broker.request_stock_tool_permission(state, request))
+        permission=lambda request: request_stock_tool_permission(broker, state, request))
     try:
         result = stock.execute("AskUserQuestion", {"questions": [{"question": "Which mode?", "header": "Mode",
             "options": [{"label": "Safe", "description": "Safe mode"}, {"label": "Other", "description": "Other mode"}], "multiSelect": False}]})

@@ -44,11 +44,7 @@ def owner(tmp_path):
     conductor._active_session_state.set_provider_metadata("session_id", "11111111-1111-7111-8111-111111111111")
     conductor._current_route_id = "gpt-5.5"
     yield conductor
-    registry = getattr(conductor, "_codex_agent_registry", None)
-    if registry:
-        for child in list(registry.children.values()):
-            if not child.closed:
-                call(conductor, "multi_agent_v1.close_agent", target=child.id)
+    conductor.close_stock_tools()
 
 
 def call(owner, name, **args):
@@ -180,7 +176,7 @@ def replay(owner, tmp_path):
 
 @pytest.fixture
 def child_execution_provider(owner, tmp_path, monkeypatch):
-    from scripts.compaction_lanes.codex_lane import EngineMockProvider
+    from breadboard_engine.compaction_lanes.codex_lane import EngineMockProvider
 
     usage = {"input_tokens": 100, "output_tokens": 10, "total_tokens": 110}
     script = [
@@ -294,8 +290,8 @@ def test_non_codex_goal_hooks_are_inert(owner):
     ("local_image", None, "auto"),
 ])
 def test_child_image_request_matches_stock_url_bytes(owner, tmp_path, monkeypatch, kind, url, detail):
-    from scripts.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
-    from scripts.compaction_lanes import codex_lane
+    from breadboard_engine.compaction_lanes.codex_lane import BINARY, EngineMockProvider, run_stock
+    from breadboard_engine.compaction_lanes import codex_lane
 
     class WaitForChildHandler(codex_lane.EngineResponsesHandler):
         def _handle_openai_responses(self, item, request_json):
@@ -378,7 +374,7 @@ def test_image_passthrough_requires_native_profile(owner):
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("phase_enabled", [False, True])
 def test_real_final_answer_phase_survives_fork(owner, tmp_path, monkeypatch, stream, phase_enabled):
-    from scripts.compaction_lanes.codex_lane import EngineMockProvider
+    from breadboard_engine.compaction_lanes.codex_lane import EngineMockProvider
 
     if phase_enabled:
         owner.config["provider_tools"]["openai"]["responses_message_phase"] = True
@@ -433,7 +429,7 @@ def test_real_background_processes_are_thread_scoped_and_close_recursively(owner
     import time
 
     from breadboard_engine.execution.codex_exec import execute_codex_tool
-    from scripts.compaction_lanes.codex_lane import EngineMockProvider
+    from breadboard_engine.compaction_lanes.codex_lane import EngineMockProvider
 
     owner.config["agents"] = {"max_depth": 2}
     owner.config["tools"]["registry"]["include"].append("write_stdin")
@@ -492,4 +488,6 @@ def test_real_background_processes_are_thread_scoped_and_close_recursively(owner
                 "session_id": root_pid, "chars": "", "yield_time_ms": 0,
             })["__mvi_text_output"]
     finally:
-        owner._ray_get(owner.sandbox.codex_close_exec_sessions.remote(root_id))
+        from breadboard_engine.execution.codex_exec import codex_runtime
+
+        codex_runtime(owner).close_thread(root_id)

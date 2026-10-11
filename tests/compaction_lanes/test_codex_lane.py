@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import httpx
 
-from scripts.compaction_lanes.codex_lane import (
+from breadboard_engine.compaction_lanes.codex_lane import (
     BINARY, EngineMockProvider, PROMPT, SCENARIOS, compare_requests,
     compaction_count, outcomes_valid, run_lane, scenario_script, settings,
 )
@@ -16,10 +16,11 @@ def record(body: str) -> dict:
     return {"path": "/v1/responses", "raw_body_bytes": body.encode().hex(), "json": json.loads(body)}
 
 
-def test_comparator_ignores_only_json_object_member_order():
+def test_comparator_rejects_undeclared_json_member_order():
     stock = record('{"model":"gpt-5.5","input":[]}')
     bb = record('{"input":[],"model":"gpt-5.5"}')
-    assert compare_requests([stock], [bb]) == []
+    differences = compare_requests([stock], [bb])
+    assert differences[0]["stock_raw_sha256"] != differences[0]["bb_raw_sha256"]
     assert stock["raw_body_bytes"] != bb["raw_body_bytes"]
     assert compare_requests([stock], [deepcopy(stock)]) == []
 
@@ -96,7 +97,7 @@ def test_exec_metadata_guards_count_per_request_and_leave_body_strict():
 
 
 def test_injected_process_ids_are_finite_and_allocation_mismatch_fails():
-    from scripts.compaction_lanes.codex_lane import StockProcessIds, validate_process_allocations
+    from breadboard_engine.compaction_lanes.codex_lane import StockProcessIds, validate_process_allocations
     source = StockProcessIds([1000, 99999])
     assert source() == 1000
     assert source() == 99999
@@ -342,9 +343,10 @@ def test_live_stock_and_production_engine_bytes(tmp_path: Path):
 
 
 @pytest.mark.parametrize("consumer", ["select", "reduce", None])
-def test_pending_exclusion_alone_registers_production_sampling_phase(monkeypatch, consumer):
+def test_pending_exclusion_consumes_explicit_request_context(monkeypatch, consumer):
     from breadboard_engine.compaction import CompactionContext, CompactionState, ProjectionTarget
-    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compaction.controller import CompactionController, CompactionRequestContext
+    from types import SimpleNamespace
     from breadboard_engine.compaction.methods import SummaryResponse
     from breadboard_engine.compaction import presets
     document = presets.load_preset_document("codex@0.139.0")
@@ -356,7 +358,6 @@ def test_pending_exclusion_alone_registers_production_sampling_phase(monkeypatch
         stage[consumer]["exclude_pending_user_on"] = ["pre_turn"]
     monkeypatch.setattr(presets, "load_preset_document", lambda _: document)
     controller = CompactionController({"compaction": {"enabled": True, "preset": "codex@0.139.0", "contextWindow": 16000}})
-    assert controller.tracks_sampling_phase is (consumer is not None)
     messages = [{"role": "user", "content": "previous task"},
                 {"role": "assistant", "content": "previous answer"},
                 {"role": "user", "content": "pending prompt"}]
@@ -365,14 +366,11 @@ def test_pending_exclusion_alone_registers_production_sampling_phase(monkeypatch
         def complete(self, request):
             calls.append(request)
             return SummaryResponse("checkpoint")
-    # The same registration gates populate phase and boundary in the loop.
-    if controller.tracks_sampling_phase:
-        controller.sampling_phase = "pre_turn"
-        controller.pending_user_index = len(messages) - 1
-    context = CompactionContext(messages, CompactionState(), controller.settings, "threshold",
-                                ProjectionTarget("openai", "responses", "gpt-5.5"), 16000, 14500,
-                                summarizer=Summary(), sampling_phase=controller.sampling_phase,
-                                pending_user_index=controller.pending_user_index)
+    controller.summary_model = Summary()
+    context = controller._context_for_pass(
+        SimpleNamespace(provider_messages=messages, compaction_state=CompactionState()),
+        reason="threshold", target=ProjectionTarget("openai", "responses", "gpt-5.5"),
+        context_window=16000, request_context=CompactionRequestContext("pre_turn", len(messages) - 1))
     step = controller.recipe.pipeline.stages["summary"].step
     selection = step.selector.select(context)
     if consumer == "select":

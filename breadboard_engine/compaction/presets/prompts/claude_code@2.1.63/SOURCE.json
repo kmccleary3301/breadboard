@@ -1,6 +1,10 @@
 {
   "package": "@anthropic-ai/claude-code@2.1.63",
   "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+  "license": "Proprietary; Anthropic PBC reserves all rights",
+  "license_source": "package/LICENSE.md",
+  "license_terms": "https://code.claude.com/docs/en/legal-and-compliance",
+  "modification_notice": "Prompt fragments extracted from the pinned cli.js for BreadBoard replay. No redistribution permission is asserted; see implementations/THIRD_PARTY_NOTICES.txt.",
   "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
   "source_sha256": {
     "package/cli.js": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d"

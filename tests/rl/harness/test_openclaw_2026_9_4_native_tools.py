@@ -14,6 +14,15 @@ import tarfile
 
 import pytest
 
+from tests.rl.harness.native_dependencies import require_openclaw, resolve_openclaw
+
+
+@pytest.fixture
+def openclaw_dist(monkeypatch: pytest.MonkeyPatch) -> Path:
+    dist = require_openclaw()
+    monkeypatch.setenv("OPENCLAW_DIST", str(dist))
+    return dist
+
 from breadboard.rl.harness.openclaw_native_tools import (
     BOOTSTRAP_ORDER,
     EXEC_YIELD_MS,
@@ -44,8 +53,8 @@ def message_timestamp_ms() -> str:
 
 
 
-def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path) -> None:
-    source_dist = Path(os.environ.get("OPENCLAW_DIST", "/tmp/openclaw-npm-20260923/node_modules/openclaw/dist"))
+def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path, openclaw_dist: Path) -> None:
+    source_dist = openclaw_dist
     dist = tmp_path / "dist"
     dist.mkdir()
     for source in source_dist.iterdir():
@@ -65,7 +74,7 @@ def test_pinned_classifier_refuses_changed_dist_byte(tmp_path: Path) -> None:
 
 
 @pytest.mark.skipif(not _PACKET.is_file(), reason="admitted supplier packet is not installed")
-def test_packet_results_are_classified_by_pinned_dist(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_packet_results_are_classified_by_pinned_dist(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         expected = {
@@ -97,7 +106,7 @@ def test_bootstrap_order_budgets_and_missing_markers(tmp_path: Path) -> None:
     assert context[3]["content"] == f"[MISSING] Expected at: {tmp_path / 'BOOTSTRAP.md'}"
 
 
-def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     tools.execute("write", {"path": "marker.txt", "content": "before\n"})
     result = tools.execute("edit", {"path": "marker.txt", "oldText": "before", "newText": "after"})
@@ -107,7 +116,7 @@ def test_native_file_effects_and_exact_edit(tmp_path: Path, message_timestamp_ms
 
 
 @pytest.mark.parametrize("failure_kind", ["error_with_cause", "structured_error"])
-def test_argument_preparation_failure_matches_stock_immediate_outcome(failure_kind: str) -> None:
+def test_argument_preparation_failure_matches_stock_immediate_outcome(failure_kind: str, openclaw_dist: Path) -> None:
     script = """
 import { pathToFileURL } from "node:url";
 const { prepareSourceToolCall } = await import(pathToFileURL(process.argv[2]));
@@ -161,7 +170,7 @@ console.log(JSON.stringify({
     assert outcomes["executionStarted"] is False
 
 
-def test_native_write_echoes_relative_path(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_native_write_echoes_relative_path(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         result = tools.execute("write", {"path": "marker.txt", "content": "OPENCLAW-NORMAL\n"})
@@ -170,7 +179,7 @@ def test_native_write_echoes_relative_path(tmp_path: Path, message_timestamp_ms:
         tools.scope.cleanup()
 
 
-def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     result = tools.execute("exec", {"command": "printf READY", "background": True})
     assert result["status"] == "running"
@@ -182,7 +191,7 @@ def test_exec_and_process_poll_clamp(tmp_path: Path, message_timestamp_ms: str) 
     tools.scope.cleanup()
 
 
-def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     release = tmp_path / "poll-release"
     try:
@@ -206,7 +215,7 @@ def test_poll_replays_unacknowledged_output_until_history_commit(tmp_path: Path,
         tools.scope.cleanup()
 
 
-def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         tools._worker._request({
@@ -226,7 +235,7 @@ def test_parallel_native_batch_commits_source_order_with_observed_completion(tmp
         tools.scope.cleanup()
 
 
-def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         tools._worker._request({
@@ -244,7 +253,7 @@ def test_parallel_exec_reservations_enforce_live_process_cap(tmp_path: Path, mes
         tools.scope.cleanup()
 
 
-def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         denied = tools.execute("exec", {"command": "touch timeout-31.txt", "timeoutSeconds": 31})
@@ -257,7 +266,7 @@ def test_exec_timeout_admission_rejects_over_thirty_seconds(tmp_path: Path, mess
         tools.scope.cleanup()
 
 
-def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         for index in range(4):
@@ -272,7 +281,7 @@ def test_max_live_processes_counts_every_exec_including_foreground(tmp_path: Pat
         assert "OpenClaw live process cap exceeded" in str(fifth.get("output", ""))
     finally:
         tools.scope.cleanup()
-def test_classify_result_semantics_and_envelope_invariants(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_classify_result_semantics_and_envelope_invariants(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     tools = OpenClawNativeTools(tmp_path, message_timestamp_ms=message_timestamp_ms)
     try:
         # 1. OK execution: exit 0, trailing trim, nullable model/provider, usage/cost/toolSummary preserved
@@ -407,7 +416,7 @@ def _retire(worker: _OpenClawWorkerClient) -> None:
 
 
 @pytest.mark.skipif(sys.platform == "linux", reason="Linux spawns the marker from /proc/self/exe")
-def test_marker_spawn_failure_is_a_typed_error_not_a_worker_crash(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_marker_spawn_failure_is_a_typed_error_not_a_worker_crash(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     # Off Linux the marker runs process.execPath.  Deleting the launch path
     # reproduces the ENOENT that crashed sealed memfd workers at close.
     workspace = tmp_path / "workspace"
@@ -432,7 +441,7 @@ def test_marker_spawn_failure_is_a_typed_error_not_a_worker_crash(tmp_path: Path
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="sealed memfd launches are Linux-only")
-def test_marker_runs_the_sealed_worker_image_under_memfd_launch(tmp_path: Path, message_timestamp_ms: str) -> None:
+def test_marker_runs_the_sealed_worker_image_under_memfd_launch(tmp_path: Path, message_timestamp_ms: str, openclaw_dist: Path) -> None:
     import fcntl
 
     sealed = os.memfd_create("breadboard-runtime", os.MFD_ALLOW_SEALING)
@@ -478,7 +487,7 @@ def test_marker_runs_the_sealed_worker_image_under_memfd_launch(tmp_path: Path, 
 
 
 def test_native_worker_environment_matches_supplier_skill_eligibility(
-    tmp_path: Path, message_timestamp_ms: str, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, message_timestamp_ms: str, monkeypatch: pytest.MonkeyPatch, openclaw_dist: Path,
 ) -> None:
     # Supplier capture (kit/openclaw_capture_supplier.py:123): node leads PATH and
     # bundled plugins are disabled, so node-gated skills are listed and bundled
@@ -490,7 +499,7 @@ def test_native_worker_environment_matches_supplier_skill_eligibility(
     root = tmp_path / "native"
     (root / "runtime").mkdir(parents=True)
     shutil.copy2(_node_image(), root / "runtime/node")
-    source_dist = Path(os.environ.get("OPENCLAW_DIST", "/opt/openclaw/dist")).resolve(strict=True)
+    source_dist = openclaw_dist.resolve(strict=True)
     metadata = root.stat()
     adapter = sandbox_module.InstalledToolAdapter(
         adapter_id=sandbox_module.OPENCLAW_LOCAL_ADAPTER_ID,
