@@ -58,10 +58,10 @@ The proof is a differential lane that compares raw request bytes against the pin
 
 ## 5) Evidence and Validation Plan
 
-- On the final tree, the focused suite (`tests/compaction tests/providers tests/compaction_lanes tests/rl/harness tests/test_e4_targets.py tests/test_runtime_resource_closure.py tests/test_script_index_guard.py`) had 4676 passed, 270 skipped and 28 failed on a fresh macOS worktree. None is caused by this change:
+- After merging the RL run-budget ceilings, the focused suite (`tests/compaction tests/providers tests/compaction_lanes tests/rl/harness tests/test_e4_targets.py tests/test_runtime_resource_closure.py tests/test_script_index_guard.py`) had 4699 passed, 271 skipped and 29 failed on a fresh macOS worktree. None is caused by this change:
   - 10 fail identically at base `308b9027`: runner and WP7 source guards, v1 history close, and the V2 containment receipt.
   - 3 fail identically on `main` `0f590af4`: two Docker sandbox tests and the Hermes packet replay, which reads an untracked `docs_tmp` input.
-  - 13 Pi 0.73.1 worker tests need the npm package installed. With it installed, those two modules pass (297 passed).
+  - 14 native Pi worker tests need the npm package installed. With it installed, those two modules pass (308 passed).
   - 1 OpenRouter test reads a local credential.
   - 1 OpenCode dead-end test is timing-dependent: stock oh-my-opencode 3.10.0 caches its storage-backend check (`isSqliteBackend`) and, if the check runs before `opencode.db` exists, truncates nothing. It passes or fails the same way without this change.
 - The long-session lanes match stock byte for byte, or differ only by recorded, guarded deviations (`breadboard_engine/compaction_lanes/README.md`).
@@ -73,7 +73,7 @@ The proof is a differential lane that compares raw request bytes against the pin
   - the OpenAI SDK 3.29.0 loopback HTTP smoke sends 8 real requests with no failures.
 - All shipped and test Python compiles under Python 3.11.
 - CI's Compat core, Conformance gate, Conformance matrix sync and E4 target-freeze manifest guard pass.
-- The script index (`scripts/SCRIPT_INDEX.yaml`) registers the 21 new scripts, and the clean-wheel test pins the 17 shipped target revisions.
+- The script index (`scripts/SCRIPT_INDEX.yaml`) registers the 21 new scripts, and the clean-wheel test pins the 23 shipped target revisions.
 
 ## 6) Rollout Plan
 
