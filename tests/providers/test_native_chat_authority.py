@@ -5,7 +5,7 @@ import pytest
 
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
 from breadboard_engine.provider.profiles import (
-    OpenAICompletionsProviderProfile, OpenAICompletionsRequestPolicy,
+    OpenAICompletionsCapabilities, OpenAICompletionsProviderProfile, OpenAICompletionsRequestPolicy,
 )
 from breadboard_engine.provider.runtimes.openai.native_chat_wire import (
     NativeRequestAuthorityError, admitted_native_request, create_chat_client, native_chat_wire_scope,
@@ -19,6 +19,9 @@ def _request(*, temperature=1.0, tools=False, cap_field="max_tokens"):
         model="native", base_url="http://127.0.0.1:8111/v1", scoped_credential="test",
         context_window=8192, max_output_tokens=128, sampling={"temperature": temperature},
         request_policy=OpenAICompletionsRequestPolicy(max_token_field=cap_field),
+        capabilities=OpenAICompletionsCapabilities(
+            supports_max_completion_tokens=cap_field == "max_completion_tokens",
+        ),
     )
     expected = profile.chat_request([{"role": "user", "content": "café/"}], [
         {"type": "function", "function": {"name": "echo", "parameters": {

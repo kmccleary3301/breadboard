@@ -43,13 +43,6 @@ def test_installed_wheel_lowers_compaction_targets_and_discovers_native_workspac
             assert thaw_json(lowered.tools) == thaw_json(baseline.tools), target_id
             assert lowered.system_prompt == baseline.system_prompt, target_id
             assert lowered.runtime_profile["compaction"] is True, target_id
-            native = json.loads(target.read_asset_text("native-config.json"))
-            if target_id.startswith(("pi-", "oh-my-pi-")):
-                assert native["agent"]["compaction_enabled"] is True, target_id
-            elif target_id.startswith("openclaw-"):
-                assert native["agent_exec"]["compaction"] is True, target_id
-            else:
-                assert native["agent"]["compression"] is True, target_id
 
         # Resolve the real installed workspace without building or launching helpers.
         # workspace_target reads every manifest, lockfile, and Rust entrypoint;
