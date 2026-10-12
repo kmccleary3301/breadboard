@@ -490,6 +490,7 @@
         "type": "object"
       },
       "AuthorityDeclaration": {
+        "additionalProperties": false,
         "description": "Requested rights. A manifest containing these values grants nothing.",
         "properties": {
           "child": {
@@ -751,6 +752,7 @@
         "type": "object"
       },
       "ChildAuthority": {
+        "additionalProperties": false,
         "properties": {
           "allowed_module_ids": {
             "items": {
@@ -1048,6 +1050,7 @@
         "type": "object"
       },
       "CredentialDisclosure": {
+        "additionalProperties": false,
         "properties": {
           "purpose": {
             "title": "Purpose",
@@ -2329,6 +2332,7 @@
         "type": "object"
       },
       "NetworkAuthority": {
+        "additionalProperties": false,
         "properties": {
           "destinations": {
             "items": {
@@ -2607,6 +2611,7 @@
         "type": "object"
       },
       "ProjectAuthority": {
+        "additionalProperties": false,
         "properties": {
           "operations": {
             "items": {

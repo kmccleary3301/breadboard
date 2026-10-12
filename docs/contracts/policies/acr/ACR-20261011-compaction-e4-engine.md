@@ -1,14 +1,14 @@
 # ACR-20261011-compaction-e4-engine
 
 - `acr_id`: `ACR-20261011-compaction-e4-engine`
-- `title`: E4 native compaction presets, compaction-enabled RL target revisions and differential lanes
+- `title`: Context compaction subsystem, E4 native compaction presets, compaction-enabled RL target revisions and differential lanes
 - `author`: BreadBoard compaction implementation
 - `date`: 2026-10-11
 - `status`: implemented
 
 ## 1) Problem Statement
 
-Steps 2–4 of `COMPACTION_E4_SCOPE_REQUEST.md` need native context compaction that matches each stock harness:
+The compaction subsystem (step 1, `breadboard_engine/compaction/`) is off by default: with no `compaction` block, request views and session snapshots are unchanged. Steps 2–4 of `COMPACTION_E4_SCOPE_REQUEST.md` need native context compaction that matches each stock harness:
 
 - the RL targets: Pi 0.73.1, Pi 0.57.1, OMP 16.2.13, OMP 18.1.17, Hermes and OpenClaw 2026.9.4;
 - the dated engine profiles: Codex 0.139.0, Claude Code 2.1.63, OpenCode 1.2.17 and oh-my-opencode 3.10.0.
@@ -18,6 +18,7 @@ The proof is a differential lane that compares raw request bytes against the pin
 ## 2) Scope and Surfaces
 
 - Kernel danger-zone: yes. The change touches `breadboard/**` and `breadboard_engine/**`: agent loop, session state, CLI bridge, provider runtime and permission broker.
+- Default-path behavior change: a provider `context_length_exceeded` overflow no longer records a route-health failure, so it cannot open the route circuit before a retry.
 - New compaction presets, engine profiles (`agent_configs/*_e4_10-9-2026.yaml`) and RL target revisions:
   - `pi-r3@0.73.1`
   - `pi-r4@0.57.1`
@@ -51,7 +52,7 @@ The proof is a differential lane that compares raw request bytes against the pin
 
 ## 4) Change Classification
 
-- Classification: `additive`. New targets, presets, capability flags and optional contract members. Existing profiles, target revisions and documents keep their behavior and validity.
+- Classification: `additive`. New targets, presets, capability flags and optional contract members. Existing profiles, target revisions and documents keep their behavior and validity. The one default-path change, overflow no longer counting against route health, is a fix: no wire field or accepted document changes.
 
 ## 5) Evidence and Validation Plan
 
@@ -65,18 +66,18 @@ The proof is a differential lane that compares raw request bytes against the pin
   - the OpenAI SDK 3.29.0 loopback HTTP smoke sends 8 real requests with no failures.
 - All shipped and test Python compiles under Python 3.11.
 - CI's Compat core, Conformance gate, Conformance matrix sync and E4 target-freeze manifest guard pass.
-- These CI failures are inherited from the base branch:
-  - CLI-bridge `openapi.json` export drift: the same five `additionalProperties` lines appear at `308b9027`.
-  - `longrun_phase1`: the workflow does not install `jinja2`, which base `compaction/primitives/event_summary.py` imports.
+- Two CI failures were environment gaps:
+  - CLI-bridge `openapi.json` export drift: pydantic 2.14 emits `additionalProperties: false` for five authority models, and `main` at `0ab05604` drifts identically. The contract and the generated TS SDK (`openapi.v1.json`, `routes.ts`) are regenerated.
+  - `longrun_phase1`: the gate installs a minimal dependency set without `jinja2`, a declared runtime dependency that `breadboard_engine.state` now reaches through `compaction`. The gate installs it.
 
 ## 6) Rollout Plan
 
-- Merge into `feat/compaction-subsystem`. Profiles and target revisions are selected explicitly, so nothing changes for existing consumers until they choose a new revision or profile.
+- Merge `feat/compaction-subsystem` into `main`. Compaction stays off without a `compaction` block, and profiles and target revisions are selected explicitly, so nothing changes for existing consumers until they opt in.
 - Step 5 and training stay stopped until separately authorized.
 
 ## 7) Rollback Plan
 
-- Revert the merge commit on `feat/compaction-subsystem`. Baseline profiles and target revisions are unchanged, so consumers that never selected the new revisions need no migration.
+- Revert the merge commit on `main`. Baseline profiles and target revisions are unchanged, so consumers that never selected the new revisions need no migration.
 
 ## 8) Approvals
 
