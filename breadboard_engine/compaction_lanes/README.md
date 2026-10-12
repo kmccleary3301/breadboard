@@ -89,15 +89,21 @@ mislabelled as equal-body differences.
 `omp_native_bash_elapsed_time` is grounded in commit
 `3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec`,
 `packages/coding-agent/src/tools/bash.ts:531-549,781-793,1009,1111-1121` and
-`tools/tool-timeouts.ts:10-11,33-37`. A uniquely correlated Bash result admits
-one final two-decimal wall-time header. It may precede the exact source clamp
+`tools/tool-timeouts.ts:10-11,33-37`. A Bash call must correlate to exactly one
+tool-result message; duplicate results do not qualify even if their content
+differs. That unique result admits one final two-decimal wall-time header.
+It may precede the exact source clamp
 notice for the matching call's integer timeout (default 300s) and this lane's
 30s global ceiling. The notice itself is never changed or removed.
 The original content must also have one exact native JSON string carrier;
 alternate escaping in its unchanged output or notice is not normalized away.
 
 The report retains the original raw difference, edited content, source
-authority and admitted ceiling. Arbitrary suffixes, changed notices, wrong
+authority and admitted ceiling. Each stock/actor value change additionally
+records `start`/`end` UTF8 byte offsets into its original retained request,
+`original_bytes` hex, and replacement `projected_bytes` hex. The existing
+projection parser supplies the JSON-pointer spans; no second parser or
+whole-request canonicalization is used. Arbitrary suffixes, changed notices, wrong
 call timeouts, duplicate calls/headers or ambiguous argument objects do not
 qualify.
 

@@ -52,8 +52,8 @@ def request_json_problem(stock: dict[str, Any], bb: dict[str, Any], index: int) 
             "raw_difference": raw_mismatch(raw["stock"], raw["bb"], index)}
 
 
-def project_guarded_values(raw: bytes, projected: Any) -> bytes:
-    """Apply an already validated JSON projection without rewriting other bytes."""
+def project_guarded_values(raw: bytes, projected: Any, *, value_spans: dict[str, tuple[int, int]] | None = None) -> bytes:
+    """Project values; optionally retain their original character spans by JSON pointer."""
     text = raw.decode("utf-8")
     decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
 
@@ -62,9 +62,11 @@ def project_guarded_values(raw: bytes, projected: Any) -> bytes:
             pos += 1
         return pos
 
-    def visit(pos: int, target: Any) -> tuple[str, int]:
+    def visit(pos: int, target: Any, path: str) -> tuple[str, int]:
         start = skip(pos)
         original, end = decoder.raw_decode(text, start)
+        if value_spans is not None:
+            value_spans[path] = (start, end)
         if original == target and type(original) is type(target):
             return text[start:end], end
         if isinstance(original, dict) and isinstance(target, dict):
@@ -78,13 +80,16 @@ def project_guarded_values(raw: bytes, projected: Any) -> bytes:
                 key, key_end = decoder.raw_decode(text, cursor)
                 value_start = skip(skip(key_end) + 1)
                 value, value_end = decoder.raw_decode(text, value_start)
+                pointer = path + "/" + key.replace("~", "~0").replace("/", "~1")
+                if value_spans is not None:
+                    value_spans[pointer] = (value_start, value_end)
                 next_pos = skip(value_end)
                 comma = next_pos < end and text[next_pos] == ","
                 member_end = skip(next_pos + 1) if comma else next_pos
                 if not comma:
                     suffix = text[value_end:end - 1]
                 if key in target:
-                    replacement, _ = visit(value_start, target[key])
+                    replacement, _ = visit(value_start, target[key], pointer)
                     members.append(leading + text[member_start:value_start] + replacement + (text[value_end:next_pos] if comma else ""))
                 cursor = member_end
                 leading = text[next_pos + 1:member_end] if comma else ""
@@ -98,7 +103,8 @@ def project_guarded_values(raw: bytes, projected: Any) -> bytes:
                 for key in original:
                     _, key_end = decoder.raw_decode(text, cursor)
                     value_start = skip(skip(key_end) + 1)
-                    replacement, value_end = visit(value_start, target[key])
+                    pointer = path + "/" + key.replace("~", "~0").replace("/", "~1")
+                    replacement, value_end = visit(value_start, target[key], pointer)
                     edits.append((value_start, value_end, replacement))
                     cursor = skip(value_end)
                     if text[cursor:cursor+1] == ",":
@@ -111,9 +117,9 @@ def project_guarded_values(raw: bytes, projected: Any) -> bytes:
         if isinstance(original, list) and isinstance(target, list) and len(original) == len(target):
             cursor = skip(start + 1)
             edits = []
-            for item in target:
+            for index, item in enumerate(target):
                 value_start = cursor
-                replacement, value_end = visit(cursor, item)
+                replacement, value_end = visit(cursor, item, path + "/" + str(index))
                 edits.append((value_start, value_end, replacement))
                 cursor = skip(value_end)
                 if text[cursor:cursor+1] == ",":
@@ -125,7 +131,7 @@ def project_guarded_values(raw: bytes, projected: Any) -> bytes:
         return canonical_json([target])[1:-1], end
 
     start = skip(0)
-    result, end = visit(start, projected)
+    result, end = visit(start, projected, "$")
     return (text[:start] + result + text[end:]).encode("utf-8")
 
 
@@ -146,8 +152,22 @@ def raw_request_differences(stock: list[dict[str, Any]], bb: list[dict[str, Any]
     return result
 
 
-def guarded_changes(original: Any, projected: Any, path: str = "$", /) -> list[dict[str, Any]]:
-    """Exact JSON positions and values edited by a named source guard."""
+def guarded_changes(original: Any, projected: Any, path: str = "$", /, *, raw: bytes | None = None) -> list[dict[str, Any]]:
+    """Record value changes, optionally with original UTF8 spans and replacement bytes."""
+    if raw is not None:
+        changes = guarded_changes(original, projected, path)
+        if not changes:
+            return changes
+        spans: dict[str, tuple[int, int]] = {}
+        project_guarded_values(raw, projected, value_spans=spans)
+        text = raw.decode("utf-8")
+        for change in changes:
+            start, end = spans[change["path"]]
+            start, end = len(text[:start].encode("utf-8")), len(text[:end].encode("utf-8"))
+            change.update(start=start, end=end, original_bytes=raw[start:end].hex())
+            if change["operation"] == "replace":
+                change["projected_bytes"] = project_guarded_values(raw[start:end], change["projected"]).hex()
+        return changes
     if type(original) is type(projected) and original == projected:
         return []
     if isinstance(original, dict) and isinstance(projected, dict):

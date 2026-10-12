@@ -241,7 +241,6 @@ async def run_bb(workspace: Path, scratch: Path, base_url: str) -> dict[str, Any
     port.containment = RuntimeContainment.ATTESTED
     port.containment_lease_id = admission.CONDUCTOR_TEST_LEDGER.record.lease_id
     port.containment_receipt = signed_containment_receipt(port.containment_lease_id, "sandbox", admission.CONDUCTOR_TEST_AUTHENTICATOR)
-    port.declared_workspace = str(workspace)
     (scratch / "home").mkdir(parents=True, exist_ok=True)
     request = h.RunnerOpenRequest(episode_id="omp18-lane", effective_plan=plan)
     client = h.EpisodeOpenAICompletionsPolicyClient(episode_id=request.episode_id, effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
@@ -301,6 +300,11 @@ def normalize_tool_elapsed_time(payload: dict[str, Any], raw: bytes | None = Non
     count = 0
     bash_calls: dict[str, str | None] = {}
     seen_calls: set[str] = set()
+    result_counts: dict[str, int] = {}
+    for message in payload.get("messages", []):
+        call_id = message.get("tool_call_id")
+        if message.get("role") == "tool" and isinstance(call_id, str):
+            result_counts[call_id] = result_counts.get(call_id, 0) + 1
     for message in payload.get("messages", []):
         if message.get("role") == "assistant":
             for call in message.get("tool_calls", []):
@@ -327,7 +331,9 @@ def normalize_tool_elapsed_time(payload: dict[str, Any], raw: bytes | None = Non
                     if requested > 30 else ""
                 )
         call_id = message.get("tool_call_id")
-        if message.get("role") != "tool" or call_id not in bash_calls or bash_calls[call_id] is None:
+        if (message.get("role") != "tool" or not isinstance(call_id, str)
+                or result_counts.get(call_id) != 1
+                or call_id not in bash_calls or bash_calls[call_id] is None):
             continue
         content = message.get("content")
         if not isinstance(content, str) or content.count("Wall time: ") != 1:
@@ -395,8 +401,8 @@ def compare_requests(stock: list[Any], bb: list[Any], phases: list[Any], deviati
                 "source_commit": OMP_SOURCE_COMMIT,
                 "admitted_global_timeout_ceiling_seconds": 30,
                 "raw_difference": raw_mismatch(original_left, original_right, i),
-                "changes": {"stock": guarded_changes(stock[i]["json"], left_payload),
-                            "bb": guarded_changes(bb[i]["json"], right_payload)}})
+                "changes": {"stock": guarded_changes(stock[i]["json"], left_payload, raw=original_left),
+                            "bb": guarded_changes(bb[i]["json"], right_payload, raw=original_right)}})
         left = project_guarded_values(left, left_payload)
         right = project_guarded_values(right, right_payload)
         if left != right or stock[i].get("method") != bb[i].get("method") or stock[i].get("path") != bb[i].get("path"):
