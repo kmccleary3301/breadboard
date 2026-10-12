@@ -773,9 +773,9 @@ Only named, source-authorized edits whose guards pass on both sides may be
 applied; the remaining bytes must match exactly. Member order, whitespace,
 escaping and duplicate JSON names are not silently normalized.
 Raw request bytes and per-edit deviation records are kept beside each report.
-Each record carries the edit's JSON pointer and its original UTF-8 byte range
-and bytes on both sides. A Bash elapsed-time edit requires exactly one tool
-result for its call ID.
+OMP 18 records also carry each edit's original UTF-8 byte range and bytes on
+both sides; replacements add their projected bytes. A Bash elapsed-time edit
+requires exactly one tool result for its call ID.
 
 | Module | Harness |
 |---|---|
