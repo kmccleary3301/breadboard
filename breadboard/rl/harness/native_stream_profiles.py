@@ -9,7 +9,7 @@ their source state is constructed and which native stops are incomplete.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from types import MappingProxyType, ModuleType
 from typing import Any, Literal
 
@@ -30,6 +30,14 @@ from breadboard.rl.harness.runners import (
 
 
 @dataclass(frozen=True, slots=True)
+class NativeRunLimits:
+    """Per-run limits of a ceiling-admitted target, from its compiled plan."""
+
+    max_requests: int
+    episode_seconds: int
+
+
+@dataclass(frozen=True, slots=True)
 class NativeStreamProfile:
     """One admitted native-stream source profile."""
 
@@ -47,8 +55,9 @@ class NativeStreamProfile:
     runtime_input_names: tuple[str, ...]
     package_subpath: str
     state_module: ModuleType
-    # (task, system_prompt, bootstrap) -> profile semantics state.
-    state_factory: Callable[[str, str, Mapping[str, Any]], Any] | None
+    # (task, system_prompt, bootstrap, run_limits) -> profile semantics state;
+    # run_limits is None for a target that keeps the profile's exact kit limits.
+    state_factory: Callable[[str, str, Mapping[str, Any], NativeRunLimits | None], Any] | None
     phase_mode: Literal["streaming", "checkpointed"] = "streaming"
     trace_schema_version: str = ""
     trace_profile_name: str = ""
@@ -107,9 +116,61 @@ class NativeStreamProfile:
     # Source-owned HTTP exchanges beyond the ordinary model turn. Capability
     # registration is runtime-only and does not alter any target's compiled IR.
     provider_exchanges: frozenset[str] = frozenset()
+    # Set only by ``admit_run_limits`` for a ceiling-admitted target.
+    run_limits: NativeRunLimits | None = None
 
 
-def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+def admit_run_limits(
+    profile: NativeStreamProfile,
+    runtime_profile: Mapping[str, Any],
+    *,
+    max_turns: int,
+    action_timeout_ms: int,
+    wall_time_ms: int,
+) -> NativeStreamProfile:
+    """Return the profile one run executes under.
+
+    A target without ``budget_admission`` keeps the profile's exact kit limits
+    (the Conductor still requires the plan to equal them). A ``ceiling`` target
+    runs the plan's request cap and wall, each bounded by the harness
+    ``bounded_controls`` that lowering copied into its runtime profile
+    (``breadboard/product/harness/targets.py``). The native tool timeout stays
+    the profile's exact value.
+    """
+    if "budget_admission" not in runtime_profile:
+        return profile
+    controls = runtime_profile.get("bounded_controls")
+    if (
+        runtime_profile["budget_admission"] != "ceiling"
+        or not isinstance(controls, Mapping)
+        or any(
+            type(controls.get(name)) is not int or controls[name] <= 0
+            for name in ("max_model_calls", "episode_wall_seconds")
+        )
+    ):
+        raise ValueError("native budget admission is not a compiled ceiling")
+    episode_seconds = -(-wall_time_ms // 1000)
+    if not 0 < max_turns <= controls["max_model_calls"]:
+        raise ValueError("plan request cap exceeds the target ceiling")
+    if not 0 < episode_seconds <= controls["episode_wall_seconds"]:
+        raise ValueError("plan wall exceeds the target ceiling")
+    if action_timeout_ms != profile.action_timeout_ms:
+        raise ValueError("plan action timeout differs from the source tool timeout")
+    trace_controls = profile.trace_controls
+    if trace_controls is not None and "max_iterations" in trace_controls:
+        trace_controls = MappingProxyType({**trace_controls, "max_iterations": max_turns})
+    return replace(
+        profile,
+        max_turns=max_turns,
+        episode_timeout_seconds=episode_seconds,
+        trace_controls=trace_controls,
+        run_limits=NativeRunLimits(max_requests=max_turns, episode_seconds=episode_seconds),
+    )
+
+
+def _pi_state(
+    task: str, system_prompt: str, bootstrap: Mapping[str, Any], run_limits: NativeRunLimits | None,
+) -> Any:
     model_config = bootstrap.get("model_config")
     if not isinstance(model_config, Mapping):
         raise ValueError("native stream bootstrap missing model_config")
@@ -128,10 +189,17 @@ def _pi_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> An
         model_id=model_id,
         provider=provider,
         api=api,
+        **_request_cap(run_limits),
     )
 
 
-def _pi_0_57_1_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+def _request_cap(run_limits: NativeRunLimits | None) -> dict[str, int]:
+    return {} if run_limits is None else {"request_cap": run_limits.max_requests}
+
+
+def _pi_0_57_1_state(
+    task: str, system_prompt: str, bootstrap: Mapping[str, Any], run_limits: NativeRunLimits | None,
+) -> Any:
     for name in ("model_config", "current_date_time"):
         if name not in bootstrap:
             raise ValueError(f"native stream bootstrap missing {name}")
@@ -146,10 +214,13 @@ def _pi_0_57_1_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]
         api=model_config["api"],
         cost=model_config["cost"],
         current_date_time=bootstrap["current_date_time"],
+        **_request_cap(run_limits),
     )
 
 
-def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+def _omp_state(
+    task: str, system_prompt: str, bootstrap: Mapping[str, Any], run_limits: NativeRunLimits | None,
+) -> Any:
     # The worker observes the stock process-local date of the admitted instant.
     current_date = bootstrap.get("current_date")
     if type(current_date) is not str or not current_date:
@@ -162,13 +233,28 @@ def _omp_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> A
         capability_denials=bootstrap.get("capability_denials"),
         cwd=bootstrap.get("cwd"),
         current_date=current_date,
+        **_request_cap(run_limits),
     )
 
 
-def _openclaw_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
-    return openclaw_semantics.OpenClawSemanticsState(task, system_prompt, bootstrap)
+def _openclaw_state(
+    task: str, system_prompt: str, bootstrap: Mapping[str, Any], run_limits: NativeRunLimits | None,
+) -> Any:
+    if run_limits is None:
+        return openclaw_semantics.OpenClawSemanticsState(task, system_prompt, bootstrap)
+    # The kit admits four tool calls per model request (32 for 8); a ceiling
+    # run keeps that ratio for its own request cap.
+    return openclaw_semantics.OpenClawSemanticsState(
+        task, system_prompt, bootstrap,
+        max_requests=run_limits.max_requests,
+        episode_deadline_seconds=run_limits.episode_seconds,
+        max_tool_admissions=run_limits.max_requests
+        * (openclaw_semantics.TOOL_ADMISSIONS // openclaw_semantics.MAX_REQUESTS),
+    )
 
-def _omp_16_2_13_state(task: str, system_prompt: str, bootstrap: Mapping[str, Any]) -> Any:
+def _omp_16_2_13_state(
+    task: str, system_prompt: str, bootstrap: Mapping[str, Any], run_limits: NativeRunLimits | None,
+) -> Any:
     for name in ("model_config", "runtime_inputs", "length_aborted_message"):
         if name not in bootstrap:
             raise ValueError(f"native stream bootstrap missing {name}")
@@ -191,6 +277,7 @@ def _omp_16_2_13_state(task: str, system_prompt: str, bootstrap: Mapping[str, An
         current_date_time=current_date_time,
         length_aborted_message=bootstrap["length_aborted_message"],
         runtime_inputs=runtime_inputs,
+        **_request_cap(run_limits),
     )
 
 

@@ -378,6 +378,9 @@ class HermesActor:
         self._source_runtime: dict[str, Any] = {}
         self._sdk_clients: list[dict[str, Any]] = []
         self._source_flushes = 0
+        # Kit constants unless initialize admits a ceiling run's own controls.
+        self._max_requests = MAX_REQUESTS
+        self._episode_seconds = EPISODE_SECONDS
         self._deadline = time.monotonic() + EPISODE_SECONDS
         self._status = "RUNNING"
         self._stop_reason: str | None = None
@@ -447,7 +450,7 @@ class HermesActor:
         _require(
             type(remaining) in (int, float)
             and math.isfinite(remaining)
-            and 0 < remaining <= EPISODE_SECONDS,
+            and 0 < remaining <= self._episode_seconds,
             "invalid remaining episode time",
         )
         self._deadline = min(self._deadline, time.monotonic() + remaining)
@@ -647,10 +650,24 @@ class HermesActor:
             "task", "model_config", "schema_overlay", "remaining_seconds", "compaction",
         }
         _require(required_keys.issubset(set(payload)), "native payload fields differ")
-        _require(set(payload).issubset(required_keys | {"workspace", "scratch"}), "native payload fields differ")
+        _require(
+            set(payload).issubset(required_keys | {"workspace", "scratch", "execution_controls"}),
+            "native payload fields differ",
+        )
         workspace = payload.get("workspace") or os.environ.get("TERMINAL_CWD") or "/workspace"
         scratch = payload.get("scratch") or str(Path(workspace).parent / "scratch")
         Path(scratch).mkdir(parents=True, exist_ok=True)
+        if "execution_controls" in payload:
+            controls = payload["execution_controls"]
+            _require(
+                isinstance(controls, Mapping)
+                and set(controls) == {"max_requests", "episode_seconds"}
+                and all(type(value) is int and value > 0 for value in controls.values()),
+                "execution controls are malformed",
+            )
+            self._max_requests = controls["max_requests"]
+            self._episode_seconds = float(controls["episode_seconds"])
+            self._deadline = time.monotonic() + self._episode_seconds
         self._admit_deadline(payload)
         overlay = payload["schema_overlay"]
         _require(
@@ -701,7 +718,7 @@ class HermesActor:
             provider="custom",
             api_mode="chat_completions",
             model=model["model_name"],
-            max_iterations=MAX_REQUESTS,
+            max_iterations=self._max_requests,
             enabled_toolsets=["bb-hermes-native"],
             disabled_toolsets=[],
             save_trajectories=False,
@@ -845,7 +862,7 @@ class HermesActor:
                 "source": _SOURCE_ID,
                 "tool_order": list(_TOOL_NAMES),
                 "max_output_tokens": MAX_OUTPUT_TOKENS,
-                "max_iterations": MAX_REQUESTS,
+                "max_iterations": self._max_requests,
                 "provider_timeout_seconds": PROVIDER_SECONDS,
                 "native_tool_timeout_seconds": NATIVE_TOOL_SECONDS,
                 "terminal_timeout_seconds": TERMINAL_SECONDS,
@@ -1002,7 +1019,7 @@ class HermesActor:
             self._summary_requests += 1
         else:
             _require(
-                self._phase == "sampling" and self._requests < MAX_REQUESTS,
+                self._phase == "sampling" and self._requests < self._max_requests,
                 "provider request outside admitted sample",
             )
             self._requests += 1
@@ -1178,13 +1195,13 @@ class HermesActor:
             self._phase == "ready" and self._status == "RUNNING", "sample out of phase"
         )
         if (
-            self._requests >= MAX_REQUESTS
+            self._requests >= self._max_requests
             or self._loop_state.api_call_count >= self._state.max_iterations
             or self._state.iteration_budget.remaining <= 0
         ):
             self._stop(
                 "request_cap"
-                if self._requests >= MAX_REQUESTS
+                if self._requests >= self._max_requests
                 else "native_iteration_cap"
             )
             return self._result("sample_ready")
@@ -1300,7 +1317,7 @@ class HermesActor:
                 self._status = "ERROR"
             else:
                 self._stop("excluded_outer_error_retry")
-        if self._status == "RUNNING" and self._requests >= MAX_REQUESTS:
+        if self._status == "RUNNING" and self._requests >= self._max_requests:
             self._stop("request_cap")
         self._phase = "ready"
         if self._bridge_completed:

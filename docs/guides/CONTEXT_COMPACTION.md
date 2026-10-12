@@ -607,6 +607,41 @@ compaction. BreadBoard does not read `overlay.settings`; they only feed the
 overlay digest (`breadboard/product/harness/targets.py`). Compaction runs for
 that revision. The target files are immutable, so the entry stays.
 
+### Run budgets
+
+Kit revisions pin the stock capture budget: the plan's `max_turns` must equal
+the profile's request cap (8), and the native tool timeout must equal the
+profile's. An RL episode long enough to compact needs more requests than that.
+The RL successor revisions admit the plan's budget instead:
+
+| Successor | Predecessor |
+|---|---|
+| `pi-r5@0.57.1` | `pi-r4@0.57.1` |
+| `pi-r4@0.73.1` | `pi-r3@0.73.1` |
+| `oh-my-pi-r4@16.2.13` | `oh-my-pi-r3@16.2.13` |
+| `oh-my-pi-r3@18.1.17` | `oh-my-pi-r2@18.1.17` |
+| `openclaw-r3@2026.9.4` | `openclaw-r2@2026.9.4` |
+| `hermes-agent-r3@2026.9.11` | `hermes-agent-r2@2026.9.11` |
+
+Each successor's `native-config.json` sets `"budget_admission": "ceiling"`, and
+its `harness.yaml` sets `bounded_controls` to `max_model_calls: 100000` and
+`episode_wall_seconds: 10200`. Lowering copies those controls into the runtime
+profile; a native config that supplies its own `bounded_controls`, or names any
+other admission mode, does not compile. When the episode opens, the Conductor
+(`admit_run_limits` in `native_stream_profiles.py`) requires:
+- `0 < max_turns <= max_model_calls`;
+- `0 < ceil(resources.wall_time_ms / 1000) <= episode_wall_seconds`;
+- `action_timeout_ms` equal to the profile's tool timeout: Pi and OpenClaw
+  35000, OMP 16.2.13, OMP 18.1.17 and Hermes 40000.
+
+Otherwise the open fails with `compiled_ir_mismatch` before any request. The
+admitted plan then sets the source's own request cap and episode deadline: Pi
+and OMP `request_cap`; OpenClaw `max_requests`, `episode_deadline_seconds` and
+a tool-admission cap scaled by the same ratio as the kit (4 per request); and
+Hermes `max_iterations`, sent to the worker in the sealed `initialize` payload
+as `execution_controls`. Kit revisions and the predecessors keep exact
+equality and compile byte-identically.
+
 ### Phases
 
 The Conductor side is `breadboard/rl/harness/runners/native_compaction.py`. At

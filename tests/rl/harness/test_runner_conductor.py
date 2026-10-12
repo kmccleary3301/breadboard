@@ -4407,11 +4407,11 @@ def _native_close_test_case(
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=omp_semantics if agent_end_compaction else pi_semantics,
         state_factory=(
-            lambda task, system_prompt, bootstrap: omp_semantics.OMPSemanticsState(
+            lambda task, system_prompt, bootstrap, run_limits: omp_semantics.OMPSemanticsState(
                 task=task, system_prompt=system_prompt, tool_schemas=(), request_cap=3,
             )
         ) if agent_end_compaction else (
-            lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
+            lambda task, system_prompt, bootstrap, run_limits: pi_semantics.PiSemanticsState(
                 task=task, system_prompt=system_prompt, request_cap=2,
                 model_id="model-a", provider="openai",
             )
@@ -4645,6 +4645,122 @@ async def test_native_stream_unverified_runtime_retirement_fails_before_effects(
     assert captured.value.code == "native_response_invalid"
     assert tools.operations.count("retire_runtime") == 1
     assert tools.effect_measurements == 0
+
+
+def _ceiling(
+    *, max_model_calls: int = 5, episode_wall_seconds: int = 60, mode: str = "ceiling",
+) -> dict[str, Any]:
+    # The fixture plan's resources grant a 60 s wall.
+    return {
+        "budget_admission": mode,
+        "bounded_controls": {"max_model_calls": max_model_calls, "episode_wall_seconds": episode_wall_seconds},
+    }
+
+
+async def test_native_stream_ceiling_target_runs_past_the_kit_request_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    from breadboard.rl.harness.native_stream_profiles import NativeRunLimits
+    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
+
+    plan, client, tools = _native_close_test_case(
+        monkeypatch, runtime_profile_override=_ceiling(), limit_updates_override={"max_turns": 5},
+    )
+    registry = conductor_module.NATIVE_STREAM_PROFILES
+    kit = registry[PI_RESPONSE_CONSUMER_ID]
+    received: list[NativeRunLimits | None] = []
+
+    def state_factory(task: str, system_prompt: str, bootstrap: Any, run_limits: NativeRunLimits | None) -> Any:
+        received.append(run_limits)
+        assert run_limits is not None
+        return pi_semantics.PiSemanticsState(
+            task=task, system_prompt=system_prompt, request_cap=run_limits.max_requests,
+            model_id="model-a", provider="openai",
+        )
+
+    registry[PI_RESPONSE_CONSUMER_ID] = replace(kit, state_factory=state_factory)
+    session, *_ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert kit.max_turns == 1
+    assert received == [NativeRunLimits(max_requests=5, episode_seconds=60)]
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert result.turn_count == 2 and len(client.requests) == 2
+
+
+@pytest.mark.parametrize(("ceiling", "limit_updates", "action_timeout_ms"), [
+    (_ceiling(max_model_calls=4), {"max_turns": 5}, 100),
+    (_ceiling(episode_wall_seconds=59), {"max_turns": 5}, 100),
+    (_ceiling(), {"max_turns": 5}, 200),
+    (_ceiling(mode="unbounded"), {"max_turns": 5}, 100),
+    ({"budget_admission": "ceiling"}, {"max_turns": 5}, 100),
+], ids=["requests_above_ceiling", "wall_above_ceiling", "tool_timeout_differs", "unknown_mode", "no_controls"])
+async def test_native_stream_ceiling_refuses_plans_outside_the_target_before_any_request(
+    monkeypatch: pytest.MonkeyPatch,
+    ceiling: dict[str, Any],
+    limit_updates: dict[str, int],
+    action_timeout_ms: int,
+) -> None:
+    plan, client, tools = _native_close_test_case(
+        monkeypatch, runtime_profile_override=ceiling, limit_updates_override=limit_updates,
+        action_timeout_ms=action_timeout_ms,
+    )
+    with pytest.raises(RunnerPlanError) as captured:
+        await _open(plan=plan, client=client, tools=tools)
+    assert captured.value.code == "compiled_ir_mismatch"
+    assert client.requests == [] and tools.operations == []
+
+
+async def test_native_stream_kit_target_requires_the_profile_request_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, client, tools = _native_close_test_case(monkeypatch, limit_updates_override={"max_turns": 5})
+    session, *_ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        with pytest.raises(RunnerPlanError, match="native source runtime controls differ") as captured:
+            await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert captured.value.code == "compiled_ir_mismatch"
+    assert client.requests == []
+
+
+_ZERO_COST = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+_FACTORY_BOOTSTRAPS = {
+    "pi@0.73.1": {"model_config": {"id": "model-a", "provider": "openai"}},
+    "pi-r3@0.57.1": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "current_date_time": "2026-09-26",
+    },
+    "oh-my-pi@18.1.17": {"current_date": "2026-09-26"},
+    "oh-my-pi-r3@16.2.13": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "runtime_inputs": {"cwd": "/w", "home": "/h", "current_date": "2026-09-26", "package_dir": "/p"},
+        "length_aborted_message": "aborted",
+        "current_date_time": "2026-09-26",
+    },
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_FACTORY_BOOTSTRAPS))
+def test_production_state_admits_the_ninth_request_only_under_a_ceiling(target_id: str) -> None:
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES, NativeRunLimits
+
+    (profile,) = (item for item in NATIVE_STREAM_PROFILES.values() if item.target_id == target_id)
+    bootstrap = _FACTORY_BOOTSTRAPS[target_id]
+    kit = profile.state_factory("task", "system", bootstrap, None)
+    ceiling = profile.state_factory("task", "system", bootstrap, NativeRunLimits(max_requests=12, episode_seconds=600))
+    for state in (kit, ceiling):
+        # Eight requests already committed: the kit cap is spent.
+        state.request_count = state.stream_fn_issued = profile.max_turns
+    assert profile.max_turns == 8
+    assert kit.begin_query() is not None and kit.exit_status == "RequestLimitExceeded"
+    assert ceiling.begin_query() is None and ceiling.exit_status is None
 
 
 class _OpenHandsTraceClient(RecordingPolicyClient):

@@ -44,6 +44,23 @@ def test_installed_wheel_lowers_compaction_targets_and_discovers_native_workspac
             assert lowered.system_prompt == baseline.system_prompt, target_id
             assert lowered.runtime_profile["compaction"] is True, target_id
 
+        successors = {
+            "pi-r5@0.57.1": "pi-r4@0.57.1",
+            "pi-r4@0.73.1": "pi-r3@0.73.1",
+            "oh-my-pi-r4@16.2.13": "oh-my-pi-r3@16.2.13",
+            "oh-my-pi-r3@18.1.17": "oh-my-pi-r2@18.1.17",
+            "openclaw-r3@2026.9.4": "openclaw-r2@2026.9.4",
+            "hermes-agent-r3@2026.9.11": "hermes-agent-r2@2026.9.11",
+        }
+        for target_id, predecessor_id in successors.items():
+            lowered = lower_e4_target(load_e4_target(target_id), {})
+            baseline = lower_e4_target(load_e4_target(predecessor_id), {})
+            assert thaw_json(lowered.tools) == thaw_json(baseline.tools), target_id
+            assert lowered.runtime_profile["budget_admission"] == "ceiling", target_id
+            controls = thaw_json(lowered.runtime_profile["bounded_controls"])
+            assert (controls["max_model_calls"], controls["episode_wall_seconds"]) == (100000, 10200), target_id
+            assert "budget_admission" not in baseline.runtime_profile, predecessor_id
+
         # Resolve the real installed workspace without building or launching helpers.
         # workspace_target reads every manifest, lockfile, and Rust entrypoint;
         # a wheel missing any member fails through NativeHelperUnavailable.

@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import os
+import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -67,6 +69,7 @@ class FakeNativePort:
         if operation == "initialize":
             self.init_count += 1
             self.schema_overlay = payload.get("schema_overlay")
+            self.initialize_payload = dict(payload)
             if self.init_count > 1:
                 raise AssertionError("initialize invoked twice")
             return self._checkpoint()
@@ -140,9 +143,9 @@ class FakeBinding:
         self.bound_tools = tools
 
 def _configure_session(
-    session: HarnessSession, tools: FakeNativePort, *, overlay: bool = True,
+    session: HarnessSession, tools: FakeNativePort, *, overlay: bool = True, max_turns: int = 8,
 ) -> None:
-    limits = SimpleNamespace(max_turns=8, action_timeout_ms=40_000, transcript_bytes=1_000_000)
+    limits = SimpleNamespace(max_turns=max_turns, action_timeout_ms=40_000, transcript_bytes=1_000_000)
     session._open_request = SimpleNamespace(
         episode_id="hermes-regression", effective_plan_digest="sha256:" + "a" * 64,
         effective_plan=SimpleNamespace(effective_capabilities=SimpleNamespace(limits=limits)),
@@ -160,15 +163,17 @@ def _configure_session(
     session._native_cleanup_outcome = conductor_module.NativeCleanupOutcome(False, None, None, None)
 
 
-async def _run(*, overlay: bool = True) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
+async def _run(
+    *, overlay: bool = True, profile: Any = None, max_turns: int = 8,
+) -> tuple[Any, FakeNativePort, list[tuple[str, str]]]:
     tools = FakeNativePort()
     log = tools.log
     session = HarnessSession(log)
-    _configure_session(session, tools, overlay=overlay)
+    _configure_session(session, tools, overlay=overlay, max_turns=max_turns)
 
     result = await session._loop_native_stream(
         conductor_module.ConductorRunRequest({"prompt": "test"}),
-        conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
+        profile or conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID],
     )
     if overlay:
         assert tools.schema_overlay == {"read_file": {}, "terminal": {}}
@@ -304,6 +309,118 @@ async def test_missing_sealed_overlay_prevents_worker_initialization() -> None:
     with pytest.raises(conductor_module.RunnerPlanError, match="runtime controls differ"):
         await _run(overlay=False)
 
+
+@pytest.mark.asyncio
+async def test_ceiling_run_hands_the_worker_its_request_cap_and_wall() -> None:
+    from breadboard.rl.harness.native_stream_profiles import admit_run_limits
+
+    kit = conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID]
+    profile = admit_run_limits(
+        kit,
+        {"budget_admission": "ceiling", "bounded_controls": {"max_model_calls": 100_000, "episode_wall_seconds": 10_200}},
+        max_turns=50, action_timeout_ms=40_000, wall_time_ms=599_001,
+    )
+    result, tools, _ = await _run(profile=profile, max_turns=50)
+    assert tools.initialize_payload["execution_controls"] == {"max_requests": 50, "episode_seconds": 600}
+    assert result.response["replay_trace"]["controls"]["max_iterations"] == 50
+    # The kit run keeps the worker's constants and its sealed initialize fields.
+    _, kit_tools, _ = await _run()
+    assert "execution_controls" not in kit_tools.initialize_payload
+    assert kit.trace_controls["max_iterations"] == 8
+
+
+def _initialize_until_overlay(actor: Any, tmp_path: Path, **extra: Any) -> None:
+    # The overlay check follows limit admission; an empty overlay stops there
+    # before the pinned source is imported.
+    with pytest.raises(hermes_worker.HermesWorkerError, match="sealed schema overlay"):
+        actor._initialize({
+            "task": "t", "model_config": {}, "schema_overlay": {}, "compaction": False,
+            "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
+            **extra,
+        })
+
+
+def test_hermes_worker_admits_a_ceiling_wall_only_with_execution_controls(tmp_path: Path) -> None:
+    kit = hermes_worker.HermesActor(channel=None)
+    with pytest.raises(hermes_worker.HermesWorkerError, match="invalid remaining episode time"):
+        kit._initialize({
+            "task": "t", "model_config": {}, "schema_overlay": {}, "compaction": False,
+            "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
+            "remaining_seconds": 3000,
+        })
+    actor = hermes_worker.HermesActor(channel=None)
+    _initialize_until_overlay(
+        actor, tmp_path, remaining_seconds=3000,
+        execution_controls={"max_requests": 50, "episode_seconds": 3600},
+    )
+    assert actor._max_requests == 50
+    assert 2990 < actor._remaining() <= 3000
+    for malformed in ({"max_requests": 50}, {"max_requests": 0, "episode_seconds": 60}, {"max_requests": True, "episode_seconds": 60}):
+        with pytest.raises(hermes_worker.HermesWorkerError, match="execution controls are malformed"):
+            hermes_worker.HermesActor(channel=None)._initialize({
+                "task": "t", "model_config": {}, "schema_overlay": {}, "compaction": False,
+                "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
+                "remaining_seconds": 30, "execution_controls": malformed,
+            })
+
+
+# The worker owns its process (it points HOME at the episode scratch), so each
+# initialization runs in a fresh interpreter.
+_SOURCE_INIT = """
+import json, sys
+from pathlib import Path
+from breadboard.rl.harness import hermes_worker
+
+class Channel:
+    digest = None
+    def respond(self, result):
+        self.digest = result["history_digest"]
+    def receive(self):
+        return {"operation": "history_ack", "payload": {"history_digest": self.digest}}
+
+payload = json.loads(sys.argv[1])
+actor = hermes_worker.HermesActor(Channel())
+result = actor._initialize(payload)
+print(json.dumps({
+    "max_iterations": actor._state.max_iterations,
+    "iteration_budget": actor._state.iteration_budget.max_total,
+    "source_runtime_max_iterations": result["source_runtime"]["max_iterations"],
+    "remaining_seconds": actor._remaining(),
+}))
+"""
+
+
+@pytest.mark.parametrize(("controls", "remaining_seconds", "expected_cap"), [
+    (None, 100, 8),
+    ({"max_requests": 50, "episode_seconds": 3600}, 3000, 50),
+], ids=["kit", "ceiling"])
+def test_stock_hermes_runs_with_the_admitted_request_cap(
+    tmp_path: Path, controls: dict[str, int] | None, remaining_seconds: int, expected_cap: int,
+) -> None:
+    from tests.rl.harness.native_dependencies import require_hermes_worker_runtime
+
+    require_hermes_worker_runtime()
+    target = Path(__file__).resolve().parents[3] / "config/e4_targets/hermes_agent/2026.9.11-r3/native-config.json"
+    (tmp_path / "workspace").mkdir()
+    payload = {
+        "task": "t", "compaction": False, "remaining_seconds": remaining_seconds,
+        "model_config": {
+            "model_name": "m", "model_canonical_name": None, "max_input_tokens": 131_072,
+            "base_url": "http://127.0.0.1:9/v1",
+        },
+        "schema_overlay": json.loads(target.read_bytes())["schema_overlay"],
+        "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
+        **({} if controls is None else {"execution_controls": controls}),
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", _SOURCE_INIT, json.dumps(payload)],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    observed = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert observed["max_iterations"] == observed["iteration_budget"] == expected_cap
+    assert observed["source_runtime_max_iterations"] == expected_cap
+    assert remaining_seconds - 10 < observed["remaining_seconds"] <= remaining_seconds
 
 def test_mismatched_native_schema_sha_fails_closed(tmp_path: Path) -> None:
 
