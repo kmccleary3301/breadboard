@@ -1,8 +1,10 @@
 """Portable locations and selective guards for optional pinned stock runtimes."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import shutil
+import site
 from pathlib import Path
 
 import pytest
@@ -44,6 +46,26 @@ def require_hermes() -> Path:
     if not (source / "agent/context_compressor.py").is_file():
         pytest.skip(f"pinned Hermes source is unavailable at {source}")
     return source
+
+
+def require_hermes_worker_runtime() -> None:
+    """Skip unless the Hermes worker can initialize stock Hermes in this interpreter.
+
+    Outside a sealed native root the worker reads the pinned source from the
+    user cache and admits SDK modules only from the interpreter's
+    site-packages (``hermes_worker.py`` ``_source_import``).
+    """
+    from breadboard.rl.harness import hermes_worker
+
+    source = _CACHE / hermes_worker._SOURCE_ID
+    if not (source / "run_agent.py").is_file():
+        pytest.skip(f"pinned Hermes source is unavailable at {source}")
+    sites = [Path(path).resolve() for path in site.getsitepackages()]
+    for name in ("httpx", "openai"):
+        spec = importlib.util.find_spec(name)
+        origin = None if spec is None or spec.origin is None else Path(spec.origin).resolve()
+        if origin is None or not any(origin.is_relative_to(path) for path in sites):
+            pytest.skip(f"the Hermes worker admits SDK modules only from {sites}; {name} is not installed there")
 
 
 def resolve_pi(version: str) -> Path:

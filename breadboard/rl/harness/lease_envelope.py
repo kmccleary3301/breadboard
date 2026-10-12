@@ -625,10 +625,13 @@ def _write_map(path: str, value: str) -> None:
         stream.write(value)
 
 
-def _enter_user_namespace() -> None:
+def _enter_user_namespace(uid: int, gid: int) -> None:
+    """Map namespace root to the caller's outer IDs, read before the unshare.
+
+    Until the maps are written, geteuid()/getegid() inside the new user
+    namespace report the overflow IDs, which no map may name.
+    """
     _write_map("/proc/self/setgroups", "deny\n")
-    uid = os.geteuid()
-    gid = os.getegid()
     _write_map("/proc/self/uid_map", f"0 {uid} 1\n")
     _write_map("/proc/self/gid_map", f"0 {gid} 1\n")
 
@@ -653,8 +656,9 @@ def preflight_host_containment() -> None:
             except OSError as exc:
                 if exc.errno != errno.EPERM:
                     raise
+                uid, gid = os.geteuid(), os.getegid()
                 _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
-                _enter_user_namespace()
+                _enter_user_namespace(uid, gid)
         except OSError:
             os._exit(1)
         os._exit(0)
@@ -1234,8 +1238,9 @@ def _launcher_main(
             if exc.errno != errno.EPERM:
                 raise
             mode = "userns"
+            uid, gid = os.geteuid(), os.getegid()
             _unshare(_CLONE_NEWUSER | _CLONE_NEWPID | _CLONE_NEWNS | _CLONE_NEWNET)
-            _enter_user_namespace()
+            _enter_user_namespace(uid, gid)
         phase = "fork_pid1"
         child = os.fork()
         if child == 0:

@@ -252,3 +252,20 @@ def test_length_stop_preserves_source_identity_until_native_retry_verdict() -> N
     assert state.native_stop_reason is None
     assert state.stop_reason is None
     assert state.request_count == 0
+
+
+def test_ceiling_run_state_admits_requests_past_the_kit_cap() -> None:
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES, NativeRunLimits
+    from breadboard.rl.harness.runners.openclaw_semantics import OPENCLAW_CONSUMER_ID
+
+    factory = NATIVE_STREAM_PROFILES[OPENCLAW_CONSUMER_ID].state_factory
+    kit = factory("task", "system", {}, None)
+    ceiling = factory("task", "system", {}, NativeRunLimits(max_requests=12, episode_seconds=600))
+    for _ in range(8):
+        assert kit.begin_query() is None and ceiling.begin_query() is None
+    assert kit.begin_query()["error"] == "bbe4 capture request cap"
+    for _ in range(4):
+        assert ceiling.begin_query() is None
+    assert ceiling.begin_query()["error"] == "bbe4 capture request cap"
+    assert (kit.max_tool_admissions, kit.episode_deadline_seconds) == (32, 120)
+    assert (ceiling.max_tool_admissions, ceiling.episode_deadline_seconds) == (48, 600)

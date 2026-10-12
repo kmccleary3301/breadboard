@@ -87,6 +87,31 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.hermes-agent.v2026.9.11",
         "33c6f2c61b6407cb6832193e68f455cdb2cf33f6ab10fd8a2e9c2c00e3dbe6c0",
     ),
+    # RL execution-ceiling revisions (native-config budget_admission: ceiling).
+    "pi-r5@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "8cbd319478dae0b48b569fc50603c6e412626267b7f8d9e7cfd827a66e882bcf",
+    ),
+    "pi-r4@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "db32a3bb3241ac0b6226a4366f773bd5dbc6f05f3bf5b68c1e8b7f49ed695ee0",
+    ),
+    "oh-my-pi-r4@16.2.13": (
+        "breadboard.oh-my-pi.v16.2.13",
+        "81dd55e062cbfc44829138955d16605515841557f42cf9c332ef96b15fef9c57",
+    ),
+    "oh-my-pi-r3@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "baf2b23f23188144a69ab6d0670b1403de1e7a5973c1d1a29e2165cad65c99ef",
+    ),
+    "openclaw-r3@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "76318346322b02370b3978c516290d934208b599833ea52d69729b4570b11eef",
+    ),
+    "hermes-agent-r3@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "4cd9bc0c310dbc4c7fc2062dc492641bf5127c31b4ef69d632c7d1fa6edd1eef",
+    ),
 })
 
 
@@ -333,7 +358,24 @@ def _lower_worker_target(
         raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
-    policy_provider = harness.get("policy", {}).get("provider", {})
+    policy = harness.get("policy", {})
+    policy_provider = policy.get("provider", {})
+    # An explicit ceiling revision admits per-run limits up to its verified
+    # harness controls; the Conductor reads them from the compiled profile.
+    # Without the marker the source profile's exact kit limits apply.
+    if "budget_admission" in native:
+        controls = policy.get("execution", {}).get("bounded_controls")
+        if (
+            native["budget_admission"] != "ceiling"
+            or "bounded_controls" in native
+            or not isinstance(controls, Mapping)
+            or any(
+                type(controls.get(name)) is not int or controls[name] <= 0
+                for name in ("max_model_calls", "episode_wall_seconds", "single_tool_wall_seconds")
+            )
+        ):
+            raise HarnessCompileError("E4 budget admission requires 'ceiling' and positive harness bounded_controls")
+        native["bounded_controls"] = copy_harness_json(controls, freeze=False)
     from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
 
     stream_profile = NATIVE_STREAM_PROFILES.get(native.get("consumer_id"))
@@ -347,7 +389,7 @@ def _lower_worker_target(
     if compaction_enabled:
         if "agent" in native and isinstance(native["agent"], dict):
             native["agent"]["compaction_enabled"] = True
-    if package.target_id in {"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17"}:
+    if package.target_id in {"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17", "oh-my-pi-r3@18.1.17"}:
         required_native_fields = (
             "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
             "model_registry",

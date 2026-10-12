@@ -36,13 +36,19 @@ NATIVE_CHAT_RESPONSE_CONSUMERS: Final = frozenset({
 OPENCLAW_RESPONSE_CONSUMER_ID: Final = "breadboard.openclaw.native-chat.v1"
 NATIVE_TARGET_IDS: Final[MappingProxyType[str, frozenset[str]]] = MappingProxyType({
     MINI_RESPONSE_CONSUMER_ID: frozenset({"mini-swe-agent@2.4.6"}),
-    PI_RESPONSE_CONSUMER_ID: frozenset({"pi@0.73.1", "pi-r2@0.73.1", "pi-r3@0.73.1"}),
-    PI_0_57_1_RESPONSE_CONSUMER_ID: frozenset({"pi-r3@0.57.1", "pi-r4@0.57.1"}),
-    OMP_RESPONSE_CONSUMER_ID: frozenset({"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17"}),
-    OMP_16_2_13_RESPONSE_CONSUMER_ID: frozenset({"oh-my-pi-r2@16.2.13", "oh-my-pi-r3@16.2.13"}),
+    PI_RESPONSE_CONSUMER_ID: frozenset({"pi@0.73.1", "pi-r2@0.73.1", "pi-r3@0.73.1", "pi-r4@0.73.1"}),
+    PI_0_57_1_RESPONSE_CONSUMER_ID: frozenset({"pi-r3@0.57.1", "pi-r4@0.57.1", "pi-r5@0.57.1"}),
+    OMP_RESPONSE_CONSUMER_ID: frozenset({"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17", "oh-my-pi-r3@18.1.17"}),
+    OMP_16_2_13_RESPONSE_CONSUMER_ID: frozenset({
+        "oh-my-pi-r2@16.2.13", "oh-my-pi-r3@16.2.13", "oh-my-pi-r4@16.2.13",
+    }),
     OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"openhands-sdk@1.47.0"}),
-    HERMES_RESPONSE_CONSUMER_ID: frozenset({"hermes-agent@2026.9.11", "hermes-agent-r2@2026.9.11"}),
-    OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({"openclaw@2026.9.4", "openclaw-r2@2026.9.4"}),
+    HERMES_RESPONSE_CONSUMER_ID: frozenset({
+        "hermes-agent@2026.9.11", "hermes-agent-r2@2026.9.11", "hermes-agent-r3@2026.9.11",
+    }),
+    OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({
+        "openclaw@2026.9.4", "openclaw-r2@2026.9.4", "openclaw-r3@2026.9.4",
+    }),
 })
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024

@@ -1,0 +1,22 @@
+{
+  "repository": "https://github.com/badlogic/pi-mono",
+  "package": "@mariozechner/pi-coding-agent",
+  "version": "0.73.1",
+  "commit": "781152fc24841dc54b22284514604048ebe5e2c9",
+  "source_archive": "03_pi_mono_source_0.73.1_781152fc.zip",
+  "source_archive_sha256": "2dcb6f94bcae879f19e5c4e445c5944304ea4e48181a0ee86995123fb4fca929",
+  "published_package": "04_pi_coding_agent_npm_0.73.1.tgz",
+  "published_package_sha256": "7bf5d492670c04fd7c599dee7e6eaabff964084affd216766107e6741df7a2e1",
+  "native_loop": "Pi agent-loop semantics executed by BreadBoard PiSemanticsState; upstream process is not invoked",
+  "source_files": [
+    "packages/coding-agent/src/core/system-prompt.ts",
+    "packages/coding-agent/src/core/tools/read.ts",
+    "packages/coding-agent/src/core/tools/bash.ts",
+    "packages/coding-agent/src/core/tools/edit.ts",
+    "packages/coding-agent/src/core/tools/write.ts",
+    "packages/coding-agent/src/core/tools/file-mutation-queue.ts",
+    "packages/agent/src/agent-loop.ts",
+    "packages/ai/src/utils/json-parse.ts",
+    "packages/ai/src/utils/validation.ts"
+  ]
+}

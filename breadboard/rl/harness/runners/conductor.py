@@ -718,6 +718,8 @@ class _RuntimeProjection:
     tool_results_as_text: bool = False
     source_profile: FrozenJsonObject | None = None
     source_consumer_id: str | None = None
+    # The native-stream profile this run executes under (admit_run_limits).
+    stream_profile: native_stream_profiles.NativeStreamProfile | None = None
 
 
 
@@ -780,6 +782,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
     target = metadata.get("e4_target") if isinstance(metadata, Mapping) else None
     source_profile = None
     source_consumer_id = None
+    run_profile = None
     expected_api_variant = "responses"
     if isinstance(target, Mapping) and (
         target.get("renderer_id") in {MINI_RESPONSE_CONSUMER_ID, *NATIVE_CHAT_RESPONSE_CONSUMERS}
@@ -805,6 +808,19 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         ):
             raise _plan_error(request, "source-native profile is invalid", "compiled_ir_mismatch")
         source_profile = target["runtime_profile"]
+        if stream_profile is not None:
+            # Before the policy claim: a plan outside the target's admitted
+            # limits never reaches a provider or a native worker.
+            capabilities = request.effective_plan.effective_capabilities
+            try:
+                run_profile = native_stream_profiles.admit_run_limits(
+                    stream_profile, source_profile,
+                    max_turns=capabilities.limits.max_turns,
+                    action_timeout_ms=capabilities.limits.action_timeout_ms,
+                    wall_time_ms=capabilities.resources.wall_time_ms,
+                )
+            except ValueError as exc:
+                raise _plan_error(request, f"native source runtime controls differ: {exc}", "compiled_ir_mismatch") from exc
     providers = semantic.get("providers")
     if not isinstance(providers, Mapping):
         raise _plan_error(request, "compiled provider IR is invalid", "compiled_ir_mismatch")
@@ -1147,7 +1163,7 @@ def _project_ir(request: RunnerOpenRequest) -> _RuntimeProjection:
         tuple(projected_tools), responses_use_developer_role,
         prompts["tool_prompt_mode"], tool_errors_as_observations,
         tool_results_as_text,
-        source_profile, source_consumer_id,
+        source_profile, source_consumer_id, run_profile,
     )
 
 
@@ -1682,7 +1698,7 @@ class _ConductorSession:
         if self._projection.source_consumer_id == OPENHANDS_RESPONSE_CONSUMER_ID:
             async with asyncio.timeout(180):
                 return await self._loop_openhands(request)
-        stream_profile = NATIVE_STREAM_PROFILES.get(self._projection.source_consumer_id)
+        stream_profile = self._projection.stream_profile
         if stream_profile is not None:
             async with asyncio.timeout(stream_profile.episode_timeout_seconds):
                 return await self._loop_native_stream(request, stream_profile)
@@ -2681,7 +2697,7 @@ class _ConductorSession:
             system_prompt, tuple(tool_schemas),
             accept_truncated_stream=profile.accepts_truncated_stream,
         )
-        state = profile.state_factory(task, system_prompt, bootstrap)
+        state = profile.state_factory(task, system_prompt, bootstrap, profile.run_limits)
         trace_requests: list[dict[str, Any]] = []
 
         async def commit(
@@ -3653,6 +3669,12 @@ class _ConductorSession:
                     for name in profile.sealed_initialize_fields
                 },
                 **({"compaction": compaction_enabled} if profile.compaction_in_source else {}),
+                # A ceiling-admitted run hands the worker its own request cap
+                # and wall; without it the worker keeps its kit constants.
+                **({"execution_controls": {
+                    "max_requests": profile.run_limits.max_requests,
+                    "episode_seconds": profile.run_limits.episode_seconds,
+                }} if profile.run_limits is not None else {}),
             }, "initial", None,
         )
         source_runtime = initialized.get("source_runtime")

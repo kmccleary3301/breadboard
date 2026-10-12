@@ -268,7 +268,7 @@ def test_profile_entry_declares_0_57_1_phases() -> None:
     assert profile.parse_arguments_phase == "parse_streaming_json_batch"
     assert profile.accepts_truncated_stream is False and profile.provider_failure_terminates is True
     with pytest.raises(ValueError):
-        profile.state_factory("t", "s", {"model_config": {"id": "m", "provider": "p", "api": "a", "cost": ZERO_COST}})
+        profile.state_factory("t", "s", {"model_config": {"id": "m", "provider": "p", "api": "a", "cost": ZERO_COST}}, None)
 
 
 class _Pi057Port(rc._NativeCloseTestPort):
@@ -300,7 +300,7 @@ async def _run(monkeypatch: pytest.MonkeyPatch, port: _Pi057Port, *, error: Base
         registry[PI_RESPONSE_CONSUMER_ID],
         provider_failure_terminates=True,
         provider_failure_phase="project_provider_failure",
-        state_factory=lambda task, system_prompt, bootstrap: _state(task=task, system_prompt=system_prompt),
+        state_factory=lambda task, system_prompt, bootstrap, run_limits: _state(task=task, system_prompt=system_prompt),
     )
     client.invoke_error = error
     session, _, _, _, _, _ = await rc._open(plan=plan, client=client, tools=port)
