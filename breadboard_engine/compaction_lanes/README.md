@@ -100,9 +100,10 @@ alternate escaping in its unchanged output or notice is not normalized away.
 
 The report retains the original raw difference, edited content, source
 authority and admitted ceiling. Each stock/actor value change additionally
-records `start`/`end` UTF8 byte offsets into its original retained request,
-`original_bytes` hex, and replacement `projected_bytes` hex. The existing
-projection parser supplies the JSON-pointer spans; no second parser or
+records `start`/`end` UTF8 byte offsets of the original value in its retained
+request and `original_bytes` hex; replacements also record `projected_bytes`
+hex. Removals (summary `tools`/cap guards) record only the removed value span.
+The existing projection parser supplies the JSON-pointer spans; no second parser or
 whole-request canonicalization is used. Arbitrary suffixes, changed notices, wrong
 call timeouts, duplicate calls/headers or ambiguous argument objects do not
 qualify.
@@ -121,10 +122,11 @@ stock's native assistant `stopReason: error`, actor `policy_incomplete` and
 the committed native error termination/message in the actor replay trace.
 Stock must exit normally, or the RPC capturer must record its own SIGTERM
 request after observing source settlement and `agent_end`, followed by a
-successful owned-process wait with the actual `-15` return code. That exception
-requires the owned PID/controller, exact observed settlement event, no reader
-error or kill escalation, and preserved native terminal outcome evidence.
-Unexplained signals or other negative exit codes fail.
+successful owned-process wait with the actual `-15` return code, or `143` when
+stock's own handler exits (`dist/modes/rpc/rpc-mode.js:265-277`, `shutdown(143)`).
+That exception requires the owned PID/controller, exact observed settlement
+event, no reader error or kill escalation, and preserved native terminal outcome
+evidence. Unexplained signals or other exit codes fail.
 Missing terminal evidence, an opaque actor exception or an unexpected native outcome
 fails acceptance even if every request byte matches after named guards.
 Error-message wording is retained as evidence but is not copied or compared.

@@ -568,19 +568,24 @@ def _upstream_date_time(case: str) -> str:
 
 # --- per-case replay verdicts -------------------------------------------------
 
-DECLARED_REPLAY_CASES = (
-    "declared__p0_text_stop",
-    "declared__p1_all_tools_sequence",
-    "declared__p2_fragmented_malformed_repair",
-    "declared__p3_context_compaction",
-    "declared__p5_retry_default_http500_exhausted",
-    "declared__p6_disabled_resources_and_agents_md",
-    "declared__p7_retry_session_recovers",
-    "declared__p8_retry_sdk_recovers",
-)
+# Native bodies keep the pinned SDK's member order, so only transport headers
+# differ in every case; each case's other named divergences are exact.
+BASE_DIVERGENCES = ["sdk_transport_headers"]
+EXPECTED_DIVERGENCES = {
+    "declared__p0_text_stop": BASE_DIVERGENCES,
+    "declared__p1_all_tools_sequence": BASE_DIVERGENCES + ["tool_download_attempt", "workspace_regular_files_only"],
+    # Pinned parseStreamingJson/validateToolArguments run in the worker, so the
+    # unknown-tool, malformed and split calls match upstream with no repair divergence.
+    "declared__p2_fragmented_malformed_repair": BASE_DIVERGENCES,
+    "declared__p3_context_compaction": BASE_DIVERGENCES + ["compaction_start_then_exit"],
+    "declared__p5_retry_default_http500_exhausted": BASE_DIVERGENCES + ["sdk_hidden_transport_retry"],
+    "declared__p6_disabled_resources_and_agents_md": BASE_DIVERGENCES,
+    "declared__p7_retry_session_recovers": BASE_DIVERGENCES + ["sdk_hidden_transport_retry"],
+    "declared__p8_retry_sdk_recovers": BASE_DIVERGENCES + ["sdk_hidden_transport_retry"],
+}
 
 
-@pytest.mark.parametrize("case", DECLARED_REPLAY_CASES)
+@pytest.mark.parametrize("case", sorted(EXPECTED_DIVERGENCES))
 def test_declared_case_replays_through_the_conductor(tmp_path: Path, case: str) -> None:
     episode = _run_case(tmp_path, case)
     assert episode.error is None
@@ -589,11 +594,8 @@ def test_declared_case_replays_through_the_conductor(tmp_path: Path, case: str) 
     assert [request["body"] for request in episode.requests] == trace["requests"]
     report = _compare(case, trace)
     assert report["verdict"] == "named_divergence", report["findings"]
-    if case in {
-        "declared__p5_retry_default_http500_exhausted",
-        "declared__p7_retry_session_recovers",
-        "declared__p8_retry_sdk_recovers",
-    }:
+    assert [item["name"] for item in report["divergences"]] == EXPECTED_DIVERGENCES[case]
+    if "sdk_hidden_transport_retry" in EXPECTED_DIVERGENCES[case]:
         assert episode.result.termination == RunnerTermination.POLICY_INCOMPLETE
         assert trace["termination"] == {"kind": "error", "native_stop_reason": "error"}
 

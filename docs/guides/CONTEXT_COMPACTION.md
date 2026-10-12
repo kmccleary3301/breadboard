@@ -713,6 +713,8 @@ never invokes Cargo; missing helpers fail closed through the tool boundary.
 The closing subtree rejects resume and input until resource cleanup, worker
 drain and shutdown persistence complete. Failed cleanup keeps admission blocked
 until a successful close retry. Sequential resume remains supported afterward.
+A stale command collector cannot remove or release a newer session that reused
+its numeric process ID; cleanup applies only to the collector's own entry.
 
 Installed wheels include the target revisions, prompt and context resources,
 tool catalogs, native worker modules and shared Cargo workspace. Stock caches
@@ -728,7 +730,7 @@ with `-I` from a temporary directory outside the checkout):
 
 ```bash
 env -u PYTHONPATH \
-  BREADBOARD_INSTALLED_WHEEL_PYTHON=/tmp/pr160-cleanup-proof/venv/bin/python \
+  BREADBOARD_INSTALLED_WHEEL_PYTHON=/path/to/wheel-venv/bin/python \
   python -m pytest -q tests/test_runtime_resource_closure.py \
   tests/product/harness/test_templates.py::test_wheel_import_loads_template_from_distribution_data_root \
   tests/compaction/test_codex_native_resources.py
@@ -757,7 +759,8 @@ spellings, escapes, whitespace and member order.
 Codex and Claude ordering adapters copy SDK request options before serialization.
 They depend narrowly on the private `_build_request`, options-copy and
 extra-body merge interfaces. Source inspection covered OpenAI 3.26.1 and
-Anthropic 1.12.1. This does not establish compatibility with every version
+Anthropic 1.12.1; the installed-wheel loopback HTTP smoke also passed with
+OpenAI 3.29.0. This does not establish compatibility with every version
 allowed by the declared OpenAI `>=1.0.0` dependency. Generic requests retain
 SDK serialization; profile scopes reset after completion, cancellation or error.
 
@@ -770,6 +773,9 @@ Only named, source-authorized edits whose guards pass on both sides may be
 applied; the remaining bytes must match exactly. Member order, whitespace,
 escaping and duplicate JSON names are not silently normalized.
 Raw request bytes and per-edit deviation records are kept beside each report.
+Each record carries the edit's JSON pointer and its original UTF-8 byte range
+and bytes on both sides. A Bash elapsed-time edit requires exactly one tool
+result for its call ID.
 
 | Module | Harness |
 |---|---|
@@ -819,7 +825,8 @@ Pi terminal parity also requires the actual stock `agent_end` and BreadBoard's
 typed outcome. Exhausted or declined source recovery commits the SDK assistant
 error and returns `POLICY_INCOMPLETE`, not an infrastructure exception. An owned
 RPC process terminated after source settlement retains its real exit status;
-only a recorded, authenticated SIGTERM cleanup may qualify. Missing completion
+only a recorded, authenticated SIGTERM cleanup may qualify, with either the
+signal status `-15` or stock's handled-signal exit `143`. Missing completion
 evidence, unexpected signals and opaque exceptions fail the lane.
 
 ### Codex dated-profile agent and goal execution
