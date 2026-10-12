@@ -123,6 +123,65 @@ async def test_denied_user_namespace_mapping_refuses_lease_before_child_effect(
     assert list(harness.workspace_root.iterdir()) == []
 
 
+def _unprivileged_user_namespace_refusal() -> str | None:
+    """Name why this host cannot exercise the unprivileged user-namespace lane.
+
+    The child makes the launcher's own calls (the module's ctypes ``_unshare``,
+    which every supported Python has) with the production flag sets: the
+    privileged namespaces first, then the combined user-namespace fallback mapped
+    to the outer IDs. Any refusal skips the regression probe instead of failing it.
+    """
+    if sys.platform != "linux" or not Path("/proc/self/ns").is_dir():
+        return "requires Linux namespaces"
+    privileged = (
+        lease_envelope._CLONE_NEWPID | lease_envelope._CLONE_NEWNS | lease_envelope._CLONE_NEWNET
+    )
+    try:
+        pid = os.fork()
+    except OSError as exc:
+        return f"host cannot fork the user-namespace probe: {exc}"
+    if pid == 0:
+        code = 12
+        try:
+            try:
+                lease_envelope._unshare(privileged)
+                code = 10
+            except OSError as exc:
+                code = 11 if exc.errno == errno.EPERM else 13
+            if code == 11:
+                uid, gid = os.geteuid(), os.getegid()
+                lease_envelope._unshare(lease_envelope._CLONE_NEWUSER | privileged)
+                for path, value in (
+                    ("/proc/self/setgroups", "deny\n"),
+                    ("/proc/self/uid_map", f"0 {uid} 1\n"),
+                    ("/proc/self/gid_map", f"0 {gid} 1\n"),
+                ):
+                    with open(path, "w", encoding="ascii") as stream:
+                        stream.write(value)
+                code = 0
+        except OSError:
+            code = 14
+        finally:
+            os._exit(code)
+    _, status = os.waitpid(pid, 0)
+    return {
+        0: None,
+        10: "host grants privileged namespaces, so the user-namespace lane is not taken",
+        13: "host refuses the privileged namespaces for a reason other than permission",
+        14: "host denies unprivileged user namespaces or their UID/GID maps",
+    }.get(os.waitstatus_to_exitcode(status), "user-namespace probe failed")
+
+
+_userns_refusal = _unprivileged_user_namespace_refusal()
+
+
+@pytest.mark.skipif(_userns_refusal is not None, reason=_userns_refusal or "")
+def test_preflight_maps_outer_ids_in_an_unprivileged_user_namespace() -> None:
+    # Inside a fresh user namespace geteuid() reports the overflow ID until the
+    # maps exist, so a map naming it is refused; the outer IDs must be used.
+    lease_envelope.preflight_host_containment()
+
+
 
 @pytest.mark.skipif(sys.platform != "linux", reason="requires Linux namespaces")
 def test_preflight_fork_exhaustion_is_typed(
