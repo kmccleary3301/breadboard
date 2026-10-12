@@ -1,0 +1,83 @@
+# ACR-20261011-compaction-e4-engine
+
+- `acr_id`: `ACR-20261011-compaction-e4-engine`
+- `title`: E4 native compaction presets, compaction-enabled RL target revisions and differential lanes
+- `author`: BreadBoard compaction implementation
+- `date`: 2026-10-11
+- `status`: implemented
+
+## 1) Problem Statement
+
+Steps 2–4 of `COMPACTION_E4_SCOPE_REQUEST.md` need native context compaction that matches each stock harness:
+
+- the RL targets: Pi 0.73.1, Pi 0.57.1, OMP 16.2.13, OMP 18.1.17, Hermes and OpenClaw 2026.9.4;
+- the dated engine profiles: Codex 0.139.0, Claude Code 2.1.63, OpenCode 1.2.17 and oh-my-opencode 3.10.0.
+
+The proof is a differential lane that compares raw request bytes against the pinned stock harness.
+
+## 2) Scope and Surfaces
+
+- Kernel danger-zone: yes. The change touches `breadboard/**` and `breadboard_engine/**`: agent loop, session state, CLI bridge, provider runtime and permission broker.
+- New compaction presets, engine profiles (`agent_configs/*_e4_10-9-2026.yaml`) and RL target revisions:
+  - `pi-r3@0.73.1`
+  - `pi-r4@0.57.1`
+  - `oh-my-pi-r3@16.2.13`
+  - `oh-my-pi-r2@18.1.17`
+  - `openclaw-r2@2026.9.4`
+  - `hermes-agent-r2@2026.9.11`
+- Unchanged:
+  - the dated `*_9-10-2026` profiles;
+  - the baseline `config/e4_targets/**` revisions (the E4 target-freeze manifest guard passes);
+  - `tests/fixtures/compat/**`.
+- New runtime behavior is opt-in through capability flags, never harness identity:
+  - `tools.native_local_only`
+  - `tools.native_concurrent_prompts`
+  - `tools.pty`
+  - `session.failed_turn_continues`
+  - `product_session.concurrent_approvals`
+- Contract schemas are additive. No field is removed, and every previously valid document still validates. The changes:
+  - `bb.agent_config_surface.v2` gains optional `compaction`, prompt-builder, OpenAI Responses and resume members.
+  - `bb.e4.target_config.v2` gains optional compaction members.
+  - `bb.provider_exchange.v2` adds an optional `raw_arguments` alternative for tool calls, typed replay-payload dispatch and native request-body members.
+  - `bb.payload.product_session.lifecycle.v1` gains optional `concurrent_approvals`.
+- Native workers carry the pinned SDK's serialized request body. The provider admits it only when it matches the compiled request by JSON value.
+
+## 3) Coupling and Generalization Impact
+
+- There is one immutable stock execution driver per target, selected at setup. Controllers use explicit execution, lifecycle and summary-catalog ports, not traversal of vendor-private objects.
+- OpenCode and OMO share one tool-definition catalog and HTTP proxy.
+- Codex process and child-registry ownership stays outside the generic sandbox.
+- Readers pinned to an older copy of `bb.provider_exchange.v2` would reject `raw_arguments`. Only native stock targets emit it, and the in-repo schema is the single source.
+
+## 4) Change Classification
+
+- Classification: `additive`. New targets, presets, capability flags and optional contract members. Existing profiles, target revisions and documents keep their behavior and validity.
+
+## 5) Evidence and Validation Plan
+
+- At `eecdf9b8`, the focused suite (`tests/compaction tests/providers tests/compaction_lanes tests/rl/harness tests/test_e4_targets.py tests/test_runtime_resource_closure.py`) had 4879 passed, 144 skipped and 10 failed. All 10 fail identically at base `308b9027`: runner and WP7 source guards, v1 history close, and the V2 containment receipt.
+- The long-session lanes match stock byte for byte, or differ only by recorded, guarded deviations (`breadboard_engine/compaction_lanes/README.md`).
+- Installed-wheel proof in a fresh venv with `-I`, run outside the checkout:
+  - the consumer regression passes;
+  - all five native workers initialize, read and close with every process dead;
+  - the Codex patch, search and image helpers work;
+  - process-group cleanup kills leftover descendants;
+  - the OpenAI SDK 3.29.0 loopback HTTP smoke sends 8 real requests with no failures.
+- All shipped and test Python compiles under Python 3.11.
+- CI's Compat core, Conformance gate, Conformance matrix sync and E4 target-freeze manifest guard pass.
+- These CI failures are inherited from the base branch:
+  - CLI-bridge `openapi.json` export drift: the same five `additionalProperties` lines appear at `308b9027`.
+  - `longrun_phase1`: the workflow does not install `jinja2`, which base `compaction/primitives/event_summary.py` imports.
+
+## 6) Rollout Plan
+
+- Merge into `feat/compaction-subsystem`. Profiles and target revisions are selected explicitly, so nothing changes for existing consumers until they choose a new revision or profile.
+- Step 5 and training stay stopped until separately authorized.
+
+## 7) Rollback Plan
+
+- Revert the merge commit on `feat/compaction-subsystem`. Baseline profiles and target revisions are unchanged, so consumers that never selected the new revisions need no migration.
+
+## 8) Approvals
+
+- This artifact records the implementation decision and its evidence. It does not assert external acceptance or promotion.
