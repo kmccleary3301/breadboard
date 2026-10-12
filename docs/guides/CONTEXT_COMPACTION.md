@@ -747,8 +747,12 @@ Native worker requests carry the pinned SDK's complete serialized
 transport carrier stays separate from semantic replay payloads and their digests.
 Main, summary and continuation requests use the same boundary. Reported members
 describe emitted JSON, excluding SDK properties whose values are `undefined`.
-The provider checks the body against compiled request authority before applying
-admitted summary tools and output caps.
+The provider checks JSON values against compiled authority, admitting only the
+summary tool/output-cap overlays. Numeric spellings such as `1` and `1.0` are
+equivalent; booleans are distinct from numbers, and duplicate members are rejected.
+The original body remains outbound. Summary overlays replace only admitted root
+member/key spans or append missing admitted members, preserving other numeric
+spellings, escapes, whitespace and member order.
 
 Codex and Claude ordering adapters copy SDK request options before serialization.
 They depend narrowly on the private `_build_request`, options-copy and
