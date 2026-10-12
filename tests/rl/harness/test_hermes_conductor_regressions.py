@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import os
+import subprocess
+import sys
 from collections.abc import Mapping
 from dataclasses import replace
 from pathlib import Path
@@ -360,6 +362,65 @@ def test_hermes_worker_admits_a_ceiling_wall_only_with_execution_controls(tmp_pa
                 "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
                 "remaining_seconds": 30, "execution_controls": malformed,
             })
+
+
+# The worker owns its process (it points HOME at the episode scratch), so each
+# initialization runs in a fresh interpreter.
+_SOURCE_INIT = """
+import json, sys
+from pathlib import Path
+from breadboard.rl.harness import hermes_worker
+
+class Channel:
+    digest = None
+    def respond(self, result):
+        self.digest = result["history_digest"]
+    def receive(self):
+        return {"operation": "history_ack", "payload": {"history_digest": self.digest}}
+
+payload = json.loads(sys.argv[1])
+actor = hermes_worker.HermesActor(Channel())
+result = actor._initialize(payload)
+print(json.dumps({
+    "max_iterations": actor._state.max_iterations,
+    "iteration_budget": actor._state.iteration_budget.max_total,
+    "source_runtime_max_iterations": result["source_runtime"]["max_iterations"],
+    "remaining_seconds": actor._remaining(),
+}))
+"""
+
+
+@pytest.mark.parametrize(("controls", "remaining_seconds", "expected_cap"), [
+    (None, 100, 8),
+    ({"max_requests": 50, "episode_seconds": 3600}, 3000, 50),
+], ids=["kit", "ceiling"])
+def test_stock_hermes_runs_with_the_admitted_request_cap(
+    tmp_path: Path, controls: dict[str, int] | None, remaining_seconds: int, expected_cap: int,
+) -> None:
+    from tests.rl.harness.native_dependencies import require_hermes_worker_runtime
+
+    require_hermes_worker_runtime()
+    target = Path(__file__).resolve().parents[3] / "config/e4_targets/hermes_agent/2026.9.11-r3/native-config.json"
+    (tmp_path / "workspace").mkdir()
+    payload = {
+        "task": "t", "compaction": False, "remaining_seconds": remaining_seconds,
+        "model_config": {
+            "model_name": "m", "model_canonical_name": None, "max_input_tokens": 131_072,
+            "base_url": "http://127.0.0.1:9/v1",
+        },
+        "schema_overlay": json.loads(target.read_bytes())["schema_overlay"],
+        "workspace": str(tmp_path / "workspace"), "scratch": str(tmp_path / "scratch"),
+        **({} if controls is None else {"execution_controls": controls}),
+    }
+    completed = subprocess.run(
+        [sys.executable, "-c", _SOURCE_INIT, json.dumps(payload)],
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    assert completed.returncode == 0, completed.stderr[-4000:]
+    observed = json.loads(completed.stdout.strip().splitlines()[-1])
+    assert observed["max_iterations"] == observed["iteration_budget"] == expected_cap
+    assert observed["source_runtime_max_iterations"] == expected_cap
+    assert remaining_seconds - 10 < observed["remaining_seconds"] <= remaining_seconds
 
 def test_mismatched_native_schema_sha_fails_closed(tmp_path: Path) -> None:
 
