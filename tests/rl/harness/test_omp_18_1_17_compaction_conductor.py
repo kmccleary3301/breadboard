@@ -187,7 +187,7 @@ async def test_conductor_large_tool_batch_compacts_from_stored_floor_and_matches
     prepared_results = []
     original_profile = next(iter(conductor_module.NATIVE_STREAM_PROFILES.values()))
 
-    def state_factory(task: str, system_prompt: str, bootstrap: dict[str, Any]) -> Any:
+    def state_factory(task: str, system_prompt: str, bootstrap: dict[str, Any], run_limits: Any) -> Any:
         state = omp_semantics.OMPSemanticsState(
             task="previous context " * 30000, system_prompt=system_prompt, request_cap=4,
         )

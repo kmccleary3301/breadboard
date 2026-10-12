@@ -428,7 +428,7 @@ def test_profile_registration_and_state_factory() -> None:
         "current_date_time": "2026-09-26",
         "length_aborted_message": SAMPLE_ABORTED_TEXT,
     }
-    state = _omp_16_2_13_state("Task", "Prompt", valid_bootstrap)
+    state = _omp_16_2_13_state("Task", "Prompt", valid_bootstrap, None)
     assert isinstance(state, Omp16213SemanticsState)
     assert state.model_id == "Qwen/Qwen3.5-35B-A3B"
     assert state.length_aborted_message == SAMPLE_ABORTED_TEXT
@@ -437,10 +437,10 @@ def test_profile_registration_and_state_factory() -> None:
     with pytest.raises(ValueError, match="missing length_aborted_message"):
         invalid = dict(valid_bootstrap)
         del invalid["length_aborted_message"]
-        _omp_16_2_13_state("Task", "Prompt", invalid)
+        _omp_16_2_13_state("Task", "Prompt", invalid, None)
 
     # Malformed bootstrap: incomplete model_config
     with pytest.raises(ValueError, match="model_config is malformed"):
         invalid = dict(valid_bootstrap)
         invalid["model_config"] = {"id": "m"}
-        _omp_16_2_13_state("Task", "Prompt", invalid)
+        _omp_16_2_13_state("Task", "Prompt", invalid, None)
