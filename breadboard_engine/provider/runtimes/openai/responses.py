@@ -148,16 +148,6 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     output["action"][field] = value
         return output
 
-    @staticmethod
-    def _compaction_stateless(messages: List[Dict[str, Any]], context: ProviderRuntimeContext) -> bool:
-        """A compacted history replaces server-side state, so it is sent whole."""
-        if context.extra.get("compaction_stateless") is True:
-            return True
-        ledger = getattr(context.session_state, "compaction_state", None)
-        return (ledger is not None and ledger.latest_boundary() is not None) or any(
-            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
-        )
-
     def _split_messages_for_responses(
         self,
         messages: List[Dict[str, Any]],
@@ -185,7 +175,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         responses_stateful = True
         if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
-        if self._compaction_stateless(messages, context):
+        if context.extra.get("compaction_stateless") is True:
+            # Explicit full-history summaries must not become stateful deltas.
             responses_stateful = False
 
         # Build instructions from system messages (if any)
@@ -1335,7 +1326,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         )
         provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
-        if self._compaction_stateless(messages, context):
+        if context.extra.get("compaction_stateless") is True:
             responses_stateful = False
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")

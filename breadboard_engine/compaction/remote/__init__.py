@@ -19,7 +19,8 @@ from ..methods import (
     RemoteCompactionPort,
 )
 from ..settings import MAX_SUMMARY_TOKENS
-from ..transcript import find_cut_point, leading_system_count
+from ..serialize import serialize_conversation_for_summary
+from ..transcript import find_cut_point
 from ..prompts import SUMMARIZATION_PROMPT, SUMMARIZATION_SYSTEM_PROMPT
 
 
@@ -40,23 +41,6 @@ def _default_http_poster(
             return json.loads(body)
     except Exception as exc:
         raise CompactionError(f"Remote endpoint POST to {url} failed: {exc}") from exc
-
-
-def _serialize_messages_for_prompt(messages: Sequence[Mapping[str, Any]]) -> str:
-    lines: list[str] = []
-    for msg in messages:
-        role = msg.get("role", "unknown")
-        content = msg.get("content", "")
-        if isinstance(content, list):
-            parts = []
-            for part in content:
-                if isinstance(part, dict) and "text" in part:
-                    parts.append(str(part["text"]))
-                elif isinstance(part, str):
-                    parts.append(part)
-            content = "\n".join(parts)
-        lines.append(f"<{role}>\n{content}\n</{role}>")
-    return "\n\n".join(lines)
 
 
 class RemoteCompaction:
@@ -92,18 +76,18 @@ class RemoteCompaction:
 
     def _run_remote_endpoint(self, context: CompactionContext) -> CompactionRecord:
         endpoint = str(context.settings.remote_endpoint).strip()
-        head = leading_system_count(context.messages)
+        start = context.state.kept_start(context.messages)
         cut = find_cut_point(
             context.messages,
-            head,
+            start,
             len(context.messages),
             context.settings.keep_recent_tokens,
         )
-        messages_to_summarize = context.messages[head:cut.first_kept_index]
+        messages_to_summarize = context.messages[start:cut.first_kept_index]
         if not messages_to_summarize:
             raise MethodUnavailable("No history messages eligible for remote endpoint summarization")
 
-        conversation_text = _serialize_messages_for_prompt(messages_to_summarize)
+        conversation_text = serialize_conversation_for_summary(messages_to_summarize)
         prompt_parts = [f"<conversation>\n{conversation_text}\n</conversation>\n"]
         latest_boundary = context.state.latest_readable_boundary()
         if latest_boundary and latest_boundary.summary:

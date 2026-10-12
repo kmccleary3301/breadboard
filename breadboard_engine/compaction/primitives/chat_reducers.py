@@ -102,7 +102,7 @@ class ChatSummary:
             text = self.empty_fallback
         if self.normalize_tags:
             text = normalize_xml_summary(text)
-        details = {"stateless_summary": True} if self.stateless else {}
+        details = {}
         if response.continuation_messages is not None:
             details["continuation_messages"] = response.continuation_messages
         return Reduction(summary=text, details=details)

@@ -65,24 +65,25 @@ def test_summary_history_is_complete_without_changing_ordinary_stateful_delta(su
     assert ("max_output_tokens" in payload) is summary
 
 
-def test_local_compaction_boundary_sends_full_history_without_server_state():
+def test_compacted_session_chains_from_the_first_response_after_the_boundary():
     from breadboard_engine.compaction import CompactionState
     from breadboard_engine.compaction.state import CompactionRecord
 
     runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
     messages = [{"role": "user", "content": "Summary of earlier work"}, {"role": "assistant", "content": "Answer"},
-                {"role": "tool", "tool_call_id": "c1", "content": "out"}, {"role": "user", "content": "Next"}]
+                {"role": "tool", "tool_call_id": "c1", "content": "out"}]
     ledger = CompactionState()
     ledger.append(CompactionRecord(
         record_id="r1", sequence=0, method="summary", reason="threshold", created_at="t", tokens_before=1,
-        history_length=4, first_kept_index=1, summary="s", summary_messages=(messages[0],),
+        history_length=3, first_kept_index=1, summary="s", summary_messages=(messages[0],),
     ), messages)
-    state = types.SimpleNamespace(compaction_state=ledger, get_provider_metadata=lambda key: f"old_{key}")
+    references = {"previous_response_id": "resp_after_boundary"}
+    state = types.SimpleNamespace(compaction_state=ledger, get_provider_metadata=references.get)
     payload = runtime._request_payload(model="test", messages=messages, tools=None, context=ProviderRuntimeContext(
         state, {"provider_tools": {"openai": {"responses_stateful": True}}}))
-    assert "previous_response_id" not in payload and "conversation" not in payload
-    assert payload["input"][0]["content"][0]["text"] == "Summary of earlier work"
-
+    # The server chain carries the encrypted reasoning that belongs to the pending tool call.
+    assert payload["previous_response_id"] == "resp_after_boundary"
+    assert payload["input"] == [{"type": "function_call_output", "call_id": "c1", "output": "out"}]
 
 
 def test_stateless_replay_keeps_raw_native_tool_arguments():

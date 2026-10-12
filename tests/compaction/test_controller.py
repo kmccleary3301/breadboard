@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, Dict, List
 
@@ -290,3 +291,37 @@ def test_usage_freshness_is_scoped_to_session_state() -> None:
         resumed, context_window=20000,
         last_usage=resumed.get_provider_metadata("usage"), checkpoint="every_request",
     )
+
+
+def test_native_port_leases_the_broker_client_for_each_compaction() -> None:
+    leases: List[str] = []
+
+    class Port:
+        provider, api = "openai", "responses"
+
+        def __init__(self, client: Any) -> None:
+            self.client = client
+
+        def supports(self, model: str) -> bool:
+            return True
+
+        def compact(self, context: Any) -> Any:
+            return self.client
+
+    class LeaseRuntime:
+        def compaction_port(self, *, client: Any, model: str) -> Port:
+            return Port(client)
+
+    @contextmanager
+    def lease(route_id: str, runtime: Any):
+        leases.append(route_id)
+        yield "leased-client"
+
+    # Production conductors pass no client; the invoker leases one per provider call.
+    conductor = SimpleNamespace(_provider_client_lease=lease, _current_route_id="route-a")
+    [port] = CompactionController({"compaction": {"enabled": True}}).remote_ports_for(
+        LeaseRuntime(), None, "gpt-test", conductor
+    )
+    assert (port.provider, port.api, port.supports("gpt-test"), leases) == ("openai", "responses", True, [])
+    assert port.compact(None) == "leased-client"
+    assert leases == ["route-a"]

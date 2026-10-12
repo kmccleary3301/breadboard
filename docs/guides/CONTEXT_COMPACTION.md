@@ -147,7 +147,8 @@ The preset's `chat_summary.reduce.request` selects streaming, exact episode tool
 names, and provider-native summary parameters. Claude uses `stream: true`,
 `tools: [Read]`, and `params: {temperature: 1}` with the existing 20,000-token cap.
 An unknown selected tool is an error. An absent `request` retains the original
-summary invocation. Summary clients use the production provider credential lease.
+summary invocation. Summary clients and native compaction ports use the production
+provider credential lease.
 The dated 2026-10-09 profile enables stock's 31,999-token thinking budget and
 omits ordinary-turn temperature and tool choice. SDKs without legacy sampling
 kwargs receive those wire fields through documented `extra_body`.
@@ -233,8 +234,10 @@ reopened for compaction does not count as an idle zero-tool step. Bound native
 tool continuations carry tool results without synthesized user stubs. Lifecycle
 sources are OpenCode `session/processor.ts:281-287,419-423` and
 `session/prompt.ts:704-716`. Other presets keep their existing checkpoints.
-Summary caps require an explicit `request` block; full-history projection and
-provider-reference invalidation require `request.stateless: true` (default false).
+Summary caps require an explicit `request` block; full-history summary requests
+require `request.stateless: true` (default false). Every boundary on a Responses
+route clears `previous_response_id` and `conversation_id`, so the next request
+sends the compacted history in full and later requests chain from its response.
 
 The two dated `10-9-2026` engine profiles select a digest-pinned, unmodified stock
 tool executor. Stock generates the live system text and catalog and executes

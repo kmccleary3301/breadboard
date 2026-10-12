@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from breadboard_engine.compaction import (
@@ -209,3 +211,36 @@ def test_remote_endpoint_generic_summarizer_posting():
     assert record.summary == "Custom generic endpoint summary"
     assert record.short_summary == "Generic short summary"
     assert record.readable
+
+
+def test_remote_endpoint_summarizes_tool_work_after_the_active_boundary():
+    messages = [
+        {"role": "system", "content": "system instructions"},
+        {"role": "user", "content": "Already summarized task"},
+        {"role": "assistant", "content": "Already summarized answer"},
+        {"role": "user", "content": "Fix the build"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"make all\"}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": "build ok"},
+        {"role": "user", "content": "Recent" * 200},
+    ]
+    state = CompactionState()
+    state.append(CompactionRecord(
+        record_id="r1", sequence=0, method="summary", reason="threshold", created_at="t", tokens_before=1,
+        history_length=3, first_kept_index=3, summary="Earlier summary",
+        summary_messages=({"role": "user", "content": "Earlier summary"},),
+    ), messages[:3])
+    prompts = []
+
+    def fake_poster(url, payload, headers):
+        prompts.append(payload["prompt"])
+        return {"summary": "New summary"}
+
+    context = _make_context(messages, remote_endpoint="https://omp-summarizer.internal/api/compact",
+                            keep_recent_tokens=50)
+    RemoteCompaction(http_poster=fake_poster).run(dataclasses.replace(context, state=state))
+    [prompt] = prompts
+    assert "Already summarized" not in prompt
+    assert "Earlier summary" in prompt
+    assert "make all" in prompt and "build ok" in prompt

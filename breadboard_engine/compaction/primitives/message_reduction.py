@@ -109,7 +109,6 @@ class MessageSummary:
         )).text
         return Reduction(summary=summary, details={
             "summary": True,
-            **({"stateless_summary": True} if self.stateless else {}),
             **({"queued_user_reminder": True} if selection.replay else {}),
         })
 

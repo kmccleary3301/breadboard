@@ -432,14 +432,8 @@ def test_end_to_end_compaction_and_responses_runtime_replay():
     runtime = OpenAIResponsesRuntime(
         types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
     )
-    # Simulate session state that had an old previous_response_id from the prior turn
-    mock_session_state = types.SimpleNamespace(
-        get_provider_metadata=lambda name: {
-            "previous_response_id": "resp_stale_before_compaction",
-            "conversation_id": "conv_old",
-        }.get(name),
-        set_provider_metadata=lambda *_args: None,
-    )
+    # The controller clears the Responses chain when it commits the boundary.
+    mock_session_state = types.SimpleNamespace(get_provider_metadata=lambda name: None)
     runtime_context = ProviderRuntimeContext(
         mock_session_state,
         {"provider_tools": {"openai": {"responses_stateful": True}}},
@@ -462,8 +456,6 @@ def test_end_to_end_compaction_and_responses_runtime_replay():
     # C. bb_native_compaction marker key is NEVER sent on the wire
     payload_dump = json.dumps(payload)
     assert "bb_native_compaction" not in payload_dump
-    # D. Stale previous_response_id is NOT included in request payload
-    assert "previous_response_id" not in payload
 
     # 3. Non-matching target (e.g. switched to another model):
     other_target = ProjectionTarget("openai", "responses", "gpt-other-model")

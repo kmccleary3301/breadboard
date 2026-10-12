@@ -229,7 +229,7 @@ def test_summary_boundary_invalidates_superseded_responses_reference(preset):
 
 
 @pytest.mark.parametrize("request_declared", [False, True])
-def test_legacy_summary_boundary_preserves_responses_state_references(request_declared):
+def test_stateful_summary_boundary_still_invalidates_responses_state_references(request_declared):
     from breadboard_engine.compaction.state import ProjectionTarget
     from breadboard_engine.compaction.params import BuildEnv, Params
     from breadboard_engine.compaction.primitives.chat_reducers import ChatSummary
@@ -242,8 +242,8 @@ def test_legacy_summary_boundary_preserves_responses_state_references(request_de
     # Exercise the actual legacy recipe, not a manually fabricated boundary.
     outcome = controller.compact_now(state, target=target, runtime=OmpFakeRuntime(), client=object())
     assert outcome.compacted
-    assert state.get_provider_metadata("previous_response_id") == "resp_original"
-    assert state.get_provider_metadata("conversation_id") == "conv_original"
+    assert state.get_provider_metadata("previous_response_id") is None
+    assert state.get_provider_metadata("conversation_id") is None
     reducer = ChatSummary(Params({"system": "Summary", "prompt": "Summarize",
                                   **({"request": {"stream": False}} if request_declared else {})}, "test", BuildEnv(None)))
     assert reducer.stateless is False

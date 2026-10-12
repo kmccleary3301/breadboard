@@ -11,7 +11,7 @@ from __future__ import annotations
 import copy
 import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence
 from ..execution.stock_driver import StockDriver
 from ..provider.contract_runtime import ProviderRuntimeContext
 
@@ -46,6 +46,33 @@ class CompactionRequestContext:
 
     sampling_phase: Optional[str] = None
     pending_user_index: Optional[int] = None
+
+
+@dataclass(frozen=True)
+class _LeasedPort:
+    """A native port whose client is leased from the broker for each compaction call."""
+
+    probe: RemoteCompactionPort
+    factory: Callable[..., RemoteCompactionPort]
+    lease: Callable[[str, Any], ContextManager[Any]]
+    route_id: str
+    runtime: Any
+    model: str
+
+    @property
+    def provider(self) -> str:
+        return self.probe.provider
+
+    @property
+    def api(self) -> str:
+        return self.probe.api
+
+    def supports(self, model: str) -> bool:
+        return self.probe.supports(model)
+
+    def compact(self, context: CompactionContext) -> CompactionRecord:
+        with self.lease(self.route_id, self.runtime) as client:
+            return self.factory(client=client, model=self.model).compact(context)
 
 
 class CompactionController:
@@ -171,16 +198,29 @@ class CompactionController:
             return isinstance(inputs, (list, tuple)) and "image" in inputs
         return False
 
-    def remote_ports_for(self, runtime: Optional[Any], client: Optional[Any], model: str) -> List[RemoteCompactionPort]:
+    def remote_ports_for(
+        self,
+        runtime: Optional[Any],
+        client: Optional[Any],
+        model: str,
+        conductor: Optional[Any] = None,
+    ) -> List[RemoteCompactionPort]:
         factory = getattr(runtime, "compaction_port", None)
-        if not callable(factory) or client is None:
+        # Production clients are scoped to a broker lease per provider call.
+        lease = getattr(conductor, "_provider_client_lease", None) if client is None else None
+        if not callable(factory) or (client is None and lease is None):
             return []
         try:
             port = factory(client=client, model=model)
         except Exception as exc:  # capability probe; remote method then reports unavailable
             logger.debug("compaction_port unavailable: %s", exc)
             return []
-        return [port] if port is not None else []
+        if port is None:
+            return []
+        if lease is None:
+            return [port]
+        route_id = getattr(conductor, "_current_route_id", None) or model
+        return [_LeasedPort(port, factory, lease, route_id, runtime, model)]
 
     def prepare_request(
         self,
@@ -475,8 +515,8 @@ class CompactionController:
     ) -> None:
         """Record lifecycle event and persist Product snapshot."""
         session_state.compaction_state.messages_len_at_last_record = len(session_state.provider_messages)
-        if record.is_boundary and target is not None and target.api == "responses" and record.details.get("stateless_summary"):
-            # Only explicitly stateless replacements supersede provider state.
+        if record.is_boundary and target is not None and target.api == "responses":
+            # The boundary replaces server-side history; the next request starts a new chain.
             session_state.set_provider_metadata("conversation_id", None)
             session_state.set_provider_metadata("previous_response_id", None)
         driver = self.stock_driver
@@ -532,7 +572,7 @@ class CompactionController:
         if max_output_tokens is not None:
             max_output = max_output_tokens
         if remote_ports is None:
-            remote_ports = self.remote_ports_for(runtime, client, target.model)
+            remote_ports = self.remote_ports_for(runtime, client, target.model, conductor)
         summarizer = self.summary_model
         if summarizer is None and callable(getattr(runtime, "invoke", None)):
             summary_tools = (
