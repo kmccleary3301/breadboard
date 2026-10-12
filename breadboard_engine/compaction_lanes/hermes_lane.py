@@ -24,8 +24,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider
-from .request_bytes import project_guarded_values
-from .request_bytes import raw_request_differences, raw_mismatch, guarded_changes
+from .request_bytes import guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_ID = "hermes-agent-r2@2026.9.11"
@@ -312,6 +311,10 @@ def run_scenario(root: Path, scenario: str) -> dict[str, Any]:
         if sides["bb"]["requests"][index]["purpose"] == "main"
     )
     for index, (stock, bb) in enumerate(zip(records["stock"], records["bb"])):
+        problem = request_json_problem(stock, bb, index)
+        if problem is not None:
+            diffs.append(problem)
+            continue
         purpose = sides["bb"]["requests"][index]["purpose"]
         if purpose == "compaction_summary":
             valid_deviations = summary_deviations_valid(stock["json"], bb["json"], fields, main_body)

@@ -5,8 +5,9 @@ Run from the repository root::
     BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m scripts.compaction_lanes.codex_lane --out /tmp/codex-e4-lane
 
 Requests compare raw HTTP bodies; every raw mismatch is retained in reports.
-Only approved terminal chunk IDs and wall times are guarded on tool-result
-headers. Values, array order, body whitespace and member presence stay strict.
+Only named source-owned terminal headers and the two-member client metadata
+HashMap order are guarded. Values, array order, whitespace and other member
+order remain strict.
 The production conductor writes and reads its own session snapshot between user
 turns. The mock subclass serves complete streaming and unary Responses, without
 changing compaction or request generation.
@@ -30,8 +31,8 @@ from typing import Any
 import uuid
 
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider, MockRequestHandler, MockThreadingServer
-from .request_bytes import raw_request_differences, raw_mismatch, guarded_changes
-from .request_bytes import project_guarded_values
+from breadboard_engine.provider.contract_wire import canonical_json
+from .request_bytes import decode_request_body, guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE = ROOT / "agent_configs/codex_0-139-0_gpt55_e4_10-9-2026.yaml"
@@ -323,6 +324,86 @@ def json_differences(stock: Any, bb: Any, path: str = "$") -> list[dict[str, Any
     return [] if stock == bb else [{"path": path, "stock": stock, "bb": bb}]
 
 
+METADATA_ORDER_DEVIATION = "codex_client_metadata_hashmap_member_order"
+METADATA_ORDER_AUTHORITY = (
+    "codex-rs/core/src/client.rs:174-176,409-412,791-814; "
+    "codex-rs/codex-api/src/common.rs:182-202"
+)
+
+
+def guarded_client_metadata_order(
+    stock_raw: bytes, bb_raw: bytes,
+) -> tuple[bytes, bytes, dict[str, Any] | None]:
+    """Admit only the pinned HTTP HashMap's two compact identity member orders."""
+    keys = ("x-codex-installation-id", "x-codex-window-id")
+    bodies = [decode_request_body(raw) for raw in (stock_raw, bb_raw)]
+    metadata = [body.get("client_metadata") if isinstance(body, dict) else None for body in bodies]
+    if not all(isinstance(value, dict) and set(value) == set(keys) for value in metadata):
+        return stock_raw, bb_raw, None
+    if metadata[0] != metadata[1] or list(metadata[0]) == list(metadata[1]):
+        return stock_raw, bb_raw, None
+    window = metadata[0][keys[1]]
+    if not isinstance(window, str):
+        return stock_raw, bb_raw, None
+    thread, separator, generation = window.partition(":")
+    if (separator != ":" or len(generation) > 20
+            or re.fullmatch(r"0|[1-9][0-9]*", generation) is None
+            or int(generation) > (1 << 64) - 1):
+        return stock_raw, bb_raw, None
+    for value, version in ((metadata[0][keys[0]], 4), (thread, 7)):
+        try:
+            parsed = uuid.UUID(value) if isinstance(value, str) else None
+        except ValueError:
+            return stock_raw, bb_raw, None
+        if parsed is None or str(parsed) != value or parsed.version != version:
+            return stock_raw, bb_raw, None
+
+    projected = canonical_json(metadata[0])
+    results = []
+    evidence: dict[str, Any] = {
+        "name": METADATA_ORDER_DEVIATION, "path": "$/client_metadata",
+        "authority": METADATA_ORDER_AUTHORITY,
+        "source_commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+        "projected_member_order": list(keys),
+    }
+    decoder = json.JSONDecoder()
+    for side, raw, body, value in zip(("stock", "bb"), (stock_raw, bb_raw), bodies, metadata):
+        text = raw.decode("utf-8")
+
+        def skip(position: int) -> int:
+            while position < len(text) and text[position].isspace():
+                position += 1
+            return position
+
+        cursor = skip(skip(0) + 1)
+        for key in body:
+            _, key_end = decoder.raw_decode(text, cursor)
+            start = skip(skip(key_end) + 1)
+            _, end = decoder.raw_decode(text, start)
+            if key == "client_metadata":
+                break
+            cursor = skip(end)
+            if text[cursor:cursor + 1] == ",":
+                cursor = skip(cursor + 1)
+        original = text[start:end]
+        # UUIDs and these literal keys contain no escapable characters. Accept
+        # exactly the two stock Serialize representations, never whitespace or
+        # escaping differences disguised as a member-order deviation.
+        expected = "{" + ",".join(f'"{key}":"{value[key]}"' for key in value) + "}"
+        if original != expected:
+            return stock_raw, bb_raw, None
+        evidence[side] = {
+            "original_member_order": list(value),
+            "byte_span": [len(text[:start].encode("utf-8")), len(text[:end].encode("utf-8"))],
+            "raw_sha256": hashlib.sha256(raw).hexdigest(),
+            "original_sha256": hashlib.sha256(original.encode("utf-8")).hexdigest(),
+            "projected_sha256": hashlib.sha256(projected.encode("utf-8")).hexdigest(),
+            "changed": original != projected,
+        }
+        results.append((text[:start] + projected + text[end:]).encode("utf-8"))
+    return results[0], results[1], evidence
+
+
 def compare_requests(stock: list[dict[str, Any]], bb: list[dict[str, Any]],
                      deviation_counts: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
     differences = []
@@ -331,6 +412,10 @@ def compare_requests(stock: list[dict[str, Any]], bb: list[dict[str, Any]],
             differences.append({"request": index, "kind": "missing_request", "stock_present": index < len(stock), "bb_present": index < len(bb)})
             continue
         a, b = stock[index], bb[index]
+        problem = request_json_problem(a, b, index)
+        if problem is not None:
+            differences.append(problem)
+            continue
         raw_a, raw_b = bytes.fromhex(a["raw_body_bytes"]), bytes.fromhex(b["raw_body_bytes"])
         try:
             normalized_a, counts_a = guarded_exec_headers(a["json"], side="stock", request=index)
@@ -339,16 +424,29 @@ def compare_requests(stock: list[dict[str, Any]], bb: list[dict[str, Any]],
             differences.append({"request": index, "kind": "deviation_guard", "message": str(error),
                                 "raw_difference": raw_mismatch(raw_a, raw_b, index)})
             continue
+        ordered_a, ordered_b, metadata_order = raw_a, raw_b, None
+        if a["path"] == b["path"] == "/v1/responses":
+            ordered_a, ordered_b, metadata_order = guarded_client_metadata_order(raw_a, raw_b)
+        if metadata_order is not None:
+            counts_a[METADATA_ORDER_DEVIATION] = int(metadata_order["stock"]["changed"])
+            counts_b[METADATA_ORDER_DEVIATION] = int(metadata_order["bb"]["changed"])
+        canonical_a = project_guarded_values(ordered_a, normalized_a)
+        canonical_b = project_guarded_values(ordered_b, normalized_b)
+        accepted = (a["path"] == b["path"] and a.get("method") == b.get("method")
+                    and canonical_a == canonical_b)
         if deviation_counts is not None:
-            deviation_counts.append({"request": index, "stock": counts_a, "bb": counts_b,
-                                     "raw_difference": raw_mismatch(raw_a, raw_b, index),
-                                     "names": [name for name in counts_a if counts_a[name] or counts_b[name]],
-                                     "authority": "codex@0.139.0 core/src/exec.rs tool result headers",
-                                     "changes": {"stock": guarded_changes(a["json"], normalized_a),
-                                                 "bb": guarded_changes(b["json"], normalized_b)}})
-        canonical_a = project_guarded_values(raw_a, normalized_a)
-        canonical_b = project_guarded_values(raw_b, normalized_b)
-        if a["path"] != b["path"] or a.get("method") != b.get("method") or canonical_a != canonical_b:
+            evidence = {"request": index, "stock": counts_a, "bb": counts_b,
+                        "raw_difference": raw_mismatch(raw_a, raw_b, index),
+                        "names": [name for name in counts_a if counts_a[name] or counts_b[name]],
+                        "authority": "codex@0.139.0 core/src/exec.rs tool result headers",
+                        "changes": {"stock": guarded_changes(a["json"], normalized_a),
+                                    "bb": guarded_changes(b["json"], normalized_b)},
+                        "accepted": accepted}
+            if metadata_order is not None:
+                evidence["metadata_order"] = {"request": index, **metadata_order}
+                evidence["authority"] += "; " + METADATA_ORDER_AUTHORITY
+            deviation_counts.append(evidence)
+        if not accepted:
             differences.append({"request": index, "kind": "request_bytes", "stock_path": a["path"], "bb_path": b["path"],
                                 "stock_raw_sha256": hashlib.sha256(raw_a).hexdigest(), "bb_raw_sha256": hashlib.sha256(raw_b).hexdigest(),
                                 "stock_canonical_sha256": hashlib.sha256(canonical_a).hexdigest(), "bb_canonical_sha256": hashlib.sha256(canonical_b).hexdigest(),
@@ -476,14 +574,19 @@ def run_lane(out: Path, window: int = 16000, *, stock_recordings: Path | None = 
         if not lane["passed"]:
             report["unresolved"].append({"scenario": scenario, "evidence": str(folder), "request_differences": len(differences), "stock_compactions": counts["stock"], "bb_compactions": counts["bb"]})
         (folder / "lane_report.json").write_text(json.dumps(lane, indent=2))
-    for name, citation, guard in (
-        ("codex_exec_chunk_id", "codex-rs/core/src/unified_exec/mod.rs:173-178", "six lowercase hexadecimal digits"),
-        ("codex_exec_wall_time", "codex-rs/core/src/tools/context.rs:409-434", "nonnegative seconds with exactly four decimal places"),
+    for name, citation, guard, scope in (
+        ("codex_exec_chunk_id", "codex-rs/core/src/unified_exec/mod.rs:173-178",
+         "six lowercase hexadecimal digits", "exec_command/write_stdin function_call_output metadata headers only"),
+        ("codex_exec_wall_time", "codex-rs/core/src/tools/context.rs:409-434",
+         "nonnegative seconds with exactly four decimal places", "exec_command/write_stdin function_call_output metadata headers only"),
+        (METADATA_ORDER_DEVIATION, METADATA_ORDER_AUTHORITY,
+         "two unchanged identities: lowercase installation UUIDv4 and thread UUIDv7:canonical u64 generation; compact unescaped lexemes, member permutation only",
+         "HTTP Responses request $/client_metadata only"),
     ):
         if any(counts[side].get(name, 0) for lane in report["lane_results"]
                for counts in lane["deviation_counts"] for side in ("stock", "bb")):
             report["deviations_used"].append({
-                "name": name, "scope": "exec_command/write_stdin function_call_output metadata headers only",
+                "name": name, "scope": scope,
                 "guard": guard, "citation": citation, "source_commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
             })
     report["passed"] = all(lane["passed"] for lane in report["lane_results"])

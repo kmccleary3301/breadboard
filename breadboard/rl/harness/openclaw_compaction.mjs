@@ -237,7 +237,12 @@ async function prepareCompaction(message) {
     const prefixCaptured = Promise.withResolvers();
     const replay = runCompactionReplay(preparation, (m, context, options) => {
       const wire = supplier.sourceTransport.t(m, context, options);
-      capturedRequests.push({ messages: wire.messages, max_tokens: wire.max_completion_tokens ?? wire.max_tokens });
+      capturedRequests.push({
+        messages: wire.messages,
+        max_tokens: wire.max_completion_tokens ?? wire.max_tokens,
+        request_body: wire,
+        request_body_json: JSON.stringify(wire),
+      });
       if (capturedRequests.length === 1) {
         firstCaptured.resolve();
         return releaseHistory.promise;
@@ -331,10 +336,21 @@ async function finalizeCompaction(message) {
     const streamFn = (m, context, options) => {
       const wireParams = supplier.sourceTransport.t(m, context, options);
       const request = { messages: wireParams.messages, max_tokens: wireParams.max_completion_tokens ?? wireParams.max_tokens };
-      const initialIdx = answers.findIndex((answer) => isDeepStrictEqual(answer.request, request));
+      const initialIdx = answers.findIndex((answer) => isDeepStrictEqual({
+        messages: answer.request.messages,
+        max_tokens: answer.request.max_tokens,
+      }, request));
       if (initialIdx >= 0) return replaySummaryResponse(answers.splice(initialIdx, 1)[0].summary);
       if (followupIdx < followupAnswers.length) return replaySummaryResponse(followupAnswers[followupIdx++]);
-      followup.resolve({ schema_version: protocol, kind: "compaction_followup_request", request });
+      followup.resolve({
+        schema_version: protocol,
+        kind: "compaction_followup_request",
+        request: {
+          ...request,
+          request_body: wireParams,
+          request_body_json: JSON.stringify(wireParams),
+        },
+      });
       return new Promise(() => {});
     };
 

@@ -217,13 +217,13 @@ class SessionRunner:
     def wait_for_stock_source_input(self) -> None:
         owner = getattr(self._agent, "agent", None)
         driver = getattr(owner, "stock_driver", None)
-        if driver is not None:
+        if driver is not None and driver.wait_for_source_input is not None:
             driver.wait_for_source_input(owner, self.session.session_id)
 
     def stock_source_should_continue(self) -> bool:
         owner = getattr(self._agent, "agent", None)
         driver = getattr(owner, "stock_driver", None)
-        return driver is not None and driver.source_should_continue(
+        return driver is not None and driver.source_should_continue is not None and driver.source_should_continue(
             owner, self.session.session_id,
         )
 

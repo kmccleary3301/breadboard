@@ -78,6 +78,8 @@ class ReplayDriver {
     messages: unknown[];
     max_tokens?: number;
     tool_choice?: string;
+    request_body: Record<string, unknown>;
+    request_body_json: string;
   }> = [];
   callIndex = 0;
 
@@ -93,14 +95,30 @@ class ReplayDriver {
     const idx = this.callIndex++;
     const targetModel = (modelParam && typeof modelParam === "object") ? modelParam : sessionState.session.agent.state.model;
     const wireMessages = sessionState.convertMessages!(targetModel, ctx, (targetModel as Record<string, unknown>).compat);
-    const callRecord: { messages: unknown[]; max_tokens?: number; tool_choice?: string } = {
+    // The hash-verified supplier source root is selected at runtime.
+    const { streamSimple } = await import(`${sessionState.pinnedSourceRoot}/packages/ai/src/stream.ts`);
+    let wire: Record<string, unknown> | null = null;
+    const sentinel = new ReplaySentinelError();
+    const stream = streamSimple(targetModel, ctx, {
+      ...opts,
+      apiKey: WORKER_API_KEY,
+      onPayload: (params: Record<string, unknown>) => {
+        wire = params;
+        throw sentinel;
+      },
+    });
+    for await (const _event of stream) {}
+    if (!wire) throw new Error("pinned OMP18 summary request capture failed");
+    const callRecord: { messages: unknown[]; max_tokens?: number; tool_choice?: string; request_body: Record<string, unknown>; request_body_json: string } = {
       messages: wireMessages,
       max_tokens: typeof opts?.maxTokens === "number" ? opts.maxTokens : undefined,
+      request_body: wire,
+      request_body_json: JSON.stringify(wire),
     };
     if (typeof opts?.toolChoice === "string") {
       callRecord.tool_choice = opts.toolChoice;
     }
-    this.capturedCalls.push(callRecord);
+    this.capturedCalls[idx] = callRecord;
     if (idx < this.answers.length) {
       return {
         role: "assistant",

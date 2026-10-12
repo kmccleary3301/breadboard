@@ -1,9 +1,44 @@
 """pi episode responsibility owner."""
 from __future__ import annotations
 import hashlib
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 from .pi_target import REPO_ROOT, load_target_document, resolve_target_harness_path
+from .pi_environment_guards import begin_pi_environment_observation, finish_pi_environment_observation
+
+
+def _terminal_error_evidence(error: BaseException) -> Dict[str, Any]:
+    """Retain the actual caught dependency failure and its source error chain."""
+    from breadboard_engine.provider.contracts import NativeProviderRequestFailure, ProviderRuntimeError
+
+    chain: List[Dict[str, Any]] = []
+    current: BaseException | None = error
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        row: Dict[str, Any] = {
+            "type": type(current).__qualname__,
+            "module": type(current).__module__,
+            "message": str(current),
+        }
+        if isinstance(current, ProviderRuntimeError):
+            row.update(
+                details=current.details, kind=current.kind,
+                output_emitted=current.output_emitted,
+                model_fallback_reason=current.model_fallback_reason,
+            )
+        if isinstance(current, NativeProviderRequestFailure):
+            row["request_body"] = dict(current.request_body)
+        chain.append(row)
+        current = current.__cause__ if current.__cause__ is not None else current.__context__
+    return {
+        "type": type(error).__qualname__, "module": type(error).__module__,
+        "message": str(error),
+        "traceback": "".join(traceback.format_exception(error)),
+        "chain": chain,
+    }
+
 
 async def run_breadboard_pi_episode(
     mock_base_url: str,
@@ -30,7 +65,7 @@ async def run_breadboard_pi_episode(
     consumer = PI_0_57_1_RESPONSE_CONSUMER_ID if legacy else PI_RESPONSE_CONSUMER_ID
     model_id = "model-a"
     profile = h.OpenAICompletionsProviderProfile(
-        model=model_id, scoped_credential="episode-secret", base_url=mock_base_url,
+        model=model_id, scoped_credential="episode-secret", base_url=mock_base_url + "/v1",
         context_window=context_window, max_output_tokens=max_output_tokens,
         caller_headers={},
         request_policy={
@@ -114,6 +149,7 @@ async def run_breadboard_pi_episode(
     )
     request = h.RunnerOpenRequest(episode_id="episode-pi-compaction", effective_plan=plan)
     sink = h._Events()
+    environment_observation = begin_pi_environment_observation(version, workdir, native=True)
     session = await h.ConductorAdapter(
         h.CONDUCTOR_RUNTIME_ABI,
         containment_authenticator=h.CONDUCTOR_TEST_AUTHENTICATOR,
@@ -135,6 +171,9 @@ async def run_breadboard_pi_episode(
         await session.close()
         await worker.close()
         await client.close()
+        finish_pi_environment_observation(environment_observation)
+    if not legacy:
+        environment_observation["declared_current_date"] = worker.initialize_runtime_inputs["current_date"]
     limits = plan.effective_capabilities.limits.model_dump(mode="json")
     sources = {
         name: "tests/rl/harness/test_runner_policy_runtime.py:_plan limit_payload"
@@ -155,4 +194,6 @@ async def run_breadboard_pi_episode(
     return result, sink.events, {
         "limits": limits, "limit_sources": sources,
         "bb_replay_trace_request_count": trace_count,
+        "pi_environment_observation": environment_observation,
+        "bb_terminal_error_evidence": _terminal_error_evidence(result) if isinstance(result, Exception) else None,
     }

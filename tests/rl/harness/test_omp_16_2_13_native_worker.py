@@ -531,9 +531,14 @@ def test_compaction_real_history_and_next_wire_equal_stock(initialized_worker, t
     assert prepared["kind"] == "compaction_prepared"
     assert prepared["first_kept_index"] == stock["firstKeptIndex"]
     assert prepared["summary_request"]["messages"] == stock["requests"][0]["messages"]
+    summary_request = prepared["summary_request"]
+    assert json.loads(summary_request["request_body_json"]) == summary_request["request_body"]
+    assert "model" in summary_request["request_body"]
     assert [entry["message"] for entry in prepared["preparation"]["entries"]] == state.messages
     finalized, followup = _finalize(worker, prepared, *summaries)
     assert followup["request"]["messages"] == stock["requests"][1]["messages"]
+    assert json.loads(followup["request"]["request_body_json"]) == followup["request"]["request_body"]
+    assert "model" in followup["request"]["request_body"]
     assert finalized["summary"] == stock["result"]["summary"]
     compacted = finalized.get("messages", [
         finalized["compaction_message"], *state.messages[finalized["first_kept_index"]:],

@@ -20,6 +20,8 @@ class _Request:
     started: threading.Event = field(default_factory=threading.Event)
     finished: threading.Event = field(default_factory=threading.Event)
     future: object = None
+    task: asyncio.Task | None = None
+    error: BaseException | None = None
 
 
 class AuxiliaryTransport:
@@ -43,19 +45,28 @@ class AuxiliaryTransport:
             self.requests.add(request)
 
             async def run():
+                request.task = asyncio.current_task()
+                request.started.set()
                 try:
-                    request.started.set()
                     if request.cancelled.is_set():
                         raise AuxiliaryCancelled()
                     async with httpx.AsyncClient(timeout=600) as client:
                         response = await client.post(url, headers=headers, content=body)
                         return response.status_code, dict(response.headers), response.content
-                finally:
-                    request.finished.set()
+                except BaseException as error:
+                    # The blocking owner observes every outcome, including an
+                    # upstream failure racing cancellation. Never strand an
+                    # exception on a cancelled concurrent-future bridge.
+                    request.error = error
+                    return None
 
             request.future = asyncio.run_coroutine_threadsafe(run(), self.loop)
+            request.future.add_done_callback(lambda future: request.finished.set())
         try:
-            return request.future.result()
+            result = request.future.result()
+            if request.error is not None:
+                raise request.error
+            return result
         except (CancelledError, asyncio.CancelledError):
             raise AuxiliaryCancelled() from None
         finally:
@@ -69,8 +80,8 @@ class AuxiliaryTransport:
             requests = [request for request in self.requests if request.session_id == session_id]
             for request in requests:
                 request.cancelled.set()
-                if request.started.is_set():
-                    request.future.cancel()
+                if request.started.is_set() and request.task is not None:
+                    self.loop.call_soon_threadsafe(request.task.cancel)
         for request in requests:
             if not request.finished.wait(5):
                 raise RuntimeError(f"Auxiliary provider cancellation did not finish: {session_id}")

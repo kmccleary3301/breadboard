@@ -1,5 +1,6 @@
 """Byte-strict comparator and real pinned stock/production engine scenarios."""
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 import httpx
 
 from breadboard_engine.compaction_lanes.codex_lane import (
-    BINARY, EngineMockProvider, PROMPT, SCENARIOS, compare_requests,
+    BINARY, EngineMockProvider, METADATA_ORDER_DEVIATION, PROMPT, SCENARIOS, compare_requests,
     compaction_count, outcomes_valid, run_lane, scenario_script, settings,
 )
 
@@ -16,12 +17,152 @@ def record(body: str) -> dict:
     return {"path": "/v1/responses", "raw_body_bytes": body.encode().hex(), "json": json.loads(body)}
 
 
+def _metadata_wire(reverse: bool, *, generation: str = "0") -> str:
+    metadata = {
+        "x-codex-installation-id": "b637ab9d-566a-45d7-a71e-8726b668d5ca",
+        "x-codex-window-id": f"01a12d82-4543-7961-9faa-26eaef0ba627:{generation}",
+    }
+    if reverse:
+        metadata = dict(reversed(list(metadata.items())))
+    return json.dumps({
+        "model": "gpt-5.5",
+        "input": [{"type": "message", "role": "user",
+                   "content": [{"type": "input_text", "text": "π"}]}],
+        "client_metadata": metadata,
+    }, ensure_ascii=False, separators=(",", ":"))
+
+
+@pytest.mark.parametrize("generation", ["0", "1", "2", str((1 << 64) - 1)])
+@pytest.mark.parametrize("reverse_stock", [False, True])
+def test_declared_metadata_hashmap_order_records_exact_raw_evidence(reverse_stock, generation):
+    stock = record(_metadata_wire(reverse_stock, generation=generation))
+    bb = record(_metadata_wire(not reverse_stock, generation=generation))
+    counts = []
+    assert stock["raw_body_bytes"] != bb["raw_body_bytes"]
+    assert compare_requests([stock, stock], [deepcopy(stock), bb], counts) == []
+    assert counts[0]["raw_difference"] is None
+    evidence = counts[1]
+    assert evidence["accepted"] is True
+    assert evidence["names"] == [METADATA_ORDER_DEVIATION]
+    assert evidence["raw_difference"]["index"] == 1
+    assert evidence["stock"][METADATA_ORDER_DEVIATION] == int(reverse_stock)
+    assert evidence["bb"][METADATA_ORDER_DEVIATION] == int(not reverse_stock)
+    permutation = evidence["metadata_order"]
+    assert permutation["request"] == 1
+    assert permutation["path"] == "$/client_metadata"
+    assert permutation["source_commit"] == "a7dff904308535e965aee87680c1fc5ef1d19eec"
+    assert permutation["projected_member_order"] == [
+        "x-codex-installation-id", "x-codex-window-id",
+    ]
+    for side, item in (("stock", stock), ("bb", bb)):
+        raw = bytes.fromhex(item["raw_body_bytes"])
+        start, end = permutation[side]["byte_span"]
+        assert json.loads(raw[start:end]) == item["json"]["client_metadata"]
+        assert permutation[side]["original_sha256"] == hashlib.sha256(raw[start:end]).hexdigest()
+        assert permutation[side]["raw_sha256"] == hashlib.sha256(raw).hexdigest()
+        assert permutation[side]["original_member_order"] == list(item["json"]["client_metadata"])
+    assert permutation["stock"]["projected_sha256"] == permutation["bb"]["projected_sha256"]
+
+
+@pytest.mark.parametrize("side", ["stock", "bb"])
+@pytest.mark.parametrize("variant", [
+    "metadata_whitespace", "escaped_key", "escaped_value", "extra_metadata",
+    "duplicate_metadata", "changed_uuid", "non_uuid", "root_whitespace",
+    "root_member_order", "nested_member_order", "changed_model",
+])
+def test_metadata_order_guard_does_not_admit_other_wire_changes(side, variant):
+    stock, bb = record(_metadata_wire(False)), record(_metadata_wire(True))
+    malformed = stock if side == "stock" else bb
+    raw = bytes.fromhex(malformed["raw_body_bytes"]).decode()
+    if variant == "metadata_whitespace":
+        raw = raw.replace('"client_metadata":{', '"client_metadata":{ ')
+    elif variant == "escaped_key":
+        raw = raw.replace("x-codex-window-id", "x-codex-window\\u002did")
+    elif variant == "escaped_value":
+        raw = raw.replace("01a12d82", "\\u00301a12d82")
+    elif variant == "extra_metadata":
+        raw = raw[:-2] + ',"extra":"value"}}'
+    elif variant == "duplicate_metadata":
+        raw = raw[:-2] + ',"x-codex-window-id":"01a12d82-4543-7961-9faa-26eaef0ba627:0"}}'
+    elif variant == "changed_uuid":
+        raw = raw.replace("9faa-26eaef0ba627", "9faa-26eaef0ba628")
+    elif variant == "non_uuid":
+        raw = raw.replace("b637ab9d-566a-45d7-a71e-8726b668d5ca", "not-a-uuid")
+    elif variant == "root_whitespace":
+        raw = " " + raw
+    elif variant == "root_member_order":
+        raw = json.dumps(dict(reversed(list(json.loads(raw).items()))),
+                         ensure_ascii=False, separators=(",", ":"))
+    elif variant == "nested_member_order":
+        body = json.loads(raw)
+        body["input"][0] = dict(reversed(list(body["input"][0].items())))
+        raw = json.dumps(body, ensure_ascii=False, separators=(",", ":"))
+    elif variant == "changed_model":
+        raw = raw.replace("gpt-5.5", "gpt-5.4")
+    malformed.update(record(raw))
+    counts = []
+    differences = compare_requests([stock], [bb], counts)
+    assert differences
+    assert bytes.fromhex(stock["raw_body_bytes"]) != bytes.fromhex(bb["raw_body_bytes"])
+    assert not counts or counts[0]["accepted"] is False
+
+
+@pytest.mark.parametrize("window", [
+    "01a12d82-4543-7961-9faa-26eaef0ba627",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:00",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:-1",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:1.0",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:18446744073709551616",
+    "01a12d82-4543-7961-9faa-26eaef0ba627:0:1",
+    "01a12d82-4543-4961-9faa-26eaef0ba627:0",
+    "01A12D82-4543-7961-9FAA-26EAEF0BA627:0",
+])
+def test_metadata_order_guard_rejects_equal_invalid_source_window_ids(window):
+    original = "01a12d82-4543-7961-9faa-26eaef0ba627:0"
+    stock = record(_metadata_wire(False).replace(original, window))
+    bb = record(_metadata_wire(True).replace(original, window))
+    assert stock["json"] == bb["json"]
+    counts = []
+    assert compare_requests([stock], [bb], counts)
+    assert counts[0]["names"] == []
+    assert counts[0]["accepted"] is False
+
+
 def test_comparator_rejects_undeclared_json_member_order():
     stock = record('{"model":"gpt-5.5","input":[]}')
     bb = record('{"input":[],"model":"gpt-5.5"}')
     differences = compare_requests([stock], [bb])
     assert differences[0]["stock_raw_sha256"] != differences[0]["bb_raw_sha256"]
     assert stock["raw_body_bytes"] != bb["raw_body_bytes"]
+    assert compare_requests([stock], [deepcopy(stock)]) == []
+
+
+@pytest.mark.parametrize("stock_body,legacy_sdk_body", [
+    (
+        '{"model":"gpt-5.5","instructions":"native","input":[],"stream":true}',
+        '{"model":"gpt-5.5","stream":true,"input":[],"instructions":"native"}',
+    ),
+    (
+        '{"input":[{"type":"message","role":"user","content":[]}]}',
+        '{"input":[{"role":"user","content":[],"type":"message"}]}',
+    ),
+    (
+        '{"input":[{"type":"function_call","name":"read","arguments":"{}","call_id":"c"}]}',
+        '{"input":[{"type":"function_call","call_id":"c","name":"read","arguments":"{}"}]}',
+    ),
+])
+def test_source_and_legacy_sdk_ordering_remains_a_raw_failure(stock_body, legacy_sdk_body):
+    stock = record(stock_body)
+    legacy_sdk = record(legacy_sdk_body)
+    assert stock["json"] == legacy_sdk["json"]
+    differences = compare_requests([stock], [legacy_sdk])
+    assert len(differences) == 1
+    difference = differences[0]
+    assert difference["kind"] == "request_bytes"
+    assert difference["request"] == 0
+    assert difference["fields"] == []
+    assert difference["stock_raw_sha256"] != difference["bb_raw_sha256"]
     assert compare_requests([stock], [deepcopy(stock)]) == []
 
 
@@ -55,8 +196,11 @@ def test_exec_chunk_guard_rejects_a_malformed_side(side):
     stock, bb = record(json.dumps(body)), record(json.dumps(body))
     malformed = stock if side == "stock" else bb
     malformed["json"]["input"][1]["output"] = malformed["json"]["input"][1]["output"].replace("05a38f", "05A38F")
-    with pytest.raises(ValueError, match=side + ".*codex_exec_chunk_id"):
-        compare_requests([stock], [bb])
+    malformed.update(record(json.dumps(malformed["json"])))
+    failures = compare_requests([stock], [bb])
+    assert failures[0]["kind"] == "deviation_guard"
+    assert side in failures[0]["message"]
+    assert "codex_exec_chunk_id" in failures[0]["message"]
 
 
 @pytest.mark.parametrize("side", ["stock", "bb"])
@@ -70,8 +214,11 @@ def test_exec_wall_guard_rejects_a_malformed_side(side, wall):
     stock, bb = record(json.dumps(body)), record(json.dumps(body))
     malformed = stock if side == "stock" else bb
     malformed["json"]["input"][1]["output"] = malformed["json"]["input"][1]["output"].replace("0.1234", wall)
-    with pytest.raises(ValueError, match=side + ".*codex_exec_wall_time"):
-        compare_requests([stock], [bb])
+    malformed.update(record(json.dumps(malformed["json"])))
+    failures = compare_requests([stock], [bb])
+    assert failures[0]["kind"] == "deviation_guard"
+    assert side in failures[0]["message"]
+    assert "codex_exec_wall_time" in failures[0]["message"]
 
 
 def test_exec_metadata_guards_count_per_request_and_leave_body_strict():
@@ -83,16 +230,21 @@ def test_exec_metadata_guards_count_per_request_and_leave_body_strict():
     stock = record(json.dumps(body))
     bb = deepcopy(stock)
     bb["json"]["input"][1]["output"] = bb["json"]["input"][1]["output"].replace("05a38f", "abcdef").replace("0.1234", "12.0000")
+    bb.update(record(json.dumps(bb["json"])))
     counts = []
     assert compare_requests([stock], [bb], counts) == []
-    assert counts == [{"request": 0, "stock": {"codex_exec_chunk_id": 1, "codex_exec_wall_time": 1},
-                      "bb": {"codex_exec_chunk_id": 1, "codex_exec_wall_time": 1}}]
+    assert counts[0]["stock"] == counts[0]["bb"] == {
+        "codex_exec_chunk_id": 1, "codex_exec_wall_time": 1}
+    assert counts[0]["raw_difference"]["stock_sha256"] != counts[0]["raw_difference"]["bb_sha256"]
+    assert {change["path"] for change in counts[0]["changes"]["bb"]} == {"$/input/1/output"}
     bb["json"]["input"][1]["output"] += " "
+    bb.update(record(json.dumps(bb["json"])))
     assert compare_requests([stock], [bb])
     body["input"][0]["name"] = "update_plan"
     stock = record(json.dumps(body))
     bb = deepcopy(stock)
     bb["json"]["input"][1]["output"] = bb["json"]["input"][1]["output"].replace("05a38f", "abcdef")
+    bb.update(record(json.dumps(bb["json"])))
     assert compare_requests([stock], [bb])
 
 
@@ -330,7 +482,9 @@ def test_other_http_status_still_allows_explicit_overflow():
 @pytest.mark.skipif(not BINARY.is_file(), reason="pinned Codex binary is unavailable")
 def test_live_stock_and_production_engine_bytes(tmp_path: Path):
     report = run_lane(tmp_path)
-    assert {item["name"] for item in report["deviations_used"]} == {"codex_exec_chunk_id", "codex_exec_wall_time"}
+    names = {item["name"] for item in report["deviations_used"]}
+    assert {"codex_exec_chunk_id", "codex_exec_wall_time"} <= names
+    assert names <= {"codex_exec_chunk_id", "codex_exec_wall_time", METADATA_ORDER_DEVIATION}
     assert report["passed"], str(tmp_path / "lane_report.json")
     # A fresh production entrypoint resumes the ledger, so the second summary
     # reads the first boundary rather than the original assistant history.

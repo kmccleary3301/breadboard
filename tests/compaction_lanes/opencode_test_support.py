@@ -14,7 +14,7 @@ def summary_record(messages):
 def _native_prune_event_fence(monkeypatch, tmp_path, events, *, already_compacted=False):
     import io
     from types import SimpleNamespace
-    from breadboard_engine.compaction_lanes import opencode_lane as lane
+    from breadboard_engine.compaction_lanes import opencode_stock as lane
     part = {"id": "part", "messageID": "assistant", "sessionID": "root",
             "type": "tool", "callID": "call_seed", "tool": "bash",
             "state": {"status": "completed", "output": "Original tool output",

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { TOOL_ORDER, createToolSession, prepareToolCallArguments, createErrorToolResult } from "./openclaw_tool_session.mjs";
 import { createCompactionController } from "./openclaw_compaction.mjs";
 import { createProviderExchange } from "./openclaw_provider_exchange.mjs";
@@ -8,7 +9,6 @@ import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
 
-#!/usr/bin/env node
 /**
  * OpenClaw 2026.9.4 source-tool and native-compaction phase worker.
  *
@@ -493,8 +493,10 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
     return {
       messages: params.messages || [],
       tools: params.tools || [],
+      request_body: params,
+      request_body_json: JSON.stringify(params),
       // Wire body members of the pinned supplier buildOpenAICompletionsParams.
-      request_members: Object.keys(params).sort(),
+      request_members: Object.keys(params).filter((member) => params[member] !== undefined),
     };
   }
   return {

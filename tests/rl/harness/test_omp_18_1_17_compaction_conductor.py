@@ -72,14 +72,16 @@ def test_agent_end_stock_continuation_gate(tmp_path: Path, terminal_text: bool) 
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("capture_source_body", [False, True])
 async def test_handoff_tool_choice_reaches_transport_without_changing_main_body(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capture_source_body: bool,
 ) -> None:
     import httpx
     from breadboard.rl.harness.runners.base import PolicyRuntimeInvokeRequest, freeze_json_object, thaw_json
     from breadboard_engine.compilation.contracts import canonical_sha256
     from breadboard_engine.compilation.provider_response import OMP_RESPONSE_CONSUMER_ID
     from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
     from tests.rl.harness.test_policy_provider import _unbound_native_chat_client, _OPENHANDS_EPISODE, _digest
     from tests.rl.harness import test_policy_provider as fixtures
 
@@ -104,6 +106,7 @@ async def test_handoff_tool_choice_reaches_transport_without_changing_main_body(
     client._transport.close()
     client._transport = factory(client._runtime, client._profile)
     bodies: list[bytes] = []
+    source_bodies: list[bytes] = []
 
     def send(request: httpx.Request, **kwargs: Any) -> httpx.Response:
         bodies.append(request.content)
@@ -125,17 +128,35 @@ async def test_handoff_tool_choice_reaches_transport_without_changing_main_body(
     summary = {**main, "tool_choice": "none"}
     try:
         for turn, body in enumerate((main, summary, main), 1):
+            native_request_body_json = None
+            if capture_source_body:
+                source_body = client._runtime.profile_chat_request(
+                    client._profile, body["messages"], body["tools"],
+                    context=ProviderRuntimeContext(None, {}, extra={
+                        "response_consumer_id": OMP_RESPONSE_CONSUMER_ID,
+                        **({"tool_choice": "none"} if turn == 2 else {}),
+                    }),
+                )
+                # Any source ordering is authoritative, not an SDK field table.
+                source_body = dict(reversed(tuple(source_body.items())))
+                native_request_body_json = json.dumps(
+                    source_body, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+                )
+                source_bodies.append(native_request_body_json.encode("utf-8"))
             await client.invoke(PolicyRuntimeInvokeRequest(
                 episode_id=_OPENHANDS_EPISODE, effective_plan_digest=plan.canonical_digest(),
                 binding_digest=_digest("binding"), policy_slot_id="model:model-a",
                 request_digest=canonical_sha256(body), request_payload=freeze_json_object(body, field_name="request"),
                 turn=turn, attempt=1, compaction_summary=turn == 2,
+                native_request_body_json=native_request_body_json,
             ))
     finally:
         await client.close()
     assert json.loads(bodies[1])["tool_choice"] == "none"
     assert "tool_choice" not in json.loads(bodies[0])
     assert bodies[0] == bodies[2]
+    if capture_source_body:
+        assert bodies == source_bodies
 
 
 @pytest.mark.skipif(not OMP_AVAILABLE, reason="pinned OMP runtime unavailable")
@@ -230,7 +251,9 @@ async def test_conductor_large_tool_batch_compacts_from_stored_floor_and_matches
 
     async def invoke(request: Any) -> Any:
         nonlocal main_count
-        body = thaw_json(request.request_payload)
+        # Script the provider receipt from the actual pinned SDK capture, not
+        # the separate semantic replay snapshot.
+        body = json.loads(request.native_request_body_json)
         summary = request.compaction_summary
         if not summary:
             main_count += 1
@@ -338,7 +361,7 @@ async def test_failed_preparation_preserves_native_rescue_history(
             prepared_results.append(result)
             return result
 
-        async def no_summary(request):
+        async def no_summary(request, native_request_body_json=None):
             pytest.fail("Failed preparation must not issue a summary request")
 
         settings = {"methodOrder": method_order}

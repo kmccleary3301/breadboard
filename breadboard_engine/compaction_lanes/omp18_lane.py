@@ -25,16 +25,17 @@ from typing import Any
 
 import yaml
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider
-from .request_bytes import project_guarded_values
-from .request_bytes import raw_request_differences, raw_mismatch, guarded_changes
+from .request_bytes import decode_request_body, guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_ID = "oh-my-pi-r2@18.1.17"
 TARGET_DIR = ROOT / "config/e4_targets/oh_my_pi/18.1.17-r2"
 SCENARIOS = ("long_session", "overflow", "large_tool_batch", "final_over_threshold")
 WINDOW = 65536
-TOOL_ELAPSED_TIME_PATTERN = r"(?m)^Wall time: [0-9]+(?:\.[0-9]+)? seconds$"
+TOOL_ELAPSED_TIME_PATTERN = r"(?m)^Wall time: [0-9]+\.[0-9]{2} seconds$"
 TOOL_ELAPSED_TIME = re.compile(TOOL_ELAPSED_TIME_PATTERN)
+OMP_SOURCE_COMMIT = "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
+BASH_TIMING_AUTHORITY = "packages/coding-agent/src/tools/bash.ts:531-549,781-793,1009,1111-1121; tools/tool-timeouts.ts:10-11,33-37"
 PROMPT = "Inspect the supplied numbered records, then give the final answer."
 
 # Source SDK setup matches omp_native_tool_worker.ts:524-564. The approved
@@ -295,22 +296,51 @@ def guarded_summary_fields(stock: dict[str, Any], bb: dict[str, Any], main: dict
     return fields
 
 
-def normalize_tool_elapsed_time(payload: dict[str, Any]) -> int:
-    """Guard the final native timing header of a correlated Bash result only."""
+def normalize_tool_elapsed_time(payload: dict[str, Any], raw: bytes | None = None) -> int:
+    """Guard one correlated Bash header and preserve its exact source clamp notice."""
     count = 0
-    bash_calls = {}
+    bash_calls: dict[str, str | None] = {}
+    seen_calls: set[str] = set()
     for message in payload.get("messages", []):
         if message.get("role") == "assistant":
             for call in message.get("tool_calls", []):
-                bash_calls[call.get("id")] = call.get("function", {}).get("name") == "bash"
-        if message.get("role") != "tool" or not bash_calls.get(message.get("tool_call_id")):
+                call_id = call.get("id")
+                if not isinstance(call_id, str):
+                    continue
+                function = call.get("function", {})
+                if call_id in seen_calls or function.get("name") != "bash":
+                    bash_calls[call_id] = None
+                    seen_calls.add(call_id)
+                    continue
+                seen_calls.add(call_id)
+                try:
+                    arguments = decode_request_body(function["arguments"].encode("utf-8"))
+                except (KeyError, AttributeError, ValueError):
+                    bash_calls[call_id] = None
+                    continue
+                requested = arguments.get("timeout", 300)
+                if type(requested) is not int or requested < 0:
+                    bash_calls[call_id] = None
+                    continue
+                bash_calls[call_id] = (
+                    f"Timeout clamped to 30s (requested {requested}s; global tools.maxTimeout ceiling 30s)."
+                    if requested > 30 else ""
+                )
+        call_id = message.get("tool_call_id")
+        if message.get("role") != "tool" or call_id not in bash_calls or bash_calls[call_id] is None:
             continue
         content = message.get("content")
-        if not isinstance(content, str):
+        if not isinstance(content, str) or content.count("Wall time: ") != 1:
             continue
+        if raw is not None and raw.count(json.dumps(content, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) != 1:
+            continue
+        trailer = ""
         prefix, separator, header = content.rpartition("\n")
-        if TOOL_ELAPSED_TIME.fullmatch(header) and len(TOOL_ELAPSED_TIME.findall(content)) == 1:
-            message["content"] = prefix + separator + "Wall time: <elapsed> seconds"
+        if header == bash_calls[call_id] and header:
+            trailer = "\n" + header
+            prefix, separator, header = prefix.rpartition("\n")
+        if TOOL_ELAPSED_TIME.fullmatch(header):
+            message["content"] = prefix + separator + "Wall time: <elapsed> seconds" + trailer
             count += 1
     return count
 
@@ -329,6 +359,10 @@ def compare_requests(stock: list[Any], bb: list[Any], phases: list[Any], deviati
     for i in range(max(len(stock), len(bb))):
         if i >= len(stock) or i >= len(bb):
             diffs.append({"index": i, "type": "request_count"})
+            continue
+        problem = request_json_problem(stock[i], bb[i], i)
+        if problem is not None:
+            diffs.append(problem)
             continue
         left = bytes.fromhex(stock[i]["raw_body_bytes"])
         right = bytes.fromhex(bb[i]["raw_body_bytes"])
@@ -349,15 +383,17 @@ def compare_requests(stock: list[Any], bb: list[Any], phases: list[Any], deviati
                 diffs.append({"index": i, "type": "deviation_guard", "message": str(error)})
                 continue
         left_payload, right_payload = json.loads(left), json.loads(right)
-        counts = {"index": i, "stock": normalize_tool_elapsed_time(left_payload),
-                  "bb": normalize_tool_elapsed_time(right_payload)}
+        counts = {"index": i, "stock": normalize_tool_elapsed_time(left_payload, left),
+                  "bb": normalize_tool_elapsed_time(right_payload, right)}
         if timing_substitutions is not None:
             timing_substitutions.append({**counts,
                 "names": (["omp_native_bash_elapsed_time"] if counts["stock"] or counts["bb"] else [])
                          + [name for name, field in (("compaction_summary_episode_tools", "tools"),
                                                       ("compaction_summary_max_tokens", "max_completion_tokens"))
                             if field in fields],
-                "authority": "pinned native Bash tool-result elapsed-time header; target harness policy.deviations",
+                "authority": BASH_TIMING_AUTHORITY + "; target harness policy.deviations",
+                "source_commit": OMP_SOURCE_COMMIT,
+                "admitted_global_timeout_ceiling_seconds": 30,
                 "raw_difference": raw_mismatch(original_left, original_right, i),
                 "changes": {"stock": guarded_changes(stock[i]["json"], left_payload),
                             "bb": guarded_changes(bb[i]["json"], right_payload)}})

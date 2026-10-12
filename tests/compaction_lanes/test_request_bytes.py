@@ -101,3 +101,37 @@ def test_elapsed_header_in_other_tool_output_is_not_admitted(tool_name, correlat
 def test_guarded_string_projection_reuses_wire_encoder_without_changing_other_bytes():
     assert project_guarded_values(rb'{ "id": "old", "body":"\u00e9" }',
                                   {"id": "new", "body": "é"}) == rb'{ "id": "new", "body":"\u00e9" }'
+
+
+@pytest.mark.parametrize("raw", [
+    b'{"x":"a","x":"z","tools":1}',
+    b'{"x":"b","x":"z","tools":1}',
+    b'{"nested":{"x":"a","x":"z"},"tools":1}',
+])
+def test_duplicate_unguarded_member_cannot_be_rewritten_by_authorized_removal(raw):
+    collapsed = json.loads(raw)
+    collapsed.pop("tools")
+    with pytest.raises(ValueError, match="Duplicate JSON member"):
+        project_guarded_values(raw, collapsed)
+
+
+def test_duplicate_member_rejection_keeps_raw_mismatch_evidence_before_summary_guard():
+    from breadboard.rl.harness.native_stream_profiles import PI_SUMMARIZATION_SYSTEM_PROMPT
+    from breadboard_engine.compaction_lanes.request_bytes import raw_mismatch
+    messages = json.dumps([{"role": "system", "content": PI_SUMMARIZATION_SYSTEM_PROMPT},
+                           {"role": "user", "content": "Conversation history."}], separators=(",", ":"))
+    tools = [{"type": "function", "function": {"name": "bash"}}]
+    stock_raw = ('{"x":"a","x":"z","messages":' + messages + ',"max_tokens":800}').encode()
+    bb_raw = ('{"x":"b","x":"z","messages":' + messages
+              + ',"tools":' + json.dumps(tools, separators=(",", ":")) + ',"max_tokens":2048}').encode()
+    deviations = []
+    passed, failures = pi_requests.compare_recorded_requests(
+        [record(stock_raw)], [record(bb_raw)],
+        ["compaction_summary_episode_tools", "compaction_summary_max_tokens"],
+        target_id="pi-r4@0.57.1", episode_tools=tools, episode_max_tokens=2048,
+        reserve_tokens=1000, deviation_records=deviations)
+    assert not passed
+    assert failures[0]["kind"] == "request_json"
+    assert failures[0]["raw_difference"] == raw_mismatch(stock_raw, bb_raw, 0)
+    assert {error["side"] for error in failures[0]["errors"]} == {"stock", "bb"}
+    assert deviations == []

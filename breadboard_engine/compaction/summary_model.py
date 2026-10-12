@@ -113,6 +113,7 @@ class ConductorSummaryModel:
             session_state=state,
             agent_config=dict(self.agent_config),
             stream=request.stream,
+            native_request_field_order=request.native_request_field_order,
             extra={
                 "turn_index": turn_index,
                 "model": model,

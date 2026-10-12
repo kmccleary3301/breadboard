@@ -13,6 +13,7 @@ from tests.compaction.test_opencode_stock_tools import binary
 from tests.compaction.test_opencode_stock_tools import isolated_environment
 from tests.compaction.test_opencode_stock_tools import response
 from tests.compaction.test_opencode_stock_tools import hermetic_stock_config
+from tests.compaction.test_opencode_stock_tools import short_stock_workspace
 from breadboard_engine.security.stock_install import stock_install_digest
 import shlex
 import shutil
@@ -160,12 +161,11 @@ def test_unstaged_or_altered_sg_rejects_before_startup(tmp_path, altered):
 
 
 @pytest.mark.usefixtures("omo_dependencies")
-def test_stock_tmux_pane_cannot_read_protected_path_with_pty_enabled(tmp_path, binary):
+def test_stock_tmux_pane_cannot_read_protected_path_with_pty_enabled(tmp_path, binary, short_stock_workspace):
     tmux = shutil.which("tmux")
     if tmux is None:
         pytest.skip("tmux is absent: real PTY credential isolation requires tmux")
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace = short_stock_workspace
     secret = tmp_path / "protected-token"
     marker = "BB_PROTECTED_SECRET_" + uuid.uuid4().hex
     secret.write_text(marker)

@@ -17,7 +17,7 @@ from .opencode_mcp import MCPRelay
 from .opencode_recording import ResponsesProvider
 from .opencode_scenarios import PLUGIN_COMMIT, PLUGIN_EVIDENCE, PLUGIN_SCENARIOS, PROFILES, ROOT, SCENARIOS, STOCK_VERSION, production_settings, responses_sse, scenario_turns, text_response
 from .opencode_stock import create_empty_stock_sessions, run_stock
-from .request_bytes import raw_request_differences, guarded_changes
+from .request_bytes import guarded_changes, raw_request_differences, request_json_problem
 
 def auxiliary_script(scenario: str) -> list[dict[str, Any]]:
     if scenario == "delegate_prune":
@@ -185,9 +185,11 @@ def run_scenario(harness: str, scenario: str, out: Path) -> dict[str, Any]:
         (out / "bb_requests.jsonl").write_text("".join(json.dumps(row) + "\n" for row in records["bb"]))
         relay_failures = list(relay.failures) if relay is not None else []
     deviations = []
-    guard_errors = []
+    wire_problems = [problem for index, (stock, bb) in enumerate(zip(records["stock"], records["bb"]))
+                     if (problem := request_json_problem(stock, bb, index)) is not None]
+    guard_errors = list(wire_problems)
     compared = records
-    if scenario in {"delegate_prune", "delegate_idle"} and all("native_evidence" in sides[side] for side in ("stock", "bb")):
+    if not wire_problems and scenario in {"delegate_prune", "delegate_idle"} and all("native_evidence" in sides[side] for side in ("stock", "bb")):
         try:
             guard = RuntimeGeneratedIDs(sides["stock"]["native_evidence"], sides["bb"]["native_evidence"],
                                         [item["info"]["id"] for item in sessions])
@@ -204,7 +206,7 @@ def run_scenario(harness: str, scenario: str, out: Path) -> dict[str, Any]:
             compared = records
             guard_errors.append({"deviation_guard": str(exc)})
     tie_usage = []
-    if all("native_evidence" in sides[side] for side in ("stock", "bb")):
+    if not wire_problems and all("native_evidence" in sides[side] for side in ("stock", "bb")):
         tie_guard = CreatedTimeTieOrder(sides["stock"]["native_evidence"], sides["bb"]["native_evidence"])
         tied_rows = []
         for index, stock_row in enumerate(compared["stock"]):

@@ -159,6 +159,7 @@ async function initialize(payload) {
     tool_schemas: schemas,
     bootstrap: initializedState.bootstrap,
   };
+}
 
 async function executeOperation(operation, payload, signal) {
   if (operation === "initialize") return initialize(payload);
@@ -235,7 +236,4 @@ mainFramed().catch((error) => {
   process.exitCode = 1;
 });
 
-export { initializedState };
-
-export { initializedState };
 

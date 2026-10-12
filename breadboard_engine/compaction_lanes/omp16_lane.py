@@ -22,8 +22,7 @@ import subprocess
 from typing import Any
 
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider, MockScriptEngine
-from .request_bytes import project_guarded_values
-from .request_bytes import raw_request_differences, raw_mismatch, guarded_changes
+from .request_bytes import decode_request_body, guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET_ID = "oh-my-pi-r3@16.2.13"
@@ -166,7 +165,7 @@ def run_stock(workspace: Path, scratch: Path, url: str, out: Path) -> dict[str, 
 async def run_bb(workspace: Path, scratch: Path, url: str) -> dict[str, Any]:
     from tests.rl.harness import test_omp_16_2_13_native_stream_conductor as h
     native, harness = target_documents()
-    profile = replace(h._profile(url), model=MODEL, context_window=WINDOW,
+    profile = replace(h._profile(url + "/v1"), model=MODEL, context_window=WINDOW,
                       max_output_tokens=native["model"]["max_tokens"])
     cas = h.FilesystemCAS(scratch / "cas")
     try:
@@ -230,7 +229,7 @@ def is_summary(body: dict[str, Any]) -> bool:
 
 
 def normalize(raw: bytes, *, stock: bool, tools: Any, cap: int, settings: dict[str, Any], deviations: list[str]) -> bytes:
-    body = json.loads(raw)
+    body = decode_request_body(raw)
     if not is_summary(body):
         return raw
     # The established lane comparator uses canonical JSON bytes, retaining
@@ -288,6 +287,10 @@ def run_lane(out: Path, scenario: str) -> dict[str, Any]:
         if index >= min(len(stock_rows), len(bb_rows)):
             diffs.append({"index": index, "reason": "missing_request"})
             continue
+        problem = request_json_problem(stock_rows[index], bb_rows[index], index)
+        if problem is not None:
+            diffs.append(problem)
+            continue
         a = bytes.fromhex(stock_rows[index]["raw_body_bytes"])
         b = bytes.fromhex(bb_rows[index]["raw_body_bytes"])
         if a != b:
@@ -305,7 +308,12 @@ def run_lane(out: Path, scenario: str) -> dict[str, Any]:
                 used_deviations.update(names)
                 deviation_records.append({**raw_mismatch(a, b, index), "names": names, "changes": changes,
                     "authority": TARGET_ID + "/harness.yaml#policy.deviations", "accepted": aa == bb_bytes})
-            if aa != bb_bytes or stock_rows[index].get("path") != bb_rows[index].get("path") or stock_rows[index].get("method") != bb_rows[index].get("method"):
+            route_a = (stock_rows[index].get("method"), stock_rows[index].get("path"))
+            route_b = (bb_rows[index].get("method"), bb_rows[index].get("path"))
+            if route_a != route_b:
+                diffs.append({"index": index, "kind": "request_route",
+                              "stock_route": list(route_a), "bb_route": list(route_b)})
+            if aa != bb_bytes:
                 first = next((i for i, pair in enumerate(zip(aa, bb_bytes)) if pair[0] != pair[1]), min(len(aa), len(bb_bytes)))
                 diffs.append({"index": index, "first_byte": first, "stock": aa[max(0, first-60):first+160].decode(), "bb": bb_bytes[max(0, first-60):first+160].decode()})
         except ValueError as exc:

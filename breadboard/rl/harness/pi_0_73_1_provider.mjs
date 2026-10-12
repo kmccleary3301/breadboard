@@ -9,7 +9,7 @@ import { appendSessionEntry, nextTimestamp, replayState, syncSessionMessages, wi
 
 
 
-function projectRequest(initializedState, payload) {
+async function projectRequest(initializedState, payload) {
   if (!initializedState) fail("project_request requires initialize");
   if (!Array.isArray(payload?.messages)) fail("project_request requires messages");
   const model = modelForProject(initializedState.modelConfig);
@@ -24,7 +24,29 @@ function projectRequest(initializedState, payload) {
   const context = { systemPrompt: initializedState.systemPrompt, messages };
   const outboundMessages = convertMessages(model, context, model.compat);
   const tools = initializedState.schemas;
-  return { schema_version: "bb.pi-native.v1", kind: "request", messages: outboundMessages, tools };
+  let captured = null;
+  const sentinel = new Error("Pi073_REQUEST_CAPTURE_SENTINEL");
+  const stream = openaiCompletions.streamSimpleOpenAICompletions(model, {
+    ...context,
+    tools: tools.map((tool) => tool.function),
+  }, {
+    apiKey: "EMPTY",
+    onPayload: (wire) => {
+      captured = wire;
+      throw sentinel;
+    },
+  });
+  await stream.result();
+  if (!captured) fail("pinned Pi0.73 primary request capture failed");
+  return {
+    schema_version: "bb.pi-native.v1",
+    kind: "request",
+    messages: outboundMessages,
+    tools,
+    request_members: Object.keys(captured).filter((member) => captured[member] !== undefined),
+    request_body: captured,
+    request_body_json: JSON.stringify(captured),
+  };
 }
 
 async function projectProviderFailure(initializedState, payload) {

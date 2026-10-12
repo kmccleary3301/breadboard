@@ -94,7 +94,7 @@ when the endpoint is offline. Its tmux lifecycle test creates a session, sends
 keys, captures actual output, and kills the session on both stock paths, skipping
 only when tmux is absent. Stock blocks bare `capture-pane` in `interactive_bash`
 and directs capture through its `bash` tool; the test preserves both results.
-`test_opencode_stock_pty_isolation.py` proves the pane cannot read a protected
+`test_opencode_stock_isolation.py` proves the pane cannot read a protected
 path. Concurrent headless completion and operator stop share one whole native
 teardown mutex (`test_opencode_stock_lifecycle.py`).
 
@@ -113,9 +113,8 @@ before the idle run as ordinary stock-originated turns on the session runner.
 Interactive native sessions require the live `SessionService` input queue.
 A persistent direct caller without that queue gets an explicit error if stock
 initiates a parent turn, rather than a parked request or a fabricated answer.
-`test_opencode_stock_autonomous_input.py`,
-`test_opencode_stock_cross_turn_permission.py`, and
-`test_opencode_stock_headless.py` cover these transitions.
+`test_opencode_stock_interaction.py` and
+`test_opencode_stock_lifecycle.py` cover these transitions.
 
 Stage the omo ast-grep dependency before launch:
 
@@ -235,7 +234,7 @@ permission conformance tests live in `tests/compaction/test_opencode_stock_*.py`
 They are not a full-catalog daily-driving parity certificate.
 The plugin's recovery owner is pinned `5137df72`,
 `src/hooks/anthropic-context-window-limit-recovery/summarize-retry-strategy.ts:104-117`.
-`test_opencode_stock_budget_followup.py` compares a real BB budget stop and
+`test_opencode_stock_lifecycle.py` compares a real BB budget stop and
 same-session followup with a direct stock interruption. The plugin group tests
 exercise recovery followed by real bash execution, completion or interruption,
 and another user turn.

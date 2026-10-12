@@ -1099,10 +1099,10 @@ class TaskExecutionOwner:
             )
         if interactive_permissions:
             if is_local_agent:
-                import queue as pyqueue
+                from breadboard_engine.permissions.session_ids import PermissionResponseQueue
 
                 permission_queue = (runner._permission_queue if retain_native_permission_queue
-                                    and runner._permission_queue is not None else pyqueue.Queue())
+                                    and runner._permission_queue is not None else PermissionResponseQueue())
             else:
                 try:
                     from ray.util.queue import Queue as RayQueue

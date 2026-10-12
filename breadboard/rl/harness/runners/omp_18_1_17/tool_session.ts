@@ -74,7 +74,7 @@ function sleep(milliseconds: number): Promise<void> {
 type ProcessHandle = { pid: number; pgid: number };
 type ProcessInfo = ProcessHandle & { ppid: number; state: string };
 
-async function processTable(): Promise<Map<number, ProcessInfo>> {
+export async function processTable(): Promise<Map<number, ProcessInfo>> {
   const table = new Map<number, ProcessInfo>();
   if (process.platform === "darwin") {
     const child = Bun.spawn(["/bin/ps", "-axo", "pid=,ppid=,pgid=,stat="], {

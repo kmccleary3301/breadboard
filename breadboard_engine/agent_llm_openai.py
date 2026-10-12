@@ -382,10 +382,6 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             completion_guard_abort_threshold=COMPLETION_GUARD_ABORT_THRESHOLD,
             admitted_workspace=admitted_workspace,
         )
-        from .execution.stock_driver import resolve_stock_driver, summary_tool_schema
-        self.stock_driver = resolve_stock_driver(self)
-        self.compaction_controller.stock_driver = self.stock_driver
-        self.compaction_controller.tool_schema_provider = lambda provider: summary_tool_schema(self, provider)
         self.permission_authority: PermissionAuthority = self.permission_broker
         self._model_role_lock = (
             dict(self.config.get("model_role_lock"))

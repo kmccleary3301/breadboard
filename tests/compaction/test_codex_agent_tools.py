@@ -267,7 +267,11 @@ def test_wait_returns_first_final_and_clamps_timeout(owner, monkeypatch):
     registry = native._registry(owner)
     # Real wait over registry state, with a deterministic clock rather than a 10s sleep.
     id = str(uuid.uuid4())
-    child = native.Child(id, "parent", 1, None, {}, "", owner, status="running")
+    child = native._make_child(
+        owner, registry, agent_id=id, parent_id="parent", depth=1, nickname=None,
+        config=deepcopy(owner.config), route=owner._current_route_id, messages=[],
+    )
+    child.status = "running"
     registry.children[id] = child
     times = iter([0.0, 11.0])
     monkeypatch.setattr(native.time, "monotonic", lambda: next(times))

@@ -27,6 +27,13 @@ TypeScript unions. Runtime registries retain the original schema, including
 its negative constraints, bounds, and conditional payload validation. No
 schema acceptance or frozen digest changes are needed for this projection.
 
+Generic replay envelopes carry a private type-only validation brand. Native
+replay literals retain their exact provider/version/payload contracts, while
+arbitrary generic tags cannot bypass those contracts. Parse untrusted exchanges
+with `kernelValidators.providerExchangeV2(value)`, which narrows successful
+values to `ProviderExchangeV2` using the existing canonical generated validator.
+The brand adds no runtime field or wrapper and is never serialized.
+
 The Python provider contracts keep request identity and transport normalization
 in `contract_requests.py`, tool definitions/calls/results in `contract_tools.py`,
 and message content, reasoning, replay, and results in `contract_messages.py`.
@@ -34,3 +41,4 @@ and message content, reasoning, replay, and results in `contract_messages.py`.
 
 Hook-denied Responses tool searches retain their correlated error output;
 successful native search outputs retain their original wire fields.
+

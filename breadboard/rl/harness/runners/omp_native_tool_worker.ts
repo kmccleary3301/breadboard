@@ -2,6 +2,7 @@
 import { close, executeBatch, initialize, prepareTools } from "./omp_18_1_17/tool_session.ts";
 import { parseProviderUsage, projectProviderFailure, projectRequest } from "./omp_18_1_17/provider_projection.ts";
 import { finalizeCompactionPhase, prepareCompactionPhase } from "./omp_18_1_17/compaction_replay.ts";
+import { writeFrame } from "./omp_18_1_17/rpc_frames.ts";
 
 
 
@@ -28,15 +29,6 @@ const decoder = new TextDecoder();
 const reader = Bun.stdin.stream().getReader();
 let buffer = new Uint8Array(0);
 function append(chunk: Uint8Array) { const next = new Uint8Array(buffer.length + chunk.length); next.set(buffer); next.set(chunk, buffer.length); buffer = next; }
-async function writeFrame(value: Record<string, unknown>) {
-  const encoded = new TextEncoder().encode(JSON.stringify(value));
-  const frame = new Uint8Array(4 + encoded.length);
-  new DataView(frame.buffer).setUint32(0, encoded.length, false);
-  frame.set(encoded, 4);
-  await new Promise<void>((resolve, reject) => {
-    process.stdout.write(frame, (error) => error ? reject(error) : resolve());
-  });
-}
 while (true) {
   const { value, done } = await reader.read();
   if (done) break;

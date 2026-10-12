@@ -24,7 +24,22 @@ function mergeObject(base: Schema, branch: Schema): Schema {
 }
 
 function replayBranches(dispatch: Schema, base: Schema): Schema[] {
-  if (!dispatch.if || !dispatch.then || !dispatch.else) return [mergeObject(base, dispatch)]
+  if (!dispatch.if || !dispatch.then || !dispatch.else) {
+    // TypeScript cannot exclude finite native tags from arbitrary strings.
+    // Generic envelopes must therefore enter through the canonical validator,
+    // not through unchecked object literals that can impersonate native replay.
+    const blockType = base.properties?.type ? 'type: "provider_replay";' : ""
+    return [{
+      tsType: `{
+        ${blockType}
+        provider_id: string;
+        schema_version: string;
+        replay_scope: "same_provider" | "diagnostic";
+        payload: ProviderReplayPayload;
+        readonly [validatedGenericProviderReplay]: true;
+      }`,
+    }]
+  }
   const native = mergeObject(mergeObject(base, dispatch.if), dispatch.then)
   return [native, ...replayBranches(dispatch.else, base)]
 }

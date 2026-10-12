@@ -590,6 +590,7 @@ def get_model_response(
         session_state=session_state,
         agent_config=conductor.config,
         stream=effective_stream_responses,
+        native_request_field_order=tuple(stock_request) if stock_request is not None else None,
         extra=runtime_extra,
         session_id=session_state.get_provider_metadata("session_id")
         or getattr(session_state, "session_id", None),

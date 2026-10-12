@@ -7,7 +7,7 @@
 Capture all three scenarios with:
 
 ```sh
-BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. /Users/kylemccleary/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m scripts.compaction_lanes.codex_lane --out /tmp/codex-e4-gpt55-lane --window 16000 --stock-recordings tests/compaction/oracles/codex@0.139.0/recordings-gpt55
+BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. python -m scripts.compaction_lanes.codex_lane --out /tmp/codex-e4-gpt55-lane --window 16000 --stock-recordings tests/compaction/oracles/codex@0.139.0/recordings-gpt55
 ```
 
 The same 16,000-token window and derived 14,400-token compaction limit apply to both sides. Stock `exec`/`resume` and fresh BreadBoard conductor instances share workspace, native environment, installation file and stock thread root. Process IDs are injected from stock's successful PTY allocation; allocation mismatches fail. Build the explicit native helper prerequisites with `python -m breadboard_engine.execution.codex_native build all` before running the lane.

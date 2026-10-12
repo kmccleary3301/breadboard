@@ -1,7 +1,7 @@
 """Stock oracle byte-equality tests for Pi 0.73.1 and 0.57.1 context compaction.
 
 Compares the worker with real stock AgentSession and SessionManager:
-(a) every summary wire request (messages and max_tokens) between worker and stock;
+(a) every complete SDK summary wire body and its replay fragment between worker and stock;
 (b) post-compaction context: stock buildSessionContext -> convertToLlm -> convertMessages
     vs the worker's rebuilt messages through projectRequest.
 
@@ -183,7 +183,6 @@ const { prepareCompaction, compact } = await imp('@mariozechner/pi-coding-agent'
 const { convertToLlm } = await imp('@mariozechner/pi-coding-agent', 'dist/core/messages.js');
 const { convertMessages, streamSimpleOpenAICompletions } = await imp('@mariozechner/pi-ai', 'dist/providers/openai-completions.js');
 const { registerApiProvider, unregisterApiProviders } = await imp('@mariozechner/pi-ai', 'dist/api-registry.js');
-const { AssistantMessageEventStream } = await imp('@mariozechner/pi-ai', 'dist/utils/event-stream.js');
 const { Agent } = await imp('@mariozechner/pi-agent-core', 'dist/index.js');
 const sm = SessionManager.inMemory();
 idCounter = 0;
@@ -263,10 +262,21 @@ for (const step of input.steps) {
   let callIndex = 0;
   registerApiProvider({ api: 'oracle', streamSimple: (model, ctx, options) => {
     const kind = kinds[callIndex++];
-    requests[kind] = { messages: convertMessages(input.model, ctx, input.model.compat), max_tokens: options.maxTokens };
-    const stream = new AssistantMessageEventStream();
-    stream.push({ type: 'done', message: { role: 'assistant', content: [{ type: 'text', text: step.responses[kind] }], stopReason: 'stop' } });
-    return stream;
+    const request = requests[kind] = { messages: convertMessages(input.model, ctx, input.model.compat), max_tokens: options.maxTokens };
+    return { result: async () => {
+      const captured = streamSimpleOpenAICompletions(input.model, ctx, {
+        ...options,
+        apiKey: 'EMPTY',
+        onPayload: (wire) => {
+          request.request_body = wire;
+          request.request_body_json = JSON.stringify(wire);
+          throw new Error('stock summary request capture');
+        },
+      });
+      await captured.result();
+      if (!request.request_body_json) throw new Error('stock summary wire capture missing');
+      return { role: 'assistant', content: [{ type: 'text', text: step.responses[kind] }], stopReason: 'stop' };
+    } };
   } }, 'oracle');
   ++clock; // worker prepare calls compact through its capture seam
   ++clock; // worker finalize replays the same stock provider calls
@@ -448,6 +458,9 @@ async def test_stock_oracle(tmp_path: Path, version: str, worker_script: Path,
             assert finalized["retry"] is expected["retry"]
             assert _bytes(finalized["messages"]) == _bytes(expected["messages"])
             projected = await client.invoke("project_request", {"messages": finalized["messages"]})
+            emitted_body = json.loads(projected["request_body_json"])
+            assert projected["request_members"] == list(emitted_body)
+            assert projected["request_body"] == emitted_body
             assert _bytes(projected["messages"]) == _bytes(expected["postWire"])
             messages = finalized["messages"]
     finally:

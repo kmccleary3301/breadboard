@@ -89,11 +89,24 @@ async function prepareCompactionPhase(initializedState, payload) {
     api: seamApi,
     stream: () => fail("unexpected stream call during compaction prepare"),
     streamSimple: (_model, context, options) => {
-      requests[callKinds[callIndex++]] = {
+      const request = requests[callKinds[callIndex++]] = {
         messages: convertMessages(wireModel, context, wireModel.compat),
         max_tokens: options.maxTokens,
       };
-      return { result: async () => { throw new CompactionPrepareSentinel(); } };
+      return { result: async () => {
+        const stream = openaiCompletions.streamSimpleOpenAICompletions(wireModel, context, {
+          ...options,
+          apiKey: PROVIDER_API_KEY,
+          onPayload: (wire) => {
+            request.request_body = wire;
+            request.request_body_json = JSON.stringify(wire);
+            throw new CompactionPrepareSentinel();
+          },
+        });
+        await stream.result();
+        if (!request.request_body_json) fail("pinned Pi0.57 summary request capture failed");
+        throw new CompactionPrepareSentinel();
+      } };
     },
   }, seamApi);
   const timestamp = nextTimestamp();

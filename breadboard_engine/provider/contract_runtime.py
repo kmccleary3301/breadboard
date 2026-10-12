@@ -219,6 +219,8 @@ class ProviderRuntimeContext:
     provider_profile: Optional[OpenAICompletionsProviderProfile] = None
     effective_plan_digest: Optional[str] = None
     capability_observation_digest: Optional[str] = None
+    native_request_body_json: Optional[str] = None
+    native_request_field_order: Optional[tuple[str, ...]] = None
 
     def record_provider_event(
         self, kind: str, payload: Optional[Mapping[str, Any]] = None

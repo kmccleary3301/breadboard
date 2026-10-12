@@ -7,7 +7,7 @@ import time
 from typing import Any
 from .opencode_scenarios import PARITY_REFERENCE
 from breadboard_engine.provider.contract_wire import canonical_json
-from .request_bytes import project_guarded_values
+from .request_bytes import project_guarded_values, request_json_problem
 
 def canonical(body: Any) -> bytes:
     return canonical_json([body])[1:-1].encode("utf-8")
@@ -459,6 +459,10 @@ def compare_records(stock: list[dict[str, Any]], bb: list[dict[str, Any]]) -> li
     if len(stock) != len(bb):
         diffs.append({"kind": "request_count", "classification": "compaction-path", "stock": len(stock), "bb": len(bb)})
     for index, (left, right) in enumerate(zip(stock, bb)):
+        problem = request_json_problem(left, right, index)
+        if problem is not None:
+            diffs.append(problem)
+            continue
         raw_left = bytes.fromhex(left["raw_body_bytes"])
         raw_right = bytes.fromhex(right["raw_body_bytes"])
         if project_guarded_values(raw_left, left["json"]) == project_guarded_values(raw_right, right["json"]) and left["path"] == right["path"] and left.get("method") == right.get("method"):

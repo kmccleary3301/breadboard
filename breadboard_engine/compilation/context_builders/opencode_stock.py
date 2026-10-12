@@ -114,7 +114,13 @@ def project_inflight_tool_arguments(native_request, messages):
                 native = calls.get(call_id)
                 if native is None or not isinstance(native.get("arguments"), str) or not isinstance(native.get("name"), str):
                     raise StockExecutionError(f"Native pending request omitted arguments/name for BB call {call_id}")
-                block = {**block, "payload": {**payload, "arguments": native["arguments"], "name": native["name"]}}
+                # Canonical persistence may sort mapping members. Recover the
+                # source wire ordering only for this admitted call, without
+                # importing native-only fields or changing stored history.
+                wire_payload = {key: payload[key] for key in native if key in payload}
+                wire_payload.update((key, value) for key, value in payload.items() if key not in wire_payload)
+                wire_payload.update(arguments=native["arguments"], name=native["name"])
+                block = {**block, "payload": wire_payload}
                 changed = True
             projected.append(block)
         if changed:
@@ -186,7 +192,10 @@ class StockSummaryProjection:
         instruction = {**request.messages[-1], "content": copy.deepcopy(_last_user_content(native_request))}
         messages = project_inflight_tool_arguments(native_request, [*request.messages[:-1], instruction])
         messages = project_inflight_tool_outputs(native_request, messages)
-        return replace(request, messages=tuple(messages))
+        return replace(
+            request, messages=tuple(messages),
+            native_request_field_order=tuple(native_request),
+        )
 
     def complete(self, response: SummaryResponse):
         # The mirror commits the genuine BB response, including usage/reasoning.

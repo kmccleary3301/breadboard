@@ -8,8 +8,9 @@ import { join } from "node:path"
 import { GENERATED_SCHEMAS, GENERATED_SCHEMA_IDS_BY_PACK, GENERATED_SCHEMAS_BY_PACK, PACKS } from "../src/generated/index.js"
 import { GENERATED_SCHEMAS as INTERNAL_GENERATED_SCHEMAS } from "../src/generated/internal-registry.js"
 import { Ajv2020 } from "ajv/dist/2020.js"
+import { kernelValidators } from "../src/index.js"
 import type {
-  Event, ProviderReplayBlock, ProviderReplayPayload,
+  Event, ProviderExchangeV2, ProviderReplay, ProviderReplayBlock, ProviderReplayPayload,
 } from "../src/generated/types/bb.provider_exchange.v2.js"
 
 const scalarReplayPayload = {
@@ -95,6 +96,12 @@ void incompleteEnd
 // @ts-expect-error Raw and canonical arguments are mutually exclusive.
 const mixedEnd: Event = { kind: "tool_call_end", sequence: 1, content_index: 0, message_id: "message", call_id: "search", raw_arguments: "lexical", arguments_json: "{}", arguments: {} }
 void mixedEnd
+// @ts-expect-error Native tags cannot use an unchecked generic replay payload.
+const disguisedNativeBlock: ProviderReplayBlock = { type: "provider_replay", provider_id: "openai", schema_version: "openai.responses.tools.v1", replay_scope: "same_provider", payload: { item_id: "x" } }
+// @ts-expect-error Terminal replay has the same validated generic boundary.
+const disguisedNativeReplay: ProviderReplay = { provider_id: "openai", schema_version: "openai.responses.tools.v1", replay_scope: "same_provider", payload: { item_id: "x" } }
+void disguisedNativeBlock
+void disguisedNativeReplay
 
 test("provider event and native replay types retain discriminated fields", () => {
   assert.equal(completedCallId({
@@ -120,6 +127,30 @@ test("provider schema retains exact native dispatch and argument exclusions", ()
   assert.equal(event(end), true)
   assert.equal(event({ ...end, arguments_json: "{}", arguments: {} }), false)
   assert.equal(event({ ...end, raw_arguments: undefined }), false)
+})
+
+test("canonical SDK validation admits and narrows generic replay", () => {
+  const fixture: unknown = loadJson("../../contracts/kernel/examples/provider_exchange_v2_done.json")
+  if (!kernelValidators.providerExchangeV2(fixture)) {
+    assert.fail(JSON.stringify(kernelValidators.providerExchangeV2.errors))
+  }
+  const exchange: ProviderExchangeV2 = fixture
+  const replays: ProviderReplayBlock[] = exchange.request.messages.flatMap(
+    (message) => message.content.filter((block): block is ProviderReplayBlock => block.type === "provider_replay"),
+  )
+  assert.equal(replays.length, 1)
+  assert.equal(replays[0].schema_version, "responses.v1")
+  const request = {
+    ...exchange.request,
+    messages: [{
+      role: "assistant", content: [{
+        type: "provider_replay", provider_id: "openai",
+        schema_version: "openai.responses.tools.v1", replay_scope: "same_provider",
+        payload: { item_id: "x" },
+      }],
+    }],
+  }
+  assert.equal(kernelValidators.providerExchangeV2({ ...exchange, request }), false)
 })
 
 test("generated registry and type files cover every kernel schema", () => {

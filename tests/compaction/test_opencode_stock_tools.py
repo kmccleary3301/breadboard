@@ -496,3 +496,54 @@ def omo_dependencies():
                 LSP_ROOT / "node_modules/.bin/pyright-langserver")
     if not all(path.is_file() for path in required):
         pytest.skip("Pinned OMO/ast-grep/LSP conformance dependencies are not installed")
+
+
+@pytest.fixture
+def short_stock_workspace():
+    import tempfile
+    # Unix sockets must fit sockaddr_un even when pytest's root is deeply nested.
+    # The entire short workspace is owned, admitted by the same sandbox policy,
+    # and removed only after dependent stock sessions have shut down.
+    with tempfile.TemporaryDirectory(prefix="bb-stock-", dir="/tmp") as directory:
+        yield Path(directory).resolve()
+
+
+def test_auxiliary_upstream_disconnect_is_observed_by_forward_owner():
+    from concurrent.futures import ThreadPoolExecutor
+    from http.server import BaseHTTPRequestHandler
+    import socket
+    import threading
+    import httpx
+    from breadboard_engine.execution.local_http_proxy import LocalHTTPProxy
+    from breadboard_engine.execution.opencode_auxiliary import AuxiliaryTransport
+    entered, disconnect = threading.Event(), threading.Event()
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def do_POST(self):
+            entered.set()
+            disconnect.wait(10)
+            self.connection.shutdown(socket.SHUT_RDWR)
+    proxy = LocalHTTPProxy(Handler)
+    proxy.start()
+    transport = AuxiliaryTransport()
+    unobserved = []
+    try:
+        with ThreadPoolExecutor() as pool:
+            request = pool.submit(
+                transport.forward, "owned", f"http://127.0.0.1:{proxy.server_port}/", {}, b"{}",
+            )
+            assert entered.wait(10)
+            transport.loop.call_soon_threadsafe(
+                transport.loop.set_exception_handler,
+                lambda loop, context: unobserved.append(context),
+            )
+            disconnect.set()
+            with pytest.raises(httpx.HTTPError):
+                request.result(timeout=5)
+            transport.close()
+            assert not unobserved
+    finally:
+        disconnect.set()
+        transport.close()
+        proxy.close()

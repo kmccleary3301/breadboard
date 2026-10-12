@@ -9,6 +9,7 @@ import pytest
 from breadboard_engine.permissions.broker import PermissionBroker, PermissionRequestTimeoutError
 from breadboard_engine.permissions.claude_permission import request_stock_tool_permission
 from breadboard_engine.permissions.opencode_questions import request_stock_question
+from breadboard_engine.permissions.session_ids import PermissionResponseQueue
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -187,3 +188,41 @@ def test_legacy_and_native_requests_share_session_counter_across_brokers(tmp_pat
         item.get("permission_broker", {}).get("note") == "user_allow_once"
         for item in state.transcript
     )
+
+
+def test_retained_response_channel_owns_ids_across_turn_states_and_brokers(tmp_path):
+    replies = PermissionResponseQueue()
+    child_asked = threading.Event()
+    child_requests, root_requests = [], []
+    def child_emit(kind, payload, turn=None):
+        if kind == "permission_request":
+            child_requests.append(payload)
+            child_asked.set()
+    def root_emit(kind, payload, turn=None):
+        if kind == "permission_request":
+            root_requests.append(payload)
+            replies.put("once")
+            replies.put({"request_id": "permission_stale", "response": "always"})
+            replies.put({"request_id": payload["request_id"], "response": "reject"})
+    child_state = session(tmp_path, child_emit, replies)
+    root_state = session(tmp_path, root_emit, replies)
+    child_broker = PermissionBroker({"options": {"mode": "prompt", "timeout_s": 5}})
+    root_broker = child_broker
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        child = pool.submit(request_stock_question, child_broker, child_state, question())
+        try:
+            assert child_asked.wait(2)
+            assert request_stock_tool_permission(root_broker, root_state, native_request())["behavior"] == "deny"
+            assert not child.done()
+            assert child_requests[0]["request_id"] != root_requests[0]["request_id"]
+            replies.put({"request_id": child_requests[0]["request_id"], "answers": [["owned"]]})
+            assert child.result(timeout=2) == [["owned"]]
+        finally:
+            child_broker.cancel_pending_requests(child_state)
+    replies.put({"request_id": child_requests[0]["request_id"], "response": "always"})
+    later_state = session(tmp_path, root_emit, replies)
+    later_broker = PermissionBroker({"options": {"mode": "prompt", "timeout_s": 5}})
+    assert request_stock_tool_permission(later_broker, later_state, native_request("later"))["behavior"] == "deny"
+    assert [child_requests[0]["request_id"], *(item["request_id"] for item in root_requests)] == [
+        "permission_1", "permission_2", "permission_3"
+    ]

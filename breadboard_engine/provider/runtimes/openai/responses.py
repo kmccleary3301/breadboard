@@ -17,14 +17,22 @@ from ...contracts import (
 )
 from ...input_media import resolve_input_media
 from ...model_role_options import openai_responses_role_options
+from ...sdk_bindings import provider_sdk_bindings
 from ....logging.provider_dump import provider_dump_logger
 from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .chat import OpenAIChatRuntime
+from .codex_responses_wire import (
+    codex_wire_scope, create_responses_client, project_codex_request, selected,
+)
+from .source_responses_wire import project_source_request, source_responses_wire_scope
 
 
 class OpenAIResponsesRuntime(OpenAIChatRuntime):
     """Runtime for OpenAI Responses API."""
+
+    def _create_sdk_client(self, **kwargs):
+        return create_responses_client(provider_sdk_bindings.openai, **kwargs)
 
     def _provider_config(self, context: ProviderRuntimeContext) -> Dict[str, Any]:
         provider_tools_cfg = context.agent_config.get("provider_tools") or {}
@@ -954,7 +962,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
 
         try:
-            with stream_ctx as stream:
+            with source_responses_wire_scope(context.native_request_field_order), codex_wire_scope(context), stream_ctx as stream:
                 for event in stream:
                     event_type = getattr(event, "type", None)
                     if event_type == "response.output_text.delta":
@@ -1464,7 +1472,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             payload.update(extra_body)
         if stream:
             payload["stream"] = True
-        return payload
+        if context.native_request_field_order is not None:
+            return project_source_request(payload, context.native_request_field_order)
+        return project_codex_request(payload) if selected(context) else payload
     def invoke(
         self,
         *,
@@ -1488,12 +1498,13 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
 
         if response is None:
             try:
-                response = self._call_with_raw_response(
-                    client.responses,
-                    error_context="responses.create",
-                    context=context,
-                    **payload,
-                )
+                with source_responses_wire_scope(context.native_request_field_order), codex_wire_scope(context):
+                    response = self._call_with_raw_response(
+                        client.responses,
+                        error_context="responses.create",
+                        context=context,
+                        **payload,
+                    )
             except ProviderRuntimeError:
                 raise
             except Exception as exc:  # pragma: no cover - exercised in integration

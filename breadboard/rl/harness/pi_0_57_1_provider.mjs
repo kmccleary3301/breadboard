@@ -89,8 +89,9 @@ async function projectRequest(initializedState, payload) {
     kind: "request",
     messages: captured.messages,
     tools,
-    request_members: Object.keys(captured),
+    request_members: Object.keys(captured).filter((member) => captured[member] !== undefined),
     request_body: captured,
+    request_body_json: JSON.stringify(captured),
   };
 }
 

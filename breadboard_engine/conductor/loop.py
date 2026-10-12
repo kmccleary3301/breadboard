@@ -1030,9 +1030,8 @@ def run_main_loop(
                         completed = False
             except Exception:
                 pass
-            # Native response-end pressure can compact even a final answer.
-            # OpenCode processor.ts:281-287,419-423 queues compaction before
-            # prompt.ts:704-712 resumes the continuation, then prunes at :716.
+            # A source may queue a summary during terminal turn-end maintenance.
+            # Consume that boundary and its continuation before finalizing.
             reopened_completed_answer = False
             if compaction_ctrl is not None:
                 if compaction_ctrl.finish_assistant_step(
@@ -1044,11 +1043,14 @@ def run_main_loop(
                     completed = False
                     session_state.completion_summary = None
                 elif completed:
-                    compaction_ctrl.finish_user_turn(
+                    if compaction_ctrl.finish_user_turn(
                         session_state, conductor=self, runtime=runtime, client=client,
                         model=model, turn_index=turn_index,
                         request_context=request_context,
-                    )
+                    ):
+                        reopened_completed_answer = True
+                        completed = False
+                        session_state.completion_summary = None
             if completed:
                 break
 

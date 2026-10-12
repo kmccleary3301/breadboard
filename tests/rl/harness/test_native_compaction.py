@@ -22,7 +22,7 @@ async def test_compaction_rejects_invalid_worker_continuation(continuation: Any)
             }
         raise AssertionError(f"Unexpected worker phase {operation}")
 
-    async def summary_exchange(request: Any) -> Any:
+    async def summary_exchange(request: Any, native_request_body_json: str | None = None) -> Any:
         raise AssertionError("The native rewrite has no summary request")
 
     with pytest.raises(ValueError):

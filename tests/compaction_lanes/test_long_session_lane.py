@@ -207,11 +207,16 @@ def test_pi_rpc_lane_e2e(tmp_path: Path, target_id: str, scenario: str, requests
     assert report["scenario"] == scenario
     assert report["stock_request_count"] == requests
     assert report["bb_request_count"] == requests
-    if version == "0.73.1" and scenario in {"long_session", "repeated_failure"}:
-        assert report["bb_terminal_error"] is not None
-        assert report["bb_replay_trace_request_count"] is None
-    else:
-        assert report["bb_replay_trace_request_count"] == requests
+    assert report["bb_terminal_error"] is None
+    assert report["bb_replay_trace_request_count"] == requests
+    expected_error = scenario in {"long_session", "repeated_failure"}
+    assert report["stock_terminal_state"]["last_assistant"]["stopReason"] == ("error" if expected_error else "stop")
+    assert report["bb_terminal_state"]["termination"] == ("policy_incomplete" if expected_error else "assistant_complete")
+    assert report["terminal_differences"] == []
+    assert (tmp_path / "stock-runtime.json").is_file()
+    if expected_error:
+        assert report["bb_terminal_state"]["last_assistant"]["stopReason"] == "error"
+        assert report["bb_terminal_state"]["native_termination"]["native_stop_reason"] == "error"
     assert report["stock_compaction_count"] == compactions
     assert report["bb_compaction_count"] == compactions
     assert report["diffs"] == []
@@ -236,7 +241,7 @@ def test_pi_package_root_is_required(monkeypatch, version, env_var):
     {"overlay": {"argv": "not an argv"}}, {"overlay": {"argv": [None]}},
 ])
 def test_invalid_overlay_argv_raises(monkeypatch, tmp_path, document):
-    import breadboard_engine.compaction_lanes.long_session_lane as lane
+    import breadboard_engine.compaction_lanes.pi_target as lane
     harness = tmp_path / "harness.yaml"
     harness.write_text("")
     harness.with_name("target.json").write_text(json.dumps(document))
@@ -246,7 +251,7 @@ def test_invalid_overlay_argv_raises(monkeypatch, tmp_path, document):
 
 
 def test_invalid_native_config_raises(monkeypatch, tmp_path):
-    import breadboard_engine.compaction_lanes.long_session_lane as lane
+    import breadboard_engine.compaction_lanes.pi_target as lane
     harness = tmp_path / "harness.yaml"
     harness.write_text("")
     harness.with_name("native-config.json").write_text("not json")

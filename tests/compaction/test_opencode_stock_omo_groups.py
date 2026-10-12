@@ -20,6 +20,7 @@ from tests.compaction.test_opencode_stock_tools import binary
 from tests.compaction.test_opencode_stock_tools import isolated_environment
 from tests.compaction.test_opencode_stock_tools import response
 from tests.compaction.test_opencode_stock_tools import hermetic_stock_config, live_mcp
+from tests.compaction.test_opencode_stock_tools import connect_auxiliary, raw_descriptor, short_stock_workspace
 
 """Exercise actual pinned plugin tools; no BB native executors or MCP replicas."""
 
@@ -41,12 +42,11 @@ def lsp_environment():
 
 
 @pytest.fixture
-def omo(tmp_path, binary, omo_dependencies):
+def omo(tmp_path, binary, omo_dependencies, short_stock_workspace):
     root = Path(os.environ.get("OPENCODE_PLUGIN_ROOT", PLUGIN)).expanduser().resolve()
     assert root == PLUGIN.resolve(), "Conformance requires the staged pinned plugin, never /tmp"
     assert stock_install_digest(root) == PLUGIN_DIGEST
-    workspace = tmp_path / "workspace"
-    workspace.mkdir()
+    workspace = short_stock_workspace
     (workspace / "sample.ts").write_text("export const answer = 42;\nconsole.log(answer);\n")
     session = OpenCodeToolSession(str(workspace), MODEL, binary=binary, plugin_root=root, timeout=120, stock_config=hermetic_stock_config({"agent": {"title": {"disable": True}}}), lsp_root=LSP_PIN,
     pty=True,

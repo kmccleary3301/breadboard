@@ -13,6 +13,7 @@ from .pi_requests import compare_recorded_requests, is_summary_request
 from .pi_scenarios import build_final_over_threshold_scenario, build_long_session_scenario, build_repeated_failure_scenario
 from .pi_stock import run_stock_pi
 from .pi_target import REPO_ROOT, get_target_deviations, load_target_document, resolve_pi_cli, resolve_target_harness_path
+from .pi_terminal import bb_terminal_evidence, compare_terminal_states, stock_terminal_evidence
 from .request_bytes import raw_request_differences
 
 def run_pi_0_73_1_lane(
@@ -91,6 +92,7 @@ def run_pi_0_73_1_lane(
     # 1. Run Stock Pi against mock provider
     stock_record_file = out_dir / "stock_requests.jsonl"
     stock_mock = MockProvider(script=scenario_script, record_path=stock_record_file)
+    stock_environment = {}
     stock_mock.start()
 
     with tempfile.TemporaryDirectory(prefix="stock_pi_lane_") as stock_tmp:
@@ -106,6 +108,7 @@ def run_pi_0_73_1_lane(
                 reserve_tokens=reserve_tokens,
                 keep_recent_tokens=keep_recent_tokens,
                 runner=runner,
+                environment_observation=stock_environment,
             )
         finally:
             stock_mock.stop()
@@ -115,6 +118,13 @@ def run_pi_0_73_1_lane(
         for line in stock_record_file.read_text(encoding="utf-8").splitlines()
         if line.strip()
     ]
+    stock_terminal = stock_terminal_evidence(
+        stock_proc, rpc_cleanup=stock_environment.get("rpc_cleanup"),
+    )
+    (out_dir / "stock-runtime.json").write_text(json.dumps({
+        "stdout": stock_proc.stdout, "stderr": stock_proc.stderr,
+        **stock_terminal,
+    }, indent=2), encoding="utf-8")
 
     # 2. Replay through BreadBoard conductor
     bb_record_file = out_dir / "breadboard_requests.jsonl"
@@ -152,7 +162,19 @@ def run_pi_0_73_1_lane(
 
     # 3. Compare request bodies
     deviation_records = []
-    passed, diffs = compare_recorded_requests(stock_requests, bb_requests, deviations, target_id=target_id, deviation_records=deviation_records)
+    passed, diffs = compare_recorded_requests(
+        stock_requests, bb_requests, deviations, target_id=target_id,
+        deviation_records=deviation_records, stock_environment=stock_environment,
+        bb_environment=limit_report["pi_environment_observation"],
+    )
+    request_parity_passed = passed
+    bb_terminal = bb_terminal_evidence(bb_result)
+    terminal_differences = compare_terminal_states(
+        stock_terminal, bb_terminal,
+        expected_provider_error=scenario in ("long_session", "repeated_failure"),
+    )
+    diffs.extend(terminal_differences)
+    passed = request_parity_passed and not terminal_differences
 
     harness_name = f"pi@{version}"
     summary = {
@@ -174,6 +196,13 @@ def run_pi_0_73_1_lane(
         "diffs": diffs,
         "raw_differences": raw_request_differences(stock_requests, bb_requests),
         "deviation_records": deviation_records,
+        "environment_observations": {
+            "stock": stock_environment, "bb": limit_report["pi_environment_observation"],
+        },
+        "stock_terminal_state": stock_terminal,
+        "bb_terminal_state": bb_terminal,
+        "terminal_differences": terminal_differences,
+        "request_parity_passed": request_parity_passed,
         "comparison_basis": "Raw HTTP request bytes after named source-guarded edits; representation differences fail by default",
         "passed": passed,
     }

@@ -204,6 +204,24 @@ def _canonical_json(value: Any) -> bytes:
     ).encode("utf-8")
 
 
+def _append_summary_episode_fields(body: bytes, tools: list[dict[str, Any]]) -> bytes:
+    stock = json.loads(body.decode("utf-8"))
+    _require(type(stock) is dict, "stock summary request must be a JSON object")
+    _require(
+        "tools" not in stock and "max_tokens" not in stock,
+        "stock summary request already defines episode-owned fields",
+    )
+    closing = len(body.rstrip(b" \t\r\n")) - 1
+    _require(body[closing:closing + 1] == b"}", "stock summary object is unterminated")
+    additions = json.dumps(
+        {"tools": tools, "max_tokens": MAX_OUTPUT_TOKENS},
+        ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+    ).encode("utf-8")[1:-1]
+    # Keep every stock byte, including key order, escapes, number spelling and
+    # whitespace. Only the admitted top-level episode fields are appended.
+    return body[:closing] + (b"," if stock else b"") + additions + body[closing:]
+
+
 def _digest(value: Any) -> str:
     return "sha256:" + hashlib.sha256(_canonical_json(value)).hexdigest()
 
@@ -1005,13 +1023,7 @@ class HermesActor:
             extra_result_kwargs["compaction_summary_id"] = self._summary_call_id
             extra_result_kwargs["compaction_summary_retry"] = self._summary_call_http_attempts > 0
             self._summary_call_http_attempts += 1
-            stock_obj = json.loads(body.decode("utf-8"))
-            rewritten_obj = {
-                **stock_obj,
-                "tools": self._tool_schemas,
-                "max_tokens": MAX_OUTPUT_TOKENS,
-            }
-            wire_body = _canonical_json(rewritten_obj)
+            wire_body = _append_summary_episode_fields(body, self._tool_schemas)
             wire_headers = [
                 [k, v] for k, v in wire_headers
                 if k.lower() != "content-length"

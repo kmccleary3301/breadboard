@@ -58,10 +58,11 @@ def test_summary_tool_guard_rejects_boolean_as_number() -> None:
         _normalize(body, False)
 
 
-def test_only_object_member_order_is_canonicalized() -> None:
+def test_request_member_order_is_not_an_admitted_deviation() -> None:
     body = {"messages": [{"content": "Whitespace  stays\n", "role": "user"}], "tools": ["read", "write"]}
     reversed_members = {key: body[key] for key in reversed(body)}
-    assert _normalize(body, True) == _normalize(reversed_members, False)
+    assert _normalize(body, True) != _normalize(reversed_members, False)
+    assert _normalize(body, True) == json.dumps(body).encode()
     changed = deepcopy(body)
     changed["tools"].reverse()
     assert _normalize(body, True) != _normalize(changed, False)

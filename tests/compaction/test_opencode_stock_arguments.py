@@ -323,3 +323,52 @@ def test_original_api_error_uses_recipe_native_or_plugin_parser(monkeypatch, tmp
     if forwarded:
         assert observed == [(status, dict(response.headers), response.content)]
     assert all(getattr(trigger, "pending", None) is None for trigger in controller.recipe.triggers)
+
+
+@pytest.mark.parametrize("source_order", [
+    ("type", "call_id", "name", "arguments"),
+    ("call_id", "arguments", "type", "name"),
+])
+@pytest.mark.parametrize("summary", [False, True])
+def test_inflight_call_wire_order_recovers_source_order_after_canonical_sort(source_order, summary):
+    values = {
+        "type": "function_call", "call_id": "persisted-call",
+        "name": "bash", "arguments": '{"command":"printf preserved"}',
+    }
+    native_call = {key: values[key] for key in source_order}
+    native = {
+        "stream": False, "input": [native_call, {"role": "user", "content": "Summarize."}],
+        "model": "gpt-fixture",
+    }
+    persisted_call = json.loads(json.dumps(values, sort_keys=True))
+    messages = [{"role": "assistant", "content": [{
+        "type": "provider_replay", "provider_id": "openai",
+        "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
+        "payload": persisted_call,
+    }]}]
+    canonical_bytes = json.dumps(messages)
+    if summary:
+        session = SimpleNamespace(compaction_prompt=lambda **kwargs: native)
+        request = SummaryRequest(
+            system=None, messages=(*messages, {"role": "user", "content": "Summarize."}),
+            max_tokens=None, purpose="summary", context_reason="threshold",
+        )
+        prepared = StockSummaryProjection(
+            SimpleNamespace(_opencode_tool_session=session),
+        ).prepare(request)
+        assert prepared.native_request_field_order == tuple(native)
+        assert request.native_request_field_order is None
+        projected = list(prepared.messages)
+    else:
+        projected = project_inflight_tool_arguments(native, messages)
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(
+        provider_id="openai", runtime_id="openai_responses",
+    ))
+    context = ProviderRuntimeContext(None, {"provider_tools": {"openai": {
+        "responses_preserve_tool_call_items": True,
+    }}})
+    actual_call = runtime._convert_messages_to_input(projected, context=context)[0]
+    assert json.dumps(actual_call, separators=(",", ":")).encode() == (
+        json.dumps(native_call, separators=(",", ":")).encode()
+    )
+    assert json.dumps(messages) == canonical_bytes

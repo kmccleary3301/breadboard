@@ -29,8 +29,7 @@ from typing import Any
 
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider, MockScriptEngine, MockRequestHandler, MockThreadingServer
 from breadboard_engine.provider.contract_wire import canonical_json
-from .request_bytes import project_guarded_values
-from .request_bytes import raw_request_differences, raw_mismatch, guarded_changes
+from .request_bytes import guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ROOT / "config/e4_targets/openclaw/2026.9.4-r2"
@@ -461,6 +460,10 @@ def compare(stock: list[dict[str, Any]], bb: list[dict[str, Any]]) -> dict[str, 
             diffs.append({"request": i, "reason": "request count differs"})
             continue
         left, right = stock[i], bb[i]
+        problem = request_json_problem(left, right, i)
+        if problem is not None:
+            diffs.append(problem)
+            continue
         if "/v1/embeddings" in {left["path"], right["path"]}:
             fields = ("method", "path", "raw_body_bytes", "source_header_names")
             if any(left.get(field) != right.get(field) for field in fields):

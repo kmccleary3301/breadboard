@@ -31,18 +31,17 @@ def test_request_boundary_is_immutable_and_does_not_leak_into_next_pass():
     assert second.sampling_phase is None and second.pending_user_index is None
 
 
-def test_queued_summary_requires_consumption(monkeypatch):
-    controller = CompactionController({})
+def test_turn_completion_drains_queued_summaries(monkeypatch):
     queue = [object(), object()]
-    controller.stock_driver = StockDriver(
+    controller = CompactionController({}, stock_driver=StockDriver(
         execute=lambda *args, **kwargs: None,
         pending_compaction=lambda state: queue[0] if queue else None,
-    )
+    ))
     def compact(state, **kwargs):
         queue.pop(0)
         return SimpleNamespace(compacted=True)
     monkeypatch.setattr(controller, "compact", compact)
-    assert controller._serve_native_summary_requests(
+    assert controller.finish_user_turn(
         _state(), conductor=None, runtime=None, client=None, model="gpt-test", turn_index=1,
     )
     assert not queue
@@ -51,13 +50,12 @@ def test_queued_summary_requires_consumption(monkeypatch):
 def test_unconsumed_summary_raises_selected_driver_error(monkeypatch):
     class SourceError(RuntimeError):
         pass
-    controller = CompactionController({})
     pending = object()
-    controller.stock_driver = StockDriver(
+    controller = CompactionController({}, stock_driver=StockDriver(
         execute=lambda *args, **kwargs: None,
         pending_compaction=lambda state: pending,
         compaction_error=SourceError,
-    )
+    ))
     monkeypatch.setattr(controller, "compact", lambda *args, **kwargs: SimpleNamespace(compacted=True))
     with pytest.raises(SourceError):
         controller._serve_native_summary_requests(
@@ -66,12 +64,11 @@ def test_unconsumed_summary_raises_selected_driver_error(monkeypatch):
 
 
 def test_handled_source_outcome_is_not_retried():
-    controller = CompactionController({})
     outcomes = iter(["handled", None])
-    controller.stock_driver = StockDriver(
+    controller = CompactionController({}, stock_driver=StockDriver(
         execute=lambda *args, **kwargs: None,
         recovery_outcome=lambda state: next(outcomes),
-    )
+    ))
     args = dict(turn_index=1, conductor=None, runtime=None, client=None, model="gpt-test")
     assert not controller.recover_from_overflow(RuntimeError("overflow"), _state(), **args)
     assert not controller.recover_from_overflow(RuntimeError("unrelated"), _state(), **args)

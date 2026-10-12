@@ -487,7 +487,7 @@ class AgenticCoder:
 
         model = self._select_model()
         stock_driver = getattr(self.agent, "stock_driver", None)
-        if stock_driver is not None:
+        if stock_driver is not None and stock_driver.source_model is not None:
             source_model = stock_driver.source_model(self.agent, context)
             if source_model is not None:
                 model = source_model

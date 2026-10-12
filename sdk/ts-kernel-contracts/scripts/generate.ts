@@ -91,6 +91,8 @@ async function emitTypes(entries: SchemaEntry[]): Promise<void> {
       enableConstEnums: false,
       unreachableDefinitions: true,
     })
+    if (entry.filename === "bb.provider_exchange.v2.schema.json")
+      output = "declare const validatedGenericProviderReplay: unique symbol;\n\n" + output
     if (entry.filename === "bb.e4.lane_def.v3.schema.json" || entry.filename === "bb.e4.lane_manifest.v2.schema.json")
       output = output.replace(/^export type (\w+) = \{\n  \[k: string\]: unknown;\n\} & \{/m, "export interface $1 {")
     const outFile = join(TYPES_DIR, entry.filename.replace(/\.schema\.json$/, ".ts"))

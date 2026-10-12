@@ -224,7 +224,12 @@ const capturedRequests = [];
 let responseIndex = 0;
 const streamFn = (m, context, options) => {
   const wire = transport.t(m, context, options);
-  capturedRequests.push({ messages: wire.messages, max_tokens: wire.max_completion_tokens ?? wire.max_tokens });
+  capturedRequests.push({
+    messages: wire.messages,
+    max_tokens: wire.max_completion_tokens ?? wire.max_tokens,
+    request_body: wire,
+    request_body_json: JSON.stringify(wire),
+  });
   const summary = inputData.scripted_responses[responseIndex++];
   if (typeof summary !== "string") throw new Error("Oracle has no scripted provider response");
   const response = { stopReason: "stop", content: [{ type: "text", text: summary }] };
@@ -330,7 +335,7 @@ def _compact_in_production_phases(worker, messages, *, reason, settings, answers
         phases.append((operation, json.loads(json.dumps(payload))))
         return worker.request({"phase": operation, **payload})
 
-    async def exchange(request):
+    async def exchange(request, native_request_body_json=None):
         exchanges.append(thaw_json(request))
         return {"native_response": {"content": next(scripted)}}, {"request": thaw_json(request)}
 

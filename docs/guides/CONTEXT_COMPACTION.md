@@ -196,12 +196,12 @@ not a harness-name check.
 Run the stock/production differential lane with:
 
 ```sh
-BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. ~/projects/breadboard-compaction-ref-20261009/.venv/bin/python -m scripts.compaction_lanes.claude_lane --out /tmp/claude-e4-lane
+BB_WORKSPACE_ROOT=$PWD PYTHONPATH=. python -m scripts.compaction_lanes.claude_lane --out /tmp/claude-e4-lane
 ```
 
 Both sides keep the 200,000-token window and 32,000-token output cap. The lane
 applies stock's supported 10% auto-compact threshold override to both runners.
-It records raw bytes and compares canonical JSON without removing any field.
+It compares raw request-body bytes, without a canonical-JSON fallback.
 The lane report distinguishes stock compact boundaries from BB's compaction
 events and fails on every unadmitted difference. These runs are not evidence of
 full request parity until the report passes.
@@ -691,13 +691,81 @@ The OMP 18.1.17 handoff side request already carries the live tools, a
 (`session-handoff.ts:150-157`). The two summary deviations remove nothing
 there; the lane finds handoff requests byte-equal.
 
+### Runtime ownership and distribution
+
+The conductor selects one immutable stock execution driver during setup.
+Controllers use explicit execution, lifecycle and summary-catalog ports, not
+vendor-private object traversal. Sampling phase and pending user position belong
+to each compaction request, not the controller's lifetime.
+
+OpenCode and OMO share one canonical tool-definition catalog and HTTP proxy.
+Their version-specific tools and native session behavior remain separate.
+Native permission IDs follow the retained response channel across runner turns;
+a transient turn state cannot restart numbering while older requests wait.
+
+Codex owns its process managers and child registry outside the generic sandbox.
+Shutdown atomically closes the target subtree before stopping processes or
+joining workers. Closed parents cannot admit descendants; worker startup uses
+the same admission lock. Shutdown drains owned process groups and reader threads
+even after a group leader exits. Build all native helpers explicitly with
+`python -m breadboard_engine.execution.codex_native build all`. Runtime execution
+never invokes Cargo; missing helpers fail closed through the tool boundary.
+The closing subtree rejects resume and input until resource cleanup, worker
+drain and shutdown persistence complete. Failed cleanup keeps admission blocked
+until a successful close retry. Sequential resume remains supported afterward.
+
+Installed wheels include the target revisions, prompt and context resources,
+tool catalogs, native worker modules and shared Cargo workspace. Stock caches
+and documented dependency overrides remain external prerequisites.
+Captured OMO material is subject to Sustainable Use License 1.0, not MIT.
+Claude material remains proprietary. Included notices record provenance and
+restrictions; they do not establish redistribution permission.
+
+To test a candidate wheel, build and install it separately into a fresh venv
+without editable installs or system site packages. Then run from the checkout
+using the test runner's Python (the fixture launches the supplied interpreter
+with `-I` from a temporary directory outside the checkout):
+
+```bash
+env -u PYTHONPATH \
+  BREADBOARD_INSTALLED_WHEEL_PYTHON=/tmp/pr160-cleanup-proof/venv/bin/python \
+  python -m pytest -q tests/test_runtime_resource_closure.py \
+  tests/product/harness/test_templates.py::test_wheel_import_loads_template_from_distribution_data_root \
+  tests/compaction/test_codex_native_resources.py
+```
+
+Without `BREADBOARD_INSTALLED_WHEEL_PYTHON`, the installed-wheel tests skip.
+They never build, copy source trees, download dependencies or launch workers.
+The wheel regression lowers all six compaction target revisions against their
+pinned predecessors and resolves Codex's shared native workspace through the
+installed consumer APIs. It also exercises Codex model capabilities, deferred
+tool-catalog discovery's unavailable-helper response, and startup rendering
+with permission prompts, skill instructions and admitted environment facts.
+
+Native worker requests carry the pinned SDK's complete serialized
+`request_body_json` through an explicit invocation-local provider port. This
+transport carrier stays separate from semantic replay payloads and their digests.
+Main, summary and continuation requests use the same boundary. Reported members
+describe emitted JSON, excluding SDK properties whose values are `undefined`.
+The provider checks the body against compiled request authority before applying
+admitted summary tools and output caps.
+
+Codex and Claude ordering adapters copy SDK request options before serialization.
+They depend narrowly on the private `_build_request`, options-copy and
+extra-body merge interfaces. Source inspection covered OpenAI 3.26.1 and
+Anthropic 1.12.1. This does not establish compatibility with every version
+allowed by the declared OpenAI `>=1.0.0` dependency. Generic requests retain
+SDK serialization; profile scopes reset after completion, cancellation or error.
+
 ### Differential lanes
 
 `scripts/compaction_lanes/` runs the stock harness and the BreadBoard target
-against the same mock provider and compares every request in canonical JSON.
-Canonical JSON sorts object members; nothing else is normalized. A deviation
-is applied only after both the stock and BreadBoard values pass its guard.
-Raw request bytes are kept beside each report.
+against the same mock provider and compares raw request-body bytes first.
+Every raw mismatch retains its request index and both SHA-256 digests.
+Only named, source-authorized edits whose guards pass on both sides may be
+applied; the remaining bytes must match exactly. Member order, whitespace,
+escaping and duplicate JSON names are not silently normalized.
+Raw request bytes and per-edit deviation records are kept beside each report.
 
 | Module | Harness |
 |---|---|
@@ -710,9 +778,19 @@ Raw request bytes are kept beside each report.
 | `claude_lane` | `claude_code@2.1.63` engine preset |
 | `opencode_lane` | `opencode@1.2.17`, `oh-my-opencode@3.10.0` engine presets |
 
-The OMP 18.1.17 lane removes one anchored pattern,
-`^Wall time: N seconds$`, from tool-result strings on both sides. It counts
-each removal.
+The OMP 18.1.17 lane may remove one terminal
+`Wall time: N seconds` header from a correlated Bash tool result. The header
+may precede the source-generated timeout-clamp notice only when the matched
+request and admitted 30-second ceiling reproduce that exact notice. The notice
+stays byte-significant. Ambiguous, embedded or unrelated headers are rejected;
+each guarded removal is recorded.
+
+The Codex lane admits only permutation of the two `client_metadata` members
+constructed by the pinned source's `HashMap`. Installation and window values
+must remain identical, both bodies must use the source's compact unescaped form,
+and every byte outside that object remains significant. The window identifier
+includes its source-owned generation suffix. Records retain original and
+projected member order, exact spans and raw digests; duplicate names still fail.
 
 OMP 18.1.17 renders the local calendar date of its own process
 (`sdk.ts:3460-3463`, `utils/local-date.ts:2-7`), not the UTC date. The profile
@@ -721,10 +799,24 @@ therefore declares the admitted instant `message_timestamp_ms` instead of
 in its own time zone and reports the result as `bootstrap.current_date`.
 The comparator requires exact input sets: supplier captures carry `cwd`,
 `home`, `current_date` and `package_dir`, and BreadBoard traces add a
-13-digit `message_timestamp_ms`. Pi 0.73.1 and 0.57.1 still force `TZ=UTC`
-around stock's prompt builder. Their lanes normalize the date line
-(`long_session_lane.py:832-833`), so on a non-UTC host those two prompts
-differ from stock.
+13-digit `message_timestamp_ms`. Pi 0.73.1 and 0.57.1 retain the dated
+profile's `TZ=UTC` prompt-builder admission. Their lanes no longer erase
+date, working-directory or package-path differences with blanket regular
+expressions. Such differences fail unless a named, source-authorized guard
+admits the exact change; frozen profiles and older revisions remain unchanged.
+
+The Pi lanes record independent working-directory, time-zone and launch-clock
+observations. Named guards admit only the pinned first-system prompt's unique
+footer date and directory spans that match those facts. Pi 0.73.1 also checks
+its declared calendar date. Summary prompts, package paths, user and tool text,
+and every byte outside the admitted spans remain significant.
+
+Pi terminal parity also requires the actual stock `agent_end` and BreadBoard's
+typed outcome. Exhausted or declined source recovery commits the SDK assistant
+error and returns `POLICY_INCOMPLETE`, not an infrastructure exception. An owned
+RPC process terminated after source settlement retains its real exit status;
+only a recorded, authenticated SIGTERM cleanup may qualify. Missing completion
+evidence, unexpected signals and opaque exceptions fail the lane.
 
 ### Codex dated-profile agent and goal execution
 

@@ -21,10 +21,41 @@ def raw_mismatch(left: bytes, right: bytes, index: int) -> dict[str, Any] | None
                                   if pair[0] != pair[1]), min(len(left), len(right)))}
 
 
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"Duplicate JSON member: {key!r}")
+        result[key] = value
+    return result
+
+
+def decode_request_body(raw: bytes) -> Any:
+    """Decode recorded JSON without collapsing duplicate object members."""
+    return json.loads(raw, object_pairs_hook=_unique_object)
+
+
+def request_json_problem(stock: dict[str, Any], bb: dict[str, Any], index: int) -> dict[str, Any] | None:
+    """Reject ambiguous recorded objects before any source-owned guard runs."""
+    errors = []
+    raw = {side: bytes.fromhex(row["raw_body_bytes"]) for side, row in (("stock", stock), ("bb", bb))}
+    for side, body in raw.items():
+        try:
+            decode_request_body(body)
+        except ValueError as error:
+            errors.append({"side": side, "message": str(error)})
+    if not errors:
+        return None
+    return {"index": index, "kind": "request_json", "errors": errors,
+            "stock_sha256": hashlib.sha256(raw["stock"]).hexdigest(),
+            "bb_sha256": hashlib.sha256(raw["bb"]).hexdigest(),
+            "raw_difference": raw_mismatch(raw["stock"], raw["bb"], index)}
+
+
 def project_guarded_values(raw: bytes, projected: Any) -> bytes:
     """Apply an already validated JSON projection without rewriting other bytes."""
     text = raw.decode("utf-8")
-    decoder = json.JSONDecoder()
+    decoder = json.JSONDecoder(object_pairs_hook=_unique_object)
 
     def skip(pos: int) -> int:
         while pos < len(text) and text[pos].isspace():

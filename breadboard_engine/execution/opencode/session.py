@@ -256,6 +256,42 @@ class OpenCodeToolSession(OpenCodeLifecycle):
         return result
 
 
+    def queued_compaction(self) -> dict | None:
+        """Fence a genuine native summary created before its provider request."""
+        with self.condition:
+            self.check_alive()
+            if self.headless and self.headless_idle_seen:
+                return None
+            if self.compaction_pending is not None:
+                return self.compaction_pending
+        # OMO's idle recovery handler awaits native API calls before summarize
+        # reaches the model proxy. The preceding idle therefore cannot prove
+        # that a newly persisted source compaction marker has finished.
+        messages = self.api("GET", "/session/" + self.session_id + "/message")
+        latest = messages[-1] if messages else None
+        if latest is None:
+            return None
+        info = latest["info"]
+        marker = info.get("role") == "user" and any(
+            part.get("type") == "compaction" for part in latest["parts"]
+        )
+        summary = (
+            info.get("role") == "assistant" and info.get("summary") is True
+            and info.get("time", {}).get("completed") is None and not info.get("error")
+        )
+        if not marker and not summary:
+            with self.condition:
+                return self.compaction_pending
+        with self.condition:
+            ready = self.condition.wait_for(
+                lambda: self.compaction_pending is not None or self.failure or self.closed,
+                self.timeout,
+            )
+            self.check_alive()
+            if not ready:
+                raise StockExecutionError("Stock queued compaction did not produce its model request")
+            return self.compaction_pending
+
     def compaction_prompt(self, *, auto: bool = True) -> dict:
         """Expose stock's summary request before BB generates/commits its summary."""
         with self.condition:

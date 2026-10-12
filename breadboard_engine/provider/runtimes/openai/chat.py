@@ -39,6 +39,7 @@ from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
+from .native_chat_wire import admitted_native_request, create_chat_client, native_chat_wire_scope
 
 
 class _ConnectionSockets:
@@ -105,6 +106,9 @@ class _ProfileClient:
 class OpenAIChatRuntime(OpenAIBaseRuntime):
     """Runtime for OpenAI Chat Completions API."""
 
+    def _create_sdk_client(self, **kwargs) -> Any:
+        return create_chat_client(provider_sdk_bindings.openai, **kwargs)
+
     def create_client(
         self,
         api_key: str,
@@ -126,7 +130,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 kwargs["timeout"] = float(timeout_env)
             except ValueError:
                 pass
-        return provider_sdk_bindings.openai(**kwargs)
+        return self._create_sdk_client(**kwargs)
 
     def create_client_from_profile(
         self,
@@ -177,7 +181,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     "max_retries": 0,
                     "timeout": effective_timeout,
                 }
-                transport = provider_sdk_bindings.openai(**kwargs)
+                transport = self._create_sdk_client(**kwargs)
             except Exception as exc:
                 if http_client is not None:
                     http_client.close()
@@ -398,6 +402,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             if omit_stream
             else profile_request
         )
+        sent_request, native_wire_body = admitted_native_request(context, profile, sent_request)
         request_digest = hashlib.sha256(
             canonical_json(sent_request).encode("utf-8")
         ).hexdigest()
@@ -419,7 +424,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if chat_template_kwargs is not None:
             extra_body_fields["chat_template_kwargs"] = chat_template_kwargs
         extra_body = extra_body_fields or None
-        with redaction.secret_value_scope(
+        with native_chat_wire_scope(native_wire_body), redaction.secret_value_scope(
             profile.scoped_credential,
             *profile.caller_headers.values(),
             allow_short=True,

@@ -663,3 +663,55 @@ def test_source_continuation_port_exposes_only_unclaimed_live_origin(origin, cla
     session.pending = {"stock_origin": origin, "stock_claimed": claimed}
     session.compaction_pending = None
     assert session.source_should_continue() is expected
+
+
+@pytest.mark.parametrize("latest", [
+    {"info": {"role": "user"}, "parts": [{"type": "compaction", "auto": True}]},
+    {"info": {"role": "assistant", "summary": True, "time": {"created": 1}}, "parts": []},
+])
+def test_native_compaction_tail_fences_delayed_provider_admission(latest):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    waiting = threading.Event()
+    class AdmissionCondition(threading.Condition):
+        def wait_for(self, predicate, timeout=None):
+            waiting.set()
+            return super().wait_for(predicate, timeout)
+    session = OpenCodeToolSession.__new__(OpenCodeToolSession)
+    session.condition = AdmissionCondition()
+    session.closed, session.failure = False, None
+    session.headless, session.headless_idle_seen = False, False
+    session.session_id, session.timeout = "root", 5
+    session.compaction_pending = None
+    calls = []
+    def native_api(method, path):
+        calls.append((method, path))
+        return [latest]
+    session.api = native_api
+    pending = {"body": {"input": []}}
+    with ThreadPoolExecutor() as pool:
+        result = pool.submit(session.queued_compaction)
+        assert waiting.wait(5)
+        assert not result.done()
+        with session.condition:
+            session.compaction_pending = pending
+            session.condition.notify_all()
+        assert result.result(timeout=5) is pending
+    assert calls == [("GET", "/session/root/message")]
+
+
+@pytest.mark.parametrize("latest", [
+    {"info": {"role": "assistant", "summary": True, "time": {"completed": 2}}, "parts": []},
+    {"info": {"role": "assistant", "summary": True, "error": {"name": "MessageAbortedError"}}, "parts": []},
+    {"info": {"role": "assistant", "time": {"completed": 2}}, "parts": [{"type": "text", "text": "Done."}]},
+])
+def test_finished_or_aborted_native_summary_is_not_a_queued_compaction(latest):
+    import threading
+    session = OpenCodeToolSession.__new__(OpenCodeToolSession)
+    session.condition = threading.Condition()
+    session.closed, session.failure = False, None
+    session.headless, session.headless_idle_seen = False, False
+    session.session_id, session.timeout = "root", 5
+    session.compaction_pending = None
+    session.api = lambda method, path: [latest]
+    assert session.queued_compaction() is None

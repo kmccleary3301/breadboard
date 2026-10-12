@@ -56,15 +56,40 @@ async function projectRequest(payload: Record<string, any>): Promise<Record<stri
     if (!model) throw new Error("pinned OMP session model is unavailable");
     if (model.api !== "openai-completions") throw new Error(`pinned OMP provider converter requires an OpenAI Completions model: ${String(model.api)}`);
     if (sessionState.reminderInjector === null) throw new Error("pinned OMP date/cwd reminder is unavailable");
-    const messages = sessionState.convertMessages(model, sessionState.reminderInjector.transform({ systemPrompt: sessionState.nativeSystemPrompt, messages: sessionState.convertToLlm(payload.messages as unknown[]) }, sessionState.currentDate, sessionState.workspace), model.compat);
+    const context = sessionState.reminderInjector.transform({
+      systemPrompt: sessionState.nativeSystemPrompt,
+      messages: sessionState.convertToLlm(payload.messages as unknown[]),
+    }, sessionState.currentDate, sessionState.workspace);
+    const messages = sessionState.convertMessages(model, context, model.compat);
+    const tools = sessionState.tools.map((tool: { name: string }) => ({
+      type: "function",
+      function: { name: tool.name, description: sessionState.boundedDescriptions[tool.name], parameters: parametersFor(tool) },
+    }));
+    // The hash-verified supplier source root is selected at runtime.
+    const { streamSimple } = await import(`${sessionState.pinnedSourceRoot}/packages/ai/src/stream.ts`);
+    let captured: Record<string, unknown> | null = null;
+    const sentinel = new Error("OMP18_REQUEST_CAPTURE_SENTINEL");
+    const stream = streamSimple(model, {
+      ...context,
+      tools: tools.map((tool) => tool.function),
+    }, {
+      apiKey: WORKER_API_KEY,
+      onPayload: (wire: Record<string, unknown>) => {
+        captured = wire;
+        throw sentinel;
+      },
+    });
+    for await (const _event of stream) {}
+    if (!captured) throw new Error("pinned OMP18 primary request capture failed");
+    const wireBody: Record<string, unknown> = captured;
     return {
       schema_version: PHASE_SCHEMA,
       kind: "request",
       messages,
-      tools: sessionState.tools.map((tool: any) => ({
-        type: "function",
-        function: { name: tool.name, description: sessionState.boundedDescriptions[tool.name], parameters: parametersFor(tool) },
-      })),
+      tools,
+      request_members: Object.keys(wireBody).filter((member) => wireBody[member] !== undefined),
+      request_body: captured,
+      request_body_json: JSON.stringify(captured),
     };
   }
 

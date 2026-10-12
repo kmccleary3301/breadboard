@@ -53,7 +53,8 @@ async function projectRequest(payload: Record<string, any>): Promise<Record<stri
     messages: captured.messages,
     tools: captured.tools,
     request_body: captured,
-    request_members: Object.keys(captured),
+    request_body_json: JSON.stringify(captured),
+    request_members: Object.keys(captured).filter((member) => captured[member] !== undefined),
   };
 }
 

@@ -48,13 +48,15 @@ class CompactionRequestContext:
 
 
 class CompactionController:
-    """Coordinates context compaction for BreadBoard conductors."""
+    """Coordinates compaction; named summary tools require an explicit catalog port."""
 
     def __init__(
         self,
         config: Optional[Mapping[str, Any]] = None,
         *,
         summary_model: Optional[SummaryModelProtocol] = None,
+        stock_driver: Optional[StockDriver] = None,
+        tool_schema_provider: Optional[Callable[[str], Sequence[Mapping[str, Any]]]] = None,
     ) -> None:
         self.config: CompactionConfig = load_compaction_config((config or {}).get("compaction"))
         self.settings = self.config.settings
@@ -66,8 +68,8 @@ class CompactionController:
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
         self._messages_len_at_last_record: Optional[int] = None
-        self.stock_driver: Optional[StockDriver] = None
-        self.tool_schema_provider: Optional[Callable[[str], Sequence[Mapping[str, Any]]]] = None
+        self.stock_driver = stock_driver
+        self.tool_schema_provider = tool_schema_provider
 
     @property
     def active(self) -> bool:
@@ -304,19 +306,23 @@ class CompactionController:
         self, session_state: Any, *, conductor: Any, runtime: Any, client: Any,
         model: str, turn_index: Optional[int],
         request_context: Optional[CompactionRequestContext] = None,
-    ) -> None:
-        """Run stages declared at native user-turn completion, not request build."""
-        if not self.active:
-            return
-        stages = [stage.id for stage in self.recipe.pipeline.stages.values() if stage.phase == "user_turn_end"]
-        if not stages:
-            return
-        self.compact(
-            session_state, request_context=request_context, reason="request",
-            target=projection_target_for(runtime, model),
-            conductor=conductor, runtime=runtime, client=client,
-            context_window=self.resolve_context_window(conductor=conductor, session_state=session_state, model=model),
-            turn_index=turn_index, order=stages,
+    ) -> bool:
+        """Run turn-end maintenance and drain source summaries before terminalizing."""
+        stages = [
+            stage.id for stage in self.recipe.pipeline.stages.values()
+            if stage.phase == "user_turn_end"
+        ] if self.active else []
+        if stages:
+            self.compact(
+                session_state, request_context=request_context, reason="request",
+                target=projection_target_for(runtime, model),
+                conductor=conductor, runtime=runtime, client=client,
+                context_window=self.resolve_context_window(conductor=conductor, session_state=session_state, model=model),
+                turn_index=turn_index, order=stages,
+            )
+        return self._serve_native_summary_requests(
+            session_state, conductor=conductor, runtime=runtime, client=client,
+            model=model, turn_index=turn_index, request_context=request_context,
         )
 
     def build_request_view(

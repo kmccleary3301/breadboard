@@ -95,11 +95,9 @@ def test_handoff_guard_retains_equal_fields_and_rejects_changes(side, field, val
 ])
 def test_darwin_process_inspection_fails_closed(output: str, status: int) -> None:
     from breadboard_engine.compaction_lanes.omp18_lane import ROOT
-    worker = (ROOT / "breadboard/rl/harness/runners/omp_18_1_17/tool_session.ts").read_text()
-    function = worker.split("async function processTable()", 1)[1].split("async function descendantHandles", 1)[0]
-    # Execute the production function, injecting only the external process result.
-    script = "async function processTable()" + function + """
+    script = """
     const input = JSON.parse(await Bun.stdin.text());
+    const { processTable } = await import(input.module);
     Bun.spawn = (argv, options) => {
       if (JSON.stringify(argv) !== JSON.stringify(["/bin/ps", "-axo", "pid=,ppid=,pgid=,stat="]))
         throw new Error("non-fixed process argv");
@@ -110,7 +108,9 @@ def test_darwin_process_inspection_fails_closed(output: str, status: int) -> Non
     catch (error) { await Bun.write(Bun.stdout, String(error)); }
     """
     result = subprocess.run([os.environ["BB_OMP_TEST_BUN"], "-e", script],
-        input=json.dumps({"output": output, "status": status}), capture_output=True, text=True, timeout=10)
+        input=json.dumps({"output": output, "status": status,
+                          "module": (ROOT / "breadboard/rl/harness/runners/omp_18_1_17/tool_session.ts").as_uri()}),
+        capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     assert "process table" in result.stdout
 
@@ -118,16 +118,17 @@ def test_darwin_process_inspection_fails_closed(output: str, status: int) -> Non
 @pytest.mark.skipif(not os.environ.get("BB_OMP_TEST_BUN"), reason="Bun is required")
 def test_native_rpc_writer_preserves_large_multibyte_frames() -> None:
     from breadboard_engine.compaction_lanes.omp18_lane import ROOT
-    worker = (ROOT / "breadboard/rl/harness/runners/omp_native_tool_worker.ts").read_text()
-    function = worker.split("async function writeFrame(", 1)[1].split("\nwhile (true)", 1)[0]
-    script = "async function writeFrame(" + function + """
+    script = """
     const input = JSON.parse(await Bun.stdin.text());
-    await writeFrame(input);
+    const { writeFrame } = await import(input.module);
+    await writeFrame(input.payload);
     await writeFrame({complete: true});
     """
     payload = {"text": "é—" * 65536}
     result = subprocess.run([os.environ["BB_OMP_TEST_BUN"], "-e", script],
-        input=json.dumps(payload).encode(), capture_output=True, timeout=10)
+        input=json.dumps({"payload": payload,
+                          "module": (ROOT / "breadboard/rl/harness/runners/omp_18_1_17/rpc_frames.ts").as_uri()}).encode(),
+        capture_output=True, timeout=10)
     assert result.returncode == 0, result.stderr.decode()
     length = int.from_bytes(result.stdout[:4], "big")
     assert length > 65536
@@ -169,6 +170,85 @@ def test_elapsed_time_normalization_is_tool_content_only(role: str) -> None:
     if role == "tool":
         bb["messages"][1]["content"] = "Record B\nWall time: 1.23 seconds"
         assert compare_requests(recording(stock), recording(bb), [], [])[0]["type"] == "byte_diff"
+
+
+def _clamped_bash_record(elapsed: str, arguments: str = "{}") -> list[dict]:
+    body = {"tools": [], "messages": [
+        {"role": "assistant", "tool_calls": [{"id": "bash-1", "type": "function",
+            "function": {"name": "bash", "arguments": arguments}}]},
+        {"role": "tool", "tool_call_id": "bash-1",
+         "content": "Record A\n\nWall time: " + elapsed + " seconds\n"
+                    "Timeout clamped to 30s (requested 300s; global tools.maxTimeout ceiling 30s)."},
+    ]}
+    return [{"json": body, "raw_body_bytes": wire_json(body).encode().hex()}]
+
+
+@pytest.mark.parametrize("arguments", ["{}", '{"timeout":300}'])
+def test_elapsed_guard_preserves_equal_source_timeout_clamp_trailer(arguments):
+    from breadboard_engine.compaction_lanes.omp18_lane import compare_requests
+    stock = _clamped_bash_record("0.57", arguments)
+    bb = _clamped_bash_record("0.67", arguments)
+    substitutions = []
+    assert compare_requests(stock, bb, [], [], timing_substitutions=substitutions) == []
+    evidence = substitutions[0]
+    assert evidence["raw_difference"]["index"] == 0
+    assert evidence["source_commit"] == "3b3a6dc9bbd85102ce19d0b1c11bf6870915f6ec"
+    assert evidence["names"] == ["omp_native_bash_elapsed_time"]
+    for side in ("stock", "bb"):
+        change = evidence["changes"][side][0]
+        assert change["path"] == "$/messages/1/content"
+        assert change["original"].split("\n")[-1] == change["projected"].split("\n")[-1]
+        assert change["projected"] == "Record A\n\nWall time: <elapsed> seconds\n" + change["original"].split("\n")[-1]
+
+
+@pytest.mark.parametrize("variant", [
+    "arbitrary_suffix", "duplicate_header", "embedded_header", "changed_trailer",
+    "wrong_requested", "wrong_ceiling", "wrong_call_timeout", "duplicate_call",
+    "wrong_tool", "ambiguous_arguments",
+])
+def test_elapsed_guard_rejects_ambiguous_or_unadmitted_clamp_boundaries(variant):
+    from breadboard_engine.compaction_lanes.omp18_lane import compare_requests
+    stock, bb = _clamped_bash_record("0.57"), _clamped_bash_record("0.67")
+    for records in (stock, bb):
+        body = records[0]["json"]
+        content = body["messages"][1]["content"]
+        if variant == "arbitrary_suffix":
+            content += "\nextra"
+        elif variant == "duplicate_header":
+            content = "Wall time: 7.89 seconds\n" + content
+        elif variant == "embedded_header":
+            content = content.replace("Wall time: ", "embedded Wall time: ")
+        elif variant == "wrong_requested":
+            content = content.replace("requested 300s", "requested 301s")
+        elif variant == "wrong_ceiling":
+            content = content.replace("ceiling 30s", "ceiling 31s")
+        elif variant == "wrong_call_timeout":
+            body["messages"][0]["tool_calls"][0]["function"]["arguments"] = '{"timeout":29}'
+        elif variant == "duplicate_call":
+            body["messages"][0]["tool_calls"] *= 2
+        elif variant == "wrong_tool":
+            body["messages"][0]["tool_calls"][0]["function"]["name"] = "read"
+        elif variant == "ambiguous_arguments":
+            body["messages"][0]["tool_calls"][0]["function"]["arguments"] = '{"timeout":29,"timeout":300}'
+        elif variant == "changed_trailer" and records is bb:
+            content += " changed"
+        body["messages"][1]["content"] = content
+        records[0]["raw_body_bytes"] = wire_json(body).encode().hex()
+    assert compare_requests(stock, bb, [], [])
+
+
+@pytest.mark.parametrize("equal_elapsed", [False, True])
+@pytest.mark.parametrize("slot", ["Record A", "Timeout clamped"])
+def test_elapsed_guard_does_not_hide_other_content_or_trailer_wire_escapes(equal_elapsed, slot):
+    from breadboard_engine.compaction_lanes.omp18_lane import compare_requests
+    stock = _clamped_bash_record("0.57")
+    bb = _clamped_bash_record("0.57" if equal_elapsed else "0.67")
+    raw = bytes.fromhex(bb[0]["raw_body_bytes"]).decode()
+    raw = raw.replace(slot, slot.replace(" ", "\\u0020", 1))
+    bb[0]["raw_body_bytes"] = raw.encode().hex()
+    assert json.loads(raw) == bb[0]["json"]
+    assert stock[0]["raw_body_bytes"] != bb[0]["raw_body_bytes"]
+    assert compare_requests(stock, bb, [], [])
 
 
 def test_comparator_guards_stock_handoff_when_candidate_choice_is_wrong() -> None:

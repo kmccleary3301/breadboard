@@ -10,6 +10,7 @@ from pathlib import Path
 from breadboard.rl.harness.pi_native_tools import dispatch_native_tools
 from breadboard.rl.harness.runners.pi_semantics import (
     PiResponseResult,
+    PiSemanticsError,
     PiSemanticsState,
     execute_pi_tool,
     parse_streaming_json,
@@ -320,3 +321,94 @@ def test_argument_parsing_cancellation_kills_the_worker(monkeypatch, tmp_path) -
     assert asyncio.run(scenario()) < 5
     with pytest.raises(ProcessLookupError):
         os.kill(int(pidfile.read_text()), 0)
+
+
+@pytest.fixture
+def pinned_provider_error():
+    return {
+        "role": "assistant",
+        "content": [],
+        "api": "openai-completions",
+        "provider": "openai",
+        "model": "model-a",
+        "usage": {
+            "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0,
+            "totalTokens": 0,
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "total": 0},
+        },
+        "stopReason": "error",
+        "timestamp": 2001,
+        "errorMessage": "400 This model's maximum context length was exceeded.",
+    }
+
+
+def test_provider_failure_commits_source_error_and_terminates(pinned_provider_error):
+    state = PiSemanticsState(task="overflow", model_id="model-a", provider="openai")
+    assert state.begin_query() is None
+
+    state.commit_provider_failure(pinned_provider_error)
+
+    assert state.messages[-1] == pinned_provider_error
+    assert state.request_count == state.stream_fn_issued == 1
+    assert len(state.request_records) == 1
+    assert state.request_records[0].sent is True
+    assert state.native_stop_reason == state.exit_status == "error"
+    assert state.is_exited
+
+
+def test_repeated_provider_failure_after_overflow_retry_terminates(pinned_provider_error):
+    state = PiSemanticsState(task="overflow", model_id="model-a", provider="openai")
+    assert state.begin_query() is None
+    state.commit_provider_failure(pinned_provider_error)
+    state.reopen_after_overflow()
+    assert not state.is_exited
+    assert state.begin_query() is None
+
+    state.commit_provider_failure(pinned_provider_error)
+
+    assert state.request_count == state.stream_fn_issued == 2
+    assert [record.sent for record in state.request_records] == [True, True]
+    assert state.messages[-1] == pinned_provider_error
+    assert state.is_exited
+    assert state.exit_status == "error"
+
+
+def test_provider_failure_requires_an_admitted_query(pinned_provider_error):
+    state = PiSemanticsState(task="overflow", model_id="model-a", provider="openai")
+
+    with pytest.raises(PiSemanticsError, match="no admitted provider query"):
+        state.commit_provider_failure(pinned_provider_error)
+
+    assert state.request_count == 0
+    assert state.request_records == []
+    assert len(state.messages) == 1
+    assert not state.is_exited
+
+
+@pytest.mark.parametrize(
+    "change",
+    [{"role": "user"}, {"stopReason": "stop"}, {"errorMessage": None}],
+)
+def test_provider_failure_rejects_malformed_source_error(pinned_provider_error, change):
+    state = PiSemanticsState(task="overflow", model_id="model-a", provider="openai")
+    assert state.begin_query() is None
+
+    with pytest.raises(PiSemanticsError, match="not a pinned assistant error"):
+        state.commit_provider_failure({**pinned_provider_error, **change})
+
+    assert state.request_count == 0
+    assert state.request_records == []
+    assert len(state.messages) == 1
+    assert not state.is_exited
+
+
+def test_provider_failure_cannot_be_committed_twice(pinned_provider_error):
+    state = PiSemanticsState(task="overflow", model_id="model-a", provider="openai")
+    assert state.begin_query() is None
+    state.commit_provider_failure(pinned_provider_error)
+
+    with pytest.raises(PiSemanticsError, match="episode already exited"):
+        state.commit_provider_failure(pinned_provider_error)
+
+    assert state.request_count == 1
+    assert len(state.messages) == 2

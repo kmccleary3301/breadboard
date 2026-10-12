@@ -221,6 +221,9 @@ NATIVE_STREAM_PROFILES: Mapping[str, NativeStreamProfile] = MappingProxyType({
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
         state_module=pi_semantics,
         state_factory=_pi_state,
+        # Stock agent-loop.js:105-108 ends on the SDK's assistant error.
+        provider_failure_terminates=True,
+        provider_failure_phase="project_provider_failure",
         implements_compaction_phases=True,  # pi_tools_0_73_1.mjs prepare/finalize_compaction
         compaction_model_window_field="contextWindow",
         # BB keeps the AgentSession alive for the episode (deviation

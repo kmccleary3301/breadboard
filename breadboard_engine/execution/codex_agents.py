@@ -178,36 +178,72 @@ class AgentRegistry:
         self.used_names = set()
         self.name_generation = 0
         self.closed = False
+        # IDs remain blocked after failed cleanup; None means a retry may own them.
+        self.closing = {}
 
-    def cancel(self, children=None):
+    def close(self, children=None):
         from .codex_exec import codex_runtime
 
         with self.condition:
+            if children is None:
+                self.closed = True
             closing = list(self.children.values()) if children is None else list(children)
+            if children is not None:
+                for current in closing:
+                    closing.extend(child for child in self.children.values()
+                                   if child.parent_id == current.id and child not in closing)
+            self.condition.wait_for(
+                lambda: all(self.closing.get(child.id) is None for child in closing))
+            ownership = object()
             for child in closing:
+                self.closing[child.id] = ownership
                 child.closed = True
                 child.pending.clear()
-                child.conductor.request_stop()
             self.condition.notify_all()
-        # Kill active execution before waiting on its conductor worker.
-        for child in closing:
-            codex_runtime(child.conductor).close()
-            child.conductor.close_stock_tools()
-        return closing
-
-    def drain(self, children=None):
-        closing = list(self.children.values()) if children is None else list(children)
-        for child in closing:
-            worker = child.worker
-            if worker is not None and worker is not threading.current_thread():
-                worker.join()
-            child.status = "shutdown"
-
-    def close(self):
+        errors = []
+        try:
+            # Stop every owned execution before joining any worker. Failed
+            # cleanup keeps the whole subtree unavailable until a close retry.
+            for child in closing:
+                try:
+                    child.conductor.request_stop()
+                except Exception as error:
+                    errors.append(error)
+                try:
+                    codex_runtime(child.conductor).close()
+                except Exception as error:
+                    errors.append(error)
+                try:
+                    child.conductor.close_stock_tools()
+                except Exception as error:
+                    errors.append(error)
+            if not errors:
+                for child in closing:
+                    worker = child.worker
+                    if worker is not None and worker is not threading.current_thread():
+                        worker.join()
+                    child.status = "shutdown"
+                    _save_child(child)
+            if errors:
+                raise RuntimeError("Codex agent shutdown failed") from errors[0]
+        except BaseException:
+            with self.condition:
+                for child in closing:
+                    if self.closing.get(child.id) is ownership:
+                        self.closing[child.id] = None
+                self.condition.notify_all()
+            raise
         with self.condition:
-            self.closed = True
-        closing = self.cancel()
-        self.drain(closing)
+            for child in closing:
+                if self.closing.get(child.id) is ownership:
+                    if child.worker is threading.current_thread():
+                        # A worker cannot join itself. Its run exit owns the
+                        # last admission release instead of reopening early.
+                        self.closing[child.id] = child.worker
+                    else:
+                        del self.closing[child.id]
+            self.condition.notify_all()
+        return closing
 
     def nickname(self, candidates):
         def suffix():
@@ -228,19 +264,26 @@ class AgentRegistry:
     def reserve(self, owner):
         if self.closed:
             raise AgentToolError("agent registry is closed")
+        parent = self.children.get(_session_id(owner))
+        if parent is not None and parent.closed:
+            raise AgentToolError(f"agent with id {parent.id} not found")
         limit = (owner.config.get("agents") or {}).get("max_threads", 6)
         if sum(not child.closed for child in self.children.values()) >= limit:
             raise AgentToolError("collab spawn failed: agent thread limit reached")
 
     def start(self, child):
-        if self.closed:
-            raise AgentToolError("agent registry is closed")
-        if child.worker is not None and child.worker.is_alive():
-            return
-        child.status = "pending_init"
-        child.worker = threading.Thread(target=self.run, args=(child,), daemon=True,
-                                        name=f"codex-agent-{child.id}")
-        child.worker.start()
+        with self.condition:
+            if self.closed:
+                raise AgentToolError("agent registry is closed")
+            parent = self.children.get(child.parent_id)
+            if child.closed or (parent is not None and parent.closed):
+                raise AgentToolError(f"agent with id {child.id} not found")
+            if child.worker is not None and child.worker.is_alive():
+                return
+            child.status = "pending_init"
+            child.worker = threading.Thread(target=self.run, args=(child,), daemon=True,
+                                            name=f"codex-agent-{child.id}")
+            child.worker.start()
 
     def run(self, child):
         while True:
@@ -287,6 +330,9 @@ class AgentRegistry:
                 self.condition.notify_all()
                 if not child.pending or child.closed:
                     child.worker = None
+                    if self.closing.get(child.id) is threading.current_thread():
+                        del self.closing[child.id]
+                        self.condition.notify_all()
                     return
 
 
@@ -487,6 +533,10 @@ def _agent_tool(owner, name, args):
                 registry.children[agent_id] = child
         if child is None:
             raise AgentToolError(f"agent with id {agent_id} not found")
+        if agent_id in registry.closing and (
+            name != "close_agent" or registry.closing[agent_id] is not None
+        ):
+            raise AgentToolError(f"agent with id {agent_id} is closing")
         if name == "resume_agent":
             if child.closed:
                 registry.reserve(owner)
@@ -495,7 +545,7 @@ def _agent_tool(owner, name, args):
                 child.status = "pending_init"
                 _save_child(child)
             return {"status": child.status}
-        if child.closed:
+        if child.closed and not (name == "close_agent" and agent_id in registry.closing):
             raise AgentToolError(f"agent with id {agent_id} not found")
         if name == "send_input":
             if args.get("interrupt"):
@@ -509,14 +559,7 @@ def _agent_tool(owner, name, args):
         if name != "close_agent":
             raise AgentToolError(f"unknown tool: multi_agent_v1.{name}")
         previous = deepcopy(child.status)
-        closing = [child]
-        for current in closing:
-            closing.extend(c for c in registry.children.values()
-                           if c.parent_id == current.id and not c.closed)
-    closing = registry.cancel(closing)
-    registry.drain(closing)
-    for current in closing:
-        _save_child(current)
+    registry.close([child])
     return {"previous_status": previous}
 
 

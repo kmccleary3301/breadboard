@@ -460,6 +460,8 @@ class PolicyRuntimeInvokeRequest:
     turn: int
     attempt: int
     compaction_summary: bool = False
+    # Source SDK serialization is invocation-local, not a public request shape.
+    native_request_body_json: str | None = None
 
     def __post_init__(self) -> None:
         _normalized_identifier(self.episode_id, field_name="episode_id")

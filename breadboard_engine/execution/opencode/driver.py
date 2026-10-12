@@ -183,7 +183,7 @@ def stock_user_parts(content: Any, *, context=None) -> list[dict]:
             continue
         source = block.get("source") or {}
         if kind == "media":
-            from ..provider.input_media import resolve_input_media
+            from ...provider.input_media import resolve_input_media
             media = resolve_input_media(block, context)
             mime, url = media.mime, media.data_url
         elif kind in {"image", "document"} and source.get("type") == "base64":
@@ -219,7 +219,7 @@ def prepare_stock_initial_user(conductor, state):
         return request
     raw_user = state.get_provider_metadata("opencode_stock_raw_user")
     if raw_user is not None:
-        from ..provider.contracts import ProviderRuntimeContext
+        from ...provider.contracts import ProviderRuntimeContext
         context = ProviderRuntimeContext(session_state=state, agent_config=conductor.config)
         request = session.user(stock_user_parts(raw_user["content"], context=context))
         state.set_provider_metadata("opencode_stock_raw_user", None)

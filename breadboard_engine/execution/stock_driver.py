@@ -64,7 +64,7 @@ def _prepare_opencode_request(owner, state, messages):
 
 def _pending_opencode_compaction(state):
     session = getattr(state, "_opencode_tool_session", None)
-    return session.compaction_pending if session is not None else None
+    return session.queued_compaction() if session is not None else None
 
 
 def _opencode_recovery_outcome(state):

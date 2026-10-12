@@ -45,6 +45,7 @@ from breadboard_engine.provider.contracts import (
 from breadboard_engine.provider.native_response import NativeProviderResponse
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
+from breadboard_engine.provider.runtimes.openai.native_chat_wire import NativeRequestAuthorityError
 
 from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
@@ -1843,6 +1844,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 None,
                 {},
                 stream=stream,
+                native_request_body_json=request.native_request_body_json,
                 extra=dict(
                     {"response_consumer_id": native_binding.policy.consumer_id}
                     if native_binding is not None
@@ -1856,6 +1858,8 @@ class EpisodeOpenAICompletionsPolicyClient:
                        if request.compaction_summary
                        and isinstance(thaw_json(request.request_payload), Mapping)
                        else {}),
+                    **({"compaction_summary": request.compaction_summary}
+                       if request.native_request_body_json is not None else {}),
                 ),
                 session_id=request.episode_id,
                 input_id=request.request_digest,
@@ -1935,6 +1939,15 @@ class EpisodeOpenAICompletionsPolicyClient:
             except asyncio.CancelledError:
                 self._cancelled.set()
                 raise
+            except NativeRequestAuthorityError as exc:
+                if self._cancelled.is_set():
+                    raise asyncio.CancelledError
+                raise RunnerProtocolError(
+                    str(exc),
+                    code=exc.details["code"],
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                ) from exc
             except RunnerDependencyError:
                 raise
             except Exception as exc:

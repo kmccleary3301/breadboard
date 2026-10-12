@@ -23,8 +23,8 @@ from breadboard_engine.compilation.contracts import canonical_sha256
 from breadboard.rl.harness.runners.base import FrozenJsonObject, freeze_json_object, thaw_json
 
 WorkerPhase = Callable[[str, Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
-# Sends one frozen summary request to the policy; returns (response, receipt).
-SummaryExchange = Callable[[FrozenJsonObject], Awaitable[tuple[Mapping[str, Any], Any]]]
+# Carries the source SDK body separately from the admitted semantic request.
+SummaryExchange = Callable[[FrozenJsonObject, str | None], Awaitable[tuple[Mapping[str, Any], Any]]]
 ProviderExchange = Callable[[Mapping[str, Any]], Awaitable[Mapping[str, Any]]]
 # Dependent summary requests a source issues after its first summaries.
 MAX_FOLLOWUP_REQUESTS = 2
@@ -225,7 +225,9 @@ async def _summarize(
         req_dict,
         field_name=field_name,
     )
-    response, receipt = await exchange(frozen)
+    # Only the worker's complete SDK capture is wire data; summary messages
+    # and tool_choice alone are a semantic fragment, not a transport body.
+    response, receipt = await exchange(frozen, request["request_body_json"])
     receipt_body = thaw_json(receipt)
     trace_body = dict(receipt_body) if isinstance(receipt_body, Mapping) else {"request": receipt}
     trace_body["_compaction_summary"] = True

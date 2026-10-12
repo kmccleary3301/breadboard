@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 from typing import Any, Dict, List
 from .pi_target import get_target_overlay_argv
+from .pi_environment_guards import begin_pi_environment_observation, finish_pi_environment_observation
 
 class RpcSettleState:
     """Follow stock events and use get_state as the no-compaction barrier.
@@ -69,6 +70,7 @@ def run_stock_pi_rpc(
     reserve_tokens: int = 1000,
     keep_recent_tokens: int = 2000,
     timeout: float = 60.0,
+    environment_observation: Dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run stock Pi in RPC mode against the mock provider."""
     import threading
@@ -158,6 +160,11 @@ def run_stock_pi_rpc(
         *filtered_overlay_argv,
     ]
 
+    if environment_observation is not None:
+        environment_observation.update(begin_pi_environment_observation(
+            target_id.split("@", 1)[1], workdir, native=False,
+        ))
+
     proc = subprocess.Popen(
         cmd,
         cwd=str(workdir),
@@ -173,15 +180,18 @@ def run_stock_pi_rpc(
     stop_event = threading.Event()
     settled = threading.Event()
     settle = RpcSettleState(target_id.split("@", 1)[1])
+    settlement_event: Dict[str, Any] | None = None
     assert proc.stdin is not None
 
     def reader() -> None:
+        nonlocal settlement_event
         try:
             assert proc.stdout is not None
             for line in iter(proc.stdout.readline, ""):
                 stdout_lines.append(line)
                 event = json.loads(line)
                 if settle.observe(event):
+                    settlement_event = event
                     settled.set()
                     stop_event.set()
                     return
@@ -203,21 +213,42 @@ def run_stock_pi_rpc(
         if not stop_event.wait(timeout=timeout):
             raise subprocess.TimeoutExpired(cmd, timeout, output="".join(stdout_lines))
     finally:
+        cleanup: Dict[str, Any] = {
+            "pid": proc.pid, "controller": "pi_stock.run_stock_pi_rpc",
+            "settled": settled.is_set(), "agent_ended": settle.agent_ended,
+            "reader_error_count": len(reader_errors),
+            "settlement_before_cleanup": settled.is_set() and settlement_event is not None,
+            "settlement_event": settlement_event,
+            "process_running_before_terminate": False,
+            "terminate_requested": False, "requested_signal": None,
+            "kill_requested": False, "wait_completed": False, "wait_returncode": None,
+        }
+        if environment_observation is not None:
+            environment_observation["rpc_cleanup"] = cleanup
         try:
             proc.stdin.close()
         except (BrokenPipeError, OSError):
             pass
-        try:
-            proc.terminate()
-        except OSError:
-            if proc.poll() is None:
-                raise
+        cleanup["process_running_before_terminate"] = proc.poll() is None
+        if cleanup["process_running_before_terminate"]:
+            cleanup["terminate_requested"] = True
+            cleanup["requested_signal"] = "SIGTERM"
+            try:
+                proc.terminate()
+            except OSError:
+                if proc.poll() is None:
+                    raise
         try:
             proc.wait(timeout=3)
         except subprocess.TimeoutExpired:
+            cleanup["kill_requested"] = True
             proc.kill()
             proc.wait()
+        cleanup["wait_completed"] = True
+        cleanup["wait_returncode"] = proc.returncode
         thread.join(timeout=3)
+        if environment_observation is not None:
+            finish_pi_environment_observation(environment_observation)
     assert proc.stderr is not None
     stderr = proc.stderr.read()
     if reader_errors:
@@ -239,6 +270,7 @@ def run_stock_pi_print(
     reserve_tokens: int = 1000,
     keep_recent_tokens: int = 2000,
     timeout: float = 60.0,
+    environment_observation: Dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run stock Pi in print mode against the mock provider (kept as reference)."""
     agent_dir = workdir / ".pi_agent"
@@ -302,14 +334,22 @@ def run_stock_pi_print(
         prompt,
     ]
 
-    return subprocess.run(
-        cmd,
-        cwd=str(workdir),
-        env=env,
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    if environment_observation is not None:
+        environment_observation.update(begin_pi_environment_observation(
+            target_id.split("@", 1)[1], workdir, native=False,
+        ))
+    try:
+        return subprocess.run(
+            cmd,
+            cwd=str(workdir),
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    finally:
+        if environment_observation is not None:
+            finish_pi_environment_observation(environment_observation)
 
 def run_stock_pi(
     pi_cli: Path,
@@ -322,6 +362,7 @@ def run_stock_pi(
     keep_recent_tokens: int = 2000,
     runner: str = "rpc",
     timeout: float = 60.0,
+    environment_observation: Dict[str, Any] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     """Run stock Pi against mock provider via RPC mode (parity) or print mode (reference)."""
     if runner == "print":
@@ -329,11 +370,11 @@ def run_stock_pi(
             pi_cli, mock_base_url, workdir, prompt,
             target_id=target_id, context_window=context_window,
             reserve_tokens=reserve_tokens, keep_recent_tokens=keep_recent_tokens,
-            timeout=timeout,
+            timeout=timeout, environment_observation=environment_observation,
         )
     return run_stock_pi_rpc(
         pi_cli, mock_base_url, workdir, prompt,
         target_id=target_id, context_window=context_window,
         reserve_tokens=reserve_tokens, keep_recent_tokens=keep_recent_tokens,
-        timeout=timeout,
+        timeout=timeout, environment_observation=environment_observation,
     )

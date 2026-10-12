@@ -71,6 +71,7 @@ class SummaryRequest:
     stateless: bool = False
     # Projection-only lifecycle metadata, never a provider request member.
     context_reason: Optional[str] = None
+    native_request_field_order: Optional[Tuple[str, ...]] = None
 
 @dataclass(frozen=True)
 class SummaryResponse:

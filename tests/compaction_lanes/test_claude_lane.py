@@ -231,7 +231,9 @@ def test_anthropic_tool_turn_summary_and_next_request_round_trip(tmp_path, resul
                 yield client
             conductor = SimpleNamespace(config=config, current_native_tools=[read], _provider_client_lease=lease,
                                         _current_route_id=f"anthropic/{model}")
-            controller = CompactionController(config)
+            from breadboard_engine.execution.stock_driver import summary_tool_schema
+            controller = CompactionController(
+                config, tool_schema_provider=lambda provider: summary_tool_schema(conductor, provider))
             view = controller.prepare_request(state, conductor=conductor, runtime=runtime, client=None, model=model, turn_index=2)
             assert len(state.compaction_state.records) == 1
             ProviderRequest(stream=True, messages=view, tools=tools)

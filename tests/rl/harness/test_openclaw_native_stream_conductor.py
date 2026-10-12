@@ -394,6 +394,10 @@ async def test_openclaw_projected_request_uses_pinned_timestamp_and_runtime_carr
         projected = await worker.invoke_native_phase(
             "project_request", {"messages": state.history}, timeout_ms=15_000,
         )
+        assert list(projected["request_body"]) == projected["request_members"]
+        assert json.loads(projected["request_body_json"]) == projected["request_body"]
+        assert projected["request_body"]["messages"] == projected["messages"]
+        assert projected["request_body"]["tools"] == projected["tools"]
         assert [message["role"] for message in projected["messages"]] == ["system", "user", "user"]
         first_user = projected["messages"][1]["content"]
         assert first_user.startswith(initialized["bootstrap"]["runtime_facts"]["timestamp_prefix"] + "Inspect marker.txt")

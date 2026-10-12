@@ -25,6 +25,7 @@ from ...logging.provider_dump import provider_dump_logger
 from ...security import redaction
 from ..registry import provider_registry
 from ..sdk_bindings import provider_sdk_bindings
+from .claude_messages_wire import claude_wire_scope, create_claude_client
 
 
 class AnthropicMessagesRuntime(ProviderRuntime):
@@ -45,7 +46,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             kwargs["base_url"] = base_url
         if default_headers:
             kwargs["default_headers"] = default_headers
-        return provider_sdk_bindings.anthropic(**kwargs)
+        return create_claude_client(provider_sdk_bindings.anthropic, **kwargs)
 
     def _message_content_to_text(self, content: Any) -> Optional[str]:
         if content is None:
@@ -1453,14 +1454,15 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             self._maybe_delay_for_rate_limits(context, anthropic_cfg)
             _respect_delay()
             try:
-                if stream:
-                    response, usage_override, headers, status_code, body_text = (
-                        self._call_streaming(client, request, context)
-                    )
-                else:
-                    response, usage_override, headers, status_code, body_text = (
-                        self._call_non_streaming(client, request)
-                    )
+                with claude_wire_scope(context):
+                    if stream:
+                        response, usage_override, headers, status_code, body_text = (
+                            self._call_streaming(client, request, context)
+                        )
+                    else:
+                        response, usage_override, headers, status_code, body_text = (
+                            self._call_non_streaming(client, request)
+                        )
 
                 metadata = {**response_metadata, "attempts": attempt + 1}
                 self._capture_rate_limit_headers(context, headers)

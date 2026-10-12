@@ -47,18 +47,34 @@ class SentinelAbort extends Error {
 type RequestEnvelope = {
   messages: Array<Record<string, unknown>>;
   max_tokens: number | null;
+  request_body: Record<string, unknown>;
+  request_body_json: string;
 };
 
-function formatRequest(
+async function formatRequest(
   ctx: { systemPrompt?: string | string[]; messages?: Array<{ role: string; content?: unknown }> },
   options: { maxTokens?: number | null },
   model: any,
   convertMessages: (model: any, context: any, compat: any) => any[],
-): RequestEnvelope {
+): Promise<RequestEnvelope> {
   const wireMessages = convertMessages(model, ctx, model.compat);
+  let wire: Record<string, unknown> | null = null;
+  const sentinel = new SentinelAbort("summary_request_captured");
+  const stream = sessionState.streamSimple(model, ctx, {
+    ...options,
+    apiKey: WORKER_API_KEY,
+    onPayload: (params: Record<string, unknown>) => {
+      wire = params;
+      throw sentinel;
+    },
+  });
+  for await (const _event of stream) {}
+  if (!wire) throw new Error("pinned OMP16 summary request capture failed");
   return {
     messages: wireMessages,
     max_tokens: options?.maxTokens ?? null,
+    request_body: wire,
+    request_body_json: JSON.stringify(wire),
   };
 }
 
@@ -165,15 +181,17 @@ async function prepareCompactionPhase(payload: Record<string, any>): Promise<Rec
 
   let summaryRequest: RequestEnvelope | null = null;
   let turnPrefixRequest: RequestEnvelope | null = null;
+  let captureIndex = 0;
 
   const replayPrepareImpl = async (_m: unknown, ctx: { systemPrompt?: string | string[]; messages?: Array<{ role: string; content?: unknown }> }, options: { maxTokens?: number | null }) => {
+    const callIndex = captureIndex++;
     const hasHistory = preparation.messagesToSummarize.length > 0 || preparation.previousSummary;
-    if (hasHistory && !summaryRequest) {
-      summaryRequest = formatRequest(ctx, options, model, convertMessages);
+    if (hasHistory && callIndex === 0) {
+      summaryRequest = await formatRequest(ctx, options, model, convertMessages);
       return { role: "assistant", content: [{ type: "text", text: "placeholder_summary" }], stopReason: "stop" };
     }
-    if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0 && !turnPrefixRequest) {
-      turnPrefixRequest = formatRequest(ctx, options, model, convertMessages);
+    if (preparation.isSplitTurn && preparation.turnPrefixMessages.length > 0 && callIndex === (hasHistory ? 1 : 0)) {
+      turnPrefixRequest = await formatRequest(ctx, options, model, convertMessages);
       return { role: "assistant", content: [{ type: "text", text: "placeholder_turn_prefix" }], stopReason: "stop" };
     }
     throw new SentinelAbort("prepare_captured");
@@ -339,7 +357,7 @@ async function finalizeCompactionPhase(payload: Record<string, any>): Promise<Re
         stopReason: "stop",
       };
     }
-    followupRequest = formatRequest(ctx, options, model, convertMessages);
+    followupRequest = await formatRequest(ctx, options, model, convertMessages);
     throw new SentinelAbort("need_followup");
   };
 

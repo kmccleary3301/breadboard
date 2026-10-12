@@ -529,6 +529,8 @@ class PolicyRuntimeBinding:
             result = await task
         except asyncio.CancelledError:
             raise
+        except RunnerProtocolError:
+            raise
         except Exception as exc:
             error = RunnerDependencyError(
                 "policy runtime invocation failed",
@@ -2740,10 +2742,13 @@ class _ConductorSession:
             checkpoint: Literal["overflow", "before_request", "agent_end"],
             tools: Any, commit_phase: str,
         ) -> CompactedHistory | None:
-            async def summary_exchange(request: FrozenJsonObject) -> tuple[Mapping[str, Any], Any]:
+            async def summary_exchange(
+                request: FrozenJsonObject, native_request_body_json: str | None = None,
+            ) -> tuple[Mapping[str, Any], Any]:
                 return await self._native_policy_exchange(
                     request, model=model, turn=turn, phase_mode=profile.phase_mode,
                     compaction_summary=True,
+                    native_request_body_json=native_request_body_json,
                 )
 
             compacted = await compact_history(
@@ -2805,6 +2810,26 @@ class _ConductorSession:
                     "messages": projected.get("messages"),
                     "tools": projected.get("tools"),
                 }, field_name="native policy request")
+                captured_body = projected.get("request_body")
+                native_request_body_json = projected.get("request_body_json")
+                if native_request_body_json is None and isinstance(captured_body, Mapping):
+                    native_request_body_json = json.dumps(
+                        captured_body, ensure_ascii=False, separators=(",", ":"), allow_nan=False,
+                    )
+                expected_members = projected.get("request_members")
+                if expected_members is not None and (
+                    not isinstance(expected_members, (list, tuple))
+                    or any(type(member) is not str for member in expected_members)
+                    or len(set(expected_members)) != len(expected_members)
+                    or (
+                        isinstance(captured_body, Mapping)
+                        and set(expected_members) != set(captured_body)
+                    )
+                ):
+                    raise RunnerProtocolError(
+                        "native provider request members differ from the pinned source request",
+                        code="native_request_members_mismatch", **self._context(),
+                    )
                 last_tools[0] = projected.get("tools")
                 if "before_request" in checkpoints and self._turns and not threshold_checked:
                     # The source checks its threshold before each request of
@@ -2819,6 +2844,7 @@ class _ConductorSession:
                 try:
                     response, request_body = await self._native_policy_exchange(
                         frozen_request, model=model, turn=turn, phase_mode=profile.phase_mode,
+                        native_request_body_json=native_request_body_json,
                     )
                     overflow_attempts[0] = 0
                     failure = None
@@ -2877,13 +2903,7 @@ class _ConductorSession:
                         raise
                     request_body = thaw_json(failure.request_body)
                     break
-            expected_members = projected.get("request_members")
-            if expected_members is not None and (
-                not isinstance(expected_members, (list, tuple))
-                or any(type(member) is not str for member in expected_members)
-                or len(set(expected_members)) != len(expected_members)
-                or set(expected_members) != set(request_body)
-            ):
+            if expected_members is not None and set(expected_members) != set(request_body):
                 # The native worker reports the member set its pinned source
                 # request builder produces; the sent body must carry exactly it.
                 raise RunnerProtocolError(
@@ -3986,6 +4006,7 @@ class _ConductorSession:
         self, frozen_request: FrozenJsonObject, *, model: _ModelProjection,
         turn: int, phase_mode: Literal["streaming", "checkpointed"],
         compaction_summary: bool = False,
+        native_request_body_json: str | None = None,
     ) -> tuple[FrozenJsonObject, Mapping[str, Any] | str]:
         request_digest = canonical_sha256(frozen_request)
         policy_request_event = PolicyRequestEvent.from_request(
@@ -4020,6 +4041,7 @@ class _ConductorSession:
                 request_digest=request_digest, request_payload=frozen_request,
                 turn=turn, attempt=1,
                 compaction_summary=compaction_summary,
+                native_request_body_json=native_request_body_json,
             ))
         except RunnerDependencyError as exc:
             failure = _find_native_provider_failure(exc)

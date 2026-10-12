@@ -136,6 +136,9 @@ def test_stock_equality_handoff_on_threshold(tmp_path: Path) -> None:
         })
         assert res["summary_request"]["messages"] == stock["wireRequests"][0]["messages"]
         assert res["summary_request"]["tool_choice"] == stock["wireRequests"][0]["tool_choice"] == "none"
+        summary_request = res["summary_request"]
+        assert json.loads(summary_request["request_body_json"]) == summary_request["request_body"]
+        assert "model" in summary_request["request_body"]
 
         fin = worker.phase(
             "finalize_compaction",

@@ -35,8 +35,11 @@ def summary_pair():
 def test_deviation_value_guard(field, side, value):
     opening, stock, bb = summary_pair()
     (stock if side == "stock" else bb)[field] = value
-    with pytest.raises(ValueError, match="recorded deviation"):
-        lane.compare([opening, record(stock)], [opening, record(bb)])
+    result = lane.compare([opening, record(stock)], [opening, record(bb)])
+    assert result["diffs"][0]["request"] == 1
+    assert result["diffs"][0]["reason"] == "deviation_guard"
+    assert "recorded deviation" in result["diffs"][0]["message"]
+    assert result["raw_differences"][0]["index"] == 1
 
 
 def test_only_admitted_summary_fields_are_removed():
@@ -65,8 +68,11 @@ def test_proxy_clamped_2037_stock_cap_is_admitted():
 def test_proxy_clamped_cap_guard_rejects_wrong_values(side, value):
     opening, stock, bb = clamped_summary_pair()
     (stock if side == "stock" else bb)["max_completion_tokens"] = value
-    with pytest.raises(ValueError, match="recorded deviation"):
-        lane.compare([opening, record(stock)], [opening, record(bb)])
+    result = lane.compare([opening, record(stock)], [opening, record(bb)])
+    assert result["diffs"][0]["request"] == 1
+    assert result["diffs"][0]["reason"] == "deviation_guard"
+    assert "recorded deviation" in result["diffs"][0]["message"]
+    assert result["raw_differences"][0]["index"] == 1
 
 
 @pytest.mark.skipif(not os.environ.get("OPENCLAW_DIST"), reason="pinned stock transport required")

@@ -5,7 +5,8 @@ import hashlib
 import json
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from .pi_target import load_target_document
-from .request_bytes import project_guarded_values, raw_mismatch, guarded_changes
+from .request_bytes import guarded_changes, project_guarded_values, raw_mismatch, request_json_problem
+from .pi_environment_guards import project_pi_environment
 
 def is_summary_request(
     request_body: Mapping[str, Any],
@@ -121,6 +122,8 @@ def compare_recorded_requests(
     episode_max_tokens: Optional[int] = None,
     reserve_tokens: Optional[int] = None,
     deviation_records: Optional[List[Dict[str, Any]]] = None,
+    stock_environment: Optional[Dict[str, Any]] = None,
+    bb_environment: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, List[Dict[str, Any]]]:
     """Byte-compare stock and BreadBoard requests after applying deviation normalizer."""
     diffs: List[Dict[str, Any]] = []
@@ -144,41 +147,66 @@ def compare_recorded_requests(
         if i >= len(bb_requests):
             diffs.append({"index": i, "type": "missing_breadboard_request", "stock_request": stock_requests[i]})
             continue
+        problem = request_json_problem(stock_requests[i], bb_requests[i], i)
+        if problem is not None:
+            diffs.append(problem)
+            continue
         raw_stock = bytes.fromhex(stock_requests[i]["raw_body_bytes"])
         raw_bb = bytes.fromhex(bb_requests[i]["raw_body_bytes"])
         mismatch = raw_mismatch(raw_stock, raw_bb, i)
         if mismatch is None and stock_requests[i].get("path") == bb_requests[i].get("path") and stock_requests[i].get("method") == bb_requests[i].get("method"):
             continue
 
+        environment_records: Dict[str, List[Dict[str, Any]]] = {"stock": [], "bb": []}
+        stock_guarded, bb_guarded = raw_stock, raw_bb
         try:
+            if stock_environment is not None or bb_environment is not None:
+                if stock_environment is None or bb_environment is None:
+                    raise ValueError("Pi source environment observations are required for both sides")
+                stock_guarded, environment_records["stock"] = project_pi_environment(
+                    raw_stock, stock_environment, index=i, side="stock",
+                )
+                bb_guarded, environment_records["bb"] = project_pi_environment(
+                    raw_bb, bb_environment, index=i, side="bb",
+                )
+            stock_body, bb_body = json.loads(stock_guarded), json.loads(bb_guarded)
             stock_norm = normalize_request_body(
-                stock_requests[i]["json"], allowed_deviations, is_stock=True,
+                stock_body, allowed_deviations, is_stock=True,
                 target_id=target_id, reserve_tokens=reserve_tokens,
             )
             bb_norm = normalize_request_body(
-                bb_requests[i]["json"], allowed_deviations, is_stock=False,
+                bb_body, allowed_deviations, is_stock=False,
                 target_id=target_id, episode_tools=episode_tools,
                 episode_max_tokens=episode_max_tokens,
             )
         except ValueError as exc:
-            diffs.append({"index": i, "type": "deviation_value_diff", "message": str(exc)})
+            diffs.append({"index": i, "type": "deviation_value_diff", "message": str(exc),
+                          "raw_difference": mismatch})
             continue
 
-        stock_bytes = project_guarded_values(raw_stock, stock_norm)
-        bb_bytes = project_guarded_values(raw_bb, bb_norm)
+        stock_bytes = project_guarded_values(stock_guarded, stock_norm)
+        bb_bytes = project_guarded_values(bb_guarded, bb_norm)
+        route_matches = (stock_requests[i].get("path") == bb_requests[i].get("path")
+                         and stock_requests[i].get("method") == bb_requests[i].get("method"))
         if mismatch is not None and deviation_records is not None:
-            changes = {"stock": guarded_changes(stock_requests[i]["json"], stock_norm),
-                       "bb": guarded_changes(bb_requests[i]["json"], bb_norm)}
+            changes = {"stock": guarded_changes(stock_body, stock_norm),
+                       "bb": guarded_changes(bb_body, bb_norm)}
             names = [name for name in allowed_deviations if name in {"compaction_summary_episode_tools", "compaction_summary_max_tokens"} and is_summary_request(stock_requests[i]["json"])]
             if any(change["path"].endswith("/description") for change in changes["stock"]):
                 names.append("pi_read_description_advertisement")
             if any(change["path"].endswith("/content") for change in changes["stock"]):
                 names.append("pi_prompt_remove_exact_advertisement")
+            names.extend(dict.fromkeys(record["name"] for records in environment_records.values() for record in records))
             deviation_records.append({**mismatch, "names": names, "changes": changes,
-                                      "authority": target_id + "/harness.yaml#policy.deviations and native-config.json#advertisement",
-                                      "accepted": stock_bytes == bb_bytes})
+                                      "environment": environment_records,
+                                      "authority": target_id + "/harness.yaml#policy.deviations and native-config.json#advertisement; pinned Pi source footer/environment observations",
+                                      "accepted": stock_bytes == bb_bytes and route_matches})
 
-        if stock_bytes != bb_bytes or stock_requests[i].get("path") != bb_requests[i].get("path") or stock_requests[i].get("method") != bb_requests[i].get("method"):
+        if not route_matches:
+            diffs.append({"index": i, "type": "request_route",
+                          "stock_route": [stock_requests[i].get("method"), stock_requests[i].get("path")],
+                          "bb_route": [bb_requests[i].get("method"), bb_requests[i].get("path")]})
+        if stock_bytes != bb_bytes:
             diffs.append({
                 "index": i,
                 "type": "body_diff",

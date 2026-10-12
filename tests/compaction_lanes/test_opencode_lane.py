@@ -142,9 +142,9 @@ def test_stock_api_authenticates_with_its_launched_server_credentials(monkeypatc
         assert timeout == 180
         return io.BytesIO(b'{"id":"fixture-response"}')
 
-    monkeypatch.setattr(lane.subprocess, "Popen", start_process)
+    monkeypatch.setattr(_lane_opencode_stock.subprocess, "Popen", start_process)
     monkeypatch.setattr(_lane_opencode_stock, "resolve_stock", lambda: tmp_path / "opencode")
-    monkeypatch.setattr(lane.urllib.request, "urlopen", open_request)
+    monkeypatch.setattr(_lane_opencode_stock.urllib.request, "urlopen", open_request)
     with _lane_opencode_stock.stock_server(tmp_path, tmp_path / "runtime", {"lsp": False}) as api:
         assert api("GET", "/session") == {"id": "fixture-response"}
     encoded = requests[0].get_header("Authorization").removeprefix("Basic ")
