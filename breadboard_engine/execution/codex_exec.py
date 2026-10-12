@@ -287,8 +287,9 @@ class CodexExecManager:
         if continuing is None:
             entry.terminate()
             with self.lifecycle_lock:
-                self.sessions.pop(session_id, None)
-            self.release_process_id(session_id)
+                if self.sessions.get(session_id) is entry:
+                    self.sessions.pop(session_id)
+                    self.release_process_id(session_id)
         else:
             entry.last_used = self.clock()
         output = format_exec_output(
