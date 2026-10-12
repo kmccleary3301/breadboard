@@ -448,7 +448,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             "pause_turn",
             "refusal",
             "model_context_window_exceeded",
-            "compaction",
         }:
             raise ProviderRuntimeError(
                 "Unknown Anthropic stop reason",
@@ -542,28 +541,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 }
                 reasoning_blocks.append({"type": "provider_replay", **replay})
                 provider_replay.append(replay)
-            elif block_type == "compaction":
-                compaction_text = self._get_attr(block, "content") or ""
-                sig = self._get_attr(block, "signature")
-                enc = self._get_attr(block, "encrypted_content")
-                payload = {
-                    "type": "anthropicCompaction",
-                    "content": compaction_text,
-                }
-                if sig:
-                    payload["signature"] = sig
-                if enc:
-                    payload["encrypted_content"] = enc
-                replay = {
-                    "provider_id": "anthropic",
-                    "schema_version": "anthropic.messages.v1",
-                    "replay_scope": "same_provider",
-                    "payload": payload,
-                }
-                reasoning_blocks.append({"type": "compaction", **payload})
-                provider_replay.append(replay)
-                if compaction_text and not text_parts:
-                    text_parts.append(compaction_text)
             else:
                 raise ProviderRuntimeError(
                     "Unknown Anthropic response content",
@@ -575,7 +552,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             role="assistant",
             content="".join(text_parts) if text_parts else None,
             tool_calls=tool_calls,
-            finish_reason="stop" if stop_reason == "compaction" else stop_reason,
+            finish_reason=stop_reason,
             index=0,
             raw_message=response,
             reasoning=reasoning_blocks or None,
@@ -1174,7 +1151,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         "pause_turn",
                         "refusal",
                         "model_context_window_exceeded",
-                        "compaction",
                     }:
                         raise ProviderRuntimeError(
                             "Unknown Anthropic message stop reason",

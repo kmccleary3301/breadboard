@@ -374,36 +374,6 @@ def test_runtime_ignores_foreign_provider_native_marker() -> None:
     assert NATIVE_MARKER_KEY not in converted[0]
 
 
-def test_runtime_normalizes_compaction_block_in_response() -> None:
-    runtime = AnthropicMessagesRuntime(
-        descriptor=SimpleNamespace(provider_id="anthropic", api_type="messages", config={})
-    )
-    compaction_block = SimpleNamespace(
-        type="compaction",
-        content="Server threshold summary",
-        signature=None,
-        encrypted_content="enc_xyz",
-    )
-    fake_response = SimpleNamespace(
-        id="msg_1",
-        model="claude-sonnet-5",
-        stop_reason="compaction",
-        content=[compaction_block],
-        usage={"input_tokens": 50, "output_tokens": 20},
-    )
-    res = runtime._normalize_response(fake_response)
-
-    assert res.messages[0].content == "Server threshold summary"
-    assert res.provider_replay is not None
-    assert len(res.provider_replay) == 1
-    replay = res.provider_replay[0]
-    assert replay["provider_id"] == "anthropic"
-    assert replay["payload"]["type"] == "anthropicCompaction"
-    assert replay["payload"]["encrypted_content"] == "enc_xyz"
-    assert res.reasoning_blocks is not None
-    assert any(b.get("type") in {"compaction", "anthropicCompaction"} for b in res.reasoning_blocks)
-
-
 class FakeAnthropicError(Exception):
     def __init__(self, message: str, status_code: int, body: dict) -> None:
         super().__init__(message)
