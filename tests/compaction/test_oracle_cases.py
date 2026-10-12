@@ -21,7 +21,6 @@ from breadboard_engine.compaction import (
     ProjectionTarget,
     SummaryRequest,
     SummaryResponse,
-    available_presets,
     load_compaction_config,
 )
 from breadboard_engine.compaction.pipeline import CompactionOutcome, ComposedStep, StageResult
@@ -41,11 +40,9 @@ CHECKED = {"trigger", "selection", "summary_requests", "projected_view", "summar
 
 def _cases() -> List[Any]:
     params = []
-    presets = set(available_presets())
     for case_file in sorted(ORACLES.glob("*/*.json")):
         preset = case_file.parent.name
-        marks = [] if preset in presets else [pytest.mark.skip(reason=f"preset {preset} is not packaged yet")]
-        params.append(pytest.param(case_file, id=f"{preset}/{case_file.stem}", marks=marks))
+        params.append(pytest.param(case_file, id=f"{preset}/{case_file.stem}"))
     return params
 
 
@@ -115,7 +112,7 @@ def _context(case, state: CompactionState, messages, summarizer=None) -> Compact
         reason="request" if request_pass else inp.get("reason") or "threshold",
         target=target,
         context_window=inp["context_window"],
-        tokens_before=recipe.count(state.project(messages, target, coalesce=False)),
+        tokens_before=recipe.count(state.project(messages, target)),
         summarizer=summarizer,
         max_input_tokens=inp.get("max_input_tokens"),
         max_output_tokens=inp.get("max_output_tokens"),
@@ -141,7 +138,6 @@ def _state_from_ledger(case, messages) -> CompactionState:
             details=prior.get("details") or {},
             prefix_end=prior.get("prefix_end"),
             reset_context=prior.get("reset_context", False),
-            coalesce_user=prior.get("coalesce_user", False),
         )
         state.append(record, prefix)
     return state
@@ -220,7 +216,7 @@ def test_oracle_case(case_file: Path) -> None:
 
     if "trigger" in expect:
         data = TriggerInput(
-            OccupancyInput(state.project(messages, TARGET, coalesce=False), normalize_usage(inp.get("usage")), usage_fresh=True),
+            OccupancyInput(state.project(messages, TARGET), normalize_usage(inp.get("usage")), usage_fresh=True),
             inp["context_window"],
             inp.get("max_output_tokens"),
             reason=inp.get("reason") or "threshold",

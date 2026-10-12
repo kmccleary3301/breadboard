@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
+from functools import lru_cache
 import gzip
 import io
 import math
@@ -188,7 +189,6 @@ _FONT_5X8: Optional[BitmapFont] = None
 _FONT_8X8: Optional[BitmapFont] = None
 _FONT_6X12: Optional[BitmapFont] = None
 _FONT_8X13: Optional[BitmapFont] = None
-_FONT_SILVER_FACE: Optional[Any] = None
 
 
 def get_font_5x8() -> BitmapFont:
@@ -222,8 +222,8 @@ def get_font_8x13() -> BitmapFont:
     return _FONT_8X13
 
 
+@lru_cache(maxsize=None)
 def get_silver_ttf(size: int = 16) -> Any:
-    global _FONT_SILVER_FACE
     if not _PILLOW_AVAILABLE:
         raise RuntimeError("Pillow is required for snapcompact font rendering")
     return ImageFont.truetype(str(FONTS_DIR / "Silver.ttf"), size)

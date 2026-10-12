@@ -122,7 +122,6 @@ class ComposedStep:
             edits=edits,
             details=details,
             reset_context=selection.reset_context,
-            coalesce_user=bool(getattr(self.placement, "coalesce_user", False)),
         )
 
 
@@ -177,7 +176,7 @@ class Pipeline:
     ) -> CompactionOutcome:
         results: List[StageResult] = []
         records: List[CompactionRecord] = []
-        current = self.count(context.state.project(context.messages, context.target, coalesce=False))
+        current = self.count(context.state.project(context.messages, context.target))
         stopped: Optional[str] = None
         original_failure: Optional[Exception] = None
         terminal_failure: Optional[Exception] = None
@@ -239,7 +238,7 @@ class Pipeline:
                     stopped = f"stopped after {stage_id} failed"
                 continue
             probe = CompactionState([*context.state.records, output.record])
-            after = self.count(probe.project(context.messages, context.target, coalesce=False))
+            after = self.count(probe.project(context.messages, context.target))
             if stage.accept == "progress" and after >= current:
                 results.append(StageResult(stage_id, "noop", "no progress", after))
                 continue

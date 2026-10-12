@@ -355,9 +355,12 @@ def main() -> None:
         result = _run_stock(args.workspace, args.scratch, args.base_url) if args.child == "stock" else asyncio.run(_run_bb(args.workspace, args.scratch, args.base_url))
     else:
         import tempfile
+        scenarios = (args.scenario,) if args.scenario else ("threshold", "overflow", "retry_turns")
         with tempfile.TemporaryDirectory(prefix="hermes-lane-") as temp:
-            result = {scenario: run_scenario(Path(temp) / scenario, scenario) for scenario in ("threshold", "overflow", "retry_turns")}
+            result = {scenario: run_scenario(Path(temp) / scenario, scenario) for scenario in scenarios}
     args.output.write_text(json.dumps(result, indent=2))
+    if not args.child and any(report["diffs"] for report in result.values()):
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -28,8 +28,7 @@ import re
 from typing import Any
 
 from breadboard_engine.compaction_lanes.mock_provider import MockProvider, MockScriptEngine, MockRequestHandler, MockThreadingServer
-from breadboard_engine.provider.contract_wire import canonical_json
-from .request_bytes import guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
+from .request_bytes import canonical, guarded_changes, project_guarded_values, raw_mismatch, raw_request_differences, request_json_problem
 
 ROOT = Path(__file__).resolve().parents[2]
 TARGET = ROOT / "config/e4_targets/openclaw/2026.9.4-r2"
@@ -129,8 +128,6 @@ def provider_for(scenario: str, record: Path, *, embeddings_status_code: int = 2
     return provider
 
 
-def canonical(body: Any) -> bytes:
-    return canonical_json([body])[1:-1].encode("utf-8")
 
 
 def seed(workspace: Path) -> None:

@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 from ..execution.stock_driver import StockDriver
+from ..provider.contract_runtime import ProviderRuntimeContext
 
 from .methods import (
     CompactionCancelled,
@@ -62,12 +63,10 @@ class CompactionController:
         self.settings = self.config.settings
         self.recipe: Recipe = build_recipe(self.config)
         self.summary_model = summary_model
-        self._turn_passes: Dict[int, int] = {}
         # Provider attempt number for the request being built; bumped after
         # each successful overflow recovery so retried requests are recorded
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
-        self._messages_len_at_last_record: Optional[int] = None
         self.stock_driver = stock_driver
         self.tool_schema_provider = tool_schema_provider
 
@@ -78,14 +77,13 @@ class CompactionController:
     def begin_request(self) -> None:
         self.request_attempt = 0
 
-    def passes_this_turn(self, turn_index: int) -> int:
-        return self._turn_passes.get(turn_index, 0)
-
-    def record_pass(self, turn_index: int) -> None:
-        self._turn_passes[turn_index] = self.passes_this_turn(turn_index) + 1
-
-    def can_pass(self, turn_index: int) -> bool:
-        return self.passes_this_turn(turn_index) < self.recipe.max_attempts_per_turn
+    @staticmethod
+    def _ledger(session_state: Any) -> CompactionState:
+        state = getattr(session_state, "compaction_state", None)
+        if state is None:
+            state = CompactionState()
+            session_state.compaction_state = state
+        return state
 
     def resolve_context_window(
         self,
@@ -344,15 +342,13 @@ class CompactionController:
         if not self.active and (compaction_state is None or not compaction_state.records):
             # Disabled: the exact pre-compaction request view.
             return copy.deepcopy(messages)
-        if compaction_state is None:
-            compaction_state = CompactionState()
-            session_state.compaction_state = compaction_state
+        compaction_state = self._ledger(session_state)
     
         max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
         steps = self.recipe.request_view if self.active else ()
         stage_ids = [step for step in steps if step in self.recipe.pipeline.stages]
         outcomes: List[CompactionOutcome] = []
-        tokens_before = self.recipe.count(compaction_state.project(messages, target, coalesce=False))
+        tokens_before = self.recipe.count(compaction_state.project(messages, target))
         request_error = None
         index = 0
         try:
@@ -398,7 +394,7 @@ class CompactionController:
                 results.extend(StageResult(stage_id, "noop", "request pass interrupted")
                                for stage_id in stage_ids[len(results):])
                 records = tuple(record for outcome in outcomes for record in outcome.records)
-                tokens_after = self.recipe.count(compaction_state.project(messages, target, coalesce=False))
+                tokens_after = self.recipe.count(compaction_state.project(messages, target))
                 target_tokens = self.recipe.target_tokens("request", context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW, max_output, max_input)
                 aggregate = CompactionOutcome(
                     records=records,
@@ -432,11 +428,11 @@ class CompactionController:
             return False
 
         compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
-        view = compaction_state.project(messages, None, coalesce=False) if compaction_state is not None else messages
+        view = compaction_state.project(messages, None) if compaction_state is not None else messages
         # Provider usage describes the last request sent. If a record was
         # appended since (no new message arrived), that request predates the
         # compaction and its usage would retrigger it.
-        usage_fresh = len(messages) != self._messages_len_at_last_record
+        usage_fresh = compaction_state is None or len(messages) != compaction_state.messages_len_at_last_record
         metadata_input, metadata_output = self.resolve_model_limits(session_state)
         summary_last = False
         if checkpoint == "assistant_step_end" and any(
@@ -478,7 +474,7 @@ class CompactionController:
         turn_index: Optional[int] = None,
     ) -> None:
         """Record lifecycle event and persist Product snapshot."""
-        self._messages_len_at_last_record = len(session_state.provider_messages)
+        session_state.compaction_state.messages_len_at_last_record = len(session_state.provider_messages)
         if record.is_boundary and target is not None and target.api == "responses" and record.details.get("stateless_summary"):
             # Only explicitly stateless replacements supersede provider state.
             session_state.set_provider_metadata("conversation_id", None)
@@ -531,10 +527,7 @@ class CompactionController:
     ) -> CompactionContext:
         """Populate the production dependencies for every ledger-producing pass."""
         messages = session_state.provider_messages
-        state = getattr(session_state, "compaction_state", None)
-        if state is None:
-            state = CompactionState()
-            session_state.compaction_state = state
+        state = self._ledger(session_state)
         max_input, max_output = self.resolve_model_limits(session_state, conductor, target.model)
         if max_output_tokens is not None:
             max_output = max_output_tokens
@@ -554,7 +547,7 @@ class CompactionController:
                 route_id=self.settings.summary_model or getattr(conductor, "_current_route_id", None) or target.model,
                 tool_schema_provider=summary_tools,
             )
-        projected = state.project(messages, target, coalesce=False)
+        projected = state.project(messages, target)
         window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW
         pressure = self.recipe.pressure(
             TriggerInput(OccupancyInput(projected, None, False), context_window,
@@ -570,13 +563,14 @@ class CompactionController:
             max_input_tokens=max_input, max_output_tokens=max_output,
             overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
             last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
-            usage_fresh=len(messages) != self._messages_len_at_last_record,
+            usage_fresh=len(messages) != state.messages_len_at_last_record,
             native_retention=self.recipe.native_retention,
             prior_compactions=sum(record.is_boundary for record in state.records),
             sampling_phase=request_context.sampling_phase if request_context is not None else None,
             pending_user_index=request_context.pending_user_index if request_context is not None else None,
             severity="hard" if reason in {"manual", "overflow"} else pressure.severity if pressure and pressure.severity else "soft",
             clock=clock or _utc_now,
+            runtime_context=ProviderRuntimeContext(session_state, dict(getattr(conductor, "config", None) or {})),
         )
 
     def compact(
@@ -782,9 +776,10 @@ class CompactionController:
             if recovered:
                 self.request_attempt += 1
             return recovered
-        if not self.can_pass(turn_index):
+        passes = self._ledger(session_state).turn_passes
+        if passes.get(turn_index, 0) >= self.recipe.max_attempts_per_turn:
             return False
-        self.record_pass(turn_index)
+        passes[turn_index] = passes.get(turn_index, 0) + 1
         overflow_tokens, overflow_limit = overflow_token_bounds(exc)
         outcome = self.compact(
             session_state, request_context=request_context, reason="overflow",

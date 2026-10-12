@@ -25,6 +25,7 @@ from typing import (
     runtime_checkable,
 )
 
+from ..provider.contract_runtime import ProviderRuntimeContext
 from .settings import CompactionSettings
 from .state import (
     CompactionRecord,
@@ -142,6 +143,7 @@ class CompactionContext:
     overflow_limit: Optional[int] = None
     sampling_phase: Optional[str] = None
     pending_user_index: Optional[int] = None
+    runtime_context: Optional[ProviderRuntimeContext] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)
@@ -160,7 +162,6 @@ class CompactionContext:
         warning: Optional[str] = None,
         prefix_end: Optional[int] = None,
         reset_context: bool = False,
-        coalesce_user: bool = False,
     ) -> CompactionRecord:
         sequence = self.state.next_sequence
         draft = CompactionRecord(
@@ -181,7 +182,6 @@ class CompactionContext:
             warning=warning,
             prefix_end=prefix_end,
             reset_context=reset_context,
-            coalesce_user=coalesce_user,
         )
         payload = draft.to_dict()
         payload.pop("record_id")

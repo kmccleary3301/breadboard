@@ -65,6 +65,44 @@ def test_summary_history_is_complete_without_changing_ordinary_stateful_delta(su
     assert ("max_output_tokens" in payload) is summary
 
 
+def test_local_compaction_boundary_sends_full_history_without_server_state():
+    from breadboard_engine.compaction import CompactionState
+    from breadboard_engine.compaction.state import CompactionRecord
+
+    runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    messages = [{"role": "user", "content": "Summary of earlier work"}, {"role": "assistant", "content": "Answer"},
+                {"role": "tool", "tool_call_id": "c1", "content": "out"}, {"role": "user", "content": "Next"}]
+    ledger = CompactionState()
+    ledger.append(CompactionRecord(
+        record_id="r1", sequence=0, method="summary", reason="threshold", created_at="t", tokens_before=1,
+        history_length=4, first_kept_index=1, summary="s", summary_messages=(messages[0],),
+    ), messages)
+    state = types.SimpleNamespace(compaction_state=ledger, get_provider_metadata=lambda key: f"old_{key}")
+    payload = runtime._request_payload(model="test", messages=messages, tools=None, context=ProviderRuntimeContext(
+        state, {"provider_tools": {"openai": {"responses_stateful": True}}}))
+    assert "previous_response_id" not in payload and "conversation" not in payload
+    assert payload["input"][0]["content"][0]["text"] == "Summary of earlier work"
+
+
+
+def test_stateless_replay_keeps_raw_native_tool_arguments():
+    runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    context = ProviderRuntimeContext(types.SimpleNamespace(get_provider_metadata=lambda key: None), {
+        "tools": {"native_semantics": "opencode_1_2_17"},
+        "provider_tools": {"openai": {"responses_stateful": False}},
+    })
+    messages = [
+        {"role": "user", "content": "Task"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "bash", "raw_arguments": "{\"command\": "}},
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "content": "invalid arguments"},
+    ]
+    payload = runtime._request_payload(model="test", messages=messages, tools=None, context=context)
+    call = next(item for item in payload["input"] if item.get("type") == "function_call")
+    assert call["arguments"] == "{\"command\": "
+
+
 @pytest.mark.parametrize("request_declared", [False, True])
 @pytest.mark.parametrize("state_reference", ["previous_response_id", "conversation_id"])
 def test_summary_without_stateless_opt_in_preserves_base_responses_delta(request_declared, state_reference):

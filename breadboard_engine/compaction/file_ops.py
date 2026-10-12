@@ -166,9 +166,6 @@ def format_grouped_paths(
     return "\n".join(lines)
 
 
-formatGroupedPaths = format_grouped_paths
-
-
 def strip_file_operation_tags(summary: str) -> str:
     """Strip legacy and current file-operation tags from a summary string."""
     cleaned = re.sub(r"<files>[\s\S]*?</files>\s*", "", summary)
@@ -199,9 +196,6 @@ def format_file_operations(
         files_tree += f"\n[…{len(all_paths) - FILE_OPERATION_SUMMARY_LIMIT} files elided…]"
 
     return render_prompt("file-operations", {"files": files_tree})
-
-
-formatFileOperations = format_file_operations
 
 
 def upsert_file_operations(

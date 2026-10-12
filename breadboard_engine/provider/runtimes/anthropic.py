@@ -1653,7 +1653,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         *,
         client: Any,
         model: str,
-        context: Optional[Any] = None,
     ) -> Optional[Any]:
         """Return an AnthropicCompactionPort if model is supported, else None."""
         from ...compaction.remote.anthropic import (
@@ -1667,7 +1666,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             client=client,
             model=model,
             runtime=self,
-            context=context,
         )
 
 

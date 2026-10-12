@@ -20,5 +20,5 @@ def test_disabled_preset_preserves_observation_bytes():
     from types import SimpleNamespace
     messages = [{"role": "tool", "tool_call_id": "call", "content": "x" * 15000}]
     state = SimpleNamespace(provider_messages=messages, compaction_state=CompactionState())
-    controller = CompactionController({"compaction": {"enabled": False, "preset": "mini_swe_agent@2.4.6"}})
+    controller = CompactionController({"compaction": {"enabled": False, "preset": "omp@18.4.5", "prune": {"enabled": True}}})
     assert controller.build_request_view(state, target=ProjectionTarget("oracle", "oracle", "oracle")) == messages

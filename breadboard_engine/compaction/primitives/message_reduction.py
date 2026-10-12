@@ -9,7 +9,7 @@ from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
 from ..params import Params
 from ..state import MessageEdit
 from .chat_reducers import summary_request_options
-from .history_selection import edited_history
+from .protected_windows import visible_messages
 from .reducers import Reduction, resolve_prompt
 from .selectors import Selection
 
@@ -60,7 +60,7 @@ class MaskOutputs:
     def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
         if not selection.targets:
             raise MethodUnavailable(str(selection.details.get("noop") or "No eligible tool outputs"))
-        messages = edited_history(context)
+        messages = visible_messages(context)
         edits = tuple(
             MessageEdit(i, {key: value for key, value in {**messages[i], "content": self.placeholder}.items()
                             if key not in self.remove_fields})
@@ -87,7 +87,7 @@ class MessageSummary:
     def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
-        messages = edited_history(context)
+        messages = visible_messages(context)
         prior = context.state.latest_readable_boundary()
         history = list(prior.summary_messages) if prior is not None else []
         history.extend(messages[i] for i in selection.summarize)

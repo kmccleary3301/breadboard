@@ -31,11 +31,12 @@ class AuxiliaryTransport:
         self.requests: set[_Request] = set()
         self.loop = None
         self.thread = None
+        self.closing = False
         self.closed = False
 
     def forward(self, session_id, url, headers, body):
         with self.lock:
-            if self.closed:
+            if self.closed or self.closing:
                 raise AuxiliaryCancelled()
             if self.loop is None:
                 self.loop = asyncio.new_event_loop()
@@ -94,7 +95,7 @@ class AuxiliaryTransport:
         with self.lock:
             if self.closed:
                 return set()
-            self.closed = True
+            self.closing = True
             sessions = {request.session_id for request in self.requests}
         for session_id in sessions:
             self.cancel(session_id)
@@ -104,4 +105,6 @@ class AuxiliaryTransport:
             if self.thread.is_alive():
                 raise RuntimeError("Auxiliary HTTP loop did not stop")
             self.loop.close()
+        with self.lock:
+            self.closed = True
         return sessions

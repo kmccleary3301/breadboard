@@ -130,7 +130,7 @@ class SnapcompactCompaction:
         if first_kept_index <= start:
             # Check if active boundary carries frames that can be rescued
             if active_boundary is not None:
-                arch_dict = active_boundary.details.get("snapcompact_archive") or active_boundary.details.get("preserve_data", {}).get("snapcompact")
+                arch_dict = active_boundary.details.get("preserve_data", {}).get("snapcompact")
                 if arch_dict:
                     prev_arch = Archive.from_dict(arch_dict)
                     if len(prev_arch.frames) > 1:
@@ -179,7 +179,7 @@ class SnapcompactCompaction:
             previous_summary = active_boundary.summary if active_boundary else None
             previous_archive = None
             if active_boundary:
-                arch_dict = active_boundary.details.get("snapcompact_archive") or active_boundary.details.get("preserve_data", {}).get("snapcompact")
+                arch_dict = active_boundary.details.get("preserve_data", {}).get("snapcompact")
                 if arch_dict:
                     previous_archive = Archive.from_dict(arch_dict)
 
@@ -235,7 +235,6 @@ class SnapcompactCompaction:
         details = {
             "read_files": read_files,
             "modified_files": modified_files,
-            "snapcompact_archive": archive.to_dict(),
             "preserve_data": {"snapcompact": archive.to_dict()},
         }
 

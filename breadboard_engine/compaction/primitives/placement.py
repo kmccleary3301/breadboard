@@ -64,12 +64,11 @@ class Template:
         return [{"role": m["role"], "content": self._render(m["content"], reduction)} for m in self.messages]
 
 
-from .event_summary import OffsetSummary
 from .bridge import Bridge
 from .alternation import AlternationTemplate
 from .message_reduction import SummaryReplay
 
-PLACEMENT_KINDS = {cls.kind: cls for cls in (Template, OffsetSummary, Bridge, AlternationTemplate, SummaryReplay)}
+PLACEMENT_KINDS = {cls.kind: cls for cls in (Template, Bridge, AlternationTemplate, SummaryReplay)}
 
 
 def build_placement(params: Params) -> Any:

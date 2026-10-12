@@ -6,11 +6,8 @@ import re
 import time
 from typing import Any
 from .opencode_scenarios import PARITY_REFERENCE
-from breadboard_engine.provider.contract_wire import canonical_json
-from .request_bytes import project_guarded_values, request_json_problem
+from .request_bytes import canonical, project_guarded_values, request_json_problem
 
-def canonical(body: Any) -> bytes:
-    return canonical_json([body])[1:-1].encode("utf-8")
 
 class CreatedTimeTieOrder:
     """Guard stock message-v2.ts:740's ORDER BY time_created DESC collision.

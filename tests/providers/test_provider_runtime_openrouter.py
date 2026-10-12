@@ -21,6 +21,73 @@ from breadboard_engine.provider.contracts import (
 )
 
 
+class _FakeCompletions:
+    def create(self, **kwargs):
+        return types.SimpleNamespace(choices=[], model=kwargs.get("model"))
+
+    def stream(self, **kwargs):  # pragma: no cover - not used in test
+        raise RuntimeError("streaming not required for test")
+
+
+class _FakeChat:
+    def __init__(self):
+        self.completions = _FakeCompletions()
+
+
+def test_openrouter_runtime_uses_openai_client(monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    monkeypatch.setattr(
+        provider_router.providers["openrouter"],
+        "default_headers",
+        {
+            "HTTP-Referer": "https://example.com",
+            "X-Title": "BreadBoard",
+            "Accept": "application/json; charset=utf-8",
+            "Accept-Encoding": "identity",
+        },
+        raising=False,
+    )
+
+    descriptor, model = provider_router.get_runtime_descriptor("openrouter/openai/gpt-4o-mini")
+    runtime = provider_registry.create_runtime(descriptor)
+
+    captured = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = _FakeChat()
+            self.responses = types.SimpleNamespace(
+                create=lambda **_: (_ for _ in ()).throw(RuntimeError("not used")),
+                stream=lambda **_: (_ for _ in ()).throw(RuntimeError("not used")),
+            )
+
+    monkeypatch.setattr(
+        "breadboard_engine.provider.sdk_bindings.provider_sdk_bindings.openai",
+        FakeOpenAI,
+    )
+
+    with provider_router.execution_client_config(
+        "openrouter/openai/gpt-4o-mini"
+    ) as client_config:
+        client = runtime.create_client(
+            client_config["api_key"],
+            base_url=client_config.get("base_url"),
+            default_headers=client_config.get("default_headers"),
+        )
+
+        assert captured["api_key"] == "test-key"
+        assert captured["base_url"] == "https://openrouter.ai/api/v1"
+        assert captured["default_headers"]["HTTP-Referer"] == "https://example.com"
+        assert (
+            captured["default_headers"]["Accept"] == "application/json; charset=utf-8"
+        )
+        assert captured["default_headers"]["Accept-Encoding"] == "identity"
+        # Ensure the fake client exposes chat completions entrypoint
+        assert hasattr(client.chat, "completions")
+        assert client.chat.completions.create(model=model, messages=[]) is not None
+
+
 def test_openrouter_gpt5_routes_through_responses_runtime_descriptor() -> None:
     descriptor, _model = provider_router.get_runtime_descriptor("openrouter/openai/gpt-5-nano")
     assert descriptor.provider_id == "openrouter"

@@ -613,6 +613,7 @@ def test_stock_equality_rescue_path(tmp_path: Path) -> None:
             followup_index += 1
         assert fin["kind"] == "compaction_finalized"
         assert fin["retry"] is True
+        assert fin["messages"] == stock["finalMessages"]
     finally:
         worker.stop()
 

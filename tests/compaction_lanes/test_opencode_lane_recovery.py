@@ -106,7 +106,7 @@ def test_plugin_only_provider_error_recovers_at_pending_checkpoint_not_native_ov
         error, state, turn_index=1, conductor=None, runtime=runtime, client=object(), model="gpt-test")
     assert len(runtime.summary_requests) == 1
     assert all(record.reason == "threshold" for record in state.compaction_state.records)
-    assert controller.passes_this_turn(1) == 0
+    assert not state.compaction_state.turn_passes
     state.add_message({"role": "assistant", "content": "Recovered."})
     assert _finish_pending_recovery(controller, state, runtime)
     state.add_message({"role": "assistant", "content": "Finally recovered."})

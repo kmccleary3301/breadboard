@@ -15,7 +15,6 @@ SEARCH_TEXTS = (
     ("wait_agent", "wait_agent wait agent subagent status final result complete timeout targets"),
     ("close_agent", "close_agent close shutdown stop agent subagent thread status target"),
 )
-DEFAULT_LIMIT = 8
 ROOT = Path(__file__).resolve().parents[2]
 
 

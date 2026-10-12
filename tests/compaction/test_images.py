@@ -45,6 +45,20 @@ def _context(
     )
 
 
+@pytest.mark.parametrize(
+    "media",
+    [
+        {"type": "media", "kind": "image", "uri": "attachment://" + "a" * 64, "mime": "image/png"},
+        {"type": "media", "kind": "codex_image_url", "uri": "https://example.test/" + "a" * 64, "detail": "high"},
+    ],
+)
+def test_canonical_media_image_is_estimated_as_an_image(media):
+    image = {"type": "input_image", "image_url": "data:image/png;base64,AA=="}
+    assert estimate_message_tokens({"role": "user", "content": [media]}) == estimate_message_tokens(
+        {"role": "user", "content": [image]}
+    )
+
+
 # -----------------------------------------------------------------------------
 # strip_images_from_message unit tests (ported from strip-images-from-message.test.ts)
 # -----------------------------------------------------------------------------

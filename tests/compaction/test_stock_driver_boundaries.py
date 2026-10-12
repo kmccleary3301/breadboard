@@ -7,7 +7,7 @@ import pytest
 from breadboard_engine.compaction.controller import CompactionController, CompactionRequestContext
 from breadboard_engine.compaction.state import ProjectionTarget
 from breadboard_engine.execution.stock_driver import StockDriver, resolve_stock_driver
-from breadboard_engine.execution.stock_tools import register_stock_session
+from breadboard_engine.execution.stock_tools import close_stock_sessions, register_stock_session
 from breadboard_engine.state.session_state import SessionState
 
 
@@ -100,11 +100,10 @@ def test_driver_close_reuses_registered_sessions_and_retries_failed_close():
     first, second = Session(False), Session(True)
     register_stock_session(owner, first)
     register_stock_session(owner, second)
-    driver = StockDriver(execute=lambda *args, **kwargs: None)
     with pytest.raises(RuntimeError):
-        driver.close(owner)
+        close_stock_sessions(owner)
     assert closed == [first] and owner._stock_tool_sessions == [second]
-    driver.close(owner)
+    close_stock_sessions(owner)
     assert closed == [first, second] and owner._stock_tool_sessions == []
 
 

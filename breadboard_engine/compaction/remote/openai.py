@@ -13,17 +13,20 @@ import urllib.error
 import urllib.request
 
 from ..methods import (
+    CompactionCancelled,
     CompactionContext,
     CompactionError,
     CompactionRecord,
     MethodUnavailable,
     RemoteCompactionPort,
 )
+from ...provider.contract_messages import normalize_provider_replay
+from ...provider.contract_runtime import ProviderRuntimeContext
+from ...provider.input_media import resolve_input_media
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
 from ..transcript import is_tool_result, leading_system_count, role_of, tool_call_ids
 
-OPENAI_REMOTE_COMPACTION_PRESERVE_KEY = "openaiRemoteCompaction"
 CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE = "Output: exceeded available model context → truncated."
 COMPACTION_TRIGGER_ITEM: Dict[str, Any] = {"type": "compaction_trigger"}
 IMAGE_TOKEN_ESTIMATE = 765
@@ -183,6 +186,7 @@ def build_openai_native_history(
     messages: Sequence[Mapping[str, Any]],
     model: str,
     previous_replacement_history: Optional[Sequence[Mapping[str, Any]]] = None,
+    runtime_context: Optional[ProviderRuntimeContext] = None,
 ) -> List[Dict[str, Any]]:
     """Port of OMP buildOpenAiNativeHistory for Responses chat format."""
     input_items: List[Dict[str, Any]] = []
@@ -210,6 +214,8 @@ def build_openai_native_history(
                         cid = it.get("call_id")
                         if isinstance(cid, str):
                             known_call_ids.add(cid)
+                            if it.get("type") == "custom_tool_call":
+                                custom_call_ids.add(cid)
             continue
 
         role = message.get("role")
@@ -227,6 +233,12 @@ def build_openai_native_history(
                             text = block.get("text")
                             if text:
                                 content_blocks.append({"type": "input_text", "text": str(text)})
+                        elif btype == "media":
+                            media = resolve_input_media(block, runtime_context)
+                            image: dict[str, Any] = {"type": "input_image", "image_url": media.data_url}
+                            if media.detail is not None:
+                                image["detail"] = media.detail
+                            content_blocks.append(image)
                         elif btype in ("image", "input_image"):
                             url = block.get("image_url") or block.get("url")
                             content_blocks.append({"type": "input_image", "image_url": str(url)})
@@ -243,11 +255,19 @@ def build_openai_native_history(
 
             # Assistant text
             text = message.get("content")
+            native_calls: dict[str, dict[str, Any]] = {}
             if isinstance(text, list):
                 parts = []
                 for p in text:
-                    if isinstance(p, Mapping) and p.get("type") in ("text", "output_text"):
+                    if not isinstance(p, Mapping):
+                        continue
+                    if p.get("type") in ("text", "output_text"):
                         parts.append(str(p.get("text") or ""))
+                    elif p.get("type") == "provider_replay" and p.get("schema_version") == "openai.responses.hosted.v1":
+                        input_items.append(dict(normalize_provider_replay(p)["payload"]))
+                    elif p.get("type") == "provider_replay" and p.get("schema_version") == "openai.responses.tools.v1":
+                        payload = dict(p["payload"])
+                        native_calls[payload["call_id"]] = payload
                 text = "".join(parts)
             if isinstance(text, str) and text.strip():
                 input_items.append({
@@ -259,6 +279,10 @@ def build_openai_native_history(
                 })
 
             # Assistant tool calls
+            # Native tool items (custom/tool_search) replay verbatim, as the Responses runtime sends them.
+            for call_id, payload in native_calls.items():
+                if payload.get("type") == "custom_tool_call":
+                    custom_call_ids.add(call_id)
             tool_calls = message.get("tool_calls") or ()
             for call in tool_calls:
                 if not isinstance(call, Mapping):
@@ -266,18 +290,24 @@ def build_openai_native_history(
                 call_id = call.get("id") or call.get("call_id")
                 if not isinstance(call_id, str):
                     continue
+                known_call_ids.add(call_id)
+                if call_id in native_calls:
+                    input_items.append(native_calls.pop(call_id))
+                    continue
                 func = call.get("function") or {}
                 name = func.get("name") if isinstance(func, Mapping) else call.get("name")
                 args = func.get("arguments") if isinstance(func, Mapping) else call.get("arguments")
                 if not isinstance(args, str):
                     args = json.dumps(args if args is not None else {})
-                known_call_ids.add(call_id)
                 input_items.append({
                     "type": "function_call",
                     "call_id": call_id,
                     "name": str(name or ""),
                     "arguments": args,
                 })
+            for call_id, payload in native_calls.items():
+                known_call_ids.add(call_id)
+                input_items.append(payload)
 
             msg_index += 1
             continue
@@ -290,8 +320,9 @@ def build_openai_native_history(
             output = message.get("content")
             if not isinstance(output, str):
                 output = json.dumps(output if output is not None else "")
+            out_type = "custom_tool_call_output" if call_id in custom_call_ids else "function_call_output"
             input_items.append({
-                "type": "function_call_output",
+                "type": out_type,
                 "call_id": call_id,
                 "output": output,
             })
@@ -345,7 +376,6 @@ def trim_remote_compaction_input_to_context_window(
             break
         item = items[idx]
         if item.get("type") in ("function_call_output", "custom_tool_call_output"):
-            old_output = str(item.get("output") or "")
             items[idx] = {**item, "output": CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE}
             rewritten_outputs += 1
             current_tokens = _estimate_input_tokens(items)
@@ -410,7 +440,6 @@ class OpenAIResponsesCompactionPort:
         *,
         client: Any = None,
         model: Optional[str] = None,
-        context: Any = None,
         runtime: Any = None,
         http_poster: Optional[Callable[[str, Mapping[str, Any], Optional[Mapping[str, str]]], Any]] = None,
         endpoint: Optional[str] = None,
@@ -418,7 +447,6 @@ class OpenAIResponsesCompactionPort:
     ) -> None:
         self.client = client
         self.model = model
-        self.context = context
         self.runtime = runtime
         self._http_poster = http_poster
         self.endpoint = endpoint
@@ -521,7 +549,8 @@ class OpenAIResponsesCompactionPort:
             raise MethodUnavailable("No messages to compact")
         model = context.target.model
         native_history = build_openai_native_history(
-            remote_messages, model, previous_replacement_history=prev_replacement
+            remote_messages, model, previous_replacement_history=prev_replacement,
+            runtime_context=context.runtime_context,
         )
         if not native_history:
             raise MethodUnavailable("Native history construction produced no items")
@@ -579,6 +608,9 @@ class OpenAIResponsesCompactionPort:
                         err_msg = ev.get("message") or ev.get("error") or etype
                         raise CompactionError(f"V2 stream failed: {err_msg}")
 
+                if not saw_completed:
+                    raise CompactionError("V2 compaction stream did not complete")
+
                 if not compaction_item:
                     raise CompactionError("V2 compaction stream did not return a compaction output item")
 
@@ -591,7 +623,7 @@ class OpenAIResponsesCompactionPort:
                         input_items, compaction_item, retained_budget
                     )
                 used_v2 = True
-            except MethodUnavailable:
+            except (MethodUnavailable, CompactionCancelled):
                 raise
             except Exception:
                 # Fall back to V1 compact

@@ -10,6 +10,7 @@ if TYPE_CHECKING:
     from ..state.session_state import SessionState
 
 from ..compaction.overflow import is_context_overflow
+from ..compaction.state import strip_native_markers
 from ..messaging.markdown_logger import MarkdownLogger
 from .contracts import (
     ProviderContractError,
@@ -94,7 +95,7 @@ class ProviderInvoker:
         )
         request = ProviderRequest(
             stream=bool(stream_responses),
-            messages=send_messages,
+            messages=strip_native_markers(send_messages),
             tools=list(tools_schema or []),
             _tool_api_variant=(
                 "responses"

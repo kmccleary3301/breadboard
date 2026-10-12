@@ -172,8 +172,7 @@ def test_successful_compaction_long_history():
         assert img.height > 0
 
     # Details has archive data
-    assert "snapcompact_archive" in record.details
-    archive_data = record.details["snapcompact_archive"]
+    archive_data = record.details["preserve_data"]["snapcompact"]
     assert archive_data["totalChars"] > 0
     assert len(archive_data["frames"]) == len(image_blocks)
 
@@ -208,7 +207,7 @@ def test_dead_end_frame_rescue():
         summary="Previous summary preamble",
         short_summary="Archived 6 frames",
         summary_messages=({"role": "user", "content": prior_content},),
-        details={"snapcompact_archive": preserved_archive, "preserve_data": {"snapcompact": preserved_archive}},
+        details={"preserve_data": {"snapcompact": preserved_archive}},
     )
     state = CompactionState([prior_record])
 
@@ -222,7 +221,7 @@ def test_dead_end_frame_rescue():
     ctx = _make_context(messages, state=state, context_window=20_000, keep_recent_tokens=50_000)
     rescue_record = method.run(ctx)
     assert rescue_record.is_boundary
-    res_arch = rescue_record.details["snapcompact_archive"]
+    res_arch = rescue_record.details["preserve_data"]["snapcompact"]
     assert len(res_arch["frames"]) < 6
 
 

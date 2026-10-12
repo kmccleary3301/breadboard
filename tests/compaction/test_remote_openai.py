@@ -15,6 +15,7 @@ from breadboard_engine.compaction import (
     settings_from_config,
 )
 from .support import run_pipeline
+from breadboard_engine.compaction.methods import CompactionCancelled
 from breadboard_engine.compaction.remote import RemoteCompaction
 from breadboard_engine.compaction.remote.openai import (
     COMPACTION_TRIGGER_ITEM,
@@ -65,6 +66,117 @@ def test_build_openai_native_history_formats():
     assert items[3]["call_id"] == "call_123"
     assert items[3]["output"] == "file1.py\nfile2.py"
 
+
+def test_authorized_canonical_media_encoded_in_remote_history(tmp_path):
+    from breadboard.product.runtime.artifacts import ArtifactStore
+
+    workspace = tmp_path / "workspace"
+    artifact = ArtifactStore(workspace / ".breadboard" / "artifacts").put(
+        b"\x89PNG\r\n\x1a\nimage-data",
+        media_type="image/png",
+    )
+    uri = f"attachment://{artifact.digest}"
+    metadata = {"attachment_capabilities": {uri: artifact.as_dict()}}
+    session_state = types.SimpleNamespace(
+        workspace=str(workspace),
+        get_provider_metadata=lambda key, default=None: metadata.get(key, default),
+    )
+    messages = [{"role": "user", "content": [
+        {"type": "text", "text": "inspect this"},
+        {"type": "media", "kind": "image", "uri": uri, "mime": "image/png"},
+    ]}]
+    posted_calls = []
+
+    def fake_poster(url, payload, headers):
+        posted_calls.append(payload)
+        return {"output": [{"type": "compaction", "encrypted_content": "enc_1"}]}
+
+    OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(CompactionContext(
+        messages=messages,
+        state=CompactionState(),
+        settings=settings_from_config({"enabled": True, "remote_streaming_v2_enabled": False}),
+        reason="threshold",
+        target=ProjectionTarget("openai", "responses", "gpt-5"),
+        context_window=8000,
+        tokens_before=100,
+        runtime_context=ProviderRuntimeContext(session_state, {}),
+    ))
+    image = posted_calls[0]["input"][0]["content"][1]
+    assert image["type"] == "input_image" and image["image_url"].startswith("data:image/png;base64,")
+
+
+def test_assistant_hosted_replay_is_in_remote_history():
+    payload = {
+        "type": "web_search_call",
+        "status": "completed",
+        "action": {"type": "search", "query": "needle"},
+    }
+    replay = {
+        "type": "provider_replay",
+        "provider_id": "openai",
+        "schema_version": "openai.responses.hosted.v1",
+        "replay_scope": "same_provider",
+        "payload": payload,
+    }
+    messages = [
+        {"role": "user", "content": "research this"},
+        {"role": "assistant", "content": [replay]},
+    ]
+    items = build_openai_native_history(messages, "gpt-5")
+    assert payload in items
+
+
+def test_custom_tool_results_emitted_as_custom_tool_call_output():
+    messages = [
+        {
+            "bb_native_compaction": {
+                "provider": "openai",
+                "api": "responses",
+                "items": [{"type": "custom_tool_call", "call_id": "call_marker_c1"}],
+            }
+        },
+        {"role": "tool", "tool_call_id": "call_marker_c1", "content": "marker custom out"},
+        {"role": "tool", "tool_call_id": "call_prev_c2", "content": "prev custom out"},
+        {"role": "tool", "tool_call_id": "call_func_1", "content": "func out"},
+    ]
+    prev_replacement = [
+        {"type": "custom_tool_call", "call_id": "call_prev_c2"},
+        {"type": "function_call", "call_id": "call_func_1"},
+    ]
+    items = build_openai_native_history(
+        messages, "gpt-5", previous_replacement_history=prev_replacement
+    )
+    outputs = {it.get("call_id"): it for it in items if "output" in it}
+    assert outputs["call_marker_c1"]["type"] == "custom_tool_call_output"
+    assert outputs["call_prev_c2"]["type"] == "custom_tool_call_output"
+    assert outputs["call_func_1"]["type"] == "function_call_output"
+
+
+def test_live_custom_tool_call_replays_native_item_in_call_order():
+    custom = {"type": "custom_tool_call", "call_id": "call_patch", "name": "apply_patch", "input": "*** Begin Patch"}
+    replay = {
+        "type": "provider_replay", "provider_id": "openai",
+        "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider", "payload": custom,
+    }
+    messages = [
+        {"role": "user", "content": "patch it"},
+        {
+            "role": "assistant",
+            "content": [replay],
+            "tool_calls": [
+                {"id": "call_read", "type": "function", "function": {"name": "read", "arguments": "{}"}},
+                {"id": "call_patch", "type": "function", "function": {"name": "apply_patch", "arguments": "{}"}},
+            ],
+        },
+        {"role": "tool", "tool_call_id": "call_read", "content": "read out"},
+        {"role": "tool", "tool_call_id": "call_patch", "content": "patch out"},
+    ]
+    items = build_openai_native_history(messages, "gpt-5")
+    calls = [(it["type"], it["call_id"]) for it in items if it["type"].endswith("call")]
+    assert calls == [("function_call", "call_read"), ("custom_tool_call", "call_patch")]
+    assert custom in items
+    outputs = {it["call_id"]: it["type"] for it in items if "output" in it}
+    assert outputs == {"call_read": "function_call_output", "call_patch": "custom_tool_call_output"}
 
 def test_build_openai_native_history_with_previous_replacement():
     prev_items = [
@@ -218,28 +330,13 @@ def test_v2_streaming_responses_compact_record_creation():
     assert user_items[0]["content"][0]["text"] == "Real user turn"
 
 
-def test_v2_fallback_to_v1_on_stream_failure():
-    calls = []
-
-    def fake_poster(url, payload, headers):
-        calls.append(url)
-        if url.endswith("/responses"):
-            # Stream error
-            return "event: response.failed\ndata: {\"error\": \"internal_error\"}\n\n"
-        # V1 fallback succeeds
-        return {
-            "output": [
-                {"type": "compaction", "encrypted_content": "enc_v1_fallback"},
-            ]
-        }
-
-    port = OpenAIResponsesCompactionPort(http_poster=fake_poster)
+def _v2_context() -> CompactionContext:
     messages = [
         {"role": "system", "content": "System prompt"},
         {"role": "user", "content": "Turn 1"},
         {"role": "assistant", "content": "Turn 1 ans"},
     ]
-    ctx = CompactionContext(
+    return CompactionContext(
         messages=messages,
         state=CompactionState(),
         settings=settings_from_config({"enabled": True, "remote_streaming_v2_enabled": True}),
@@ -249,13 +346,35 @@ def test_v2_fallback_to_v1_on_stream_failure():
         tokens_before=estimate_messages_tokens(messages),
     )
 
-    record = port.compact(ctx)
-    assert len(calls) == 2
-    assert calls[0].endswith("/responses")
-    assert calls[1].endswith("/responses/compact")
-    assert record.native is not None
+
+@pytest.mark.parametrize("stream", [
+    "event: response.failed\ndata: {\"error\": \"internal_error\"}\n\n",
+    'event: response.output_item.done\ndata: {"type": "response.output_item.done", "item": {"type": "compaction", "encrypted_content": "partial"}}\n\n',
+], ids=["failed", "no_terminal_event"])
+def test_v2_fallback_to_v1_on_stream_failure(stream):
+    calls = []
+
+    def fake_poster(url, payload, headers):
+        calls.append(url)
+        if url.endswith("/responses"):
+            return stream
+        return {"output": [{"type": "compaction", "encrypted_content": "enc_v1_fallback"}]}
+
+    record = OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(_v2_context())
+    assert [url.rsplit("/", 1)[-1] for url in calls] == ["responses", "compact"]
     assert record.native.items[0]["encrypted_content"] == "enc_v1_fallback"
 
+
+def test_v2_cancellation_skips_v1_fallback():
+    calls = []
+
+    def fake_poster(url, payload, headers):
+        calls.append(url)
+        raise CompactionCancelled("cancelled")
+
+    with pytest.raises(CompactionCancelled):
+        OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(_v2_context())
+    assert len(calls) == 1
 
 def test_end_to_end_compaction_and_responses_runtime_replay():
     """

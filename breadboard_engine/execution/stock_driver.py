@@ -9,7 +9,7 @@ import copy
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-from .stock_tools import close_stock_sessions, native_concurrent_prompts
+from .stock_tools import native_concurrent_prompts
 
 
 @dataclass(frozen=True)
@@ -34,8 +34,6 @@ class StockDriver:
     lexical_arguments: bool = False
     owns_tool_batch: bool = False
 
-    def close(self, owner: Any) -> None:
-        close_stock_sessions(owner)
 
 
 def _prepare_opencode_input(owner, state, context, message):

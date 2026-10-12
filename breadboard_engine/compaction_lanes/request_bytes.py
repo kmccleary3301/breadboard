@@ -10,6 +10,9 @@ import json
 from typing import Any
 from breadboard_engine.provider.contract_wire import canonical_json
 
+def canonical(body: Any) -> bytes:
+    return canonical_json([body])[1:-1].encode("utf-8")
+
 
 def raw_mismatch(left: bytes, right: bytes, index: int) -> dict[str, Any] | None:
     if left == right:

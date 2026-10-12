@@ -7,15 +7,8 @@ from typing import Any, Mapping
 from ..methods import CompactionContext
 from ..params import Params, PresetError
 from .accounting import _utf16_len
+from .protected_windows import visible_messages
 from .selectors import Selection
-
-
-def edited_history(context: CompactionContext) -> list[Mapping[str, Any]]:
-    messages = list(context.messages)
-    for record in context.state.records:
-        for edit in record.edits:
-            messages[edit.index] = edit.message
-    return messages
 
 
 def tool_name(messages: list[Mapping[str, Any]], index: int) -> str:
@@ -55,7 +48,7 @@ class ProtectedToolOutputs:
     def select(self, context: CompactionContext) -> Selection:
         if not self.enabled:
             return Selection(details={"noop": "tool-output pruning disabled"})
-        messages = edited_history(context)
+        messages = visible_messages(context)
         owner_summary = False
         summary_tools = set()
         for index, message in enumerate(messages):
@@ -110,7 +103,7 @@ class LargestFirstMasking:
             return Selection(details={"noop": "provider overflow bounds unavailable"})
         target = math.floor(limit * self.target_ratio)
         required = (current - target) * self.chars_per_token
-        messages = edited_history(context)
+        messages = visible_messages(context)
         candidates = []
         for i in range(context.state.kept_start(messages), len(messages)):
             message = messages[i]

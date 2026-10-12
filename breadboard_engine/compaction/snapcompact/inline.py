@@ -19,7 +19,7 @@ from ..settings import CompactionSettings
 from ..tokens import estimate_text_tokens
 from ..transcript import content_text, has_images
 
-from .archive import count_frames
+from .archive import count_frames, text_pages
 from .renderer import render_snapcompact_png
 from .shapes import (
     Shape,
@@ -159,33 +159,7 @@ def apply_inline_snapcompact(
             if frames_needed * shape.frame_token_estimate > text_tokens * SAVINGS_MARGIN:
                 continue
 
-            # Render frames
-            frame_blocks: List[Dict[str, Any]] = []
-            from .archive import paginate_cells, doc_pages, _uses_wide_cells
-            if shape.columns == 2:
-                pages = doc_pages(text, shape.cell_width, shape.cell_height, _uses_wide_cells(shape))
-            else:
-                from .shapes import geometry
-                g = geometry(shape)
-                pages = paginate_cells(text, g.capacity, g.cols, _uses_wide_cells(shape))
-
-            for page in pages:
-                b64 = render_snapcompact_png(
-                    page,
-                    size=shape.frame_size,
-                    font=shape.font,
-                    cell_width=shape.cell_width,
-                    cell_height=shape.cell_height,
-                    variant=shape.variant,
-                    line_repeat=shape.line_repeat,
-                    stretch=shape.stretch,
-                    columns=shape.columns or 1,
-                )
-                frame_blocks.append({
-                    "type": "image_url",
-                    "image_url": {"url": f"data:image/png;base64,{b64}"},
-                })
-
+            frame_blocks = _render_text_frames(text, shape)
             new_content: List[Dict[str, Any]] = [{"type": "text", "text": TOOL_RESULT_NOTE}]
             new_content.extend(frame_blocks)
             for img_idx, img in enumerate(original_images, start=1):
@@ -236,7 +210,7 @@ def apply_inline_snapcompact(
                 0 < frames <= min(budget, MAX_SYSTEM_PROMPT_FRAMES)
                 and frames * shape.frame_token_estimate <= estimate_text_tokens(target_text) * SAVINGS_MARGIN
             ):
-                rendered_frames = _render_text_frames(target_text, shape, frames)
+                rendered_frames = _render_text_frames(target_text, shape)
                 for i, replacement in replacements.items():
                     out_messages[i]["content"] = replacement
                 user_msg = out_messages[first_user_idx]
@@ -257,12 +231,8 @@ def apply_inline_snapcompact(
     return out_messages
 
 
-def _render_text_frames(text: str, shape: Shape, frames: int) -> List[Dict[str, Any]]:
-    from .shapes import geometry
-    from .archive import paginate_cells, _uses_wide_cells
-
-    g = geometry(shape)
-    pages = paginate_cells(text, g.capacity, g.cols, _uses_wide_cells(shape))[:frames]
+def _render_text_frames(text: str, shape: Shape) -> List[Dict[str, Any]]:
+    pages = text_pages(text, shape)
     rendered = []
     for page in pages:
         b64 = render_snapcompact_png(

@@ -133,15 +133,18 @@ def doc_pages(normalized: str, cols: int, rows: int, wide_cells: bool) -> List[s
     return pages
 
 
-def count_frames(text: str, shape: Shape) -> int:
+def text_pages(text: str, shape: Shape) -> List[str]:
     norm = normalize(text, shape)
     if not norm:
-        return 0
+        return []
     geo = geometry(shape)
     if shape.columns == 2:
-        return len(doc_pages(norm, geo.cols, geo.rows, _uses_wide_cells(shape)))
-    pages = paginate_cells(norm, geo.capacity, geo.cols, _uses_wide_cells(shape))
-    return max(1, len(pages))
+        return doc_pages(norm, geo.cols, geo.rows, _uses_wide_cells(shape))
+    return paginate_cells(norm, geo.capacity, geo.cols, _uses_wide_cells(shape))
+
+
+def count_frames(text: str, shape: Shape) -> int:
+    return len(text_pages(text, shape))
 
 
 @dataclass

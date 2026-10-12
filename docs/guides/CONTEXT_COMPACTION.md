@@ -96,16 +96,6 @@ Accepts Pi's `reserveTokens` (default 16384) and `keepRecentTokens` (default
   `<modified-files>` tags, and one summary message in Pi's wording.
 - Overflow: one compact-and-retry until a response succeeds.
 
-### `openhands_sdk@1.47.0`
-
-Accepts `max_size`, `keep_first`, `max_tokens`, `minimum_progress`,
-`hard_context_reset_max_retries` and `hard_context_reset_context_scaling`.
-Event-count and input-token pressure select an atomic prefix/suffix view.
-Summaries replace forgotten events at their offset and coalesce adjacent users.
-Hard pressure can fall back to bounded whole-view reset retries; soft failure
-keeps the view unchanged. The preset uses compact-and-retry overflow recovery.
-The SDK's direct-agent no-condenser default is not an enabled compaction recipe.
-
 ### `codex@0.139.0`
 
 Accepts `model_auto_compact_token_limit`, `model_auto_compact_token_limit_scope`,
@@ -224,13 +214,6 @@ capped reserve, Pi-style recent-token selection and the pinned user summary
 wrapper. Safeguard mode audits required sections and identifiers before
 accepting the summary. Overflow compacts and retries. Captures cover reserve,
 selection, quality checks and placement, not all OpenClaw hooks or runtime.
-
-### `mini_swe_agent@2.4.6`
-
-Accepts no harness-specific settings. No proactive threshold compaction runs.
-The request pass renders tool observations through the pinned clipping
-template, including the exact 10,000-character boundary. Overflow is terminal.
-This preset does not add summarization to a harness that has none.
 
 ### `opencode@1.2.17`
 
@@ -508,12 +491,12 @@ from `primitives/` and their parameters:
 
 | Part | Kinds |
 |---|---|
-| `estimator` | `bb_chars4`, `pi_chars4`, `bytes4`, `chars4_round`, `event_count`, `chars_div4_floor` |
+| `estimator` | `bb_chars4`, `pi_chars4`, `bytes4`, `chars4_round` |
 | trigger `accounting` | `max_usage_estimate`, `usage_plus_trailing`, `provider_total`, `estimate_only` |
-| trigger `limit`, `target` | `omp_settings`, `window_minus_reserve`, `window_fraction`, `output_reserve_plus_buffer`, `fixed`, `effective_budget`, `floored_capped_reserve`, `input_or_window_reserve` |
-| stage `select` | `recent_tokens`, `prefix_suffix_events`, `whole_history`, `user_messages_budget`, `latest_tool_outputs`, `decaying_prefix_tail`, `visible_tool_outputs`, `protected_tool_outputs`, `largest_first_masking` |
-| stage `reduce` | `summarize`, `event_summary`, `chat_summary`, `mask_outputs`, `duplicate_tool_results`, `observation_clip`, `checkpoint_summary`, `message_summary` |
-| stage `place` | `template`, `offset_summary`, `bridge`, `alternation_template`, `summary_replay` |
+| trigger `limit`, `target` | `omp_settings`, `window_minus_reserve`, `window_fraction`, `output_reserve_plus_buffer`, `effective_budget`, `floored_capped_reserve`, `input_or_window_reserve` |
+| stage `select` | `recent_tokens`, `whole_history`, `user_messages_budget`, `latest_tool_outputs`, `decaying_prefix_tail`, `visible_tool_outputs`, `protected_tool_outputs`, `largest_first_masking` |
+| stage `reduce` | `summarize`, `chat_summary`, `mask_outputs`, `duplicate_tool_results`, `checkpoint_summary`, `message_summary` |
+| stage `place` | `template`, `bridge`, `alternation_template`, `summary_replay` |
 | stage `algorithm` | `omp_remote`, `omp_snapcompact`, `omp_handoff`, `omp_shake` |
 
 `pipeline.mode` decides what happens after each stage result: `fallback`

@@ -58,15 +58,9 @@ def truncate_tool_result_for_summary(text: str, max_chars: int = TOOL_RESULT_MAX
     return f"{head}\n\n[... {length - max_chars} more characters truncated]"
 
 
-truncateToolResultForSummary = truncate_tool_result_for_summary
-
-
 def escape_summary_boundary_tags(text: str) -> str:
     """Keep untrusted summary input from closing or impersonating harness boundary tags."""
     return _SUMMARY_BOUNDARY_TAG_RE.sub(lambda m: f"&lt;{m.group(0)[1:]}", text)
-
-
-escapeSummaryBoundaryTags = escape_summary_boundary_tags
 
 
 def _render_tool_calls(calls: Sequence[Mapping[str, Any]]) -> str:
@@ -207,13 +201,8 @@ def serialize_conversation(
     return "\n\n".join(parts)
 
 
-serializeConversation = serialize_conversation
-
-
 def serialize_conversation_for_summary(messages: Sequence[Mapping[str, Any]]) -> str:
     """Serialize chat-format messages for summary input with boundary tags escaped."""
     conversation = serialize_conversation(messages)
     return escape_summary_boundary_tags(conversation)
 
-
-serializeConversationForSummary = serialize_conversation_for_summary

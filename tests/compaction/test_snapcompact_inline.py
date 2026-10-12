@@ -228,6 +228,20 @@ def test_inline_system_prompt_all_keeps_text_when_prompt_exceeds_frame_cap():
     assert transformed == messages
 
 
+def test_inline_system_prompt_frames_carry_text_after_unrenderable_glyphs(monkeypatch):
+    from breadboard_engine.compaction.snapcompact import inline
+
+    pages = []
+    monkeypatch.setattr(inline, "render_snapcompact_png", lambda page, **_: pages.append(page) or "")
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    prompt = "\U0001fae0" * 50000 + " Critical rule: never delete the workspace."
+    apply_inline_snapcompact(
+        [{"role": "system", "content": prompt}, {"role": "user", "content": "Help me."}],
+        settings, supports_images=True,
+    )
+    assert any("Critical rule" in page for page in pages)
+
+
 def test_inline_does_not_mutate_input():
     """Input message dictionaries and lists MUST NOT be modified."""
     settings = _make_settings(tool_results="all", inline_min_tokens=50)

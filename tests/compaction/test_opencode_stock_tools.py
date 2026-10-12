@@ -547,3 +547,43 @@ def test_auxiliary_upstream_disconnect_is_observed_by_forward_owner():
         disconnect.set()
         transport.close()
         proxy.close()
+
+
+def test_auxiliary_failed_close_is_retried_by_closed_lifecycle():
+    from concurrent.futures import ThreadPoolExecutor
+    from http.server import BaseHTTPRequestHandler
+    import threading
+    from breadboard_engine.execution.local_http_proxy import LocalHTTPProxy
+    from breadboard_engine.execution.opencode.lifecycle import OpenCodeLifecycle
+    from breadboard_engine.execution.opencode_auxiliary import AuxiliaryTransport
+    entered, release = threading.Event(), threading.Event()
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+        def do_POST(self):
+            entered.set()
+            release.wait(10)
+    proxy = LocalHTTPProxy(Handler)
+    proxy.start()
+    transport = AuxiliaryTransport()
+    cancel, failures = transport.cancel, [RuntimeError("cancellation timed out")]
+    def flaky_cancel(session_id):
+        if failures:
+            raise failures.pop()
+        cancel(session_id)
+    transport.cancel = flaky_cancel
+    try:
+        with ThreadPoolExecutor() as pool:
+            pool.submit(transport.forward, "owned", f"http://127.0.0.1:{proxy.server_port}/", {}, b"{}")
+            assert entered.wait(10)
+            with pytest.raises(RuntimeError, match="cancellation timed out"):
+                transport.close()
+            release.set()
+            lifecycle = object.__new__(OpenCodeLifecycle)
+            lifecycle.closed, lifecycle.auxiliary_transport = True, transport
+            lifecycle._close_locked()
+            assert transport.closed and not transport.thread.is_alive()
+    finally:
+        release.set()
+        transport.close()
+        proxy.close()

@@ -484,3 +484,46 @@ def test_runtime_surfaces_context_overflow_details() -> None:
             context=make_ctx(),
         )
     assert not is_context_overflow(exc_info_500.value)
+
+
+def test_anthropic_compaction_port_converts_authorized_media(tmp_path: Any) -> None:
+    from dataclasses import replace
+    from breadboard.product.runtime.artifacts import put_workspace_artifact
+    from breadboard_engine.state.session_state import SessionState
+
+    content = b"fake image bytes"
+    artifact = put_workspace_artifact(tmp_path, content, media_type="image/png")
+    uri = f"attachment://{artifact.digest}"
+    state = SessionState(workspace=str(tmp_path), image="claude-dev", config={})
+    state.set_provider_metadata("attachment_capabilities", {uri: artifact.as_dict()})
+
+    runtime = AnthropicMessagesRuntime(
+        descriptor=SimpleNamespace(provider_id="anthropic", api_type="messages", config={})
+    )
+    fake_client = FakeAnthropicClient()
+    fake_response = SimpleNamespace(
+        stop_reason="compaction",
+        content=[
+            SimpleNamespace(type="compaction", content="## Summary\ncompacted", signature="sig")
+        ],
+        usage=SimpleNamespace(input_tokens=100, output_tokens=50),
+    )
+    fake_client.messages.create = lambda **kwargs: (fake_client.messages.calls.append(kwargs) or fake_response)
+    port = runtime.compaction_port(client=fake_client, model="claude-sonnet-5")
+    messages = [
+        {"role": "user", "content": [
+            {"type": "media", "kind": "image", "uri": uri, "mime": "image/png"},
+            {"type": "text", "text": "What is in this image?"},
+        ]},
+        {"role": "assistant", "content": "I see an image."},
+        {"role": "user", "content": "Tell me more."},
+        {"role": "assistant", "content": "Done."},
+    ]
+    ctx = replace(_context(messages, state=state.compaction_state), runtime_context=ProviderRuntimeContext(state, {}))
+    record = port.compact(ctx)
+    assert record.method == "remote"
+    assert len(fake_client.messages.calls) == 1
+    sent_msgs = fake_client.messages.calls[0]["messages"]
+    image_block = sent_msgs[0]["content"][0]
+    assert image_block["type"] == "image"
+    assert image_block["source"]["type"] == "base64"

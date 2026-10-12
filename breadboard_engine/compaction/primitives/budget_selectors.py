@@ -1,8 +1,6 @@
 """Whole-history replacement, retained user text, and latest-call protection."""
 from __future__ import annotations
 
-from typing import Mapping
-
 from ..methods import CompactionContext, MethodUnavailable
 from ..params import Params
 from .accounting import _text_parts, normalize_usage, _usage_total, rounded_text_tokens
@@ -20,24 +18,12 @@ class WholeHistory:
 
     def __init__(self, params: Params) -> None:
         self.exclude_latest_user_on = params.list("exclude_latest_user_on", [])
-        self.view = params.choice("view", ("history", "events"), "history")
         self.replay_min_users = params.int("replay_min_users", 1, minimum=1)
         self.replay_prefix_only = params.bool("replay_prefix_only", False)
         self.exclude_compaction_users = params.bool("exclude_compaction_users", False)
         params.done()
 
     def select(self, context: CompactionContext) -> Selection:
-        if self.view == "events":
-            from .event_selection import indexed_view
-
-            events, indices = indexed_view(context)
-            if not events:
-                raise MethodUnavailable("Empty event view")
-            return Selection(
-                prefix_end=0, first_kept_index=len(context.messages),
-                summarize=tuple(i for i in indices if i is not None),
-                reset_context=True, details={"events": events},
-            )
         start = context.state.kept_start(context.messages)
         end = len(context.messages)
         replay = ()

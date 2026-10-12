@@ -64,13 +64,12 @@ def test_overflow_without_compaction_ends_the_run(tmp_path: Path, monkeypatch: p
     [
         "compaction:\n  enabled: true\n  contextWindow: 200000\n  keepRecentTokens: 50\n  methodOrder: [soft]\n",
         "compaction:\n  enabled: true\n  preset: pi@0.73.1\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
-        "compaction:\n  enabled: true\n  preset: openhands_sdk@1.47.0\n  contextWindow: 200000\n",
         "compaction:\n  enabled: true\n  preset: hermes_agent@2026.9.11\n  contextWindow: 200000\n  protect_first_n: 0\n  protect_last_n: 3\n",
         "compaction:\n  enabled: true\n  preset: openclaw@2026.9.4\n  contextWindow: 200000\n  keepRecentTokens: 50\n",
         "compaction:\n  enabled: true\n  preset: opencode@1.2.17\n  contextWindow: 200000\n",
         "compaction:\n  enabled: true\n  preset: oh-my-opencode@3.10.0\n  contextWindow: 200000\n",
     ],
-    ids=["omp", "pi", "openhands", "hermes", "openclaw", "opencode", "oh-my-opencode"],
+    ids=["omp", "pi", "hermes", "openclaw", "opencode", "oh-my-opencode"],
 )
 def test_overflow_with_compaction_summarizes_and_continues(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, compaction: str
@@ -86,7 +85,7 @@ def test_overflow_with_compaction_summarizes_and_continues(
     assert sum(1 for kind, _ in calls if kind == "model") > len(overflowed) + 1
 
 
-@pytest.mark.parametrize("preset", ["codex@0.139.0", "claude_code@2.1.63", "mini_swe_agent@2.4.6"])
+@pytest.mark.parametrize("preset", ["codex@0.139.0", "claude_code@2.1.63"])
 def test_terminal_preset_overflow_ends_run_without_summary(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, preset: str
 ) -> None:

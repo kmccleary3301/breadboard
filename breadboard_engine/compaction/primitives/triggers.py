@@ -123,22 +123,11 @@ class InputOrWindowReserve:
         return window - output
 
 
-class FixedLimit:
-    kind = "fixed"
-
-    def __init__(self, params: Params) -> None:
-        self.value = params.int("tokens", minimum=1)
-        params.done()
-
-    def tokens(self, window: int, max_output: Optional[int], max_input: Optional[int] = None) -> int:
-        return self.value
-
-
 from .budget_limits import EffectiveBudget, FlooredCappedReserve
 
 LIMIT_KINDS = {
     cls.kind: cls
-    for cls in (OmpSettingsLimit, WindowMinusReserve, WindowFraction, OutputReservePlusBuffer, FixedLimit,
+    for cls in (OmpSettingsLimit, WindowMinusReserve, WindowFraction, OutputReservePlusBuffer,
                 EffectiveBudget, FlooredCappedReserve, InputOrWindowReserve)
 }
 
@@ -240,37 +229,6 @@ class ThresholdTrigger:
         return Pressure(fires, measured.tokens, limit, measured.source, self.severity, in_phase)
 
 
-class EventCountTrigger:
-    """Strict event pressure with optional tokenizer pressure and explicit requests."""
-
-    kind = "event_count"
-
-    def __init__(self, params: Params) -> None:
-        self.maximum = params.int("maximum", 240, minimum=1)
-        self.max_tokens = params.int("max_tokens", None)
-        from .accounting import build_estimator
-
-        self.count = build_estimator(params.str("estimator"))
-        params.done()
-
-    def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
-        # Event pressure is independent of the optional model input cap.
-
-        events = data.occupancy.messages
-        request = data.reason in {"manual", "overflow"}
-        caps = [v for v in (self.max_tokens, data.max_input_tokens) if v is not None]
-        cap = min(caps) if data.max_input_tokens is not None else None
-        total = self.count(events) if cap is not None else None
-        token_pressure = total is not None and total > cap
-        fires = request or token_pressure or len(events) > self.maximum
-        severity = "hard" if request or token_pressure else "soft" if fires else None
-        return Pressure(
-            fires, total if total is not None else len(events) if fires else 0,
-            cap if total is not None else self.maximum,
-            "estimate" if total is not None else "events; token pressure unavailable: missing max_input_tokens",
-            severity, True,
-        )
-
 
 class PendingErrorTrigger:
     """Arm on a parsed provider error, then recover at the final-answer checkpoint."""
@@ -313,7 +271,7 @@ class PendingErrorTrigger:
                         None, 0, self.kind, "soft", in_phase)
 
 
-TRIGGER_KINDS = {cls.kind: cls for cls in (ThresholdTrigger, EventCountTrigger, PendingErrorTrigger)}
+TRIGGER_KINDS = {cls.kind: cls for cls in (ThresholdTrigger, PendingErrorTrigger)}
 
 
 def build_trigger(params: Params) -> Any:

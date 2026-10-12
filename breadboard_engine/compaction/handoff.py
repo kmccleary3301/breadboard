@@ -44,9 +44,6 @@ def generate_handoff(
     return res.text
 
 
-generateHandoff = generate_handoff
-
-
 class HandoffCompaction:
     """Compaction method that writes a handoff document and keeps recent history."""
 

@@ -30,7 +30,7 @@ def _part_tokens(part: Any) -> int:
     if not isinstance(part, Mapping):
         return estimate_text_tokens(str(part))
     kind = part.get("type")
-    if kind in {"image_url", "image", "input_image"}:
+    if kind in {"image_url", "image", "input_image"} or (kind == "media" and part.get("kind") in {"image", "codex_image_url"}):
         return IMAGE_TOKEN_ESTIMATE
     for key in ("text", "content", "thinking"):
         value = part.get(key)

@@ -252,3 +252,41 @@ def test_model_limits_resolve_from_id_shaped_model_entry() -> None:
     session = SimpleNamespace(get_provider_metadata=lambda key: None)
     assert controller.resolve_model_limits(session, conductor, "test-model") == (272000, 32000)
     assert controller.resolve_model_limits(session, conductor) == (272000, 32000)
+
+
+def test_overflow_budget_is_scoped_to_session_state() -> None:
+    controller = CompactionController({"compaction": {
+        "enabled": True, "contextWindow": 8000, "reserveTokens": 1000,
+        "keepRecentTokens": 1500, "methodOrder": ["soft"], "maxPassesPerTurn": 1,
+    }})
+    runtime = FakeRuntime()
+    kwargs = dict(conductor=SimpleNamespace(config={}, model="gpt-test"), runtime=runtime,
+                  client=object(), model="gpt-test", turn_index=1)
+    session1 = _session()
+    assert controller.recover_from_overflow(OVERFLOW, session1, **kwargs)
+    session2 = _session()
+    assert controller.recover_from_overflow(OVERFLOW, session2, **kwargs)
+
+
+def test_usage_freshness_is_scoped_to_session_state() -> None:
+    from breadboard_engine.compaction.state import CompactionRecord
+    controller = CompactionController({"compaction": {"enabled": True, "preset": "pi@0.73.1"}})
+    previous = SessionState("ws", "image", {})
+    previous.add_message({"role": "system", "content": "system"})
+    previous.add_message({"role": "user", "content": "old input"})
+    prior_record = CompactionRecord(
+        record_id="prior", sequence=0, method="summary", reason="threshold",
+        created_at="2026-10-12T00:00:00Z", tokens_before=5000,
+        history_length=len(previous.provider_messages), first_kept_index=1,
+        summary="prior summary", summary_messages=({"role": "user", "content": "prior summary"},),
+    )
+    controller._after_record_appended(previous, prior_record)
+
+    resumed = SessionState("ws", "image", {})
+    resumed.add_message({"role": "system", "content": "system"})
+    resumed.add_message({"role": "user", "content": "restored input"})
+    resumed.set_provider_metadata("usage", {"total_tokens": 4000})
+    assert controller.should_trigger_threshold(
+        resumed, context_window=20000,
+        last_usage=resumed.get_provider_metadata("usage"), checkpoint="every_request",
+    )

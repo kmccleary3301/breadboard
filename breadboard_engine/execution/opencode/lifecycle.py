@@ -465,6 +465,9 @@ class OpenCodeLifecycle:
 
     def _close_locked(self):
         if self.closed:
+            transport = getattr(self, "auxiliary_transport", None)
+            if transport is not None:
+                transport.close()
             return
         self.closing = True
         cleanup_error = None

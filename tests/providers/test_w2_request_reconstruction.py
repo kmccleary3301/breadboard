@@ -587,3 +587,27 @@ def test_model_surface_withholds_hashes_without_exact_runtime_projection() -> No
         "request_sha256": None,
         "uncertainty": "runtime request projection unavailable",
     }
+
+
+def test_invoker_records_marker_free_request_and_dispatches_markers() -> None:
+    seen = []
+
+    class Runtime:
+        descriptor = SimpleNamespace(provider_id="openai", runtime_id="openai_chat", default_api_variant="chat")
+
+        def invoke(self, *, client, model, messages, tools, stream, context):
+            seen.append(messages)
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="ok")], raw_response=None, model=model)
+
+    state = SessionState(workspace=".", image="markers", config={})
+    for key, value in {"session_id": "s1", "input_id": "i1", "turn_id": "t1"}.items():
+        state.set_provider_metadata(key, value)
+    context = ProviderRuntimeContext(session_state=state, agent_config={}, stream=False)
+    marked = {"role": "user", "content": "hello", "bb_native_compaction": {"provider": "openai"}}
+    _invoker().invoke(
+        runtime=Runtime(), client=object(), model="gpt-test", send_messages=[marked], tools_schema=[],
+        stream_responses=False, runtime_context=context, session_state=state,
+        markdown_logger=Mock(), turn_index=1, route_id="openai/gpt-test",
+    )
+    assert seen == [[marked]]
+    assert "bb_native_compaction" not in context.exchange_recorder.request.messages[0]

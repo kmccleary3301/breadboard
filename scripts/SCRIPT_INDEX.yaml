@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 451
+live_script_count: 449
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -924,11 +924,6 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_cooldown_blocked.json, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_empty_content.json, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_length_truncated.json, tests/compaction/oracles/hermes_agent@2026.9.11/placement_assistant_standalone.json, tests/compaction/oracles/hermes_agent@2026.9.11/placement_user_merged.json]
     expiry: none (durable tooling)
-  - path: scripts/compaction_oracles/capture_mini_swe_agent.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_at_10k_elided_zero.json, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_over_10k_clipped.json, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_under_10k_unclipped.json, tests/compaction/oracles/mini_swe_agent@2.4.6/overflow_terminal_failure.json, tests/compaction/oracles/mini_swe_agent@2.4.6/trigger_high_occupancy.json]
-    expiry: none (durable tooling)
   - path: scripts/compaction_oracles/capture_omp.ts
     class: live-wired
     owner: kmccleary3301
@@ -943,11 +938,6 @@ entries:
     class: live-wired
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/oh-my-opencode@3.10.0/preemptive_trigger_not_wired_in_3_10_0.json, tests/compaction/oracles/oh-my-opencode@3.10.0/recovery_largest_first_masking.json, tests/compaction/oracles/oh-my-opencode@3.10.0/todo_preservation_summary_contributor.json, tests/compaction/oracles/opencode@1.2.17/placement_auto_continuation.json, tests/compaction/oracles/opencode@1.2.17/placement_manual_no_continuation.json]
-    expiry: none (durable tooling)
-  - path: scripts/compaction_oracles/capture_openhands.py
-    class: live-wired
-    owner: kmccleary3301
-    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/openhands_sdk@1.47.0/adjacent_users_token_equality.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_batch_atomicity.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_thinking_loop.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_tool_call_matching.json, tests/compaction/oracles/openhands_sdk@1.47.0/defaults_helper_variant_80_4.json]
     expiry: none (durable tooling)
   - path: scripts/compaction_oracles/capture_pi.mjs
     class: live-wired

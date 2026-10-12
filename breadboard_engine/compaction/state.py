@@ -122,8 +122,6 @@ class CompactionRecord:
     """End of the verbatim protected prefix; ``None`` means no prefix."""
     reset_context: bool = False
     """Replace the whole context, including the system head."""
-    coalesce_user: bool = False
-    """Join adjacent plain user messages in the provider projection."""
 
     @property
     def is_boundary(self) -> bool:
@@ -160,8 +158,6 @@ class CompactionRecord:
             payload["prefix_end"] = self.prefix_end
         if self.reset_context:
             payload["reset_context"] = True
-        if self.coalesce_user:
-            payload["coalesce_user"] = True
         return payload
 
     @classmethod
@@ -189,7 +185,6 @@ class CompactionRecord:
             warning=raw.get("warning"),
             prefix_end=raw.get("prefix_end"),
             reset_context=bool(raw.get("reset_context", False)),
-            coalesce_user=bool(raw.get("coalesce_user", False)),
         )
 
 
@@ -203,12 +198,18 @@ class CompactionStateError(ValueError):
 
 
 class CompactionState:
-    """Append-only compaction ledger for one session's model history."""
+    """Append-only compaction ledger for one session's model history.
+
+    ``turn_passes`` and ``messages_len_at_last_record`` are per-session
+    controller bookkeeping; they are never persisted.
+    """
 
     def __init__(self, records: Sequence[CompactionRecord] = ()) -> None:
         self._records: List[CompactionRecord] = []
         for record in records:
             self._records.append(record)
+        self.turn_passes: Dict[int, int] = {}
+        self.messages_len_at_last_record: Optional[int] = None
 
     @property
     def records(self) -> Tuple[CompactionRecord, ...]:
@@ -333,8 +334,6 @@ class CompactionState:
         self,
         messages: Sequence[Mapping[str, Any]],
         target: Optional[ProjectionTarget] = None,
-        *,
-        coalesce: bool = True,
     ) -> List[Dict[str, Any]]:
         """Build the request view for ``target`` from the full history."""
         head = leading_system_count(messages)
@@ -363,12 +362,6 @@ class CompactionState:
                 view.extend(copy.deepcopy(dict(m)) for m in boundary.summary_messages)
         for index in range(start, len(messages)):
             view.append(copy.deepcopy(dict(edits.get(index, messages[index]))))
-        if coalesce and (
-            (boundary is not None and boundary.coalesce_user) or any("bb_event" in m for m in view)
-        ):
-            from .primitives.event_messages import wire_messages
-
-            view = wire_messages(view)
         return view
 
     def to_list(self) -> List[Dict[str, Any]]:

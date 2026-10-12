@@ -43,7 +43,6 @@ from ..transcript import (
 
 COMPACTION_BETA = "compact-2026-09-04"
 LEGACY_COMPACTION_BETA = "compact-2026-01-12"
-CONTEXT_MANAGEMENT_BETA = "context-management-2025-06-27"
 
 # Embedded verbatim from packages/agent/src/compaction/prompts/anthropic-compaction-instructions.md
 ANTHROPIC_COMPACTION_INSTRUCTIONS_PROMPT = """The conversation above is the complete history to summarize. The API replaces every message in this request with your summary; no message you leave out survives.
@@ -238,12 +237,10 @@ class AnthropicCompactionPort:
         client: Any,
         model: str,
         runtime: Optional[Any] = None,
-        context: Optional[Any] = None,
     ) -> None:
         self.client = client
         self.model = model
         self.runtime = runtime
-        self.runtime_context = context
 
     def supports(self, model: str) -> bool:
         return supports_anthropic_compaction(model)
@@ -310,7 +307,7 @@ class AnthropicCompactionPort:
         wire_messages: List[Dict[str, Any]] = []
         if self.runtime is not None and hasattr(self.runtime, "_convert_messages"):
             sys_from_conv, wire_messages = self.runtime._convert_messages(
-                request_messages, context=self.runtime_context
+                request_messages, context=context.runtime_context
             )
             if sys_from_conv:
                 system_text = (

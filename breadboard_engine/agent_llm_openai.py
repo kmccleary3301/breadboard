@@ -409,11 +409,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
     def close_stock_tools(self) -> None:
         from .execution.stock_tools import close_stock_sessions
 
-        driver = getattr(self, "stock_driver", None)
-        if driver is not None:
-            driver.close(self)
-        else:
-            close_stock_sessions(self)
+        close_stock_sessions(self)
 
     def _restore_retained_ctree(
         self, session_state: SessionState, session_id: str

@@ -148,6 +148,16 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     output["action"][field] = value
         return output
 
+    @staticmethod
+    def _compaction_stateless(messages: List[Dict[str, Any]], context: ProviderRuntimeContext) -> bool:
+        """A compacted history replaces server-side state, so it is sent whole."""
+        if context.extra.get("compaction_stateless") is True:
+            return True
+        ledger = getattr(context.session_state, "compaction_state", None)
+        return (ledger is not None and ledger.latest_boundary() is not None) or any(
+            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
+        )
+
     def _split_messages_for_responses(
         self,
         messages: List[Dict[str, Any]],
@@ -175,8 +185,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         responses_stateful = True
         if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
-        if context.extra.get("compaction_stateless") is True:
-            # Explicit full-history summaries must not become stateful deltas.
+        if self._compaction_stateless(messages, context):
             responses_stateful = False
 
         # Build instructions from system messages (if any)
@@ -196,11 +205,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 developer_messages.append(cloned)
             instructions = None
 
-        has_native_marker = any(
-            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
-        )
         has_conversation = False
-        if responses_stateful and not has_native_marker:
+        if responses_stateful:
             has_conversation = bool(
                 context.session_state.get_provider_metadata("conversation_id")
                 or context.session_state.get_provider_metadata("previous_response_id")
@@ -338,7 +344,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     or raw.get("tool_call_id")
                 )
                 name = function_data.get("name")
-                if "arguments_json" in function_data:
+                raw_arguments = function_data.get("raw_arguments")
+                if raw_arguments is not None:
+                    arguments = None
+                elif "arguments_json" in function_data:
                     arguments = function_data.get("arguments_json")
                 elif "arguments" in function_data:
                     arguments = function_data.get("arguments")
@@ -346,7 +355,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     raise ProviderContractError(
                         "tool call requires arguments"
                     )
-                if arguments is None:
+                if arguments is None and raw_arguments is None:
                     raise ProviderContractError(
                         "tool call requires arguments"
                     )
@@ -354,6 +363,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     id=call_id,
                     name=name,
                     arguments=arguments,
+                    raw_arguments=raw_arguments,
                     type=(
                         "function"
                         if raw.get("type") == "tool_call"
@@ -488,7 +498,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                                           "arguments": call.parsed_arguments})
                     else:
                         converted.append({"type": "function_call", "call_id": call_data["call_id"],
-                                          "name": call_data["name"], "arguments": call_data["arguments_json"]})
+                                          "name": call_data["name"], "arguments": call.arguments})
                     if self._native_namespaces(context) and "." in call_data["name"]:
                         namespace, name = call_data["name"].split(".", 1)
                         converted[-1]["name"] = name
@@ -1325,7 +1335,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         )
         provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
-        if context.extra.get("compaction_stateless") is True:
+        if self._compaction_stateless(messages, context):
             responses_stateful = False
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")
@@ -1391,10 +1401,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             if resolved_choice is not None:
                 payload["tool_choice"] = resolved_choice
 
-        has_native_marker = any(
-            isinstance(m, dict) and "bb_native_compaction" in m for m in messages
-        )
-        if responses_stateful and not has_native_marker:
+        if responses_stateful:
             conversation_id = context.session_state.get_provider_metadata(
                 "conversation_id"
             )
@@ -1746,13 +1753,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         *,
         client: Any,
         model: str,
-        context: Any = None,
     ) -> Any:
         from ....compaction.remote.openai import OpenAIResponsesCompactionPort
 
         return OpenAIResponsesCompactionPort(
             client=client,
             model=model,
-            context=context,
             runtime=self,
         )
