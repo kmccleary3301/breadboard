@@ -5,6 +5,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import Enum
 
+# from_dict rejects unknown fields at every level. Pydantic renders that as
+# additionalProperties: false only when the dataclass declares it (pydantic below
+# 2.14 does not infer it from an enclosing extra="forbid" model), so each type states it.
+_CLOSED = {"extra": "forbid"}
+
 
 def _text(value: object, field: str) -> str:
     if not isinstance(value, str) or not value or value.strip() != value:
@@ -42,6 +47,7 @@ class NetworkOperation(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class ProjectAuthority:
+    __pydantic_config__ = _CLOSED
     roots: tuple[str, ...]
     operations: frozenset[ProjectOperation]
 
@@ -63,6 +69,7 @@ class ProjectAuthority:
 
 @dataclass(frozen=True, slots=True)
 class NetworkAuthority:
+    __pydantic_config__ = _CLOSED
     destinations: tuple[str, ...]
     operations: frozenset[NetworkOperation]
 
@@ -84,6 +91,7 @@ class NetworkAuthority:
 
 @dataclass(frozen=True, slots=True)
 class ChildAuthority:
+    __pydantic_config__ = _CLOSED
     allowed_module_ids: frozenset[str]
     max_depth: int
 
@@ -103,6 +111,7 @@ class ChildAuthority:
 
 @dataclass(frozen=True, slots=True)
 class CredentialDisclosure:
+    __pydantic_config__ = _CLOSED
     secret_name: str
     purpose: str
 
@@ -123,6 +132,7 @@ class CredentialDisclosure:
 class AuthorityDeclaration:
     """Requested rights. A manifest containing these values grants nothing."""
 
+    __pydantic_config__ = _CLOSED
     project: ProjectAuthority | None = None
     network: NetworkAuthority | None = None
     child: ChildAuthority | None = None
