@@ -11,9 +11,10 @@
     ]
   },
   "capture": {
-    "kind": "source_derived",
-    "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/compact.rs:77-83 builds prompt input containing SUMMARIZATION_PROMPT. Lines 225-230 create Prompt { input: turn_input, base_instructions, personality, ..Default::default() }. Default tools is empty ([]). Base instructions/system prompt is passed through."
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/pre_turn_and_second_compaction.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0 via custom model provider. Recorded compact request confirms local compaction path (Prompt with base instructions, no tools, summarization prompt as user message) per codex-rs/core/src/compact.rs:257-268."
   },
   "input": {
     "messages": [

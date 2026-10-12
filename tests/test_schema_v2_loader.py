@@ -792,3 +792,85 @@ features:
     monkeypatch.setenv("AGENT_SCHEMA_V2_ENABLED", "1")
     with pytest.raises(ValueError, match="features.rlm.scheduling.batch.max_concurrency_per_branch"):
         load_agent_config(str(cfg))
+
+
+def test_v2_loader_compaction_and_model_token_limits(tmp_path):
+    valid_cfg = tmp_path / "valid_compaction_v2.yaml"
+    valid_cfg.write_text(
+        """
+schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: ./agent_ws
+providers:
+  default_model: gpt-5.5
+  models:
+    - id: gpt-5.5
+      adapter: openai
+      max_input_tokens: 272000
+      max_output_tokens: 32000
+modes:
+  - name: default
+loop:
+  sequence:
+    - mode: default
+compaction:
+  enabled: true
+  preset: codex@0.139.0
+  contextWindow: 272000
+""".strip()
+    )
+    loaded = load_agent_config(str(valid_cfg))
+    assert loaded["compaction"]["enabled"] is True
+    assert loaded["compaction"]["preset"] == "codex@0.139.0"
+    assert loaded["providers"]["models"][0]["max_input_tokens"] == 272000
+    assert loaded["providers"]["models"][0]["max_output_tokens"] == 32000
+
+    invalid_compaction_cfg = tmp_path / "invalid_compaction_v2.yaml"
+    invalid_compaction_cfg.write_text(
+        """
+schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: ./agent_ws
+providers:
+  default_model: gpt-5.5
+  models:
+    - id: gpt-5.5
+      adapter: openai
+modes:
+  - name: default
+loop:
+  sequence:
+    - mode: default
+compaction:
+  enabled: true
+  preset: non_existent_preset@9.9.9
+""".strip()
+    )
+    with pytest.raises(ValueError, match="invalid compaction config"):
+        load_agent_config(str(invalid_compaction_cfg))
+
+    for bad_max_input in ("not_an_int", 0, -5):
+        bad_input_cfg = tmp_path / f"bad_input_{bad_max_input}_v2.yaml"
+        bad_input_cfg.write_text(
+            f"""
+schema_version: bb.agent_config_surface.v2
+version: 2
+workspace:
+  root: ./agent_ws
+providers:
+  default_model: gpt-5.5
+  models:
+    - id: gpt-5.5
+      adapter: openai
+      max_input_tokens: {bad_max_input}
+modes:
+  - name: default
+loop:
+  sequence:
+    - mode: default
+""".strip()
+        )
+        with pytest.raises(ValueError, match="agent config schema error"):
+            load_agent_config(str(bad_input_cfg))

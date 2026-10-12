@@ -1,0 +1,122 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: session_search
+name: session_search
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Search for content within OpenCode session messages.
+
+
+  Performs full-text search across session messages and returns matching excerpts with context.
+
+
+  Arguments:
+
+  - query (required): Search query string
+
+  - session_id (optional): Search within specific session only (default: all sessions)
+
+  - case_sensitive (optional): Case-sensitive search (default: false)
+
+  - limit (optional): Maximum number of results to return (default: 20)
+
+
+  Example output:
+
+  Found 3 matches across 2 sessions:
+
+
+  [ses_abc123] Message msg_001 (user)
+
+  ...implement the **session manager** tool...
+
+
+  [ses_abc123] Message msg_005 (assistant)
+
+  ...I''ll create a **session manager** with full search...
+
+
+  [ses_def456] Message msg_012 (user)
+
+  ...use the **session manager** to find...'
+parameters:
+- name: query
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: session_id
+  required: false
+  schema: &id002
+    type: string
+  type: string
+- name: case_sensitive
+  required: false
+  schema: &id003
+    type: boolean
+  type: boolean
+- name: limit
+  required: false
+  schema: &id004
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: session_search
+      description: 'Search for content within OpenCode session messages.
+
+
+        Performs full-text search across session messages and returns matching excerpts with context.
+
+
+        Arguments:
+
+        - query (required): Search query string
+
+        - session_id (optional): Search within specific session only (default: all sessions)
+
+        - case_sensitive (optional): Case-sensitive search (default: false)
+
+        - limit (optional): Maximum number of results to return (default: 20)
+
+
+        Example output:
+
+        Found 3 matches across 2 sessions:
+
+
+        [ses_abc123] Message msg_001 (user)
+
+        ...implement the **session manager** tool...
+
+
+        [ses_abc123] Message msg_005 (assistant)
+
+        ...I''ll create a **session manager** with full search...
+
+
+        [ses_def456] Message msg_012 (user)
+
+        ...use the **session manager** to find...'
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          query: *id001
+          session_id: *id002
+          case_sensitive: *id003
+          limit: *id004
+        required:
+        - query
+        additionalProperties: false
+      strict: false

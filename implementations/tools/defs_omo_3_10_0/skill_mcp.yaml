@@ -1,0 +1,71 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: skill_mcp
+name: skill_mcp
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Invoke MCP server operations from skill-embedded MCPs. Requires mcp_name plus exactly one of: tool_name,
+  resource_name, or prompt_name.'
+parameters:
+- name: mcp_name
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: tool_name
+  required: false
+  schema: &id002
+    type: string
+  type: string
+- name: resource_name
+  required: false
+  schema: &id003
+    type: string
+  type: string
+- name: prompt_name
+  required: false
+  schema: &id004
+    type: string
+  type: string
+- name: arguments
+  required: false
+  schema: &id005
+    anyOf:
+    - type: string
+    - type: object
+      properties: {}
+      additionalProperties: false
+- name: grep
+  required: false
+  schema: &id006
+    type: string
+  type: string
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: skill_mcp
+      description: 'Invoke MCP server operations from skill-embedded MCPs. Requires mcp_name plus exactly one of:
+        tool_name, resource_name, or prompt_name.'
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          mcp_name: *id001
+          tool_name: *id002
+          resource_name: *id003
+          prompt_name: *id004
+          arguments: *id005
+          grep: *id006
+        required:
+        - mcp_name
+        additionalProperties: false
+      strict: false

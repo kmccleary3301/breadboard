@@ -17,6 +17,7 @@ from dataclasses import asdict
 from ..runtime.reasoning_trace_store import ReasoningTraceStore
 from breadboard.product.runtime.events import CompactionSnapshot
 from ..ctrees.store import CTreeStore
+from ..execution.stock_tools import native_concurrent_prompts
 from ..monitoring.reward_metrics import RewardMetricsRecorder, RewardMetricsRecord
 from ..provider.ir import (
     IRConversation,
@@ -367,6 +368,11 @@ class SessionState:
         event_name = str(event_type or "")
         if event_name in CANONICAL_KERNEL_EVENT_TYPES:
             meta = dict(CANONICAL_KERNEL_EVENT_TYPES[event_name])
+            if event_name == "user_message" and (
+                native_concurrent_prompts(self.config)
+                and self.provider_metadata.get("opencode_stock_turn_origin") is not None
+            ):
+                meta["actor"] = "engine"
             meta["classification"] = "canonical"
             return meta
         if event_name in PROJECTION_ONLY_RUNTIME_EVENT_TYPES:
@@ -576,9 +582,14 @@ class SessionState:
             self._provider_messages_before_last_send = copy.deepcopy(
                 self.provider_messages
             )
+            self._compaction_records_at_last_send = len(self.compaction_state.records)
 
     def final_provider_context(self) -> List[Dict[str, Any]]:
         with self._compaction_lock:
+            if len(self.compaction_state.records) > getattr(self, "_compaction_records_at_last_send", 0):
+                # A response-end edit is newer than the last transmitted view.
+                # Persist the ledger projection, not that superseded surface.
+                return copy.deepcopy(self.compaction_state.project(self.provider_messages, None))
             if (
                 self._last_sent_provider_messages is None
                 or self._provider_messages_before_last_send is None
@@ -763,6 +774,11 @@ class SessionState:
         if role == "user":
             emitted_message = dict(message)
             emitted_message["content"] = _sanitize_user_visible_content(message.get("content"))
+            stock_origin = self.provider_metadata.get("opencode_stock_turn_origin")
+            if native_concurrent_prompts(self.config) and stock_origin is not None:
+                # Provenance belongs to the transcript/event copy, never the
+                # closed semantic message used by ProviderRequest.
+                emitted_message["source"] = copy.deepcopy(stock_origin)
 
         payload = {"message": emitted_message}
 
@@ -788,7 +804,10 @@ class SessionState:
                         if isinstance(call, dict):
                             self._emit_event("tool_call", {"call": call}, turn=turn_hint)
         elif role == "user":
-            if _is_internal_user_message(message.get("content")):
+            if _is_internal_user_message(message.get("content")) and not (
+                native_concurrent_prompts(self.config)
+                and self.provider_metadata.get("opencode_stock_turn_origin") is not None
+            ):
                 return
             emit_now = (not to_provider) or (not self._turn_user_emitted)
             if emit_now:

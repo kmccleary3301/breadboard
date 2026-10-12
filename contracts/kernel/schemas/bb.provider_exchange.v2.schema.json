@@ -186,6 +186,78 @@
       }
     },
     "tool": {
+      "oneOf": [
+        {"$ref": "#/$defs/legacy_tool"},
+        {"$ref": "#/$defs/responses_function"},
+        {"$ref": "#/$defs/responses_namespace"},
+        {"$ref": "#/$defs/responses_custom"},
+        {"$ref": "#/$defs/responses_tool_search"},
+        {"$ref": "#/$defs/responses_web_search"}
+      ]
+    },
+    "responses_function": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "parameters"],
+      "properties": {
+        "type": {"const": "function"},
+        "name": {"$ref": "#/$defs/identifier"},
+        "description": {"$ref": "#/$defs/legacy_tool/properties/description"},
+        "parameters": {"$ref": "#/$defs/legacy_tool/properties/parameters"},
+        "strict": {"type": "boolean"},
+        "defer_loading": {"type": "boolean"}
+      }
+    },
+    "responses_namespace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "tools"],
+      "properties": {
+        "type": {"const": "namespace"},
+        "name": {"$ref": "#/$defs/identifier"},
+        "description": {"$ref": "#/$defs/legacy_tool/properties/description"},
+        "tools": {"type": "array", "items": {"$ref": "#/$defs/responses_function"}}
+      }
+    },
+    "responses_web_search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"const": "web_search"},
+        "external_web_access": {"type": "boolean"},
+        "search_content_types": {"type": "array", "items": {"enum": ["text", "image"]}}
+      }
+    },
+    "responses_custom": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "name", "format"],
+      "properties": {
+        "type": {"const": "custom"},
+        "name": {"$ref": "#/$defs/identifier"},
+        "description": {"$ref": "#/$defs/legacy_tool/properties/description"},
+        "format": {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "syntax", "definition"],
+          "properties": {
+            "type": {"const": "grammar"},
+            "syntax": {"const": "lark"},
+            "definition": {"$ref": "#/$defs/legacy_tool/properties/description"}
+          }
+        }
+      }
+    },
+    "responses_tool_search": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "execution", "description", "parameters"],
+      "properties": {
+        "type": {"const": "tool_search"}, "execution": {"const": "client"},
+        "description": {"$ref": "#/$defs/legacy_tool/properties/description"},
+        "parameters": {"$ref": "#/$defs/legacy_tool/properties/parameters"}
+      }
+    },
+    "legacy_tool": {
       "type": "object",
       "additionalProperties": false,
       "required": ["name", "parameters"],
@@ -208,8 +280,14 @@
       "type": "object",
       "additionalProperties": false,
       "required": ["role", "content"],
+      "dependentSchemas": {
+        "phase": {"properties": {"role": {"const": "assistant"}}},
+        "_provider_tool_batch": {"properties": {"role": {"const": "assistant"}}}
+      },
       "properties": {
         "message_id": {"$ref": "#/$defs/identifier"},
+        "phase": {"enum": ["commentary", "final_answer"]},
+        "_provider_tool_batch": {"type": "integer", "minimum": 0},
         "role": {
           "enum": ["system", "user", "developer", "assistant", "tool_result"]
         },
@@ -223,6 +301,7 @@
       "oneOf": [
         {"$ref": "#/$defs/text_block"},
         {"$ref": "#/$defs/media_block"},
+        {"$ref": "#/$defs/codex_image_url_block"},
         {"$ref": "#/$defs/thinking_block"},
         {"$ref": "#/$defs/redacted_thinking_block"},
         {"$ref": "#/$defs/tool_call_block"},
@@ -257,6 +336,18 @@
         }
       }
     },
+    "codex_image_url_block": {
+      "description": "Native Codex user image URL passthrough; runtime execution requires the configured Codex native semantics gate.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "kind", "uri", "detail"],
+      "properties": {
+        "type": {"const": "media"},
+        "kind": {"const": "codex_image_url"},
+        "uri": {"type": "string"},
+        "detail": {"enum": ["auto", "low", "high", "original"]}
+      }
+    },
     "thinking_block": {
       "type": "object",
       "additionalProperties": false,
@@ -283,13 +374,20 @@
     "tool_call_block": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "call_id", "name", "arguments_json", "arguments"],
+      "required": ["type", "call_id", "name"],
+      "oneOf": [
+        {"required": ["arguments_json", "arguments"], "not": {"required": ["raw_arguments"]}},
+        {"required": ["raw_arguments"], "not": {"anyOf": [
+          {"required": ["arguments_json"]}, {"required": ["arguments"]}
+        ]}}
+      ],
       "properties": {
         "type": {"const": "tool_call"},
         "call_id": {"$ref": "#/$defs/identifier"},
         "name": {"$ref": "#/$defs/identifier"},
         "arguments_json": {"type": "string", "minLength": 2, "maxLength": 65536},
-        "arguments": {"$ref": "#/$defs/canonical_json"}
+        "arguments": {"$ref": "#/$defs/canonical_json"},
+        "raw_arguments": {"type": "string", "maxLength": 65536}
       }
     },
     "tool_result_block": {
@@ -331,7 +429,198 @@
         }
       }
     },
+    "anthropic_tool_result_replay_payload": {
+      "$comment": "Lossless stock user messages; runtime also binds every native result to canonical call_id/content/is_error in order.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["messages"],
+      "properties": {
+        "messages": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["role", "content"],
+            "properties": {
+              "role": {"const": "user"},
+              "content": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["type"],
+                  "properties": {"type": {"type": "string"}}
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "openai_responses_tool_replay_payload": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "call_id", "name", "arguments"],
+          "properties": {
+            "type": {"const": "function_call"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "name": {"$ref": "#/$defs/identifier"},
+            "arguments": {"type": "string"},
+            "namespace": {"type": "string"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "call_id", "name", "input"],
+          "properties": {
+            "type": {"const": "custom_tool_call"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "name": {"$ref": "#/$defs/identifier"},
+            "input": {"type": "string"},
+            "status": {"type": "string"}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "call_id", "execution", "arguments"],
+          "properties": {
+            "type": {"const": "tool_search_call"},
+            "call_id": {"$ref": "#/$defs/identifier"},
+            "execution": {"type": "string"},
+            "arguments": {"$ref": "#/$defs/canonical_json"},
+            "status": {"type": "string"}
+          }
+        }
+      ]
+    },
+    "openai_responses_tool_output_replay_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type", "call_id", "output"],
+      "properties": {
+        "type": {"const": "function_call_output"},
+        "call_id": {"$ref": "#/$defs/identifier"},
+        "output": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["type", "image_url"],
+                "properties": {
+                  "type": {"const": "input_image"},
+                  "image_url": {"type": "string"},
+                  "detail": {"enum": ["auto", "low", "high", "original"]}
+                }
+              },
+              {
+                "type": "object", "additionalProperties": false,
+                "required": ["type", "text"],
+                "properties": {
+                  "type": {"const": "input_text"},
+                  "text": {"type": "string"}
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "openai_responses_hosted_replay_payload": {
+      "type": "object", "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "type": {"const": "web_search_call"},
+        "status": {"type": "string"},
+        "action": {
+          "oneOf": [
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["type"],
+              "properties": {
+                "type": {"const": "search"}, "query": {"type": "string"},
+                "queries": {"type": "array", "items": {"type": "string"}}
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["type"],
+              "properties": {"type": {"const": "open_page"}, "url": {"type": "string"}}
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["type"],
+              "properties": {
+                "type": {"const": "find_in_page"},
+                "url": {"type": "string"}, "pattern": {"type": "string"}
+              }
+            },
+            {
+              "type": "object", "additionalProperties": false,
+              "required": ["type"],
+              "properties": {"type": {"const": "other"}}
+            }
+          ]
+        }
+      }
+    },
+    "provider_replay_payload_dispatch": {
+      "if": {
+        "required": ["provider_id", "schema_version", "replay_scope"],
+        "properties": {
+          "provider_id": {"const": "anthropic"},
+          "schema_version": {"const": "anthropic.messages.tool_result.v1"},
+          "replay_scope": {"const": "same_provider"}
+        }
+      },
+      "then": {
+        "properties": {"payload": {"$ref": "#/$defs/anthropic_tool_result_replay_payload"}}
+      },
+      "else": {
+        "if": {
+          "required": ["provider_id", "schema_version", "replay_scope"],
+          "properties": {
+            "provider_id": {"enum": ["openai", "openrouter"]},
+            "schema_version": {"const": "openai.responses.tools.v1"},
+            "replay_scope": {"const": "same_provider"}
+          }
+        },
+        "then": {
+          "properties": {"payload": {"$ref": "#/$defs/openai_responses_tool_replay_payload"}}
+        },
+        "else": {
+          "if": {
+            "required": ["provider_id", "schema_version", "replay_scope"],
+            "properties": {
+              "provider_id": {"enum": ["openai", "openrouter"]},
+              "schema_version": {"const": "openai.responses.tool_output.v1"},
+              "replay_scope": {"const": "same_provider"}
+            }
+          },
+          "then": {
+            "properties": {"payload": {"$ref": "#/$defs/openai_responses_tool_output_replay_payload"}}
+          },
+          "else": {
+            "if": {
+              "required": ["provider_id", "schema_version", "replay_scope"],
+              "properties": {
+                "provider_id": {"enum": ["openai", "openrouter"]},
+                "schema_version": {"const": "openai.responses.hosted.v1"},
+                "replay_scope": {"const": "same_provider"}
+              }
+            },
+            "then": {
+              "properties": {"payload": {"$ref": "#/$defs/openai_responses_hosted_replay_payload"}}
+            },
+            "else": {
+              "properties": {"payload": {"$ref": "#/$defs/provider_replay_payload"}}
+            }
+          }
+        }
+      }
+    },
     "provider_replay": {
+      "$ref": "#/$defs/provider_replay_payload_dispatch",
       "type": "object",
       "additionalProperties": false,
       "required": ["provider_id", "schema_version", "replay_scope", "payload"],
@@ -348,10 +637,11 @@
           "pattern": "\\S"
         },
         "replay_scope": {"enum": ["same_provider", "diagnostic"]},
-        "payload": {"$ref": "#/$defs/provider_replay_payload"}
+        "payload": {"type": "object"}
       }
     },
     "provider_replay_block": {
+      "$ref": "#/$defs/provider_replay_payload_dispatch",
       "type": "object",
       "additionalProperties": false,
       "required": ["type", "provider_id", "schema_version", "replay_scope", "payload"],
@@ -369,7 +659,7 @@
           "pattern": "\\S"
         },
         "replay_scope": {"enum": ["same_provider", "diagnostic"]},
-        "payload": {"$ref": "#/$defs/provider_replay_payload"}
+        "payload": {"type": "object"}
       }
     },
     "event_sequence": {
@@ -503,7 +793,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["sequence", "kind", "content_index", "message_id", "call_id", "arguments_json", "arguments"],
+          "required": ["sequence", "kind", "content_index", "message_id", "call_id"],
+          "oneOf": [
+            {"required": ["arguments_json", "arguments"], "not": {"required": ["raw_arguments"]}},
+            {"required": ["raw_arguments"], "not": {"anyOf": [
+              {"required": ["arguments_json"]}, {"required": ["arguments"]}
+            ]}}
+          ],
           "properties": {
             "sequence": {"$ref": "#/$defs/event_sequence"},
             "kind": {"const": "tool_call_end"},
@@ -511,7 +807,8 @@
             "message_id": {"$ref": "#/$defs/identifier"},
             "call_id": {"$ref": "#/$defs/identifier"},
             "arguments_json": {"type": "string", "minLength": 2, "maxLength": 65536},
-            "arguments": {"$ref": "#/$defs/canonical_json"}
+            "arguments": {"$ref": "#/$defs/canonical_json"},
+            "raw_arguments": {"type": "string", "maxLength": 65536}
           }
         }
       ]
@@ -546,6 +843,7 @@
       "required": ["role", "content"],
       "properties": {
         "message_id": {"$ref": "#/$defs/identifier"},
+        "phase": {"enum": ["commentary", "final_answer"]},
         "role": {"const": "assistant"},
         "content": {
           "type": "array",

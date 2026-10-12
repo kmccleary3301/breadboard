@@ -116,18 +116,31 @@ def is_context_overflow(error: Any) -> bool:
 
     Walks ``__cause__``/``__context__`` chains and ``details`` mappings
     (``ProviderRuntimeError.details``).
+    Explicit HTTP 429 or ``classification=rate_limited`` takes precedence over
+    token-limit wording and a preceding overflow exception. Other statuses
+    remain eligible for provider-specific overflow signals.
     """
     seen: set[int] = set()
     link: Any = error
     while link is not None and id(link) not in seen:
         seen.add(id(link))
+        details = link if isinstance(link, Mapping) else getattr(link, "details", None)
+        if isinstance(details, Mapping) and (
+            details.get("classification") == "rate_limited"
+            or details.get("status_code", details.get("status")) == 429
+        ):
+            return False
+        status = getattr(link, "status_code", None)
+        if status is None:
+            status = getattr(getattr(link, "response", None), "status_code", None)
+        if status == 429:
+            return False
         if isinstance(link, str):
             return text_indicates_context_overflow(link)
         if isinstance(link, Mapping):
             return any(code.lower() in CONTEXT_OVERFLOW_CODES for code in _codes(link)) or any(
                 text_indicates_context_overflow(text) for text in _texts(link)
             )
-        details = getattr(link, "details", None)
         if isinstance(details, Mapping) and (
             any(code.lower() in CONTEXT_OVERFLOW_CODES for code in _codes(details))
             or any(text_indicates_context_overflow(text) for text in _texts(details))

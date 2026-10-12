@@ -299,6 +299,26 @@ def execute_agent_calls(
     policy_bypass: bool = False,
 ) -> Tuple[List[Any], int, Optional[Dict[str, Any]], Dict[str, Any]]:
     """Execute parsed agent calls with permission enforcement."""
+    driver = getattr(conductor, "stock_driver", None)
+    if driver is not None and driver.execute_batch is not None:
+        return driver.execute_batch(conductor, session_state, parsed_calls, transcript_callback)
+    if driver is not None and driver.owns_tool_batch:
+        # Stock has already validated and executed the complete provider batch.
+        # Do not reinterpret names, schemas, permissions or write/shell policy.
+        executed = []
+        for call in parsed_calls:
+            payload = {
+                "function": getattr(call, "provider_name", None) or call.function,
+                "arguments": call.arguments,
+                "call_id": getattr(call, "call_id", None),
+            }
+            result = exec_func(payload)
+            executed.append((call, result))
+            if transcript_callback:
+                transcript_callback({"tool": payload["function"], "result": result})
+        return executed, -1, None, {
+            "total_calls": len(parsed_calls), "executed_calls": len(executed),
+        }
     allow_multi_bash = bool(session_state.get_provider_metadata("replay_mode"))
     previous_value = getattr(conductor.agent_executor, "allow_multiple_bash", False)
     conductor.agent_executor.allow_multiple_bash = allow_multi_bash

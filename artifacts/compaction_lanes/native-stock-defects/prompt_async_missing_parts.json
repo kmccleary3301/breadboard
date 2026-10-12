@@ -1,0 +1,17 @@
+{
+  "stock_version": "opencode@1.2.17",
+  "stock_commit": "715b844c2a88810b6178d7a2467c7d36ea8fb764",
+  "plugin_version": "oh-my-opencode@3.10.0",
+  "plugin_commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
+  "authenticated": true,
+  "request_method": "POST",
+  "request_route": "/session/<actual-native-session-id>/prompt_async",
+  "request_body": {"auto": true},
+  "response_status": 400,
+  "response_body": {"data":{"auto":true},"error":[{"expected":"array","code":"invalid_type","path":["parts"],"message":"Invalid input: expected array, received undefined"}],"success":false},
+  "native_messages_after_request": [],
+  "source_request": "src/hooks/anthropic-context-window-limit-recovery/aggressive-truncation-strategy.ts:66-72",
+  "source_swallowed_error": "src/hooks/anthropic-context-window-limit-recovery/aggressive-truncation-strategy.ts:74",
+  "source_required_parts": "packages/opencode/src/session/prompt.ts:111",
+  "diagnostic_evidence": "/var/folders/k9/cgjgmpgd3jxgkb8j_z58fslm0000gp/T/bb-stock-prompt-async-validation-_91rq5vi/validation.json"
+}

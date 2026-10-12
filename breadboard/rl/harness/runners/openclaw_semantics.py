@@ -246,7 +246,9 @@ def _call_fields(call: Any, index: int) -> tuple[str, str, Any, str | None, int 
 
 
 def finalize_native_chat_response(
-    response: Any, *, allow_silent_tool_promotion: bool = False
+    response: Any, *, allow_silent_tool_promotion: bool = False,
+    source_timestamp: int | None = None,
+    source_model: Mapping[str, Any] | None = None,
 ) -> OpenClawParseResult:
     """Finalize lossless fragments before the worker receives raw arguments.
 
@@ -322,30 +324,33 @@ def finalize_native_chat_response(
     malformed_terminal_call = bool(errors)
     if errors or finish_reason in {"error", "aborted"}:
         executable = False
-    assistant_content: Any = content
-    if calls:
-        # Source toolCall block replay: packages/ai/src/openai-completions-messages.ts:190-238.
-        blocks: list[dict[str, Any]] = []
-        if content:
-            blocks.append({"type": "text", "text": content})
-        blocks.extend(
-            {
-                "type": "toolCall",
-                "id": call.id,
-                "name": call.name,
-                "arguments": dict(call.arguments),
-            }
-            for call in calls
-        )
-        assistant_content = blocks
+    # Stock summary serialization reads content blocks, including text-only replies:
+    # compaction-DhVoBTx3.mjs:223-239.
+    assistant_content: list[dict[str, Any]] = []
+    if content:
+        assistant_content.append({"type": "text", "text": content})
+    assistant_content.extend(
+        {"type": "toolCall", "id": call.id, "name": call.name, "arguments": dict(call.arguments)}
+        for call in calls
+    )
     assistant = {
         "role": "assistant",
         "content": assistant_content,
         "tool_calls": [call.to_dict() for call in calls],
         "finish_reason": "error" if malformed_terminal_call else finish_reason,
         "stop_reason": "error" if malformed_terminal_call else view.native_stop_reason or finish_reason,
+        "stopReason": "error" if malformed_terminal_call else (
+            "toolUse" if executable else finish_reason
+        ),
         **({"response_id": view.response_id} if view.response_id else {}),
-        **({"usage": dict(view.usage)} if isinstance(view.usage, Mapping) else {}),
+        # Stock assistant identity: assistant-output-tLt4H-iQ.mjs:3-12.
+        **({"api": source_model["api"], "provider": source_model["provider"], "model": source_model["id"]}
+           if source_model is not None else {}),
+        # Keep provider usage losslessly; the source worker's exported stock
+        # parser creates the AgentMessage usage snapshot at its boundary.
+        **({"providerUsage": dict(view.usage)} if isinstance(view.usage, Mapping) else {}),
+        # Clock seam: @openclaw/ai/dist/assistant-output-tLt4H-iQ.mjs:3-12.
+        **({"timestamp": source_timestamp} if source_timestamp is not None else {}),
     }
     batch = OpenClawToolBatch(tuple(calls), executable, tuple(errors))
     mutations: list[Mapping[str, Any]] = [assistant]
@@ -425,8 +430,23 @@ class OpenClawSemanticsState:
         self._terminal_message: dict[str, Any] | None = None
 
     @property
-    def messages(self) -> tuple[Mapping[str, Any], ...]:
-        return tuple(self.history)
+    def messages(self) -> list[dict[str, Any]]:
+        return self.history
+
+    @messages.setter
+    def messages(self, replacement: Sequence[Mapping[str, Any]]) -> None:
+        """Adopt the source worker's complete compacted history."""
+        self.history = [dict(message) for message in replacement]
+
+    def _source_message_timestamp(self) -> int | None:
+        if "message_timestamp_ms" not in self.bootstrap:
+            return None  # Standalone fragment parsing has no episode clock.
+        latest = int(self.bootstrap["message_timestamp_ms"])
+        for message in self.history:
+            timestamp = message.get("timestamp")
+            if isinstance(timestamp, (int, float)):
+                latest = max(latest, int(timestamp))
+        return latest + 1
 
     @property
     def is_exited(self) -> bool:
@@ -449,11 +469,12 @@ class OpenClawSemanticsState:
             self.stop_reason = "error"
             self._terminal_message = {
                 "role": "assistant",
-                "content": "bbe4 capture request cap",
+                "content": [{"type": "text", "text": "bbe4 capture request cap"}],
                 "isError": True,
                 "status": 429,
                 "error": "bbe4 capture request cap",
                 "finish_reason": "error",
+                "stopReason": "error",
                 "stop_reason": "429",
             }
             if self._terminal_message not in self.history:
@@ -465,9 +486,10 @@ class OpenClawSemanticsState:
             self.stop_reason = "aborted"
             self._terminal_message = {
                 "role": "assistant",
-                "content": "OpenClaw episode deadline elapsed",
+                "content": [{"type": "text", "text": "OpenClaw episode deadline elapsed"}],
                 "isError": True,
                 "finish_reason": "aborted",
+                "stopReason": "aborted",
                 "stop_reason": "timeout",
             }
             self.history.append(dict(self._terminal_message))
@@ -488,7 +510,10 @@ class OpenClawSemanticsState:
 
         Source: ``packages/agent-core/src/agent-stream-response.ts:302-380``.
         """
-        result = finalize_native_chat_response(response)
+        result = finalize_native_chat_response(
+            response, source_timestamp=self._source_message_timestamp(),
+            source_model=self.bootstrap.get("model_config"),
+        )
         self.raw_responses.append(_as_mapping(response))
         self.history.extend(dict(message) for message in result.history_mutations)
         self.native_stop_reason = result.native_stop_reason
@@ -504,12 +529,20 @@ class OpenClawSemanticsState:
                     f"OpenClaw tool admission cap exceeded ({self.max_tool_admissions})"
                 )
             self.tool_admissions += len(result.tool_batch.tool_calls)
-        elif result.finish_reason in {"stop", "error", "aborted"} and not result.recovery:
-            self.terminal_kind = "stop" if result.finish_reason == "stop" else "provider_error"
+        elif result.finish_reason in {"stop", "error", "aborted", "length"} and not result.recovery:
+            self.terminal_kind = (
+                result.finish_reason if result.finish_reason in {"stop", "length"} else "provider_error"
+            )
         return result
 
     def prepare_response(self, response: Any) -> OpenClawParseResult:
         return self.consume_native_response(response)
+
+    def reopen_after_overflow(self) -> None:
+        """Resume only after the source's compact-and-retry verdict."""
+        self.terminal_kind = None
+        self.native_stop_reason = None
+        self.stop_reason = None
 
     def commit_provider_failure(self, message: str) -> None:
         """End the episode on the provider's refusal of the sent request.
@@ -525,10 +558,11 @@ class OpenClawSemanticsState:
         self.stop_reason = "error"
         self._terminal_message = {
             "role": "assistant",
-            "content": "",
+            "content": [],
             "isError": True,
             "error": message,
             "finish_reason": "error",
+            "stopReason": "error",
         }
         self.history.append(dict(self._terminal_message))
 
@@ -543,32 +577,41 @@ class OpenClawSemanticsState:
         emits each ``toolResult`` as an OpenAI ``role=tool`` message.
         """
         if results is None:
-            committed = tuple(dict(result) for result in calls)
+            committed = tuple(
+                self._source_tool_result(result, str(result["toolCallId"]), str(result["toolName"]))
+                for result in calls
+            )
         else:
-            by_id = {
-                str(result.get("tool_call_id", result.get("id", ""))): result
-                for result in results
-                if isinstance(result, Mapping)
-            }
-            committed_items: list[Mapping[str, Any]] = []
-            for call in calls:
-                call_id = (
-                    call.tool_call_id
-                    if isinstance(call, FinalizedToolCall)
-                    else str(call.get("id", call.get("tool_call_id", "")))
+            by_id = {str(result["id"]): result for result in results}
+            committed = tuple(
+                self._source_tool_result(
+                    by_id[call.tool_call_id if isinstance(call, FinalizedToolCall) else str(call["id"])],
+                    call.tool_call_id if isinstance(call, FinalizedToolCall) else str(call["id"]),
+                    call.name if isinstance(call, FinalizedToolCall) else str(call["name"]),
                 )
-                raw = dict(by_id.get(call_id, {}))
-                if raw.get("role") != "tool":
-                    content = raw.get("content", raw.get("text", ""))
-                    raw = {
-                        "role": "tool",
-                        "tool_call_id": call_id,
-                        "content": content if isinstance(content, (str, list)) else str(content),
-                    }
-                committed_items.append(raw)
-            committed = tuple(committed_items)
+                for call in calls
+            )
+            timestamp = self._source_message_timestamp()
+            if timestamp is not None:
+                # Stock tool message clock: agent-core-B_87jlHI.mjs:1387-1394.
+                for call, message in zip(calls, committed):
+                    call_id = call.tool_call_id if isinstance(call, FinalizedToolCall) else str(call["id"])
+                    message["timestamp"] = timestamp + int(by_id[call_id]["completion_index"])
         self.history.extend(committed)
         return committed
+
+    @staticmethod
+    def _source_tool_result(
+        result: Mapping[str, Any], call_id: str, name: str,
+    ) -> dict[str, Any]:
+        # Stock message fields only (agent-core-B_87jlHI.mjs:1385-1394).
+        # RPC delivery receipts/completion ordinals stay outside persisted history.
+        return {
+            "role": "toolResult",
+            "toolCallId": call_id,
+            "toolName": name,
+            **{key: result[key] for key in ("content", "details", "isError", "timestamp") if key in result},
+        }
 
     def finish(self, kind: str = "stop") -> dict[str, Any]:
         self.terminal_kind = self.terminal_kind or kind
@@ -608,19 +651,26 @@ class OpenClawSemanticsState:
             role = message.get("role")
             if role == "assistant":
                 content = message.get("content")
-                if isinstance(content, str) and content:
-                    payloads.append({"text": content})
-                    last_assistant_text = content
+                text = "".join(
+                    block["text"] for block in content
+                    if block.get("type") == "text"
+                ) if isinstance(content, list) else content
+                if isinstance(text, str) and text:
+                    payloads.append({"text": text})
+                    last_assistant_text = text
                 reasoning = message.get("reasoning")
                 if isinstance(reasoning, str) and reasoning:
                     payloads.append({"text": reasoning, "isReasoning": True})
                 commentary = message.get("commentary")
                 if isinstance(commentary, str) and commentary:
                     payloads.append({"text": commentary, "isCommentary": True})
-            elif role == "tool":
+            elif role == "toolResult":
                 if message.get("isError"):
-                    content = message.get("content", "")
-                    payloads.append({"text": str(content), "isError": True})
+                    text = "".join(
+                        block["text"] for block in message["content"]
+                        if block.get("type") == "text"
+                    )
+                    payloads.append({"text": text, "isError": True})
 
         total_calls = 0
         counts: dict[str, int] = {}

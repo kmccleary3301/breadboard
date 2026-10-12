@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.core import ToolDefinition
 from ..compilation.system_prompt_compiler import get_compiler
+from ..compaction.controller import CompactionRequestContext
 from ..messaging.markdown_logger import MarkdownLogger
 from ..provider.ir import IRDeltaEvent
 from ..provider.routing import provider_router
@@ -266,8 +267,10 @@ def get_model_response(
     stream_responses: bool,
     local_tools_prompt: str,
     client_config: Dict[str, Any],
+    request_context: CompactionRequestContext | None = None,
 ) -> Any:
     """Get response from the model with proper tool configuration."""
+    previous_turn_index = session_state.get_provider_metadata("current_turn_index")
     turn_index = len(session_state.transcript) + 1
     try:
         session_state.begin_turn(turn_index)
@@ -295,9 +298,14 @@ def get_model_response(
             client=client,
             model=model,
             turn_index=turn_index,
+            request_context=request_context,
         )
     else:
         send_messages = copy.deepcopy(session_state.provider_messages)
+    driver = getattr(conductor, "stock_driver", None)
+    stock_request = None
+    if driver is not None and driver.prepare_request is not None:
+        send_messages, stock_request = driver.prepare_request(conductor, session_state, send_messages)
     requested_model_history = copy.deepcopy(send_messages)
     cache_control = get_prompt_cache_control(
         {
@@ -330,14 +338,28 @@ def get_model_response(
     except Exception:
         pass
 
-    if not send_messages:
-        send_messages.append({"role": "user", "content": stub_text})
-    elif send_messages[-1].get("role") != "user":
-        send_messages.append({"role": "user", "content": stub_text})
-    else:
-        last_content = send_messages[-1].get("content")
-        if isinstance(last_content, str) and not last_content.strip() and stub_text:
-            send_messages[-1]["content"] = stub_text
+    # Preserve the baseline request stub for text-tool prompting. Native tool
+    # results already provide continuation input and must not get an extra user.
+    # Stock native tool continuations carry the tool outputs, not a user stub.
+    # Redundant legacy assistant renderings can follow a native result; the
+    # execution trace, rather than text heuristics, identifies that case.
+    prior_tool_trace = (getattr(session_state, "turn_tool_usage", {}).get(previous_turn_index) or {}).get("tools")
+    native_tool_continuation = (
+        bool(getattr(conductor, "current_native_tools", None))
+        and bool(prior_tool_trace)
+        and session_state.get_provider_metadata("last_tool_execution_input_kind") == "native"
+        and session_state.get_provider_metadata("last_tool_execution_turn_index") == previous_turn_index
+    )
+    if not (
+        (send_messages and send_messages[-1].get("role") in {"tool", "tool_result"})
+        or native_tool_continuation
+    ):
+        if not send_messages or send_messages[-1].get("role") != "user":
+            send_messages.append({"role": "user", "content": stub_text})
+        else:
+            last_content = send_messages[-1].get("content")
+            if isinstance(last_content, str) and not last_content.strip() and stub_text:
+                send_messages[-1]["content"] = stub_text
 
     per_turn_written_text = conductor.tool_prompt_planner.plan(
         tool_prompt_mode=tool_prompt_mode,
@@ -505,6 +527,8 @@ def get_model_response(
                 conductor.current_text_based_tools = text_based_tools
         except Exception:
             tools_schema = None
+    if stock_request is not None:
+        tools_schema = driver.request_tools(stock_request)
     if tools_schema:
         try:
             record_tool_schema_snapshot(
@@ -566,6 +590,7 @@ def get_model_response(
         session_state=session_state,
         agent_config=conductor.config,
         stream=effective_stream_responses,
+        native_request_field_order=tuple(stock_request) if stock_request is not None else None,
         extra=runtime_extra,
         session_id=session_state.get_provider_metadata("session_id")
         or getattr(session_state, "session_id", None),
@@ -827,8 +852,8 @@ def get_model_response(
 
     runtime_context.extra["stream_retry_observer"] = _record_stream_retry
 
-    result, _ = conductor.provider_invoker.invoke(
-        runtime=runtime,
+    try:
+        result, _ = conductor.provider_invoker.invoke(runtime=runtime,
         client=client,
         model=model,
         send_messages=send_messages,
@@ -838,8 +863,13 @@ def get_model_response(
         session_state=session_state,
         markdown_logger=markdown_logger,
         turn_index=turn_index,
-        route_id=getattr(conductor, "_current_route_id", None),
-    )
+        route_id=getattr(conductor, "_current_route_id", None),)
+    except Exception as exc:
+        if driver is not None and driver.submit_overflow is not None:
+            driver.submit_overflow(conductor, session_state, exc)
+        raise
+    if driver is not None and driver.submit_response is not None:
+        driver.submit_response(conductor, session_state, result)
 
     if (conductor.config.get("features", {}) or {}).get("response_normalizer"):
         normalized_events = normalize_provider_result(result)
@@ -948,6 +978,9 @@ def setup_native_tools(conductor: Any, model: str, use_native_tools: bool) -> bo
                     conductor.yaml_tools, provider_id
                 )
             )
+            driver = getattr(conductor, "stock_driver", None)
+            if driver is not None and driver.available_tools is not None:
+                native_tools = driver.available_tools(conductor, native_tools)
             will_use_native_tools = bool(native_tools)
             conductor.current_native_tools = native_tools
             conductor.current_text_based_tools = text_based_tools

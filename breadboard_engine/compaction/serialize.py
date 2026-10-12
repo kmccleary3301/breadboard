@@ -177,9 +177,11 @@ def serialize_conversation(
                     valid_tool_calls.append(call)
 
             if thinking_parts:
-                parts.append(f"{style.thinking}: {'\n'.join(thinking_parts)}")
+                thinking_str = "\n".join(thinking_parts)
+                parts.append(f"{style.thinking}: {thinking_str}")
             if text_parts:
-                parts.append(f"{style.assistant}: {'\n'.join(text_parts)}")
+                text_str = "\n".join(text_parts)
+                parts.append(f"{style.assistant}: {text_str}")
             if valid_tool_calls:
                 parts.append(f"{style.tool_calls}: {_render_tool_calls(valid_tool_calls)}")
 

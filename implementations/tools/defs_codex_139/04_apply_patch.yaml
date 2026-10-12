@@ -1,0 +1,45 @@
+# codex-rs/core/src/tools/handlers/apply_patch_spec.rs:5-26 and apply_patch.lark.
+id: apply_patch
+name: apply_patch
+description: Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: input
+  type: string
+  required: true
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: custom
+      name: apply_patch
+      description: Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.
+      format:
+        type: grammar
+        syntax: lark
+        definition: |
+          start: begin_patch hunk+ end_patch
+          begin_patch: "*** Begin Patch" LF
+          end_patch: "*** End Patch" LF?
+
+          hunk: add_hunk | delete_hunk | update_hunk
+          add_hunk: "*** Add File: " filename LF add_line+
+          delete_hunk: "*** Delete File: " filename LF
+          update_hunk: "*** Update File: " filename LF change_move? change?
+
+          filename: /(.+)/
+          add_line: "+" /(.*)/ LF -> line
+
+          change_move: "*** Move to: " filename LF
+          change: (change_context | change_line)+ eof_line?
+          change_context: ("@@" | "@@ " /(.+)/) LF
+          change_line: ("+" | "-" | " ") /(.*)/ LF
+          eof_line: "*** End of File" LF
+
+          %import common.LF

@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 from ..methods import CompactionContext, MethodUnavailable
 from ..params import Params
-from ..transcript import find_cut_point, find_cut_point_crossing
+from ..transcript import find_cut_point, find_cut_point_crossing, leading_system_count
 from .accounting import build_estimator
 
 
@@ -76,6 +76,7 @@ class RecentTokens:
         self.walk = params.choice("walk", tuple(_WALKS))
         self.count = build_estimator(params.str("estimator", "bb_chars4"))
         self.when_empty = params.choice("when_empty", ("unavailable", "summarize"), "unavailable")
+        self.boundary = params.choice("boundary", ("first_kept", "history_length"), "first_kept")
         params.done()
 
     def _count_one(self, message: Mapping[str, Any]) -> int:
@@ -83,7 +84,11 @@ class RecentTokens:
 
     def select(self, context: CompactionContext) -> Selection:
         messages = context.messages
-        start = context.state.kept_start(messages)
+        if self.boundary == "history_length":
+            latest = context.state.latest_boundary()
+            start = leading_system_count(messages) if latest is None else latest.history_length
+        else:
+            start = context.state.kept_start(messages)
         cut = _WALKS[self.walk](messages, start, len(messages), self.budget, count_tokens=self._count_one)
         first = cut.first_kept_index
         history_end = cut.turn_start_index if cut.is_split_turn else first

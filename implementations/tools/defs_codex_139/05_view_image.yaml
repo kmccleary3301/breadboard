@@ -1,0 +1,45 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: view_image
+name: view_image
+description: View a local image file from the filesystem when visual inspection is needed. Use this for images already
+  available on disk.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: detail
+  type: string
+  required: false
+  schema: &detail
+    type: string
+    description: Image detail level. Defaults to `high`; use `original` to preserve exact resolution.
+    enum:
+    - high
+    - original
+- name: path
+  type: string
+  required: true
+  schema: &id001
+    type: string
+    description: Local filesystem path to an image file.
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: view_image
+      description: View a local image file from the filesystem when visual inspection is needed. Use this for images
+        already available on disk.
+      strict: false
+      parameters:
+        type: object
+        properties:
+          detail: *detail
+          path: *id001
+        required:
+        - path
+        additionalProperties: false

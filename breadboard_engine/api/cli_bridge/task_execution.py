@@ -16,6 +16,7 @@ from breadboard_engine.provider.contracts import (
     strip_public_completion_sentinel_tree,
 )
 from breadboard_engine.permissions import PermissionAuthority
+from breadboard_engine.execution.stock_tools import native_concurrent_prompts
 
 from .events import EventType, SessionEvent
 from .registry import TurnRecord, identity_digest
@@ -1048,6 +1049,9 @@ class TaskExecutionOwner:
         interactive_permissions = runner.permission_authority.is_interactive_mode(
             permission_mode
         )
+        retain_native_permission_queue = is_local_agent and native_concurrent_prompts(
+            runner.current_runtime_config()
+        )
         logger.info(
             "session(%s) task=%s stream=%s local=%s remote_toggle=%s",
             runner.session.session_id,
@@ -1095,9 +1099,10 @@ class TaskExecutionOwner:
             )
         if interactive_permissions:
             if is_local_agent:
-                import queue as pyqueue
+                from breadboard_engine.permissions.session_ids import PermissionResponseQueue
 
-                permission_queue = pyqueue.Queue()
+                permission_queue = (runner._permission_queue if retain_native_permission_queue
+                                    and runner._permission_queue is not None else PermissionResponseQueue())
             else:
                 try:
                     from ray.util.queue import Queue as RayQueue
@@ -1107,7 +1112,7 @@ class TaskExecutionOwner:
                     ) from exc
                 permission_queue = RayQueue()
             runner._permission_queue = permission_queue
-        else:
+        elif not retain_native_permission_queue:
             runner._permission_queue = None
         if is_local_agent:
             import queue as pyqueue
@@ -1145,6 +1150,14 @@ class TaskExecutionOwner:
             task_context["session_id"] = runner.session.session_id
             task_context["input_id"] = correlation["input_id"]
             task_context["turn_id"] = correlation["turn_id"]
+            stock_inputs = runner._stock_input_controller
+            if stock_inputs is not None:
+                task_context["opencode_stock_input_handler"] = stock_inputs.receive
+                task_context["opencode_stock_headless"] = stock_inputs.headless
+                task_context.pop("opencode_stock_origin", None)
+                stock_origin = stock_inputs.origins.get(correlation["turn_id"])
+                if stock_origin is not None:
+                    task_context["opencode_stock_origin"] = stock_origin
             task_context["attachment_capabilities"] = dict(
                 runner._active_attachment_capabilities
             )
@@ -1154,7 +1167,13 @@ class TaskExecutionOwner:
             product_session = runner.session.product_session
             task_context["_product_compaction_owner"] = bool(
                 product_session is not None
-                and product_session.read_model.status == "running"
+                and (
+                    product_session.read_model.status == "running"
+                    or (
+                        product_session.concurrent_approvals is True
+                        and product_session.read_model.status == "awaiting_approval"
+                    )
+                )
             )
             if (
                 product_session is not None
@@ -1241,7 +1260,8 @@ class TaskExecutionOwner:
             run_task_error = error
             raise
         finally:
-            runner._permission_queue = None
+            if not retain_native_permission_queue:
+                runner._permission_queue = None
             runner._install_control_queue(None)
             if queue_stop:
                 queue_stop.set()
@@ -1310,11 +1330,18 @@ class TaskExecutionOwner:
                 provider_exchanges.append(provider_exchange)
         elif provider_exchanges:
             provider_exchange = provider_exchanges[-1]
+        validated_failed_exchange = False
         if (
             provider_exchange is not None
             and provider_exchange["terminal"]["kind"] != "done"
         ):
-            raise RuntimeProtocolError("runtime_protocol_error")
+            if (
+                provider_exchange["terminal"]["kind"] == "error"
+                and (runner.current_runtime_config().get("session") or {}).get("failed_turn_continues") is True
+            ):
+                validated_failed_exchange = True
+            else:
+                raise RuntimeProtocolError("runtime_protocol_error")
         if provider_exchange is not None:
             result["provider_exchange"] = provider_exchange
             result["provider_exchanges"] = provider_exchanges
@@ -1531,6 +1558,8 @@ class TaskExecutionOwner:
             "_terminal_events": terminal_events,
             "_turn_completion_payload": turn_completion_payload,
         }
+        if validated_failed_exchange:
+            result_payload["_validated_failed_exchange"] = True
         if runner._profile_timing_enabled:
             result_payload["bridge_timing"] = dict(
                 completion_payload.get("bridge_timing") or {}

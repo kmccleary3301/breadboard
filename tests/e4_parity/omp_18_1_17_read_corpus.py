@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 from breadboard.rl.harness.omp_native_tools import NativeToolWorker, PinnedNativeWorkerSpec
-from tests.rl.harness.test_omp_18_1_17_native_worker import _lease_model
+from tests.rl.harness.omp_18_1_17_test_support import _lease_model
 
 
 def main() -> None:

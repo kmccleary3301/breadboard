@@ -1,0 +1,58 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: lsp_find_references
+name: lsp_find_references
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: Find ALL usages/references of a symbol across the entire workspace.
+parameters:
+- name: filePath
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: line
+  required: true
+  schema: &id002
+    type: number
+    minimum: 1
+  type: number
+- name: character
+  required: true
+  schema: &id003
+    type: number
+    minimum: 0
+  type: number
+- name: includeDeclaration
+  required: false
+  schema: &id004
+    type: boolean
+  type: boolean
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: lsp_find_references
+      description: Find ALL usages/references of a symbol across the entire workspace.
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          filePath: *id001
+          line: *id002
+          character: *id003
+          includeDeclaration: *id004
+        required:
+        - filePath
+        - line
+        - character
+        additionalProperties: false
+      strict: false

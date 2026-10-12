@@ -62,6 +62,31 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.openclaw.native-chat.v1",
         "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a",
     ),
+    # Compaction-enabled revisions (native compaction; docs/guides/CONTEXT_COMPACTION.md).
+    "pi-r3@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "7d79dab4ed66fa0264fe38f8beb228dc030e4173df8998c6fcfcb86e7430aba8",
+    ),
+    "pi-r4@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "7cafc31c1217a2e9c48f041d68f660145d0b03309344a594358e8dbf40a73679",
+    ),
+    "oh-my-pi-r3@16.2.13": (
+        "breadboard.oh-my-pi.v16.2.13",
+        "7e4b685a8c58fe478ae991b6832c143de3adc46c86484e40bad1e1da152595f3",
+    ),
+    "oh-my-pi-r2@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "bda017e547cc434e9560b7a923bb1d23d48147722349e8ae1dd349f4558cb78e",
+    ),
+    "openclaw-r2@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "535d1914c5a9ba23410dc7a84ef42b90af0e90198131d0ba520a7c8ddd75514c",
+    ),
+    "hermes-agent-r2@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "33c6f2c61b6407cb6832193e68f455cdb2cf33f6ab10fd8a2e9c2c00e3dbe6c0",
+    ),
 })
 
 
@@ -309,11 +334,20 @@ def _lower_worker_target(
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
     policy_provider = harness.get("policy", {}).get("provider", {})
-    if policy_provider.get("compaction") is True:
-        native["compaction"] = True
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
+
+    stream_profile = NATIVE_STREAM_PROFILES.get(native.get("consumer_id"))
+    compaction_enabled = policy_provider.get("compaction") is True
+    # Seal an explicit false only where the admitted worker requires the gate;
+    # unrelated legacy targets retain their exact compiled identities.
+    if compaction_enabled or (
+        stream_profile is not None and "compaction" in stream_profile.sealed_initialize_fields
+    ):
+        native["compaction"] = compaction_enabled
+    if compaction_enabled:
         if "agent" in native and isinstance(native["agent"], dict):
             native["agent"]["compaction_enabled"] = True
-    if package.target_id == "oh-my-pi@18.1.17":
+    if package.target_id in {"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17"}:
         required_native_fields = (
             "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
             "model_registry",

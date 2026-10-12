@@ -17,7 +17,11 @@ export type ConfigExplanationV1 = {
    * RFC 3339 UTC timestamp. The only wall-clock form for new contracts.
    */
   generated_at_utc: string;
-  surface_schema_version: "bb.agent_config_surface.v1" | "bb.agent_config_surface.v2";
+  surface_schema_version:
+    | "bb.agent_config_surface.v1"
+    | "bb.agent_config_surface.v2"
+    | "bb.harness_definition.v1"
+    | "bb.harness_definition.v2";
   resolved_summary: {
     provider_default_model: string;
     mode_ids: string[];

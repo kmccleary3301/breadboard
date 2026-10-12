@@ -431,14 +431,16 @@ Relevant package docs:
 ## Public E4 dossiers
 
 The top-level catalog has six dated family entries. The filename date is the catalog
-refresh date; accepted upstream versions and capture dates remain explicit.
+refresh date; accepted upstream versions and capture dates remain explicit. The four
+`2026-10-09` agent profiles run each harness's own context compaction with native
+defaults ([docs/guides/CONTEXT_COMPACTION.md](docs/guides/CONTEXT_COMPACTION.md)).
 
 | Harness | Current entry | Claim boundary |
 |---|---|---|
-| Codex | [Codex CLI 0.139.0 / GPT-5.5](agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml) | runnable capture/replay profile; accepted evidence is one read-only probe |
-| Claude Code | [Claude Code 2.1.63](agent_configs/claude_code_2-1-63_e4_9-10-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
-| OpenCode | [OpenCode 1.2.17](agent_configs/opencode_1-2-17_e4_9-10-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
-| oh-my-opencode | [oh-my-opencode 3.10.0](agent_configs/oh_my_opencode_3-10-0_e4_9-10-2026.yaml) | standalone dossier for the frozen Phase 8 replay surface |
+| Codex | [Codex CLI 0.139.0 / GPT-5.5](agent_configs/codex_0-139-0_gpt55_e4_10-9-2026.yaml) | runnable capture/replay profile; accepted evidence is one read-only probe |
+| Claude Code | [Claude Code 2.1.63](agent_configs/claude_code_2-1-63_e4_10-9-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
+| OpenCode | [OpenCode 1.2.17](agent_configs/opencode_1-2-17_e4_10-9-2026.yaml) | standalone dossier for the accepted static-package/replay surface |
+| oh-my-opencode | [oh-my-opencode 3.10.0](agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml) | standalone dossier for the frozen Phase 8 replay surface |
 | Oh My Pi | [Oh My Pi 16.2.13](agent_configs/oh_my_pi_16-2-13_e4_9-10-2026.yaml) | installed-target config; not an agent-config CLI profile |
 | Pi | [Pi 0.57.1](agent_configs/pi_0-57-1_e4_9-10-2026.yaml) | installed-target config; not an agent-config CLI profile |
 

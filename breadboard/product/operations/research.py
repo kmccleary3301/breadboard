@@ -54,10 +54,7 @@ from breadboard.product.runtime.workflows import (
     WorkflowStep,
 )
 from breadboard_engine.api.cli_bridge.registry.registry_impl import SessionRegistry
-from breadboard_engine.provider.contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-)
+from breadboard_engine.provider.contract_requests import ProviderCorrelation, ProviderIdentity
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
 from breadboard_engine.provider.contract_wire import canonical_json
 from breadboard_engine.provider.routing import provider_router

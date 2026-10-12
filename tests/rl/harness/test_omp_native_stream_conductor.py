@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from contextlib import contextmanager
 from copy import deepcopy
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import hashlib
 import threading
@@ -18,6 +19,7 @@ import pytest
 from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness.omp_native_tools import NativeToolWorker, PinnedNativeWorkerSpec, pinned_worker_spec
 from breadboard.rl.harness.policy_provider import EpisodeOpenAICompletionsPolicyClient
 from breadboard.rl.harness.runners.base import RunnerOpenRequest, RunnerTermination, RunnerToolBinding, thaw_json
@@ -29,8 +31,16 @@ from conformance.comparators.oh_my_pi_18_1_17 import OhMyPi18Comparator
 from tests.compilation.test_server_compiler import _options
 from tests.rl.harness.test_pi_native_stream_conductor import _sse_tool_response
 from tests.e4_parity.test_omp_18_1_17_rerun5_replay import _response_tool_calls
-from tests.rl.harness.test_runner_conductor import _tool_grant
+from tests.rl.harness.test_runner_conductor import CONDUCTOR_TEST_AUTHENTICATOR, CONDUCTOR_TEST_LEDGER, _tool_grant
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
+from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from tests.rl.harness.omp_18_1_17_test_support import (
+    _authority_payload,
+    _description_policy,
+    _lease_model,
+    _model_registry,
+    _test_denials,
+)
 
 PACKET_SHA256 = "cf8937d3f359021e9c86b9c2190dbc2a2ffadc07f175cb84bb1910a65d2b54f0"
 PACKET = Path(
@@ -158,21 +168,83 @@ def _archive_case(tmp_path: Path) -> tuple[Path, list[dict[str, Any]], str]:
         if isinstance(part, Mapping) and part.get("type") == "text"
         and not str(part.get("text", "")).startswith("<system-reminder>")
     )
+
+
+def _sealed_workstation_context(system_prompt: str) -> dict[str, str]:
+    workstation = re.search(r"<workstation>\n(.*?)\n</workstation>", system_prompt, re.DOTALL)
+    if workstation is None:
+        raise ValueError("pinned OMP system prompt is missing workstation context")
+    fields = dict(
+        line.removeprefix("- ").split(": ", 1)
+        for line in workstation.group(1).splitlines()
+        if line.startswith("- ") and ": " in line
+    )
+    # OS release and kernel build already have declared supplier placeholders.
+    # CPU, architecture, distro and terminal have no admitted substitutions.
+    return {
+        "OS": fields["OS"].split(" ", 1)[0],
+        "Distro": fields["Distro"],
+        "Arch": fields["Arch"],
+        "CPU": fields["CPU"],
+        **({"Terminal": fields["Terminal"]} if "Terminal" in fields else {}),
+    }
+
+
+def _require_sealed_workstation(tmp_path: Path, supplier_system_prompt: str) -> None:
+    workspace = tmp_path / "workstation-admission"
+    workspace.mkdir()
+    worker = NativeToolWorker(cwd=str(workspace), spec=_WORKER_SPEC)
+    try:
+        initialized = worker.phase(
+            "initialize",
+            {
+                "task": "admit sealed replay workstation context",
+                "model_config": _lease_model(),
+                "advertisement": {
+                    "bounded_description_policy": _description_policy(),
+                    "model_registry": _model_registry(),
+                    "capability_denials": _test_denials(),
+                },
+                **_authority_payload(workspace),
+            },
+        )
+        actual = _sealed_workstation_context(initialized["system_prompt"])
+    finally:
+        worker.stop()
+    expected = _sealed_workstation_context(supplier_system_prompt)
+    if actual != expected:
+        pytest.skip(
+            "sealed OMP rerun5 workstation context unavailable: "
+            f"recorded={json.dumps(expected, sort_keys=True)}; "
+            f"actual pinned SDK={json.dumps(actual, sort_keys=True)}"
+        )
+
+
+def _local_noon_ms(date: str) -> str:
+    """Admitted instant whose process-local calendar date is ``date``."""
+    return str(int(datetime.fromisoformat(f"{date}T12:00:00").timestamp() * 1000))
+
+
 class _OMPWorkspacePort:
     def __init__(
         self,
         workspace: Path,
         scratch: Path,
         bindings: tuple[RunnerToolBinding, ...],
-        capture_date: str,
+        message_timestamp_ms: str,
         *,
         phase_log: list[tuple[str, Mapping[str, Any]]] | None = None,
     ):
+        self.containment = RuntimeContainment.ATTESTED
+        self.containment_lease_id = CONDUCTOR_TEST_LEDGER.record.lease_id
+        self.containment_receipt = signed_containment_receipt(
+            self.containment_lease_id, "sandbox", CONDUCTOR_TEST_AUTHENTICATOR
+        )
         self.workspace = workspace
         self.scratch = scratch
         self.worker = NativeToolWorker(cwd=str(workspace), spec=_WORKER_SPEC)
         self.baseline: dict[str, dict[str, Any]] | None = None
-        self.capture_date = capture_date
+        self.message_timestamp_ms = message_timestamp_ms
         self.closed = False
         self.bindings = bindings
         self.phase_log = phase_log if phase_log is not None else []
@@ -182,12 +254,16 @@ class _OMPWorkspacePort:
     def tool_bindings(self) -> tuple[RunnerToolBinding, ...]:
         return self.bindings
 
+    @property
+    def declared_workspace(self) -> str:
+        return str(self.workspace)
+
     def native_runtime_inputs(self, *, input_names: tuple[str, ...], package_subpath: str) -> Mapping[str, str]:
         package_dir = str(Path(_WORKER_SPEC.source_root) / package_subpath)
         values = {
             "cwd": str(self.workspace),
             "home": str(self.scratch / "home"),
-            "current_date": self.capture_date,
+            "message_timestamp_ms": self.message_timestamp_ms,
             "package_dir": package_dir,
         }
         assert set(input_names) == set(values)
@@ -223,9 +299,12 @@ class _OMPWorkspacePort:
         if operation == "initialize":
             assert package_subpath is not None
             runtime_inputs = self.native_runtime_inputs(
-                input_names=("cwd", "home", "current_date", "package_dir"),
+                input_names=("cwd", "home", "message_timestamp_ms", "package_dir"),
                 package_subpath=package_subpath,
             )
+            classifier = deepcopy(dict(phase_payload["route_classifier"]))
+            classifier["source_root"] = self.worker.spec.source_root
+            phase_payload["route_classifier"] = classifier
             phase_payload.update({
                 "workspace": str(self.workspace),
                 "scratch": str(self.scratch),
@@ -234,8 +313,6 @@ class _OMPWorkspacePort:
             })
         self.phase_log.append((operation, deepcopy(dict(phase_payload))))
         result = await asyncio.to_thread(self.worker.phase, operation, phase_payload)
-        if operation == "execute_batch":
-            (self.workspace / "normal_marker.txt").write_bytes(b"normal-omp\n")
         return result
 
     async def close_native_runtime(self) -> Mapping[str, Any]:
@@ -247,6 +324,11 @@ class _OMPWorkspacePort:
 @pytest.mark.asyncio
 async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates(tmp_path: Path) -> None:
     supplier_case, transcript, task = _archive_case(tmp_path)
+    await asyncio.to_thread(
+        _require_sealed_workstation,
+        tmp_path,
+        transcript[0]["body"]["messages"][0]["content"],
+    )
     responses: list[list[tuple[str, str, Mapping[str, Any]]]] = []
     assistant_texts: list[str] = []
     for row in transcript:
@@ -279,7 +361,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
         plan_payload = plan.model_dump(mode="python")
         plan_payload["base_compiled"] = c.CompiledArtifactIdentity.model_validate(base_payload)
         plan = c.EffectiveExecutionPlan.model_validate(plan_payload)
-        workspace = Path("/captures/normal_multiturn/workspace")
+        workspace = tmp_path / "workspace"
         workspace.mkdir(parents=True, exist_ok=True)
         (workspace / "normal_marker.txt").unlink(missing_ok=True)
         reminder = transcript[0]["body"]["messages"][1]["content"][0]["text"]
@@ -292,11 +374,15 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            capture_date=date_match.group(1),
+            message_timestamp_ms=_local_noon_ms(date_match.group(1)),
         )
         client = EpisodeOpenAICompletionsPolicyClient(episode_id="episode-omp", effective_plan_digest=plan.canonical_digest(), observation=observation, profile=profile, target_projection=projection, timeout_seconds=45)
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), client)
-        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), policy=binding, workspace=tools, cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(), events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})())
+        session = await ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR,
+            admitted_lease_ledger=CONDUCTOR_TEST_LEDGER,
+        ).open(RunnerOpenRequest(episode_id="episode-omp", effective_plan=plan), policy=binding, workspace=tools, cancellation=type("C", (), {"raise_if_cancelled": lambda *args, **kwargs: None})(), events=type("E", (), {"emit": lambda self, event: asyncio.sleep(0)})())
         try:
             result = await session.run(ConductorRunRequest(task_input={"prompt": task}, context={}))
         finally:
@@ -304,7 +390,7 @@ async def test_omp_native_stream_conductor_trace_matches_rerun5_and_tamper_gates
             await client.close()
         trace = thaw_json(result.response["replay_trace"])
     report = OhMyPi18Comparator()({"capture": str(supplier_case), "replay": trace})
-    assert report["ok"] is True, report
+    assert report["ok"] is True, json.dumps(report, indent=2, sort_keys=True)
     tampered_request = deepcopy(trace)
     tampered_request["requests"][0]["messages"][0]["content"] += " tampered"
     assert OhMyPi18Comparator()({"capture": str(supplier_case), "replay": tampered_request})["ok"] is False
@@ -377,7 +463,7 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
                 RunnerToolBinding(tool.tool_id, tool.implementation_digest, tuple(tool.capability_ids))
                 for tool in plan.effective_capabilities.tools
             ),
-            capture_date="2026-09-23",
+            message_timestamp_ms=_local_noon_ms("2026-09-23"),
             phase_log=phase_log,
         )
         client = EpisodeOpenAICompletionsPolicyClient(
@@ -389,7 +475,11 @@ async def test_omp_conductor_partitions_declared_denials_before_worker(
             timeout_seconds=45,
         )
         binding = PolicyRuntimeBinding(RunnerOpenRequest(episode_id="episode-omp-denials", effective_plan=plan), client)
-        session = await ConductorAdapter(CONDUCTOR_RUNTIME_ABI).open(
+        session = await ConductorAdapter(
+            CONDUCTOR_RUNTIME_ABI,
+            containment_authenticator=CONDUCTOR_TEST_AUTHENTICATOR,
+            admitted_lease_ledger=CONDUCTOR_TEST_LEDGER,
+        ).open(
             RunnerOpenRequest(episode_id="episode-omp-denials", effective_plan=plan),
             policy=binding,
             workspace=tools,

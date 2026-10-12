@@ -295,3 +295,47 @@ test("kernel validator accepts tracked engine conformance manifest", () => {
     ),
   )
 })
+
+test("native raw tool arguments are bounded and exclusive in blocks and stream events", () => {
+  const rawExchange = (rawArguments: string) => ({
+    schema_version: "bb.provider_exchange.v2",
+    exchange_id: "px-raw",
+    correlation: { session_id: "session", input_id: "input", turn_id: "turn" },
+    provider: { provider_id: "openai", runtime_id: "openai_responses", route_id: "openai/model", model: "model" },
+    request: { stream: true, messages: [{ role: "user", content: [{ type: "text", text: "Run" }] }], tools: [] },
+    events: [
+      { sequence: 0, kind: "response_start" },
+      { sequence: 1, kind: "tool_call_start", content_index: 0, message_id: "message", call_id: "call", name: "bash" },
+      { sequence: 2, kind: "tool_call_end", content_index: 0, message_id: "message", call_id: "call", raw_arguments: rawArguments },
+    ],
+    terminal: {
+      kind: "done", output_emitted: true, finish_reason: "toolUse",
+      evidence_refs: [],
+      assistant_messages: [{ role: "assistant", content: [
+        { type: "tool_call", call_id: "call", name: "bash", raw_arguments: rawArguments },
+      ] }],
+    },
+  })
+  for (const raw of ["", "   ", "{", "NaN", "\u{1F600}".repeat(32769)]) {
+    const exchange = rawExchange(raw)
+    assert.equal(providerExchangeV2Validator(exchange), true, JSON.stringify(providerExchangeV2Validator.errors))
+    for (const parsedFields of [{ arguments: null }, { arguments_json: "{}" }]) {
+      const withParsedEvent = {
+        ...exchange,
+        events: exchange.events.map(event => event.kind === "tool_call_end" ? { ...event, ...parsedFields } : event),
+      }
+      assert.equal(providerExchangeV2Validator(withParsedEvent), false)
+      const withParsedBlock = {
+        ...exchange,
+        terminal: {
+          ...exchange.terminal,
+          assistant_messages: [{ role: "assistant", content: [
+            { ...exchange.terminal.assistant_messages[0].content[0], ...parsedFields },
+          ] }],
+        },
+      }
+      assert.equal(providerExchangeV2Validator(withParsedBlock), false)
+    }
+  }
+  assert.equal(providerExchangeV2Validator(rawExchange("x".repeat(65537))), false)
+})

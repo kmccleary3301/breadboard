@@ -220,6 +220,8 @@ def _apply_linux_landlock(
     read_roots: Sequence[Path],
     trusted_launchers: Sequence[Path] = (),
     writable_roots: Sequence[Path] = (),
+    *,
+    pty: bool = False,
 ) -> None:
     libc = ctypes.CDLL(None, use_errno=True)
     try:
@@ -272,6 +274,14 @@ def _apply_linux_landlock(
             device = _resolved_existing(raw_device)
             if device is not None:
                 _landlock_add_path_rule(libc, ruleset_fd, device, device_access)
+        if pty:
+            # Only the fixed devpts mount and its allocator are admitted, not
+            # /dev generally. No creation or execution rights are added.
+            pty_access = _ACCESS_FS_READ_FILE | _ACCESS_FS_READ_DIR | _ACCESS_FS_WRITE_FILE
+            for raw_device in ("/dev/pts", "/dev/ptmx"):
+                device = _resolved_existing(raw_device)
+                if device is not None:
+                    _landlock_add_path_rule(libc, ruleset_fd, device, pty_access)
         _landlock_add_path_rule(libc, ruleset_fd, workspace, workspace_access)
         for writable_root in writable_roots:
             _landlock_add_path_rule(
@@ -306,6 +316,7 @@ def _parse_linux_launch(
     tuple[Path, ...],
     tuple[str, ...],
     bool,
+    bool,
 ]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--workspace", required=True)
@@ -314,6 +325,7 @@ def _parse_linux_launch(
     parser.add_argument("--write-root", action="append", default=[])
     parser.add_argument("--trusted-launcher", action="append", default=[])
     parser.add_argument("--allow-network", action="store_true")
+    parser.add_argument("--pty", action="store_true")
     parser.add_argument("command", nargs=argparse.REMAINDER)
     namespace = parser.parse_args(list(argv))
     command = tuple(namespace.command)
@@ -368,6 +380,7 @@ def _parse_linux_launch(
         tuple(dict.fromkeys(trusted_launchers)),
         command,
         bool(namespace.allow_network),
+        bool(namespace.pty),
     )
 
 
@@ -381,6 +394,7 @@ def _parse_args(argv: Sequence[str]) -> tuple[Path, tuple[str, ...]]:
         _launchers,
         command,
         _network,
+        _pty,
     ) = _parse_linux_launch(argv)
     return workspace, command
 
@@ -395,6 +409,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             trusted_launchers,
             command,
             allow_network,
+            pty,
         ) = _parse_linux_launch(sys.argv[1:] if argv is None else argv)
         libc = ctypes.CDLL(None, use_errno=True)
         _set_no_new_privileges(libc)
@@ -404,6 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             read_roots,
             trusted_launchers,
             writable_roots,
+            pty=pty,
         )
         os.chdir(working_directory)
         os.execvpe(command[0], command, os.environ)

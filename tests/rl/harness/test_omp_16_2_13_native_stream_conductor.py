@@ -62,6 +62,7 @@ from tests.rl.harness.test_runner_conductor import (
 )
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from tests.rl.harness.native_dependencies import resolve_omp
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "e4_parity" / "fixtures" / "omp_16_2_13_supplier_cases"
@@ -79,7 +80,7 @@ _ROOT_ENV = os.environ.get("OMP16213_CODING_AGENT_NODE_MODULES")
 if os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1" and not _ROOT_ENV:
     pytest.fail("BB_REQUIRE_PINNED_OMP16213_NODE=1 requires OMP16213_CODING_AGENT_NODE_MODULES")
 
-_NODE_MODULES = Path(_ROOT_ENV) if _ROOT_ENV else None
+_NODE_MODULES = resolve_omp("16.2.13")
 if (
     _NODE_MODULES is not None
     and os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1"
@@ -87,7 +88,7 @@ if (
 ):
     pytest.fail(f"OMP16213_CODING_AGENT_NODE_MODULES is not a directory: {_NODE_MODULES}")
 
-_BUN_BIN = shutil.which("bun")
+_BUN_BIN = os.environ.get("BB_BUN") or shutil.which("bun")
 worker_available = WORKER.is_file() and _NODE_MODULES is not None and _BUN_BIN is not None
 pytestmark = pytest.mark.skipif(_NODE_MODULES is None or not worker_available, reason="OMP 16.2.13 pinned node modules or worker unavailable")
 

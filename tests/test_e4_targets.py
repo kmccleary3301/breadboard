@@ -81,15 +81,21 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -155,15 +161,21 @@ def test_openclaw_sealed_package_has_one_pinned_source_prompt_and_bootstrap() ->
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
         "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -1057,3 +1069,24 @@ def test_omp_16_2_13_r2_compiled_tools_equal_wire_tools() -> None:
         assert set(compiled_params["properties"]) == set(wire_params["properties"])
         for prop_name, prop_spec in wire_params["properties"].items():
             assert thaw_json(compiled_params["properties"][prop_name]) == prop_spec
+
+
+_COMPACTION_REVISIONS = {
+    "pi-r3@0.73.1": "pi-r2@0.73.1",
+    "pi-r4@0.57.1": "pi-r3@0.57.1",
+    "oh-my-pi-r3@16.2.13": "oh-my-pi-r2@16.2.13",
+    "oh-my-pi-r2@18.1.17": "oh-my-pi@18.1.17",
+    "openclaw-r2@2026.9.4": "openclaw@2026.9.4",
+    "hermes-agent-r2@2026.9.11": "hermes-agent@2026.9.11",
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_COMPACTION_REVISIONS))
+def test_compaction_revision_preserves_lowered_tools_and_prompt(target_id: str) -> None:
+    predecessor_id = _COMPACTION_REVISIONS[target_id]
+    target, predecessor = load_e4_target(target_id), load_e4_target(predecessor_id)
+    lowered, base_lowered = lower_e4_target(target, {}), lower_e4_target(predecessor, {})
+    assert lowered.ordered_tool_names == base_lowered.ordered_tool_names
+    assert thaw_json(lowered.tools) == thaw_json(base_lowered.tools)
+    assert lowered.system_prompt == base_lowered.system_prompt
+    assert lowered.runtime_profile["compaction"] is True

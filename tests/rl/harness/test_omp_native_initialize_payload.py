@@ -61,7 +61,7 @@ class _RecordingPort:
         values = {
             "cwd": str(self.workspace),
             "home": str(self.workspace / "home"),
-            "current_date": "2026-09-25",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": str(self.workspace / package_subpath),
         }
         return {name: values[name] for name in input_names}
@@ -171,6 +171,7 @@ async def test_omp_initialize_carries_compiled_route_classifier(tmp_path: Path) 
     assert port.initialize_payload is not None
     expected = json.loads(_NATIVE_CONFIG.read_text(encoding="utf-8"))["route_classifier"]
     assert port.initialize_payload["route_classifier"] == expected
+    assert port.initialize_payload["compaction"] is False
 
 
 async def _noop() -> None:

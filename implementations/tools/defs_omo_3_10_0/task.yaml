@@ -1,0 +1,133 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: task
+name: task
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: "Spawn agent task with category-based or direct agent selection.\n  \n  ⚠️  CRITICAL: You MUST provide\
+  \ EITHER category OR subagent_type. Omitting BOTH will FAIL.\n  \n  **COMMON MISTAKE (DO NOT DO THIS):**\n  ```\n\
+  \  task(description=\"...\", prompt=\"...\", run_in_background=false)  // ❌ FAILS - missing category AND subagent_type\n\
+  \  ```\n  \n  **CORRECT - Using category:**\n  ```\n  task(category=\"quick\", load_skills=[], description=\"\
+  Fix type error\", prompt=\"...\", run_in_background=false)\n  ```\n  \n  **CORRECT - Using subagent_type:**\n\
+  \  ```\n  task(subagent_type=\"explore\", load_skills=[], description=\"Find patterns\", prompt=\"...\", run_in_background=true)\n\
+  \  ```\n  \n  REQUIRED: Provide ONE of:\n  - category: For task delegation (uses Sisyphus-Junior with category-optimized\
+  \ model)\n  - subagent_type: For direct agent invocation (explore, librarian, oracle, etc.)\n  \n  **DO NOT provide\
+  \ both.** If category is provided, subagent_type is ignored.\n  \n  - load_skills: ALWAYS REQUIRED. Pass [] if\
+  \ no skills needed, or [\"skill-1\", \"skill-2\"] for category tasks.\n  - category: Use predefined category →\
+  \ Spawns Sisyphus-Junior with category config\n    Available categories:\n    - visual-engineering: Frontend,\
+  \ UI/UX, design, styling, animation\n  - ultrabrain: Use ONLY for genuinely hard, logic-heavy tasks. Give clear\
+  \ goals only, not step-by-step instructions.\n  - deep: Goal-oriented autonomous problem-solving. Thorough research\
+  \ before action. For hairy problems requiring deep understanding.\n  - artistry: Complex problem-solving with\
+  \ unconventional, creative approaches - beyond standard patterns\n  - quick: Trivial tasks - single file changes,\
+  \ typo fixes, simple modifications\n  - unspecified-low: Tasks that don't fit other categories, low effort required\n\
+  \  - unspecified-high: Tasks that don't fit other categories, high effort required\n  - writing: Documentation,\
+  \ prose, technical writing\n  - subagent_type: Use specific agent directly (explore, librarian, oracle, metis,\
+  \ momus)\n  - run_in_background: true=async (returns task_id), false=sync (waits). Default: false. Use background=true\
+  \ ONLY for parallel exploration with 5+ independent queries.\n  - session_id: Existing Task session to continue\
+  \ (from previous task output). Continues agent with FULL CONTEXT PRESERVED - saves tokens, maintains continuity.\n\
+  \  - command: The command that triggered this task (optional, for slash command tracking).\n  \n  **WHEN TO USE\
+  \ session_id:**\n  - Task failed/incomplete → session_id with \"fix: [specific issue]\"\n  - Need follow-up on\
+  \ previous result → session_id with additional question\n  - Multi-turn conversation with same agent → always\
+  \ session_id instead of new task\n  \n  Prompts MUST be in English."
+parameters:
+- name: load_skills
+  required: true
+  schema: &id001
+    type: array
+    items:
+      type: string
+  type: array
+- name: description
+  required: true
+  schema: &id002
+    type: string
+  type: string
+- name: prompt
+  required: true
+  schema: &id003
+    type: string
+  type: string
+- name: run_in_background
+  required: true
+  schema: &id004
+    type: boolean
+  type: boolean
+- name: category
+  required: false
+  schema: &id005
+    type: string
+  type: string
+- name: subagent_type
+  required: false
+  schema: &id006
+    type: string
+  type: string
+- name: session_id
+  required: false
+  schema: &id007
+    type: string
+  type: string
+- name: command
+  required: false
+  schema: &id008
+    type: string
+  type: string
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: task
+      description: "Spawn agent task with category-based or direct agent selection.\n  \n  ⚠️  CRITICAL: You MUST\
+        \ provide EITHER category OR subagent_type. Omitting BOTH will FAIL.\n  \n  **COMMON MISTAKE (DO NOT DO\
+        \ THIS):**\n  ```\n  task(description=\"...\", prompt=\"...\", run_in_background=false)  // ❌ FAILS - missing\
+        \ category AND subagent_type\n  ```\n  \n  **CORRECT - Using category:**\n  ```\n  task(category=\"quick\"\
+        , load_skills=[], description=\"Fix type error\", prompt=\"...\", run_in_background=false)\n  ```\n  \n\
+        \  **CORRECT - Using subagent_type:**\n  ```\n  task(subagent_type=\"explore\", load_skills=[], description=\"\
+        Find patterns\", prompt=\"...\", run_in_background=true)\n  ```\n  \n  REQUIRED: Provide ONE of:\n  - category:\
+        \ For task delegation (uses Sisyphus-Junior with category-optimized model)\n  - subagent_type: For direct\
+        \ agent invocation (explore, librarian, oracle, etc.)\n  \n  **DO NOT provide both.** If category is provided,\
+        \ subagent_type is ignored.\n  \n  - load_skills: ALWAYS REQUIRED. Pass [] if no skills needed, or [\"skill-1\"\
+        , \"skill-2\"] for category tasks.\n  - category: Use predefined category → Spawns Sisyphus-Junior with\
+        \ category config\n    Available categories:\n    - visual-engineering: Frontend, UI/UX, design, styling,\
+        \ animation\n  - ultrabrain: Use ONLY for genuinely hard, logic-heavy tasks. Give clear goals only, not\
+        \ step-by-step instructions.\n  - deep: Goal-oriented autonomous problem-solving. Thorough research before\
+        \ action. For hairy problems requiring deep understanding.\n  - artistry: Complex problem-solving with unconventional,\
+        \ creative approaches - beyond standard patterns\n  - quick: Trivial tasks - single file changes, typo fixes,\
+        \ simple modifications\n  - unspecified-low: Tasks that don't fit other categories, low effort required\n\
+        \  - unspecified-high: Tasks that don't fit other categories, high effort required\n  - writing: Documentation,\
+        \ prose, technical writing\n  - subagent_type: Use specific agent directly (explore, librarian, oracle,\
+        \ metis, momus)\n  - run_in_background: true=async (returns task_id), false=sync (waits). Default: false.\
+        \ Use background=true ONLY for parallel exploration with 5+ independent queries.\n  - session_id: Existing\
+        \ Task session to continue (from previous task output). Continues agent with FULL CONTEXT PRESERVED - saves\
+        \ tokens, maintains continuity.\n  - command: The command that triggered this task (optional, for slash\
+        \ command tracking).\n  \n  **WHEN TO USE session_id:**\n  - Task failed/incomplete → session_id with \"\
+        fix: [specific issue]\"\n  - Need follow-up on previous result → session_id with additional question\n \
+        \ - Multi-turn conversation with same agent → always session_id instead of new task\n  \n  Prompts MUST\
+        \ be in English."
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          load_skills: *id001
+          description: *id002
+          prompt: *id003
+          run_in_background: *id004
+          category: *id005
+          subagent_type: *id006
+          session_id: *id007
+          command: *id008
+        required:
+        - load_skills
+        - description
+        - prompt
+        - run_in_background
+        additionalProperties: false
+      strict: false

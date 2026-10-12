@@ -35,6 +35,12 @@ def _tool_call_to_payload(
         raise ProviderContractError("tool call is not a ProviderToolCall")
     if tool_call.id is None or tool_call.name is None:
         raise ProviderContractError("completed tool call requires stable id and name")
+    if tool_call.raw_arguments is not None:
+        return {
+            "message_index": message_index, "call_index": call_index,
+            "id": tool_call.id, "call_id": tool_call.id, "name": tool_call.name,
+            "raw_arguments": tool_call.raw_arguments, "tool_type": tool_call.type,
+        }
     if tool_call.arguments_json is None:
         raise ProviderContractError("completed tool call requires arguments_json")
     parsed = parse_canonical_json(tool_call.arguments_json)
@@ -140,8 +146,10 @@ def _message_content_events(
             call = ProviderToolCall(
                 id=block["call_id"],
                 name=block["name"],
-                arguments=block["arguments"],
-                arguments_json=block["arguments_json"],
+                arguments=block.get("arguments"),
+                arguments_json=block.get("arguments_json"),
+                raw_arguments=block.get("raw_arguments"),
+                allow_raw_arguments="raw_arguments" in block,
             )
             payload = _tool_call_to_payload(call, message_index, content_index)
             events.append(NormalizedEvent("tool_call", payload))
@@ -157,16 +165,18 @@ def _message_content_events(
                             "name": call.name,
                         },
                     ),
-                    NormalizedEvent(
-                        "tool_call_delta",
-                        {
-                            "message_index": message_index,
-                            "content_index": content_index,
-                            "message_id": message_id,
-                            "call_id": call.id,
-                            "delta": call.arguments_json,
-                        },
-                    ),
+                    *([
+                        NormalizedEvent(
+                            "tool_call_delta",
+                            {
+                                "message_index": message_index,
+                                "content_index": content_index,
+                                "message_id": message_id,
+                                "call_id": call.id,
+                                "delta": call.arguments,
+                            },
+                        )
+                    ] if call.arguments.strip() else []),
                     NormalizedEvent(
                         "tool_call_end",
                         {
@@ -265,6 +275,9 @@ def normalized_result_messages(result: ProviderResult) -> List[Dict[str, Any]]:
         messages.append(message.as_dict())
     if result.reasoning_blocks:
         blocks = normalize_content(result.reasoning_blocks, role="assistant")
+        # Some runtimes also expose message-owned reasoning at result level.
+        # Do not create a second assistant turn for already-recorded blocks.
+        blocks = [block for block in blocks if not any(block in message["content"] for message in messages)]
         if blocks:
             messages.append({"role": "assistant", "content": blocks})
     return messages

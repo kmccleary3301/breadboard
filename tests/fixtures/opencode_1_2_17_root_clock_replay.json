@@ -1,0 +1,751 @@
+{
+  "source": "Authenticated root session API snapshot from the reproduced stock checkpoint failure, /tmp/octs-idle-reentry-green.xml; message-v2.ts:740 and prompt.ts:304-314,532.",
+  "native": {
+    "session": {
+      "id": "ses_ed64ff400ffe8XyShDVd3V12HB",
+      "slug": "crisp-pixel",
+      "projectID": "global",
+      "directory": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+      "title": "New session - 2026-10-11T06:39:25.695Z",
+      "version": "1.2.17",
+      "summary": {
+        "additions": 0,
+        "deletions": 0,
+        "files": 0
+      },
+      "permission": [
+        {
+          "permission": "question",
+          "pattern": "*",
+          "action": "deny"
+        },
+        {
+          "permission": "plan_enter",
+          "pattern": "*",
+          "action": "deny"
+        },
+        {
+          "permission": "plan_exit",
+          "pattern": "*",
+          "action": "deny"
+        }
+      ],
+      "time": {
+        "created": 1791700765695,
+        "updated": 1791700767131
+      }
+    },
+    "messages": [
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700765724
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Sisyphus (Ultraworker)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b00c1c001B0N0GRnPcQ4epK",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Keep this older context.",
+            "id": "prt_129b00c1c002uRLAomkFScEukn",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00c1c001B0N0GRnPcQ4epK"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700765732,
+            "completed": 1791700766563
+          },
+          "parentID": "msg_129b00c1c001B0N0GRnPcQ4epK",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Sisyphus (Ultraworker)",
+          "agent": "Sisyphus (Ultraworker)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129b00c2400156lBofzWTEym2Q",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129b00f5e001meIrUKSpDpeiZt",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00c2400156lBofzWTEym2Q"
+          },
+          {
+            "type": "text",
+            "text": "Older context recorded.",
+            "time": {
+              "start": 1791700766560,
+              "end": 1791700766560
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_9d1efa02461a4a739379a50a378260a2"
+              }
+            },
+            "id": "prt_129b00f5f001NSJ0HpLhTO4SpH",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00c2400156lBofzWTEym2Q"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129b00f61001Q6GpFMKLoCZS3r",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00c2400156lBofzWTEym2Q"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700766568
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b00f68001T5WUjBIveXc1eG",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Recover through the stock plugin.",
+            "id": "prt_129b00f680021r4elyHgF42uu9",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00f68001T5WUjBIveXc1eG"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700766570,
+            "completed": 1791700766737
+          },
+          "error": {
+            "name": "APIError",
+            "data": {
+              "message": "too many tokens: 410000 tokens > 400000 maximum",
+              "statusCode": 400,
+              "isRetryable": false,
+              "responseHeaders": {
+                "content-length": "106",
+                "content-type": "application/json",
+                "date": "Sun, 11 Oct 2026 06:39:26 GMT",
+                "server": "BaseHTTP/0.6 Python/3.13.14"
+              },
+              "responseBody": "{\"error\": {\"message\": \"too many tokens: 410000 tokens > 400000 maximum\", \"type\": \"invalid_request_error\"}}",
+              "metadata": {
+                "url": "http://127.0.0.1:54053/v1/responses"
+              }
+            }
+          },
+          "parentID": "msg_129b00f68001T5WUjBIveXc1eG",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129b00f6a001IdxXUoFBGYwxcN",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "[user interrupted]",
+            "synthetic": true,
+            "id": "prt_1a129b0101a1d5dna1a",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b00f6a001IdxXUoFBGYwxcN"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700766749
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b0101d001Zvnp9QuxE1OnRV",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": true,
+            "id": "prt_129b0101d002RYllKvbROWVF3R",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0101d001Zvnp9QuxE1OnRV"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700766750,
+            "completed": 1791700766758
+          },
+          "parentID": "msg_129b0101d001Zvnp9QuxE1OnRV",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129b0101e001y27jykYeiJXjw7",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129b01023001bV5yYWaI2PdBsH",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0101e001y27jykYeiJXjw7"
+          },
+          {
+            "type": "text",
+            "text": "Plugin recovery preserved the older context.",
+            "time": {
+              "start": 1791700766756,
+              "end": 1791700766756
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_15b6860ce8d444e68983756703c0d8e1"
+              }
+            },
+            "id": "prt_129b01024001WDvSnyj1Qta0rd",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0101e001y27jykYeiJXjw7"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129b01025001qhJ5APm7NsqttP",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0101e001y27jykYeiJXjw7"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700766758,
+            "completed": 1791700766953
+          },
+          "parentID": "msg_129b01026001tn6Jd3HTG7P48s",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "tool-calls",
+          "id": "msg_129b010260033XlVcuBlkT9vzD",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129b010be001tKI7P8w1IS7KX3",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010260033XlVcuBlkT9vzD"
+          },
+          {
+            "type": "tool",
+            "callID": "call_recovered_bash",
+            "tool": "bash",
+            "state": {
+              "status": "completed",
+              "input": {
+                "command": "printf plugin-tool-done",
+                "description": "Execute after plugin recovery"
+              },
+              "output": "[TOOL RESULT TRUNCATED - Context limit exceeded. Original output was too large and has been truncated to recover the session. Please re-run this tool if you need the full output.]",
+              "title": "Execute after plugin recovery",
+              "metadata": {
+                "output": "plugin-tool-done",
+                "exit": 0,
+                "description": "Execute after plugin recovery",
+                "truncated": false
+              },
+              "time": {
+                "start": 1791700766915,
+                "end": 1791700766950,
+                "compacted": 1791700767098
+              }
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "fc_call_recovered_bash"
+              }
+            },
+            "id": "prt_129b010bf001u4CaoZ0fGH1hr5",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010260033XlVcuBlkT9vzD"
+          },
+          {
+            "type": "step-finish",
+            "reason": "tool-calls",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129b010e70012tC5eNVEqPvHvg",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010260033XlVcuBlkT9vzD"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700766758
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b01026001tn6Jd3HTG7P48s",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+            "synthetic": true,
+            "time": {
+              "start": 1791700766758,
+              "end": 1791700766758
+            },
+            "id": "prt_129b01026002MHn2Z8S0BWEnWY",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b01026001tn6Jd3HTG7P48s"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700766954,
+            "completed": 1791700767094
+          },
+          "parentID": "msg_129b01026001tn6Jd3HTG7P48s",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129b010ea001LKGmtW4FV1xGLA",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129b01174001i0a2rlAczyRAYU",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010ea001LKGmtW4FV1xGLA"
+          },
+          {
+            "type": "text",
+            "text": "Recovered tool completed.",
+            "time": {
+              "start": 1791700767093,
+              "end": 1791700767093
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_68d2ed68e34a488f8fd0ecdf4f48c324"
+              }
+            },
+            "id": "prt_129b011740025XXU8B2ZA8rgOg",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010ea001LKGmtW4FV1xGLA"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129b01175001i6hia8pWH1vnnr",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b010ea001LKGmtW4FV1xGLA"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700767101,
+            "completed": 1791700767108
+          },
+          "parentID": "msg_129b0117d001AU53ijC4ImwD77",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129b0117d003W2omspTA9aKXmz",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129b01182001lNw5AczyLj0kGz",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0117d003W2omspTA9aKXmz"
+          },
+          {
+            "type": "text",
+            "text": "Second source-owned recovery checkpoint.",
+            "time": {
+              "start": 1791700767107,
+              "end": 1791700767107
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_8fdf4e11e33c4009824d475778de4a37"
+              }
+            },
+            "id": "prt_129b011830019QCRkmL1Hh4dFd",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0117d003W2omspTA9aKXmz"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129b011830026ZrQ3ae38sAMHB",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0117d003W2omspTA9aKXmz"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700767101
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b0117d001AU53ijC4ImwD77",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": true,
+            "id": "prt_129b0117d002HtXKAZh92MHKy2",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0117d001AU53ijC4ImwD77"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700767108
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b01184001RniKrye5TlXhW9",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+            "synthetic": true,
+            "time": {
+              "start": 1791700767109,
+              "end": 1791700767109
+            },
+            "id": "prt_129b01185001umbZpU79rh87Df",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b01184001RniKrye5TlXhW9"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700767109,
+            "completed": 1791700767121
+          },
+          "error": {
+            "name": "MessageAbortedError",
+            "data": {
+              "message": "The operation was aborted."
+            }
+          },
+          "parentID": "msg_129b01184001RniKrye5TlXhW9",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129b01185002NDD0vMzkekVYi8",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": []
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791700767130
+          },
+          "agent": "Sisyphus (Ultraworker)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129b0119a001gUNYgmaCtApoXu",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Follow up after the interrupted recovery.",
+            "id": "prt_129b0119a002WVYP4CZDzlxg1S",
+            "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB",
+            "messageID": "msg_129b0119a001gUNYgmaCtApoXu"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791700767131
+          },
+          "parentID": "msg_129b0119a001gUNYgmaCtApoXu",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-idle-reentry-green/test_plugin_error_summary_reus1/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129b0119b001P5iCF0V6FAeQ5I",
+          "sessionID": "ses_ed64ff400ffe8XyShDVd3V12HB"
+        },
+        "parts": []
+      }
+    ],
+    "children": []
+  }
+}

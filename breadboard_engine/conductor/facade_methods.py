@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
+
+if TYPE_CHECKING:
+    from ..compaction.controller import CompactionRequestContext
 
 from ..provider.routing import provider_router
 from ..provider.registry import provider_registry
@@ -352,6 +355,7 @@ class OpenAIConductorFacadeMethods:
         stream_responses: bool,
         local_tools_prompt: str,
         client_config: Dict[str, Any],
+        request_context: CompactionRequestContext | None = None,
     ) -> Any:
         return get_model_response(
             self,
@@ -366,6 +370,7 @@ class OpenAIConductorFacadeMethods:
             stream_responses,
             local_tools_prompt,
             client_config,
+            request_context=request_context,
         )
 
     def _legacy_message_view(self, provider_message: Any) -> SimpleNamespace:

@@ -21,6 +21,7 @@ from typing import (
     Optional,
     Protocol,
     Sequence,
+    Tuple,
     runtime_checkable,
 )
 
@@ -63,6 +64,14 @@ class SummaryRequest:
     model: Optional[str] = None
 
     tools: Tuple[Mapping[str, Any], ...] = ()
+    stream: bool = False
+    tool_names: Tuple[str, ...] = ()
+    request_params: Optional[Mapping[str, Any]] = None
+    request_options_declared: bool = False
+    stateless: bool = False
+    # Projection-only lifecycle metadata, never a provider request member.
+    context_reason: Optional[str] = None
+    native_request_field_order: Optional[Tuple[str, ...]] = None
 
 @dataclass(frozen=True)
 class SummaryResponse:
@@ -70,6 +79,9 @@ class SummaryResponse:
     usage: Optional[Mapping[str, Any]] = None
     model: Optional[str] = None
     finish_reason: Optional[str] = None
+    continuation_messages: Optional[Tuple[Mapping[str, Any], ...]] = None
+    # Successful native result for profile-selected summary observers; never wire data.
+    provider_result: Optional[Any] = None
 
 
 @runtime_checkable
@@ -128,6 +140,8 @@ class CompactionContext:
     prior_compactions: int = 0
     overflow_tokens: Optional[int] = None
     overflow_limit: Optional[int] = None
+    sampling_phase: Optional[str] = None
+    pending_user_index: Optional[int] = None
 
     def projected(self) -> List[Dict[str, Any]]:
         return self.state.project(self.messages, self.target)

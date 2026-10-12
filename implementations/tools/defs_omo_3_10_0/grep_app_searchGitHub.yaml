@@ -1,0 +1,179 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: grep_app_searchGitHub
+name: grep_app_searchGitHub
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Find real-world code examples from over a million public GitHub repositories to help answer programming
+  questions.
+
+
+  **IMPORTANT: This tool searches for literal code patterns (like grep), not keywords. Search for actual code that
+  would appear in files:**
+
+  - ✅ Good: ''useState('', ''import React from'', ''async function'', ''(?s)try {.*await''
+
+  - ❌ Bad: ''react tutorial'', ''best practices'', ''how to use''
+
+
+  **When to use this tool:**
+
+  - When implementing unfamiliar APIs or libraries and need to see real usage patterns
+
+  - When unsure about correct syntax, parameters, or configuration for a specific library
+
+  - When looking for production-ready examples and best practices for implementation
+
+  - When needing to understand how different libraries or frameworks work together
+
+
+  **Perfect for questions like:**
+
+  - "How do developers handle authentication in Next.js apps?" → Search: ''getServerSession'' with language=[''TypeScript'',
+  ''TSX'']
+
+  - "What are common React error boundary patterns?" → Search: ''ErrorBoundary'' with language=[''TSX'']
+
+  - "Show me real useEffect cleanup examples" → Search: ''(?s)useEffect\(\(\) => {.*removeEventListener'' with useRegexp=true
+
+  - "How do developers handle CORS in Flask applications?" → Search: ''CORS('' with matchCase=true and language=[''Python'']
+
+
+  Use regular expressions with useRegexp=true for flexible patterns like ''(?s)useState\(.*loading'' to find useState
+  hooks with loading-related variables. Prefix the pattern with ''(?s)'' to match across multiple lines.
+
+
+  Filter by language, repository, or file path to narrow results.'
+parameters:
+- name: query
+  required: true
+  schema: &id001
+    type: string
+    description: The literal code pattern to search for (e.g., 'useState(', 'export function'). Use actual code
+      that would appear in files, not keywords or questions.
+  type: string
+  description: The literal code pattern to search for (e.g., 'useState(', 'export function'). Use actual code that
+    would appear in files, not keywords or questions.
+- name: matchCase
+  required: false
+  schema: &id002
+    type: boolean
+    description: Whether the search should be case sensitive
+    default: false
+  type: boolean
+  description: Whether the search should be case sensitive
+- name: matchWholeWords
+  required: false
+  schema: &id003
+    type: boolean
+    description: Whether to match whole words only
+    default: false
+  type: boolean
+  description: Whether to match whole words only
+- name: useRegexp
+  required: false
+  schema: &id004
+    type: boolean
+    description: Whether to interpret the query as a regular expression
+    default: false
+  type: boolean
+  description: Whether to interpret the query as a regular expression
+- name: repo
+  required: false
+  schema: &id005
+    type: string
+    description: "Filter by repository.\n            Examples: 'facebook/react', 'microsoft/vscode', 'vercel/ai'.\n\
+      \            Can match partial names, for example 'vercel/' will find repositories in the vercel org."
+  type: string
+  description: "Filter by repository.\n            Examples: 'facebook/react', 'microsoft/vscode', 'vercel/ai'.\n\
+    \            Can match partial names, for example 'vercel/' will find repositories in the vercel org."
+- name: path
+  required: false
+  schema: &id006
+    type: string
+    description: "Filter by file path.\n            Examples: 'src/components/Button.tsx', 'README.md'.\n      \
+      \      Can match partial paths, for example '/route.ts' will find route.ts files at any level."
+  type: string
+  description: "Filter by file path.\n            Examples: 'src/components/Button.tsx', 'README.md'.\n        \
+    \    Can match partial paths, for example '/route.ts' will find route.ts files at any level."
+- name: language
+  required: false
+  schema: &id007
+    type: array
+    items:
+      type: string
+    description: "Filter by programming language.\n            Examples: ['TypeScript', 'TSX'], ['JavaScript'],\
+      \ ['Python'], ['Java'], ['C#'], ['Markdown'], ['YAML']"
+  type: array
+  description: "Filter by programming language.\n            Examples: ['TypeScript', 'TSX'], ['JavaScript'], ['Python'],\
+    \ ['Java'], ['C#'], ['Markdown'], ['YAML']"
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: grep_app_searchGitHub
+      description: 'Find real-world code examples from over a million public GitHub repositories to help answer
+        programming questions.
+
+
+        **IMPORTANT: This tool searches for literal code patterns (like grep), not keywords. Search for actual code
+        that would appear in files:**
+
+        - ✅ Good: ''useState('', ''import React from'', ''async function'', ''(?s)try {.*await''
+
+        - ❌ Bad: ''react tutorial'', ''best practices'', ''how to use''
+
+
+        **When to use this tool:**
+
+        - When implementing unfamiliar APIs or libraries and need to see real usage patterns
+
+        - When unsure about correct syntax, parameters, or configuration for a specific library
+
+        - When looking for production-ready examples and best practices for implementation
+
+        - When needing to understand how different libraries or frameworks work together
+
+
+        **Perfect for questions like:**
+
+        - "How do developers handle authentication in Next.js apps?" → Search: ''getServerSession'' with language=[''TypeScript'',
+        ''TSX'']
+
+        - "What are common React error boundary patterns?" → Search: ''ErrorBoundary'' with language=[''TSX'']
+
+        - "Show me real useEffect cleanup examples" → Search: ''(?s)useEffect\(\(\) => {.*removeEventListener''
+        with useRegexp=true
+
+        - "How do developers handle CORS in Flask applications?" → Search: ''CORS('' with matchCase=true and language=[''Python'']
+
+
+        Use regular expressions with useRegexp=true for flexible patterns like ''(?s)useState\(.*loading'' to find
+        useState hooks with loading-related variables. Prefix the pattern with ''(?s)'' to match across multiple
+        lines.
+
+
+        Filter by language, repository, or file path to narrow results.'
+      parameters:
+        type: object
+        properties:
+          query: *id001
+          matchCase: *id002
+          matchWholeWords: *id003
+          useRegexp: *id004
+          repo: *id005
+          path: *id006
+          language: *id007
+        required:
+        - query
+        additionalProperties: false
+        $schema: http://json-schema.org/draft-07/schema#
+      strict: false

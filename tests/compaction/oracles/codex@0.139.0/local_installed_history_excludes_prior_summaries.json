@@ -11,9 +11,10 @@
     ]
   },
   "capture": {
-    "kind": "source_derived",
-    "script": "scripts/compaction_oracles/capture_codex.py",
-    "notes": "codex-rs/core/src/compact.rs:440-444,451-453 checks is_summary_message, which tests: message.starts_with(format!('{SUMMARY_PREFIX}\\n').as_str()). Messages matching this prefix are excluded from collected user messages, preventing duplicate summary accumulation."
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/pre_turn_and_second_compaction.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. Across consecutive compactions in a multi-turn session, the second compaction excludes previous summary messages and retains only real user messages plus the fresh summary, confirming codex-rs/core/src/compact.rs:324-328."
   },
   "input": {
     "messages": [

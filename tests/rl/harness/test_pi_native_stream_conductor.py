@@ -20,6 +20,7 @@ from breadboard.artifacts.cas import FilesystemCAS
 from breadboard.product.harness.resolution import compile_e4_harness
 from breadboard.rl.harness.lease_envelope import RuntimeContainment
 from breadboard.rl.harness import contracts as c
+from breadboard.rl.harness.pi_native_tools import PiNativeWorkerError
 from breadboard.rl.harness.policy_provider import (
     E4TargetPolicyProjection,
     EpisodeOpenAICompletionsPolicyClient,
@@ -79,6 +80,7 @@ def _compile_target(
     profile_digest: str,
     model_id: str = "model-a",
     target_id: str = "pi@0.73.1",
+    context_length: int = 32_768,
 ) -> tuple[E4TargetPolicyProjection, Mapping[str, Any], c.CompiledConfigManifest]:
     cas = FilesystemCAS(tmp_path / "target-cas")
     try:
@@ -95,7 +97,7 @@ def _compile_target(
                     "models": [{
                         "id": model_id,
                         "adapter": "openai",
-                        "context_length": 32_768,
+                        "context_length": context_length,
                         "route_handle_id": "route-a",
                         "credential_handle_id": "credential-a",
                         "params": {},
@@ -382,7 +384,7 @@ class _NativeWorkerPort:
             "schema_version": "bb.native-worker.rpc.v1",
             "request_id": self._request_id,
             "operation": operation,
-            "payload": phase_payload,
+            "payload": thaw_json(phase_payload),
         }
         body = json.dumps(command, separators=(",", ":")).encode()
         self._process.stdin.write(struct.pack(">I", len(body)) + body)
@@ -391,7 +393,8 @@ class _NativeWorkerPort:
         size = struct.unpack(">I", header)[0]
         envelope = json.loads((await asyncio.wait_for(self._process.stdout.readexactly(size), timeout_ms / 1000)).decode())
         if "error" in envelope:
-            raise RuntimeError(envelope["error"])
+            error = envelope["error"]
+            raise PiNativeWorkerError(f"{error['type']}: {error['message']}")
         result = envelope["result"]
         if operation == "initialize":
             self.system_prompt = result["system_prompt"]
@@ -911,7 +914,13 @@ async def test_pi_native_worker_rejects_invalid_advertisement(tmp_path: Path, ca
         advertisement["prompt"]["remove_exact"] = [removal, removal[1:]]
     port = _NativeWorkerPort(workspace, ())
     try:
-        with pytest.raises(RuntimeError, match=message):
+        # Parsing is a source-owned protocol round trip: module loading has
+        # completed before the short advertisement-validation phase begins.
+        ready = await port.invoke_native_phase(
+            "parse_streaming_json_batch", {"inputs": ["{}"]}, timeout_ms=35_000,
+        )
+        assert ready["results"] == [{}]
+        with pytest.raises(PiNativeWorkerError, match=message):
             await port.invoke_native_phase(
                 "initialize",
                 {

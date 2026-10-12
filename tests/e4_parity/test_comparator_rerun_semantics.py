@@ -203,9 +203,9 @@ def _registered_comparator_input(
             "bb_trace": _openhands_measured_bb_trace(),
         }
     if comparator_id == "oh_my_pi_18_1_17_trace_v1":
-        from tests.e4_parity.test_omp_18_1_17_comparator import _trace as omp_trace
+        from tests.e4_parity.test_omp_18_1_17_comparator import _supplier_capture, _trace as omp_trace
 
-        return {"capture": omp_trace(), "replay": omp_trace()}
+        return {"capture": _supplier_capture(omp_trace()), "replay": omp_trace()}
     if comparator_id == "openclaw_2026_9_4_trace_v1":
         return {
             "capture": str(OPENCLAW_CASE),

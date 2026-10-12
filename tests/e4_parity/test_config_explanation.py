@@ -21,6 +21,10 @@ PUBLIC_DOSSIERS = [
     pytest.param("agent_configs/codex_0-139-0_gpt55_e4_9-10-2026.yaml", id="codex"),
     pytest.param("agent_configs/oh_my_opencode_3-10-0_e4_9-10-2026.yaml", id="oh-my-opencode"),
     pytest.param("agent_configs/opencode_1-2-17_e4_9-10-2026.yaml", id="opencode"),
+    pytest.param("agent_configs/claude_code_2-1-63_e4_10-9-2026.yaml", id="claude-code-compaction"),
+    pytest.param("agent_configs/codex_0-139-0_gpt55_e4_10-9-2026.yaml", id="codex-compaction"),
+    pytest.param("agent_configs/oh_my_opencode_3-10-0_e4_10-9-2026.yaml", id="oh-my-opencode-compaction"),
+    pytest.param("agent_configs/opencode_1-2-17_e4_10-9-2026.yaml", id="opencode-compaction"),
 ]
 DIAGNOSTIC_CLASSES = {
     "dead_ref",

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from breadboard.rl.harness.sandbox import InstalledToolAdapter, TrustedProcessHandle
+from breadboard.rl.harness.sandbox import InstalledToolAdapter, TrustedProcessHandle, build_sandbox_execution_plan
+from tests.rl.harness.wp7_fixtures import make_runtime_fixture
 
 
 @pytest.mark.asyncio
@@ -14,16 +15,19 @@ async def test_repeated_native_tool_snapshots_executable_once_and_closes_on_term
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    handle = object.__new__(TrustedProcessHandle)
-    handle._executable = SimpleNamespace(proc_fd_path="/proc/self/fd/71", close=lambda: None)
-    handle._command_executable = None
-    handle._workspace_fd = -1
-    handle._groups = {}
-    handle._launch_lock = asyncio.Lock()
-    handle._closed = False
-    handle._closing = False
-    handle.lease_id = "lease-test"
-    handle._native_executables = {}
+    fixture = make_runtime_fixture(runtime_install_root=tmp_path / "runtime")
+    plan = build_sandbox_execution_plan(
+        fixture.request, fixture.registries, fixture.authorities
+    )
+    handle = TrustedProcessHandle(
+        plan,
+        tmp_path,
+        "lease-test",
+        SimpleNamespace(proc_fd_path="/proc/self/fd/71", close=lambda: None),
+        "/usr/bin/git",
+        -1,
+        (tmp_path.stat().st_dev, tmp_path.stat().st_ino),
+    )
 
     snapshot_calls: list[tuple[str, str | None]] = []
 
@@ -64,6 +68,7 @@ async def test_repeated_native_tool_snapshots_executable_once_and_closes_on_term
         output_limit: int,
         input_bytes: bytes,
         extra_fds: tuple[int, ...],
+        environment: Mapping[str, str] | None = None,
     ) -> dict[str, object]:
         passed_fds.append(extra_fds)
         return {"returncode": 0, "stdout": '{"result": "ok"}', "stderr": ""}

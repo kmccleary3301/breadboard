@@ -152,7 +152,7 @@ def build_limit(params: Params) -> Any:
 # Triggers
 # --------------------------------------------------------------------------
 
-PHASES = ("every_request", "user_turn_start")
+PHASES = ("every_request", "user_turn_start", "assistant_step_end", "user_turn_end")
 """``user_turn_start``: only when the last history message is a user message,
 i.e. before the first request after new user input."""
 
@@ -165,6 +165,8 @@ class TriggerInput:
     reason: str = "threshold"
     max_input_tokens: Optional[int] = None
     blocked: bool = False
+    checkpoint: Optional[str] = None
+    last_assistant_is_summary: bool = False
 
 
 @dataclass(frozen=True)
@@ -221,6 +223,13 @@ class ThresholdTrigger:
             return Pressure(False, None, 0, "missing_context_window", self.severity, False)
         limit = self.limit.tokens(data.context_window, data.max_output_tokens, data.max_input_tokens)
         in_phase = self.in_phase(history)
+        if self.phase == "assistant_step_end":
+            in_phase = self.enabled
+        if data.checkpoint is not None:
+            in_phase = in_phase and (
+                self.phase == data.checkpoint
+                or self.phase == "user_turn_start" and data.checkpoint == "every_request"
+            )
         measured = self.accounting.measure(data.occupancy)
         if measured is None:
             return Pressure(False, None, limit, "no_usage", self.severity, in_phase)
@@ -263,7 +272,48 @@ class EventCountTrigger:
         )
 
 
-TRIGGER_KINDS = {ThresholdTrigger.kind: ThresholdTrigger, EventCountTrigger.kind: EventCountTrigger}
+class PendingErrorTrigger:
+    """Arm on a parsed provider error, then recover at the final-answer checkpoint."""
+
+    kind = "pending_error"
+
+    def __init__(self, params: Params) -> None:
+        self.phase = params.choice("phase", ("assistant_step_end",))
+        self.error_parser = params.compaction_callable("error_parser")
+        self.skip_summary_last = params.bool("skip_summary_last", True)
+        self.max_attempts = params.int("max_attempts", minimum=1)
+        if self.max_attempts is None:
+            raise PresetError(f"{params.where}.max_attempts must be a positive integer")
+        params.done()
+        self.pending: Optional[Mapping[str, int]] = None
+        self.attempts = 0
+
+    def arm(self, error: Any) -> None:
+        parsed = self.error_parser(error)
+        if parsed is not None:
+            self.pending = parsed
+
+    def clear(self) -> None:
+        self.pending = None
+        self.attempts = 0
+
+    def consume(self) -> Optional[Mapping[str, int]]:
+        if self.pending is not None:
+            self.attempts += 1
+        return self.pending
+
+    def evaluate(self, data: TriggerInput, history: Sequence[Mapping[str, Any]]) -> Pressure:
+        in_phase = data.checkpoint == self.phase
+        if in_phase and (
+            self.skip_summary_last and data.last_assistant_is_summary
+            or self.attempts >= self.max_attempts
+        ):
+            self.clear()
+        return Pressure(self.pending is not None and in_phase and not data.blocked,
+                        None, 0, self.kind, "soft", in_phase)
+
+
+TRIGGER_KINDS = {cls.kind: cls for cls in (ThresholdTrigger, EventCountTrigger, PendingErrorTrigger)}
 
 
 def build_trigger(params: Params) -> Any:

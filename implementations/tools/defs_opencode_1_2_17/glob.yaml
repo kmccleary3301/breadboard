@@ -1,0 +1,78 @@
+# Pinned stock OpenCode 1.2.17 registry; registry.ts:103-124,147-151.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: glob
+name: glob
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: '- Fast file pattern matching tool that works with any codebase size
+
+  - Supports glob patterns like "**/*.js" or "src/**/*.ts"
+
+  - Returns matching file paths sorted by modification time
+
+  - Use this tool when you need to find files by name patterns
+
+  - When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task
+  tool instead
+
+  - You have the capability to call multiple tools in a single response. It is always better to speculatively perform
+  multiple searches as a batch that are potentially useful.
+
+  '
+parameters:
+- name: pattern
+  required: true
+  schema: &id001
+    description: The glob pattern to match files against
+    type: string
+  type: string
+  description: The glob pattern to match files against
+- name: path
+  required: false
+  schema: &id002
+    description: 'The directory to search in. If not specified, the current working directory will be used. IMPORTANT:
+      Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the
+      default behavior. Must be a valid directory path if provided.'
+    type: string
+  type: string
+  description: 'The directory to search in. If not specified, the current working directory will be used. IMPORTANT:
+    Omit this field to use the default directory. DO NOT enter "undefined" or "null" - simply omit it for the default
+    behavior. Must be a valid directory path if provided.'
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: glob
+      description: '- Fast file pattern matching tool that works with any codebase size
+
+        - Supports glob patterns like "**/*.js" or "src/**/*.ts"
+
+        - Returns matching file paths sorted by modification time
+
+        - Use this tool when you need to find files by name patterns
+
+        - When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use
+        the Task tool instead
+
+        - You have the capability to call multiple tools in a single response. It is always better to speculatively
+        perform multiple searches as a batch that are potentially useful.
+
+        '
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          pattern: *id001
+          path: *id002
+        required:
+        - pattern
+        additionalProperties: false
+      strict: false

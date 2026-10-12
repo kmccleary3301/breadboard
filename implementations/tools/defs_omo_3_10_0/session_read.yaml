@@ -1,0 +1,122 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: session_read
+name: session_read
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'Read messages and history from an OpenCode session.
+
+
+  Returns a formatted view of session messages with role, timestamp, and content. Optionally includes todos and
+  transcript data.
+
+
+  Arguments:
+
+  - session_id (required): Session ID to read
+
+  - include_todos (optional): Include todo list if available (default: false)
+
+  - include_transcript (optional): Include transcript log if available (default: false)
+
+  - limit (optional): Maximum number of messages to return (default: all)
+
+
+  Example output:
+
+  Session: ses_abc123
+
+  Messages: 45
+
+  Date Range: 2025-12-20 to 2025-12-24
+
+
+  [Message 1] user (2025-12-20 10:30:00)
+
+  Hello, can you help me with...
+
+
+  [Message 2] assistant (2025-12-20 10:30:15)
+
+  Of course! Let me help you with...'
+parameters:
+- name: session_id
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: include_todos
+  required: false
+  schema: &id002
+    type: boolean
+  type: boolean
+- name: include_transcript
+  required: false
+  schema: &id003
+    type: boolean
+  type: boolean
+- name: limit
+  required: false
+  schema: &id004
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: session_read
+      description: 'Read messages and history from an OpenCode session.
+
+
+        Returns a formatted view of session messages with role, timestamp, and content. Optionally includes todos
+        and transcript data.
+
+
+        Arguments:
+
+        - session_id (required): Session ID to read
+
+        - include_todos (optional): Include todo list if available (default: false)
+
+        - include_transcript (optional): Include transcript log if available (default: false)
+
+        - limit (optional): Maximum number of messages to return (default: all)
+
+
+        Example output:
+
+        Session: ses_abc123
+
+        Messages: 45
+
+        Date Range: 2025-12-20 to 2025-12-24
+
+
+        [Message 1] user (2025-12-20 10:30:00)
+
+        Hello, can you help me with...
+
+
+        [Message 2] assistant (2025-12-20 10:30:15)
+
+        Of course! Let me help you with...'
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          session_id: *id001
+          include_todos: *id002
+          include_transcript: *id003
+          limit: *id004
+        required:
+        - session_id
+        additionalProperties: false
+      strict: false

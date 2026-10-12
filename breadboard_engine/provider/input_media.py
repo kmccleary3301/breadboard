@@ -21,14 +21,20 @@ class ResolvedInputMedia:
     uri: str
     mime: str
     content: bytes
+    wire_url: str | None = None
+    detail: str | None = None
 
     @property
     def data_url(self) -> str:
+        if self.wire_url is not None:
+            return self.wire_url
         encoded = base64.b64encode(self.content).decode("ascii")
         return f"data:{self.mime};base64,{encoded}"
 
     @property
     def base64_data(self) -> str:
+        if self.wire_url is not None:
+            raise ProviderContractError("Codex image URL cannot be re-encoded")
         return base64.b64encode(self.content).decode("ascii")
 
 
@@ -38,6 +44,16 @@ def resolve_input_media(
     """Resolve one canonical media block through its turn-scoped capability."""
     if not isinstance(block, Mapping) or block.get("type") != "media":
         raise ProviderContractError("provider input media block is malformed")
+    if block.get("kind") == "codex_image_url":
+        state = context.session_state if context is not None else None
+        config = getattr(state, "config", {})
+        if (config.get("tools") or {}).get("native_semantics") != "codex_0_139":
+            raise ProviderContractError("Codex image URL requires the native Codex profile")
+        uri = block.get("uri")
+        detail = block.get("detail", "high")
+        if not isinstance(uri, str) or detail not in {"auto", "low", "high", "original"}:
+            raise ProviderContractError("malformed Codex image URL")
+        return ResolvedInputMedia("image", uri, "", b"", wire_url=uri, detail=detail)
     if block.get("kind") != "image":
         raise ProviderContractError("provider input media kind must be image")
     uri = block.get("uri")

@@ -14,19 +14,9 @@ from .contract_wire import (
     canonical_json,
     parse_canonical_json,
 )
-from .contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-    ProviderMessage,
-    ProviderRequest,
-    ProviderResult,
-    ProviderToolCall,
-    normalize_content,
-    normalize_provider_replay,
-    normalize_request_messages,
-    normalize_tool_call_dict,
-    normalize_tool_result_dict,
-)
+from .contract_requests import ProviderCorrelation, ProviderIdentity, ProviderRequest, normalize_request_messages
+from .contract_messages import ProviderMessage, ProviderResult, normalize_content, normalize_provider_replay
+from .contract_tools import ProviderToolCall, normalize_tool_call_dict, normalize_tool_result_dict
 from .contract_events import (
     ProviderCancelled,
     ProviderDone,

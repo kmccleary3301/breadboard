@@ -1,0 +1,1121 @@
+{
+  "opencode_version": "1.2.17",
+  "plugin_version": "3.10.0",
+  "plugin_commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
+  "observation": "Two completed summaries, a native main abort, exhausted recovery, then a reset attempt 1/2 with a fresh compaction marker and no created-time ties.",
+  "source_citations": [
+    "src/hooks/anthropic-context-window-limit-recovery/recovery-hook.ts:125-166",
+    "src/hooks/anthropic-context-window-limit-recovery/summarize-retry-strategy.ts:159",
+    "src/hooks/anthropic-context-window-limit-recovery/state.ts:27-36",
+    "src/hooks/anthropic-context-window-limit-recovery/executor.ts:26-40"
+  ],
+  "native": {
+    "session": {
+      "id": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+      "slug": "eager-knight",
+      "projectID": "global",
+      "directory": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+      "title": "New session - 2026-10-11T06:25:35.567Z",
+      "version": "1.2.17",
+      "summary": {
+        "additions": 0,
+        "deletions": 0,
+        "files": 0
+      },
+      "permission": [
+        {
+          "permission": "question",
+          "pattern": "*",
+          "action": "deny"
+        },
+        {
+          "permission": "plan_enter",
+          "pattern": "*",
+          "action": "deny"
+        },
+        {
+          "permission": "plan_exit",
+          "pattern": "*",
+          "action": "deny"
+        }
+      ],
+      "time": {
+        "created": 1791699935567,
+        "updated": 1791699937111
+      }
+    },
+    "messages": [
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699935599
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Sisyphus (Ultraworker)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a3616f001oQKXCyreQ7Lg6e",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Keep this older context.",
+            "id": "prt_129a3616f002FkdgvkwBXOUj3B",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3616f001oQKXCyreQ7Lg6e"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699935608,
+            "completed": 1791699936408
+          },
+          "parentID": "msg_129a3616f001oQKXCyreQ7Lg6e",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Sisyphus (Ultraworker)",
+          "agent": "Sisyphus (Ultraworker)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129a36178001RFmhM5xkKm5j8G",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129a36492001HbP7r7BjTLOMht",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36178001RFmhM5xkKm5j8G"
+          },
+          {
+            "type": "text",
+            "text": "Older context recorded.",
+            "time": {
+              "start": 1791699936404,
+              "end": 1791699936404
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_475fcb6455a8482c97b11644607b5c7d"
+              }
+            },
+            "id": "prt_129a36493001gwCWDxI7hoUPSk",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36178001RFmhM5xkKm5j8G"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129a36495001qpXV1HlkykEIEv",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36178001RFmhM5xkKm5j8G"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699936413
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a3649d001BDZqP5P06Du6vf",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Recover through the stock plugin.",
+            "id": "prt_129a3649d002V6Ivq4lGZ7lK95",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3649d001BDZqP5P06Du6vf"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936416,
+            "completed": 1791699936575
+          },
+          "error": {
+            "name": "APIError",
+            "data": {
+              "message": "too many tokens: 410000 tokens > 400000 maximum",
+              "statusCode": 400,
+              "isRetryable": false,
+              "responseHeaders": {
+                "content-length": "106",
+                "content-type": "application/json",
+                "date": "Sun, 11 Oct 2026 06:25:36 GMT",
+                "server": "BaseHTTP/0.6 Python/3.13.14"
+              },
+              "responseBody": "{\"error\": {\"message\": \"too many tokens: 410000 tokens > 400000 maximum\", \"type\": \"invalid_request_error\"}}",
+              "metadata": {
+                "url": "http://127.0.0.1:52246/v1/responses"
+              }
+            }
+          },
+          "parentID": "msg_129a3649d001BDZqP5P06Du6vf",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129a364a0001VakRX3QilnmFIN",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "[user interrupted]",
+            "synthetic": true,
+            "id": "prt_1a129a3654cgr0irj7g",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a364a0001VakRX3QilnmFIN"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699936591
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a3654f001997q5EvzWWI50b",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": true,
+            "id": "prt_129a3654f002kQYiNbDE7IK7Ro",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3654f001997q5EvzWWI50b"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936592,
+            "completed": 1791699936602
+          },
+          "parentID": "msg_129a3654f001997q5EvzWWI50b",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129a365500013Jv1kBadKFfSlm",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129a36557001WMX5MFbZCCbPGy",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a365500013Jv1kBadKFfSlm"
+          },
+          {
+            "type": "text",
+            "text": "Plugin recovery preserved the older context.",
+            "time": {
+              "start": 1791699936600,
+              "end": 1791699936600
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_96b16fc9af5949a88468466a8324426a"
+              }
+            },
+            "id": "prt_129a36558001UIJV0PVCb8qvfr",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a365500013Jv1kBadKFfSlm"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129a36559001Kd4cI1Msk00YKD",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a365500013Jv1kBadKFfSlm"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699936602
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a3655a001jttMjNPWapi1UI",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+            "synthetic": true,
+            "time": {
+              "start": 1791699936602,
+              "end": 1791699936602
+            },
+            "id": "prt_129a3655a002J4sWuAv8Tc0xvZ",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3655a001jttMjNPWapi1UI"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936603,
+            "completed": 1791699936785
+          },
+          "parentID": "msg_129a3655a001jttMjNPWapi1UI",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "tool-calls",
+          "id": "msg_129a3655b001PiKj1Ez17NJ4Mf",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129a365f2001aXQQAWFwjv2t45",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3655b001PiKj1Ez17NJ4Mf"
+          },
+          {
+            "type": "tool",
+            "callID": "call_recovered_bash",
+            "tool": "bash",
+            "state": {
+              "status": "completed",
+              "input": {
+                "command": "printf plugin-tool-done",
+                "description": "Execute after plugin recovery"
+              },
+              "output": "[TOOL RESULT TRUNCATED - Context limit exceeded. Original output was too large and has been truncated to recover the session. Please re-run this tool if you need the full output.]",
+              "title": "Execute after plugin recovery",
+              "metadata": {
+                "output": "plugin-tool-done",
+                "exit": 0,
+                "description": "Execute after plugin recovery",
+                "truncated": false
+              },
+              "time": {
+                "start": 1791699936757,
+                "end": 1791699936782,
+                "compacted": 1791699936942
+              }
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "fc_call_recovered_bash"
+              }
+            },
+            "id": "prt_129a365f30015CCBYSxdb1G1Mq",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3655b001PiKj1Ez17NJ4Mf"
+          },
+          {
+            "type": "step-finish",
+            "reason": "tool-calls",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129a36610001gba1yvVsJjlL4w",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a3655b001PiKj1Ez17NJ4Mf"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936786,
+            "completed": 1791699936938
+          },
+          "parentID": "msg_129a3655a001jttMjNPWapi1UI",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129a36612001fA3RiK6vl4qI7B",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129a366a8001sY4dsvFUsBK7j1",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36612001fA3RiK6vl4qI7B"
+          },
+          {
+            "type": "text",
+            "text": "Recovered tool completed.",
+            "time": {
+              "start": 1791699936937,
+              "end": 1791699936937
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_d3b0b1d987b84b8b90fae33267e24daa"
+              }
+            },
+            "id": "prt_129a366a8002GU6Cga0bWZXBtc",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36612001fA3RiK6vl4qI7B"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129a366a9001t7Tz66qVcvfIPL",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36612001fA3RiK6vl4qI7B"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699936944
+          },
+          "summary": {
+            "diffs": []
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a366b0001BeiNWUnI1mVuvF",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": true,
+            "id": "prt_129a366b0002MTPtiZBBkKdopt",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b0001BeiNWUnI1mVuvF"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936945,
+            "completed": 1791699936951
+          },
+          "parentID": "msg_129a366b0001BeiNWUnI1mVuvF",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "total": 0,
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "finish": "stop",
+          "id": "msg_129a366b1001DM3toIcLoSv1Af",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "step-start",
+            "id": "prt_129a366b60015v4RXza6MBSGQz",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b1001DM3toIcLoSv1Af"
+          },
+          {
+            "type": "text",
+            "text": "Second source-owned recovery checkpoint.",
+            "time": {
+              "start": 1791699936950,
+              "end": 1791699936950
+            },
+            "metadata": {
+              "openai": {
+                "itemId": "msg_474fe4b2eceb4b018d5271d55dea3c0e"
+              }
+            },
+            "id": "prt_129a366b6002HTWNSiHvfvl8sa",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b1001DM3toIcLoSv1Af"
+          },
+          {
+            "type": "step-finish",
+            "reason": "stop",
+            "cost": 0,
+            "tokens": {
+              "total": 0,
+              "input": 0,
+              "output": 0,
+              "reasoning": 0,
+              "cache": {
+                "read": 0,
+                "write": 0
+              }
+            },
+            "id": "prt_129a366b70012ddcqoYDZWx5Uv",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b1001DM3toIcLoSv1Af"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699936952,
+            "completed": 1791699937097
+          },
+          "error": {
+            "name": "MessageAbortedError",
+            "data": {
+              "message": "The operation was aborted."
+            }
+          },
+          "parentID": "msg_129a366b8001cWHjbdaKqZyWv2",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "Hephaestus (Deep Agent)",
+          "agent": "Hephaestus (Deep Agent)",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129a366b8003FI4LSDXIbqBV3a",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "[user interrupted]",
+            "synthetic": true,
+            "id": "prt_1a129a36751ro2aclqp",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b8003FI4LSDXIbqBV3a"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699936952
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a366b8001cWHjbdaKqZyWv2",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Continue if you have next steps, or stop and ask for clarification if you are unsure how to proceed.",
+            "synthetic": true,
+            "time": {
+              "start": 1791699936952,
+              "end": 1791699936952
+            },
+            "id": "prt_129a366b8002sHr4BT04siN1Ey",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a366b8001cWHjbdaKqZyWv2"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699937107
+          },
+          "agent": "Hephaestus (Deep Agent)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a36753001EkzN0KXJmDZCLx",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "compaction",
+            "auto": true,
+            "id": "prt_129a367530028M7LH5tiiqfowS",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a36753001EkzN0KXJmDZCLx"
+          }
+        ]
+      },
+      {
+        "info": {
+          "role": "assistant",
+          "time": {
+            "created": 1791699937108
+          },
+          "parentID": "msg_129a36753001EkzN0KXJmDZCLx",
+          "modelID": "gpt-5.1-codex-mini",
+          "providerID": "openai",
+          "mode": "compaction",
+          "agent": "compaction",
+          "path": {
+            "cwd": "/private/tmp/OpenCodeToolsSurgeon-native-probe-6/test_plugin_error_summary_reus0/workspace",
+            "root": "/"
+          },
+          "summary": true,
+          "cost": 0,
+          "tokens": {
+            "input": 0,
+            "output": 0,
+            "reasoning": 0,
+            "cache": {
+              "read": 0,
+              "write": 0
+            }
+          },
+          "id": "msg_129a36754001Mqxm9g6q2Jc1XP",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": []
+      },
+      {
+        "info": {
+          "role": "user",
+          "time": {
+            "created": 1791699937110
+          },
+          "agent": "Sisyphus (Ultraworker)",
+          "model": {
+            "providerID": "openai",
+            "modelID": "gpt-5.1-codex-mini"
+          },
+          "id": "msg_129a367560015liQiXE6JcmuWY",
+          "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+        },
+        "parts": [
+          {
+            "type": "text",
+            "text": "Follow up after the interrupted recovery.",
+            "id": "prt_129a36756002cYO48yYnhmZr1o",
+            "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+            "messageID": "msg_129a367560015liQiXE6JcmuWY"
+          }
+        ]
+      }
+    ],
+    "children": []
+  },
+  "events": [
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u2022 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cf OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cb OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cc OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25e6 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "  OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u00b7 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u2022 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "NEVER Use Sisyphus with GPT",
+        "message": "Sisyphus works best with Claude Opus, and works fine with Kimi/GLM models.\nDo NOT use Sisyphus with GPT.\nFor GPT models, always use Hephaestus.",
+        "variant": "error",
+        "duration": 10000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cf OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "session.error",
+      "properties": {
+        "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+        "error": {
+          "name": "APIError",
+          "data": {
+            "message": "too many tokens: 410000 tokens > 400000 maximum",
+            "statusCode": 400,
+            "isRetryable": false,
+            "responseHeaders": {
+              "content-length": "106",
+              "content-type": "application/json",
+              "date": "Sun, 11 Oct 2026 06:25:36 GMT",
+              "server": "BaseHTTP/0.6 Python/3.13.14"
+            },
+            "responseBody": "{\"error\": {\"message\": \"too many tokens: 410000 tokens > 400000 maximum\", \"type\": \"invalid_request_error\"}}",
+            "metadata": {
+              "url": "http://127.0.0.1:52246/v1/responses"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Context Limit Hit",
+        "message": "Truncating large tool outputs and recovering...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Compact In Progress",
+        "message": "Recovery already running. Please wait or start new session if stuck.",
+        "variant": "warning",
+        "duration": 5000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Compact In Progress",
+        "message": "Recovery already running. Please wait or start new session if stuck.",
+        "variant": "warning",
+        "duration": 5000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Summarizing session (attempt 1/2)...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "session.compacted",
+      "properties": {
+        "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cb OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25cc OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u25e6 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "  OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Partial Truncation",
+        "message": "Truncated 1 outputs (16B) - continuing to summarize...: bash",
+        "variant": "warning",
+        "duration": 4000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Summarizing session (attempt 2/2)...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "session.compacted",
+      "properties": {
+        "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT"
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "\u00b7 OhMyOpenCode 3.10.0",
+        "message": "Sisyphus on steroids is steering OpenCode.",
+        "variant": "info",
+        "duration": 150
+      }
+    },
+    {
+      "type": "session.error",
+      "properties": {
+        "sessionID": "ses_ed65c9eb0ffetCwH2FQa2FierT",
+        "error": {
+          "name": "MessageAbortedError",
+          "data": {
+            "message": "The operation was aborted."
+          }
+        }
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Token limit exceeded. Attempting recovery...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact Failed",
+        "message": "All recovery attempts failed. Please start a new session.",
+        "variant": "error",
+        "duration": 5000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Compact In Progress",
+        "message": "Recovery already running. Please wait or start new session if stuck.",
+        "variant": "warning",
+        "duration": 5000
+      }
+    },
+    {
+      "type": "tui.toast.show",
+      "properties": {
+        "title": "Auto Compact",
+        "message": "Summarizing session (attempt 1/2)...",
+        "variant": "warning",
+        "duration": 3000
+      }
+    }
+  ]
+}

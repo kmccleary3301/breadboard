@@ -1,0 +1,69 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: update_plan
+name: update_plan
+description: 'Updates the task plan.
+
+  Provide an optional explanation and a list of plan items, each with a step and status.
+
+  At most one step can be in_progress at a time.
+
+  '
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: explanation
+  type: string
+  required: false
+  schema: &id001
+    type: string
+    description: Optional explanation for this plan update.
+- name: plan
+  type: array
+  required: true
+  schema: &id002
+    type: array
+    description: The list of steps
+    items:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Step status.
+          enum:
+          - pending
+          - in_progress
+          - completed
+        step:
+          type: string
+          description: Task step text.
+      required:
+      - step
+      - status
+      additionalProperties: false
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: update_plan
+      description: 'Updates the task plan.
+
+        Provide an optional explanation and a list of plan items, each with a step and status.
+
+        At most one step can be in_progress at a time.
+
+        '
+      strict: false
+      parameters:
+        type: object
+        properties:
+          explanation: *id001
+          plan: *id002
+        required:
+        - plan
+        additionalProperties: false

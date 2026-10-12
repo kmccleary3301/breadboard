@@ -1,0 +1,27 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: get_goal
+name: get_goal
+description: Get the current goal for this thread, including status, budgets, token and elapsed-time usage, and
+  remaining token budget.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters: []
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: get_goal
+      description: Get the current goal for this thread, including status, budgets, token and elapsed-time usage,
+        and remaining token budget.
+      strict: false
+      parameters:
+        type: object
+        properties: {}
+        required: []
+        additionalProperties: false

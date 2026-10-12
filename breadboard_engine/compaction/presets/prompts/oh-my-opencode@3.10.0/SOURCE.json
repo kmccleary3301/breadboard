@@ -1,7 +1,9 @@
 {
   "repo": "https://github.com/code-yeongyu/oh-my-openagent",
-  "commit": "e4e13cdebf2c57f3eecb2ab94950f7f6f681169a",
-  "license": "MIT",
+  "commit": "5137df72d8fab3fec609c82f91387db8e3b13825",
+  "license": "Sustainable Use License 1.0",
+  "license_source": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/5137df72d8fab3fec609c82f91387db8e3b13825/LICENSE.md",
+  "license_notice": "Extracted and adapted for BreadBoard. Use and redistribution remain subject to the upstream limitations and notices; see implementations/THIRD_PARTY_NOTICES.txt. No broader license grant is asserted.",
   "source_sha256": {
     "src/hooks/compaction-context-injector/hook.ts": "be299d081f88f95ae5618bcf8b2c9199ce861381e0a590c2fed72612f054fb52",
     "src/shared/system-directive.ts": "34b3d34ac447b11d19d980080435b31274a3e72c5a2cdfeb694c14defd6e69c5"

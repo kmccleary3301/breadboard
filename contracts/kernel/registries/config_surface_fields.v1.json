@@ -275,6 +275,18 @@
         "source": "docs_tmp/phase_19/curation/config_surface.json:dossier_key_inventory"
       },
       "status": "active"
+    },
+    {
+      "description": "Agent config surface field `compaction` classified as operational for BB-AV authoring.",
+      "id": "compaction",
+      "metadata": {
+        "classification": "operational",
+        "consumer": "breadboard_engine.compaction.controller / presets.load_compaction_config",
+        "dossiers_using": 4,
+        "note": "All four public E4 dossiers configure native context compaction: codex, claude_code, opencode, and oh_my_opencode declare compaction presets and context windows.",
+        "source": "breadboard_engine.compilation.v2_loader"
+      },
+      "status": "active"
     }
   ],
   "registry_id": "config_surface_fields",

@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
-from ..params import Params
+from ..params import Params, PresetError
 from ..state import MessageEdit
 from .accounting import _text_parts
 from .reducers import Reduction, resolve_prompt
@@ -24,6 +24,25 @@ def normalize_xml_summary(text: str) -> str:
     return re.sub(r"\n\n+", "\n\n", text).strip()
 
 
+def summary_request_options(params: Params):
+    """Preserve omission versus explicit empty tools in the request block."""
+    options = params.mapping("request", None)
+    if options is None:
+        return False, (), None, False, False
+    request = params.child(options, "request")
+    stream = request.bool("stream", False)
+    stateless = request.bool("stateless", False)
+    names = request.list("tools", [])
+    if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
+        raise PresetError(f"{request.where}.tools must contain unique nonempty tool names")
+    raw_params = request.mapping("params", {})
+    request_params = dict(raw_params) if "params" in options or "tools" in options else None
+    if any(key in raw_params for key in ("model", "messages", "tools", "stream", "max_tokens")):
+        raise PresetError(f"{request.where}.params must not override model, messages, tools, stream, or max_tokens")
+    request.done()
+    return stream, tuple(names), request_params, True, stateless
+
+
 class ChatSummary:
     kind = "chat_summary"
 
@@ -34,6 +53,9 @@ class ChatSummary:
         self.empty_fallback = params.str("empty_fallback", None)
         self.normalize_tags = params.bool("normalize_tags", False)
         self.system_from_history = params.bool("system_from_history", False)
+        from .context_markers import sampling_phases
+        self.exclude_pending_user_on = sampling_phases(params, "exclude_pending_user_on")
+        self.stream, self.tool_names, self.request_params, self.request_options_declared, self.stateless = summary_request_options(params)
         params.done()
 
     def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
@@ -49,6 +71,10 @@ class ChatSummary:
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
         view = context.projected()
+        if context.sampling_phase in self.exclude_pending_user_on:
+            if context.pending_user_index is None:
+                raise ValueError("Compaction sampling phase requires the pending user boundary")
+            view = context.state.project(context.messages[:context.pending_user_index], context.target)
         systems = ["".join(_text_parts(m.get("content"))) for m in view if m.get("role") == "system"]
         messages = [m for m in view if m.get("role") != "system"]
         if selection.replay and not selection.details:
@@ -66,11 +92,18 @@ class ChatSummary:
         request = SummaryRequest(system="\n\n".join(systems) if self.system_from_history else self.system,
                                  messages=tuple([*messages, {"role": "user", "content": prompt}]),
                                  max_tokens=self.max_tokens, purpose="summary",
-                                 model=context.settings.summary_model or context.target.model)
-        text = context.summarizer.complete(request).text
+                                 model=context.settings.summary_model or context.target.model,
+                                 stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
+                                 request_options_declared=self.request_options_declared, stateless=self.stateless,
+                                 context_reason=context.reason)
+        response = context.summarizer.complete(request)
+        text = response.text
         if not text and self.empty_fallback is not None:
             text = self.empty_fallback
         if self.normalize_tags:
             text = normalize_xml_summary(text)
-        return Reduction(summary=text)
+        details = {"stateless_summary": True} if self.stateless else {}
+        if response.continuation_messages is not None:
+            details["continuation_messages"] = response.continuation_messages
+        return Reduction(summary=text, details=details)
 

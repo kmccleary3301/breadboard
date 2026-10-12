@@ -9,6 +9,7 @@ import type { SessionTranscriptV1 } from "./generated/types/bb.session_transcrip
 import type { DirectiveV1 } from "./generated/types/bb.directive.v1.js"
 import type { ReviewVerdictV1 } from "./generated/types/bb.review_verdict.v1.js"
 import type { SignalV1 } from "./generated/types/bb.signal.v1.js"
+import type { ProviderExchangeV2 } from "./generated/types/bb.provider_exchange.v2.js"
 export * from "./generated/index.js"
 export type SessionTranscriptV1Item = SessionTranscriptV1["items"][number]
 
@@ -117,6 +118,7 @@ const schemaKeyByValidatorName = {
   runRequest: "https://breadboard.dev/contracts/kernel/schemas/bb.run_request.v1.schema.json",
   runContext: "https://breadboard.dev/contracts/kernel/schemas/bb.run_context.v1.schema.json",
   providerExchange: "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v1.schema.json",
+  providerExchangeV2: "https://breadboard.dev/contracts/kernel/schemas/bb.provider_exchange.v2.schema.json",
   permission: "https://breadboard.dev/contracts/kernel/schemas/bb.permission.v1.schema.json",
   executionCapability: "https://breadboard.dev/contracts/kernel/schemas/bb.execution_capability.v1.schema.json",
   executionPlacement: "https://breadboard.dev/contracts/kernel/schemas/bb.execution_placement.v1.schema.json",
@@ -150,8 +152,9 @@ type GeneratedValidatorName = keyof typeof schemaKeyByValidatorName
 
 type KernelValidatorName = GeneratedValidatorName | "engineConformanceManifest"
 
-type ValidatorMap = Record<GeneratedValidatorName, ValidateFunction> & {
+type ValidatorMap = Record<Exclude<GeneratedValidatorName, "providerExchangeV2">, ValidateFunction> & {
   engineConformanceManifest: ValidateFunction
+  providerExchangeV2: ValidateFunction<ProviderExchangeV2>
 }
 
 function generatedValidator(name: GeneratedValidatorName): ValidateFunction {

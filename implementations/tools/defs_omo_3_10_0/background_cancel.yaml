@@ -1,0 +1,40 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: background_cancel
+name: background_cancel
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: Cancel running background task(s). Use all=true to cancel ALL before final answer.
+parameters:
+- name: taskId
+  required: false
+  schema: &id001
+    type: string
+  type: string
+- name: all
+  required: false
+  schema: &id002
+    type: boolean
+  type: boolean
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: background_cancel
+      description: Cancel running background task(s). Use all=true to cancel ALL before final answer.
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          taskId: *id001
+          all: *id002
+        additionalProperties: false
+      strict: false

@@ -59,7 +59,7 @@ def test_malformed_terminal_call_retains_text_and_source_error_without_replay_ca
         "tool_calls": [{"id": "bad", "name": "write", "arguments": '{"path":"malformed-marker.txt","content":'}],
     })
     assert parsed.tool_batch.dispatchable is False
-    assert parsed.assistant_message["content"] == "malformed tool-call rejected"
+    assert parsed.assistant_message["content"] == [{"type": "text", "text": "malformed tool-call rejected"}]
     assert parsed.assistant_message["tool_calls"] == []
     assert parsed.assistant_message["stop_reason"] == "error"
     assert state.prepare_request_history()[-1]["tool_calls"] == []
@@ -83,11 +83,14 @@ def test_tool_admission_budget_keeps_started_history() -> None:
     state = OpenClawSemanticsState(max_tool_admissions=1)
     state.begin_request()
     state.consume_native_response({"finish_reason": "tool_calls", "tool_calls": [{"id": "one", "name": "ls", "arguments": {"path": "."}}]})
-    state.commit_tool_results([{"role": "tool", "tool_call_id": "one", "content": "ok"}])
+    state.commit_tool_results([{
+        "role": "toolResult", "toolCallId": "one", "toolName": "ls", "isError": False,
+        "content": [{"type": "text", "text": "ok"}],
+    }])
     state.begin_request()
     with pytest.raises(Exception, match="tool admission cap"):
         state.consume_native_response({"finish_reason": "tool_calls", "tool_calls": [{"id": "two", "name": "ls", "arguments": {"path": "."}}]})
-    assert any(message.get("tool_call_id") == "one" for message in state.history)
+    assert any(message.get("toolCallId") == "one" for message in state.history)
 
 
 def test_generic_stream_consumer_returns_batch_and_history() -> None:
@@ -95,7 +98,8 @@ def test_generic_stream_consumer_returns_batch_and_history() -> None:
     state.begin_request()
     result = state.consume_native_response({"content": "done", "finish_reason": "stop", "usage": {"total_tokens": 3}})
     assert result.tool_batch.tool_calls == ()
-    assert result.history_mutations[0]["content"] == "done"
+    assert result.history_mutations[0]["content"] == [{"type": "text", "text": "done"}]
+    assert result.history_mutations[0]["providerUsage"] == {"total_tokens": 3}
     assert state.prepare_request_history()[0]["role"] == "assistant"
 
 
@@ -164,3 +168,87 @@ def test_stream_index_delta_preserves_initial_identity() -> None:
     assert call.call_type == "function"
     assert call.index == 2
     assert call.arguments == {"path": "x", "content": "ok"}
+
+
+def test_source_tool_result_preserves_content_blocks_and_details() -> None:
+    state = OpenClawSemanticsState(task="Inspect the image")
+    parsed = state.prepare_response({
+        "finish_reason": "tool_calls", "content": "Reading the image",
+        "tool_calls": [{"id": "imagecall", "name": "read", "arguments": {"path": "x.png"}}],
+    })
+    raw = {
+        "id": "imagecall", "completion_index": 0, "isError": False,
+        "delivery_id": "adapter-only-random-receipt",
+        "content": [
+            {"type": "text", "text": "Image content"},
+            {"type": "image", "data": "aW1hZ2U=", "mimeType": "image/png"},
+        ],
+        "details": {"truncation": {"truncated": False}, "metadata": ["original", 7]},
+    }
+    committed = state.commit_tool_results(parsed.calls, [raw])[0]
+    assert committed["role"] == "toolResult"
+    assert committed["toolCallId"] == "imagecall"
+    assert committed["toolName"] == "read"
+    assert committed["content"] == raw["content"]
+    assert committed["details"] == raw["details"]
+    assert committed["isError"] is False
+    assert "tool_call_id" not in committed
+    assert set(committed) == {"role", "toolCallId", "toolName", "content", "details", "isError"}
+    assert raw["delivery_id"] == "adapter-only-random-receipt"
+
+
+def test_native_compaction_replaces_mutable_history_with_full_system_context() -> None:
+    state = OpenClawSemanticsState(task="Original task", system_prompt="Pinned source prompt")
+    replacement = [
+        {"role": "system", "content": "Pinned source prompt"},
+        {"role": "compactionSummary", "summary": "Prior work", "tokensBefore": 100, "timestamp": 0},
+        {"role": "assistant", "content": [{"type": "text", "text": "Retained text"}]},
+    ]
+    state.messages = replacement
+    assert state.prepare_request_history() == replacement
+    state.messages.append({"role": "user", "content": "Continue"})
+    assert state.history[-1] == {"role": "user", "content": "Continue"}
+
+
+def test_declared_episode_clock_orders_source_messages_across_compaction() -> None:
+    epoch = 1_728_432_000_000
+    state = OpenClawSemanticsState(
+        task="Inspect", bootstrap={"message_timestamp_ms": str(epoch)},
+    )
+    parsed = state.prepare_response({
+        "finish_reason": "tool_calls",
+        "tool_calls": [{"id": "read1", "name": "read", "arguments": {"path": "x"}}],
+    })
+    result = state.commit_tool_results(parsed.calls, [{
+        "id": "read1", "completion_index": 0, "isError": False,
+        "content": [{"type": "text", "text": "Native output"}],
+    }])[0]
+    assert [message["timestamp"] for message in state.history] == [epoch, epoch + 1, epoch + 2]
+    state.messages = [{
+        "role": "compactionSummary", "summary": "Inspected", "tokensBefore": 20,
+        "timestamp": epoch + 3,
+    }, result]
+    next_response = state.prepare_response({"finish_reason": "stop", "content": "Done"})
+    assert next_response.assistant_message["timestamp"] == epoch + 4
+
+
+def test_length_stop_preserves_source_identity_until_native_retry_verdict() -> None:
+    model = {"api": "openai-completions", "provider": "openai", "id": "model-a"}
+    state = OpenClawSemanticsState(
+        task="Inspect", bootstrap={"message_timestamp_ms": "1728432000000", "model_config": model},
+    )
+    parsed = state.prepare_response({
+        "finish_reason": "length", "content": "",
+        "usage": {"prompt_tokens": 131072, "completion_tokens": 0, "total_tokens": 131072},
+    })
+    assert state.is_exited
+    assert state.native_stop_reason == "length"
+    assert parsed.assistant_message["stopReason"] == "length"
+    assert {key: parsed.assistant_message[key] for key in ("api", "provider", "model")} == {
+        "api": model["api"], "provider": model["provider"], "model": model["id"],
+    }
+    state.reopen_after_overflow()
+    assert not state.is_exited
+    assert state.native_stop_reason is None
+    assert state.stop_reason is None
+    assert state.request_count == 0

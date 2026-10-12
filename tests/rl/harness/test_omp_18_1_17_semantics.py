@@ -31,7 +31,7 @@ from breadboard.rl.harness.runners.omp_semantics import (
     run_tool_batch,
     schedule_tool_calls,
 )
-from tests.rl.harness.test_omp_18_1_17_native_worker import _differential_bun, _differential_source_root
+from tests.rl.harness.omp_18_1_17_test_support import _differential_bun, _differential_source_root
 
 
 def test_hashline_tag_is_xxh32_low16_and_trailing_display_space_insensitive() -> None:
@@ -190,6 +190,7 @@ def test_omp_raw_response_is_one_wire_record_and_projects() -> None:
             "cwd": "/workspace",
             "home": "/scratch/home",
             "current_date": "2026-09-23",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": "/workspace/package",
         },
         effects={},
@@ -464,7 +465,7 @@ def test_omp_request_cap_refuses_before_native_query() -> None:
     assert state.stream_fn_issued == 2
     trace = state.to_trace(
         requests=[{"model": "capture"}],
-        runtime_inputs={"cwd": "/workspace", "home": "/home/capture", "current_date": "2026-09-23", "package_dir": "/packages"},
+        runtime_inputs={"cwd": "/workspace", "home": "/home/capture", "current_date": "2026-09-23", "message_timestamp_ms": "1790337600000", "package_dir": "/packages"},
         effects={},
     )
     assert state.messages[-1] == {

@@ -1,11 +1,7 @@
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import sys
 from pathlib import Path
-from zipfile import ZipFile
 
 import pytest
 import yaml
@@ -150,41 +146,20 @@ def test_checked_in_daily_driver_is_public_bounded_and_provider_free() -> None:
     assert isinstance(harness, HarnessDefinition)
     assert harness.as_dict() == document
 
-def test_wheel_import_loads_template_from_distribution_data_root(tmp_path: Path) -> None:
-    wheelhouse, outside_repo = tmp_path / "wheelhouse", tmp_path / "outside-repo"
-    for directory in (wheelhouse, outside_repo):
-        directory.mkdir()
-    environment = os.environ.copy()
-    environment.pop("PYTHONPATH", None)
-    environment["PYTHONNOUSERSITE"] = "1"
-
-    def run(*command: str) -> str:
-        return subprocess.run(
-            command,
-            cwd=outside_repo,
-            env=environment,
-            check=True,
-            capture_output=True,
-            text=True,
-        ).stdout
-
-    run("uv", "build", "--wheel", "--out-dir", str(wheelhouse), str(ROOT))
-    wheel = next(wheelhouse.glob("*.whl"))
-    install_root = tmp_path / "install"
-    with ZipFile(wheel) as archive:
-        archive.extractall(install_root)
+def test_wheel_import_loads_template_from_distribution_data_root(
+    installed_wheel_python,
+) -> None:
     script = (
-        f"import sys; sys.path.insert(0, {str(install_root)!r}); import json; "
         "from breadboard.product.harness.templates import "
         "daily_driver_model_roles_path, daily_driver_model_roles_text, daily_driver_prompt_path, daily_driver_prompt_text, daily_driver_template_path, daily_driver_template_text, load_daily_driver_harness, load_daily_driver_model_roles, "
         "load_minimal_harness, minimal_template_path, minimal_template_text; from breadboard.product.coordination.work_items import WorkItem; "
         "from breadboard_engine.compilation.primitive_records import get_spec, _validator; candidate = _validator(get_spec('bb.work_item.v2').schema_path); "
         "print(json.dumps({'path': str(minimal_template_path()), 'text': minimal_template_text(), 'document': load_minimal_harness().as_dict(), 'daily_path': str(daily_driver_template_path()), 'daily_text': daily_driver_template_text(), 'daily_document': load_daily_driver_harness().as_dict(), 'prompt_path': str(daily_driver_prompt_path()), 'prompt_text': daily_driver_prompt_text(), 'model_roles_path': str(daily_driver_model_roles_path()), 'model_roles_text': daily_driver_model_roles_text(), 'model_roles_document': load_daily_driver_model_roles(), 'work_status': WorkItem.create('wheel').read_model.status, 'schema_id': candidate.schema['$id']}))"
     )
-    payload = json.loads(run(sys.executable, "-I", "-c", script))
+    payload = json.loads(installed_wheel_python(script))
     expected_text = TEMPLATE.read_text(encoding="utf-8")
-    expected_installed_path = (
-        install_root / "agent_configs/templates/minimal_harness.v3.yaml")
+    install_root = Path(payload["path"]).parents[2]
+    expected_installed_path = install_root / "agent_configs/templates/minimal_harness.v3.yaml"
     assert Path(payload["path"]) == expected_installed_path
     assert payload["text"] == expected_text
     assert payload["document"] == yaml.safe_load(expected_text) and payload["work_status"] == "ready" and payload["schema_id"] == "https://breadboard.dev/contracts/kernel/schemas/bb.work_item.v2.schema.json"

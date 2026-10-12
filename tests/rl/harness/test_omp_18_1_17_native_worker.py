@@ -1,294 +1,30 @@
 from __future__ import annotations
-
+from datetime import datetime, timezone
 import os
-from functools import cache
 from pathlib import Path
-import hashlib
 import json
 import re
-import shutil
 import subprocess
 import sys
 import zipfile
 import pytest
+from breadboard.rl.harness.omp_native_tools import NativeToolWorker, NativeWorkerPhaseError, deny_excluded_capabilities, deny_pinned_route, pinned_worker_spec, verified_tool_worker_path
 
-from breadboard.rl.harness.omp_native_tools import (
-    NativeToolWorker,
-    PinnedNativeWorkerSpec,
-    NativeWorkerPhaseError,
-    deny_excluded_capabilities,
-    deny_pinned_route,
-    pinned_worker_spec,
-    verified_tool_worker_path,
+from tests.rl.harness.omp_18_1_17_test_support import (
+    OMP_AVAILABLE,
+    _INSTALLED_SPEC,
+    _PINNED_COMPAT_SCRIPT,
+    _authority_payload,
+    _description_policy,
+    _differential_bun,
+    _differential_source_root,
+    _lease_model,
+    _model_registry,
+    _runtime_spec,
+    _source_registry_sets,
+    _source_route_patterns,
+    _test_denials,
 )
-
-_PINNED_SOURCE_SHA256 = "67822418bad69de015d28a1bbd45fa7be689fdce367dfa3d584bdfcfbfcb5587"
-
-@cache
-def _runtime_spec() -> PinnedNativeWorkerSpec:
-    source_root = os.environ.get("BB_OMP_TEST_SOURCE_ROOT")
-    bun = os.environ.get("BB_OMP_TEST_BUN")
-    if (source_root is None) != (bun is None):
-        raise ValueError("both BB_OMP_TEST_SOURCE_ROOT and BB_OMP_TEST_BUN are required")
-    if source_root is not None and bun is not None:
-        return PinnedNativeWorkerSpec.for_test(bun=Path(bun), source_root=Path(source_root))
-    return pinned_worker_spec()
-
-
-def _source_zip_path() -> Path | None:
-    configured = os.environ.get("BB_OMP_SOURCE_ZIP")
-    if not configured:
-        return None
-    path = Path(configured)
-    if not path.is_file():
-        return None
-    digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    if digest != _PINNED_SOURCE_SHA256:
-        raise AssertionError(f"pinned OMP source archive digest mismatch: {digest}")
-    return path
-
-
-def _differential_source_root() -> Path:
-    return Path(_runtime_spec().source_root)
-
-
-def _differential_bun() -> Path | None:
-    configured = os.environ.get("BB_BUN")
-    if configured:
-        return Path(configured)
-    discovered = shutil.which("bun")
-    if discovered:
-        return Path(discovered)
-    pinned = Path(_runtime_spec().bun)
-    return pinned if pinned.is_file() else None
-
-
-OMP_AVAILABLE = (
-    _differential_bun() is not None
-    and (
-        _source_zip_path() is not None
-        or _differential_source_root().is_dir()
-    )
-)
-
-
-
-def _materialize_differential_source(tmp_path: Path) -> Path:
-    source_zip = _source_zip_path()
-    if source_zip is None:
-        return _differential_source_root()
-    source_root = tmp_path / "omp-source"
-    with zipfile.ZipFile(source_zip) as archive:
-        archive.extractall(source_root)
-        roots = {
-            name.split("/", 1)[0]
-            for name in archive.namelist()
-            if "/" in name
-        }
-    if len(roots) != 1:
-        raise AssertionError(f"pinned source archive root is not unique: {roots}")
-    source_root = source_root / roots.pop()
-    for package, exports in {
-        "@oh-my-pi/pi-natives": "export const glob = async () => [];\nexport const notebookToEditableText = (value) => value;\n",
-        "@oh-my-pi/pi-utils": (
-            "export const hasFsCode = () => false;\n"
-            "export const isEnoent = (error) => error?.code === 'ENOENT';\n"
-            "export const isEnotdir = (error) => error?.code === 'ENOTDIR';\n"
-            "export const isWsl = () => false;\n"
-            "export const stripWindowsExtendedLengthPathPrefix = (value) => value;\n"
-            "export const windowsPathToWslMount = (value) => value;\n"
-            "export const BINARY_SNIFF_BYTES = 512;\n"
-            "export const isProbablyBinary = () => false;\n"
-            "export const isProbablyBinaryHeader = () => false;\n"
-            "export const logger = console;\n"
-            "export const prompt = async () => undefined;\n"
-            "export const readImageMetadata = async () => undefined;\n"
-        ),
-    }.items():
-        package_root = source_root / "node_modules" / package
-        package_root.mkdir(parents=True, exist_ok=True)
-        (package_root / "package.json").write_text(
-            '{"type":"module","exports":"./index.ts"}',
-            encoding="utf-8",
-        )
-        (package_root / "index.ts").write_text(exports, encoding="utf-8")
-    handler_stubs = {
-        "agent-protocol.ts": "export class AgentProtocolHandler { readonly scheme = 'agent'; }\n",
-        "artifact-protocol.ts": "export class ArtifactProtocolHandler { readonly scheme = 'artifact'; }\n",
-        "history-protocol.ts": "export class HistoryProtocolHandler { readonly scheme = 'history'; }\n",
-        "issue-pr-protocol.ts": (
-            "export class IssueProtocolHandler { readonly scheme = 'issue'; }\n"
-            "export class PrProtocolHandler { readonly scheme = 'pr'; }\n"
-        ),
-        "local-protocol.ts": "export class LocalProtocolHandler { readonly scheme = 'local'; }\n",
-        "mcp-protocol.ts": "export class McpProtocolHandler { readonly scheme = 'mcp'; }\n",
-        "memory-protocol.ts": "export class MemoryProtocolHandler { readonly scheme = 'memory'; }\n",
-        "omp-protocol.ts": "export class OmpProtocolHandler { readonly scheme = 'omp'; }\n",
-        "rule-protocol.ts": "export class RuleProtocolHandler { readonly scheme = 'rule'; }\n",
-        "security-protocol.ts": "export class SecurityProtocolHandler { readonly scheme = 'security'; }\n",
-        "skill-protocol.ts": "export class SkillProtocolHandler { readonly scheme = 'skill'; }\n",
-        "ssh-protocol.ts": "export class SshProtocolHandler { readonly scheme = 'ssh'; }\n",
-        "vault-protocol.ts": "export class VaultProtocolHandler { readonly scheme = 'vault'; }\n",
-        "xd-protocol.ts": "export class XdProtocolHandler { readonly scheme = 'xd'; }\n",
-    }
-    handler_root = source_root / "packages/coding-agent/src/internal-urls"
-    for filename, contents in handler_stubs.items():
-        (handler_root / filename).write_text(contents, encoding="utf-8")
-    return source_root
-def _pinned_source(relative: str) -> str:
-    source_zip = _source_zip_path()
-    if source_zip is not None:
-        with zipfile.ZipFile(source_zip) as archive:
-            matches = [name for name in archive.namelist() if name.endswith(f"/{relative}")]
-            if len(matches) != 1:
-                raise AssertionError(f"pinned source member is not unique: {relative} -> {matches}")
-            return archive.read(matches[0]).decode("utf-8")
-    return (Path(_runtime_spec().source_root) / relative).read_text(encoding="utf-8")
-
-
-def _source_registry_sets() -> dict[str, set[str]]:
-    router = _pinned_source("packages/coding-agent/src/internal-urls/router.ts")
-    imports: dict[str, str] = {}
-    for names, module in re.findall(r'import \{([^}]+)\} from "\./([^"]+)";', router):
-        for name in names.split(","):
-            imports[name.strip()] = module
-    constructor = router.split("constructor() {", 1)[1].split("\n\t}", 1)[0]
-    handlers = re.findall(r"this\.register\(new (\w+ProtocolHandler)\(\)\)", constructor)
-    internal = set()
-    for handler in handlers:
-        handler_source = _pinned_source(f"packages/coding-agent/src/internal-urls/{imports[handler]}.ts")
-        class_body = handler_source.split(f"class {handler}", 1)[1]
-        scheme = re.search(r'readonly scheme = "([^"]+)"', class_body).group(1)
-        if handler != "SshProtocolHandler":
-            internal.add(scheme)
-
-    archive = _pinned_source("packages/utils/src/ar/registry.ts")
-    archive_block = archive.split("const FORMAT_EXTENSIONS", 1)[1].split("};", 1)[0]
-    archive_extensions = {
-        f".{extension}"
-        for values in re.findall(r": \[([^\]]+)\]", archive_block)
-        for extension in re.findall(r'"([^"]+)"', values)
-    }
-
-    video = _pinned_source("packages/coding-agent/src/utils/video.ts")
-    video_block = video.split("const VIDEO_EXTENSION_LOOKUP", 1)[1].split("};", 1)[0]
-    video_extensions = set(re.findall(r'"(\.[^"]+)": true', video_block))
-
-    markit = _pinned_source("packages/coding-agent/src/utils/markit.ts")
-    markit_values = re.search(r"CONVERTIBLE_EXTENSIONS[^=]*= new Set\(\[([^\]]+)\]\)", markit).group(1)
-    document_extensions = set(re.findall(r'"(\.[^"]+)"', markit_values))
-
-    mime = _pinned_source("packages/utils/src/mime.ts")
-    mime_values = re.search(r"SUPPORTED_IMAGE_MIME_TYPES = new Set\(\[([^\]]+)\]\)", mime).group(1)
-    image_mime_types = set(re.findall(r'"([^"]+)"', mime_values))
-    read_tool = _pinned_source("packages/coding-agent/src/tools/read.ts")
-    svg_match = re.search(r"only supports \.(\w+) and \.(\w+) files", read_tool)
-    assert svg_match is not None
-    image_extensions = {
-        "." + mime_type.removeprefix("image/").replace("jpeg", "jpg")
-        for mime_type in image_mime_types
-    } | {".jpeg", *(f".{suffix}" for suffix in svg_match.groups())}
-
-    sqlite = _pinned_source("packages/coding-agent/src/tools/sqlite-reader.ts")
-    sqlite_pattern = re.search(r"SQLITE_PATH_PATTERN = /([^/]+)/", sqlite).group(1)
-    sqlite_alternatives = re.search(r"\(\?:([^)]*)\)", sqlite_pattern).group(1).split("|")
-    sqlite_extensions = set()
-    for alternative in sqlite_alternatives:
-        sqlite_extensions.add("." + alternative.replace("?", ""))
-        if "?" in alternative:
-            sqlite_extensions.add("." + alternative.replace("3?", ""))
-
-    return {
-        "internal-resource": internal,
-        "archive": archive_extensions,
-        "video": video_extensions,
-        "document": document_extensions,
-        "image": image_extensions,
-        "sqlite": sqlite_extensions,
-    }
-
-
-def _source_route_patterns() -> tuple[list[str], list[str]]:
-    source = _pinned_source("packages/coding-agent/src/tools/path-utils.ts")
-    ssh_body = source.split("export function pathTargetsSsh", 1)[1].split("}", 1)[0]
-    url_body = source.split("export function isReadableUrlPath", 1)[1].split("}", 1)[0]
-    pattern = r"/((?:\\.|[^/])+)/i\.test"
-    return (re.findall(pattern, url_body), re.findall(pattern, ssh_body))
-
-
-
-
-def _description_policy() -> dict[str, dict[str, object]]:
-    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
-    provenance = json.loads((root / "tool-surface.json").read_text(encoding="utf-8"))["native_description_provenance"]
-    return {
-        name: {
-            "original_sha256": "sha256:" + provenance["original_sha256"][name],
-            "bounded_sha256": "sha256:" + provenance["bounded_sha256"][name],
-            "removed_spans": provenance["removed_spans"][name],
-        }
-        for name in ("read", "bash", "edit", "write")
-    }
-
-
-def _authority_payload(tmp_path: Path) -> dict[str, object]:
-    scratch = tmp_path / ".scratch"
-    package_dir = tmp_path / "package"
-    (scratch / "home").mkdir(parents=True)
-    package_dir.mkdir()
-    runtime_inputs = {
-        "cwd": str(tmp_path),
-        "home": str(scratch / "home"),
-        "current_date": "2026-09-23",
-        "package_dir": str(package_dir),
-    }
-    return {
-        "workspace": str(tmp_path),
-        "scratch": str(scratch),
-        "package_dir": str(package_dir),
-        "runtime_inputs": runtime_inputs,
-    }
-
-
-def _model_registry() -> dict[str, object]:
-    root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
-    return json.loads((root / "native-config.json").read_text(encoding="utf-8"))["model_registry"]
-
-
-def _lease_model() -> dict[str, object]:
-    """The OMP lease model_config shape bound by policy_provider."""
-    return {
-        "id": "capture",
-        "name": "capture",
-        "api": "openai-completions",
-        "provider": "openai",
-        "baseUrl": "http://127.0.0.1:9/v1",
-        "reasoning": False,
-        "input": ["text"],
-        "contextWindow": 32768,
-        "maxTokens": 2048,
-        "compat": {
-            "supportsStore": True,
-            "supportsDeveloperRole": True,
-            "supportsUsageInStreaming": True,
-            "maxTokensField": "max_completion_tokens",
-            "supportsStrictMode": False,
-        },
-    }
-
-
-def _test_denials() -> dict[str, dict[str, str]]:
-    return {
-        capability: {
-            "schema_version": "bb.omp-capability-denial.v1",
-            "capability": capability,
-            "message": f"OMP capability denied: {capability}",
-            "source_ref": "test",
-        }
-        for capability in ("pty", "async")
-    }
-
-
 
 def test_native_worker_spec_binds_source_and_real_leaves() -> None:
     spec = pinned_worker_spec()
@@ -302,6 +38,7 @@ def test_static_denial_happens_before_native_resolution() -> None:
     with pytest.raises(PermissionError):
         deny_excluded_capabilities({"pty": True})
 
+
 def test_static_route_policy_is_typed_and_fail_closed() -> None:
     policy = {
         "archive": {"message": "archive denied"},
@@ -314,6 +51,7 @@ def test_static_route_policy_is_typed_and_fail_closed() -> None:
     deny_pinned_route({"route": "file"}, denial_policy=policy)
     with pytest.raises(PermissionError, match="internal denied"):
         deny_pinned_route({"route": "internal:agent"}, denial_policy=policy)
+
 
 @pytest.mark.skipif(
     not Path(_runtime_spec().bun).is_file()
@@ -377,6 +115,7 @@ def test_real_pinned_worker_classifies_fuzz_overadmission_fixtures(tmp_path: Pat
     finally:
         worker.stop()
 
+
 @pytest.mark.skipif(
     not Path(_runtime_spec().bun).is_file()
     or not Path(_runtime_spec().source_root).is_dir(),
@@ -386,7 +125,7 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
     root = Path(__file__).resolve().parents[3] / "config/e4_targets/oh_my_pi/18.1.17"
     config = json.loads((root / "native-config.json").read_text(encoding="utf-8"))
     classifier = json.loads(json.dumps(config["route_classifier"]))
-    source_root = Path(classifier["source_root"])
+    source_root = Path(_runtime_spec().source_root)
     copied_root = tmp_path / "omp-source"
     for entry in [*classifier["modules"].values(), {"path": "bun.lock"}]:
         relative = entry["path"]
@@ -424,6 +163,7 @@ def test_real_pinned_worker_rejects_tampered_classifier_module(tmp_path: Path) -
             )
     finally:
         worker.stop()
+
 
 @pytest.mark.skipif(
     not Path(_runtime_spec().bun).is_file()
@@ -465,8 +205,6 @@ def test_real_pinned_worker_rejects_unknown_classifier_module(tmp_path: Path) ->
         worker.stop()
 
 
-
-
 @pytest.mark.skipif(
     not OMP_AVAILABLE,
     reason="pinned OMP runtime/source archive is unavailable on this host",
@@ -481,8 +219,9 @@ def test_route_declarations_match_parsed_pinned_omp_registries() -> None:
     assert policy["url"]["route"]["patterns"] == url_patterns
     assert policy["ssh"]["route"]["patterns"] == ssh_patterns
 
+
 def test_worker_resolves_verified_installed_entrypoint(tmp_path: Path) -> None:
-    worker = NativeToolWorker(cwd=str(tmp_path), spec=_runtime_spec())
+    worker = NativeToolWorker(cwd=str(tmp_path), spec=pinned_worker_spec())
     command = worker.start().command
     assert command[1] == str(verified_tool_worker_path())
     assert str(tmp_path) not in command[1]
@@ -787,16 +526,6 @@ def test_real_pinned_worker_rejects_known_host_provider_id(tmp_path: Path, provi
         worker.stop()
 
 
-_PINNED_COMPAT_SCRIPT = """
-const payload = JSON.parse(await Bun.stdin.text());
-const { buildModel } = await import(`${payload.root}/packages/catalog/src/build.ts`);
-process.stdout.write(JSON.stringify(payload.providers.map((provider) => {
-  const { compat } = buildModel({ ...payload.model, provider, api: "openai-completions", baseUrl: payload.baseUrl });
-  return [compat.supportsMultipleSystemMessages, compat.supportsDeveloperRole];
-})));
-"""
-
-
 @pytest.mark.skipif(
     _differential_bun() is None or not _differential_source_root().is_dir(),
     reason="bun or pinned OMP source is unavailable on this host",
@@ -834,9 +563,6 @@ def test_pinned_compat_treats_declared_route_provider_as_custom_host(tmp_path: P
     assert json.loads(completed.stdout) == [[False, False], [True, True]]
 
 
-_INSTALLED_SPEC = pinned_worker_spec()
-
-
 @pytest.mark.skipif(
     not Path(_INSTALLED_SPEC.bun).is_file()
     or not any((Path(_INSTALLED_SPEC.source_root) / "packages/natives/native").glob("pi_natives.linux-x64-*.node")),
@@ -872,3 +598,41 @@ def test_installed_worker_renders_route_model_line_with_pinned_compat(tmp_path: 
         assert request["messages"][0] == {"role": "system", "content": initialized["system_prompt"]}
     finally:
         worker.stop()
+
+
+@pytest.mark.skipif(
+    not Path(_runtime_spec().bun).is_file()
+    or not Path(_runtime_spec().source_root).is_dir(),
+    reason="pinned OMP runtime is unavailable on this host",
+)
+@pytest.mark.parametrize(("tz", "instant_ms"), [
+    ("Pacific/Kiritimati", 1_791_633_600_000),  # 2026-10-10T12:00Z = 2026-10-11 local (+14)
+    ("Pacific/Pago_Pago", 1_791_608_400_000),  # 2026-10-10T05:00Z = 2026-10-09 local (-11)
+])
+def test_reminder_date_is_stock_local_date_of_admitted_instant(tmp_path: Path, tz: str, instant_ms: int) -> None:
+    spec = _runtime_spec()
+    stock = subprocess.run(
+        [spec.bun, "-e", "const { formatLocalCalendarDate } = await import(process.argv[1]);"
+         "console.log(formatLocalCalendarDate(new Date(Number(process.argv[2]))));",
+         f"{spec.source_root}/packages/coding-agent/src/utils/local-date.ts", str(instant_ms)],
+        env={**os.environ, "TZ": tz}, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    utc_date = datetime.fromtimestamp(instant_ms / 1000, timezone.utc).date().isoformat()
+    assert stock != utc_date
+    payload = _authority_payload(tmp_path)
+    payload["runtime_inputs"]["message_timestamp_ms"] = str(instant_ms)
+    worker = NativeToolWorker(cwd=str(tmp_path), env={"TZ": tz}, spec=spec)
+    try:
+        initialized = worker.phase("initialize", {
+            "task": "date", "model_config": _lease_model(),
+            "advertisement": {"bounded_description_policy": _description_policy(),
+                              "model_registry": _model_registry(), "capability_denials": _test_denials()},
+            **payload,
+        })
+        assert initialized["bootstrap"]["current_date"] == stock
+        request = worker.phase("project_request", {"messages": [{"role": "user", "content": "do", "timestamp": 0}]})
+    finally:
+        worker.stop()
+    reminders = re.findall(r"Today: (\d{4}-\d{2}-\d{2});", json.dumps(request["messages"]))
+    assert reminders == [stock]
+

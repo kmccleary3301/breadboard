@@ -30,12 +30,25 @@ namespaces = true
 "breadboard_engine" = ["engine-build-provenance.v1.json"]
 "breadboard_engine.compaction" = ["prompts/*.md", "snapcompact/fonts/*"]
 "breadboard_engine.compaction.presets" = ["*.yaml", "prompts/*/*"]
-"breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json", "pi_tools_0_57_1.mjs", "pi_tools_0_73_1.mjs", "hermes_*.py", "native_worker.py", "runners/*.ts", "openclaw_tool_worker.mjs", "openclaw_classifier_loader.mjs"]
+"breadboard.rl.harness" = ["SANDBOX_CAPABILITY_MATRIX.json", "pi_tools_0_57_1.mjs", "pi_tools_0_73_1.mjs", "pi_0_57_1_*.mjs", "pi_0_73_1_*.mjs", "hermes_*.py", "native_worker.py", "runners/*.ts", "runners/omp_16_2_13/*.ts", "runners/omp_18_1_17/*.ts", "openclaw_*.mjs"]
 "breadboard.rl.harness.resources.qualification" = ["canonical_artifact_vectors_v1.json", "tls/authority.json", "tls/ca.cert.pem", "tls/server.cert.pem", "tls/server.key.pem"]
-"breadboard_engine.execution" = ["node/*.mjs", "node/THIRD_PARTY_NOTICES.txt"]
+"breadboard_engine.execution" = ["node/*.mjs", "node/THIRD_PARTY_NOTICES.txt", "codex_139_models.json", "Cargo.toml", "Cargo.lock", "codex_patch/Cargo.toml", "codex_patch/main.rs", "codex_search/Cargo.toml", "codex_search/main.rs", "codex_image/Cargo.toml", "codex_image/main.rs"]
+"breadboard_engine.compilation.context_builders" = ["assets/codex_0_139/*.md", "assets/codex_0_139/*.json"]
 "breadboard_sdk.generated" = ["*.json"]
 "config.product" = ["*.json"]
-"config.e4_targets" = ["index.json", "notices/*.txt", "oh_my_pi/16.2.13/*.json", "oh_my_pi/16.2.13/*.yaml", "oh_my_pi/16.2.13/prompts/*.md", "oh_my_pi/16.2.13-r2/*.json", "oh_my_pi/16.2.13-r2/*.yaml", "oh_my_pi/16.2.13-r2/*.txt", "oh_my_pi/16.2.13-r2/prompts/*.md", "oh_my_pi/18.1.17/*.json", "oh_my_pi/18.1.17/*.yaml", "oh_my_pi/18.1.17/*.txt", "oh_my_pi/18.1.17/prompts/*.md", "pi/0.57.1/*.json", "pi/0.57.1/*.yaml", "pi/0.57.1/*.txt", "pi/0.57.1/prompts/*.md", "pi/0.73.1/*.json", "pi/0.73.1/*.yaml", "pi/0.73.1/*.txt", "pi/0.73.1/prompts/*.md", "pi/0.57.1-r3/*.json", "pi/0.57.1-r3/*.yaml", "pi/0.57.1-r3/*.txt", "pi/0.57.1-r3/prompts/*.md", "mini_swe_agent/2.4.6/*.json", "mini_swe_agent/2.4.6/*.yaml", "mini_swe_agent/2.4.6/*.txt", "mini_swe_agent/2.4.6/prompts/*.j2", "mini_swe_agent/2.4.6/prompts/*.md", "openhands_sdk/1.47.0/*.json", "openhands_sdk/1.47.0/*.yaml", "openhands_sdk/1.47.0/*.txt", "openhands_sdk/1.47.0/prompts/*.txt", "openhands_sdk/1.47.0/prompts/*.json", "openhands_sdk/1.47.0/prompts/*.md", "hermes_agent/2026.9.11/**/*", "hermes_agent/2026.9.11/*.json", "hermes_agent/2026.9.11/*.yaml", "hermes_agent/2026.9.11/*.txt", "hermes_agent/2026.9.11/prompts/*.txt", "hermes_agent/2026.9.11/prompts/*.json", "hermes_agent/2026.9.11/fixtures/*.md", "hermes_agent/2026.9.11/fixtures/fixture-code-style/*.md", "hermes_agent/2026.9.11/fixtures/fixture-code-style/references/*.md", "openclaw/2026.9.4/*.json", "openclaw/2026.9.4/*.yaml", "openclaw/2026.9.4/*.txt", "openclaw/2026.9.4/bootstrap/*.md"]
+"config.e4_targets" = [
+  "index.json", "notices/*.txt",
+  "oh_my_pi/16.2.13*/*.json", "oh_my_pi/16.2.13*/*.yaml", "oh_my_pi/16.2.13*/*.txt", "oh_my_pi/16.2.13*/prompts/*.md",
+  "oh_my_pi/18.1.17*/*.json", "oh_my_pi/18.1.17*/*.yaml", "oh_my_pi/18.1.17*/*.txt", "oh_my_pi/18.1.17*/prompts/*.md",
+  "pi/0.57.1*/*.json", "pi/0.57.1*/*.yaml", "pi/0.57.1*/*.txt", "pi/0.57.1*/prompts/*.md",
+  "pi/0.73.1*/*.json", "pi/0.73.1*/*.yaml", "pi/0.73.1*/*.txt", "pi/0.73.1*/prompts/*.md",
+  "mini_swe_agent/2.4.6/*.json", "mini_swe_agent/2.4.6/*.yaml", "mini_swe_agent/2.4.6/*.txt", "mini_swe_agent/2.4.6/prompts/*.j2", "mini_swe_agent/2.4.6/prompts/*.md",
+  "openhands_sdk/1.47.0/*.json", "openhands_sdk/1.47.0/*.yaml", "openhands_sdk/1.47.0/*.txt", "openhands_sdk/1.47.0/prompts/*.txt", "openhands_sdk/1.47.0/prompts/*.json", "openhands_sdk/1.47.0/prompts/*.md",
+  "hermes_agent/2026.9.11*/*.json", "hermes_agent/2026.9.11*/*.yaml", "hermes_agent/2026.9.11*/*.txt", "hermes_agent/2026.9.11*/prompts/*.txt", "hermes_agent/2026.9.11*/prompts/*.json", "hermes_agent/2026.9.11*/fixtures/*.md", "hermes_agent/2026.9.11*/fixtures/fixture-code-style/*.md", "hermes_agent/2026.9.11*/fixtures/fixture-code-style/references/*.md",
+  "openclaw/2026.9.4*/*.json", "openclaw/2026.9.4*/*.yaml", "openclaw/2026.9.4*/*.txt", "openclaw/2026.9.4*/bootstrap/*.md",
+  "claude_code/2.1.63/*.yaml", "claude_code/2.1.63/prompts/*.md", "claude_code/2.1.63/refs/*.json",
+  "oh_my_opencode/3.10.0/*.yaml", "oh_my_opencode/3.10.0/prompts/*.md", "oh_my_opencode/3.10.0/refs/*.mdx",
+]
 "conformance.comparators" = ["registry.json"]
 "contracts.kernel" = ["*.json"]
 "contracts.kernel.manifests" = ["*.json"]
@@ -49,6 +62,11 @@ namespaces = true
 "contracts.internal.evidence.schemas" = ["*.schema.json"]
 "implementations" = ["THIRD_PARTY_NOTICES.txt"]
 "implementations.tools.defs" = ["*.yaml"]
+"implementations.tools.defs_codex_139" = ["*.yaml"]
+"implementations.tools.defs_opencode_1_2_17" = ["*.yaml"]
+"implementations.tools.defs_claude_code_2_1_63" = ["*.yaml"]
+"implementations.tools.defs_omo_3_10_0" = ["*.yaml"]
+"implementations.tools.defs_opencode_shared" = ["*.yaml"]
 "implementations.prompts.todos" = ["*.md"]
 "implementations.system_prompts" = ["*.md"]
 "implementations.system_prompts.claude_code" = ["*.md"]

@@ -16,11 +16,7 @@ from .contract_wire import (
     _validate_provider_exchange_v2_wire,
     _validate_provider_replay_wire,
 )
-from .contract_messages import (
-    ProviderCorrelation,
-    ProviderIdentity,
-    ProviderRequest,
-)
+from .contract_requests import ProviderCorrelation, ProviderIdentity, ProviderRequest
 from .contract_events import (
     ProviderCancelled,
     ProviderDone,
@@ -198,6 +194,7 @@ class ProviderExchangeV2:
                 "delta",
                 "arguments_json",
                 "arguments",
+                "raw_arguments",
             }
             raw = _strict_dict(raw, field_name="event", allowed=allowed_event_fields)
             _require_fields(
@@ -213,6 +210,7 @@ class ProviderExchangeV2:
                 delta=raw.get("delta"),
                 arguments_json=raw.get("arguments_json"),
                 arguments=raw.get("arguments"),
+                raw_arguments=raw.get("raw_arguments"),
             )
             events.append(event)
         terminal_raw = top.get("terminal")

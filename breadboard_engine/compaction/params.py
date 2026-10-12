@@ -13,6 +13,7 @@ parser owns key spelling and migration) instead of a literal.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from importlib import import_module
 from typing import Any, Iterable, List, Mapping, Optional, Sequence
 
 
@@ -77,6 +78,27 @@ class Params:
         if value is not None and not isinstance(value, str):
             raise PresetError(f"{self.where}.{key} must be a string")
         return value
+
+    def compaction_callable(self, key: str, default: Any = _MISSING) -> Any:
+        missing = key not in self._raw
+        configured = self.str(key, default)
+        if missing and configured is None and default is None:
+            return None
+        prefix = "breadboard_engine.compaction."
+        if not isinstance(configured, str):
+            raise PresetError(f"{self.where}.{key} must be a callable string")
+        module, separator, name = configured.partition(":")
+        if not separator or not module.startswith(prefix) or not name.isidentifier():
+            raise PresetError(f"{self.where}.{key} must belong to breadboard_engine.compaction")
+        if not all(part.isidentifier() for part in module[len(prefix):].split(".")):
+            raise PresetError(f"{self.where}.{key} has an invalid module")
+        try:
+            loaded = getattr(import_module(module), name)
+        except (ImportError, AttributeError) as exc:
+            raise PresetError(f"{self.where}.{key} cannot be loaded") from exc
+        if not callable(loaded):
+            raise PresetError(f"{self.where}.{key} must be callable")
+        return loaded
 
     def int(self, key: str, default: Any = _MISSING, *, minimum: Optional[int] = None) -> Any:
         value = self._take(key, default)

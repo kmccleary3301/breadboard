@@ -82,6 +82,7 @@ class DevSandboxV2:
     def get_workspace(self) -> str:
         return self.workspace
 
+
     def provider_environment_is_clean(self) -> bool:
         """Report the provider-credential invariant without exposing names or values."""
         return not provider_credential_values()
@@ -297,10 +298,11 @@ class DevSandboxV2:
         env: Optional[Dict[str, str]] = None,
         stream: bool = True,
         shell: bool = True,
+        explicit_zero_timeout: bool = False,
     ):
         return self.run_shell(
             cmd,
-            timeout=timeout or 30,
+            timeout=(30 if timeout is None else timeout) if explicit_zero_timeout else (timeout or 30),
             env=env,
             stream=stream,
             stdin_data=stdin_data,

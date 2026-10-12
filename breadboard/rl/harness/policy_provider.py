@@ -24,10 +24,10 @@ from breadboard_engine.compilation.provider_response import (
     CompiledNativeResponseBinding,
     HERMES_RESPONSE_CONSUMER_ID,
     MINI_RESPONSE_CONSUMER_ID,
-    PI_0_73_1_TARGET_IDS,
     PI_RESPONSE_CONSUMER_ID,
     PI_0_57_1_RESPONSE_CONSUMER_ID,
-    NATIVE_CHAT_RESPONSE_TARGETS,
+    NATIVE_CHAT_RESPONSE_CONSUMERS,
+    NATIVE_TARGET_IDS,
     OMP_RESPONSE_CONSUMER_ID,
     OMP_16_2_13_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
@@ -45,6 +45,7 @@ from breadboard_engine.provider.contracts import (
 from breadboard_engine.provider.native_response import NativeProviderResponse
 from breadboard_engine.provider.routing import ProviderDescriptor
 from breadboard_engine.provider.runtimes.openai.chat import OpenAIChatRuntime
+from breadboard_engine.provider.runtimes.openai.native_chat_wire import NativeRequestAuthorityError
 
 from .contracts import EffectiveExecutionPlan, PolicyBindingRef, PolicyCapabilityObservation
 from .runners.base import (
@@ -59,15 +60,8 @@ from .runners.base import (
     freeze_json_object,
     thaw_json,
 )
+from .native_stream_profiles import NATIVE_STREAM_PROFILES
 from .service import PolicyRuntimeClientResolver
-
-PI_SUMMARIZATION_SYSTEM_PROMPT: Final[str] = (
-    "You are a context summarization assistant. Your task is to read a conversation "
-    "between a user and an AI coding assistant, then produce a structured summary following "
-    "the exact format specified.\n\n"
-    "Do NOT continue the conversation. Do NOT respond to any questions in the conversation. "
-    "ONLY output the structured summary."
-)
 
 
 def _mini_model_response(raw_response: Mapping[str, Any]) -> Any:
@@ -305,15 +299,7 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
     expected_fields = {
         *_TARGET_BINDING_FIELDS, "version", "tool_surface_digest", "harness_lock_digest", *extra_fields
     }
-    deferred_targets = {
-        OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
-        PI_RESPONSE_CONSUMER_ID: PI_0_73_1_TARGET_IDS,
-        PI_0_57_1_RESPONSE_CONSUMER_ID: "pi-r3@0.57.1",
-        OMP_RESPONSE_CONSUMER_ID: "oh-my-pi@18.1.17",
-        OMP_16_2_13_RESPONSE_CONSUMER_ID: "oh-my-pi-r2@16.2.13",
-        OPENCLAW_RESPONSE_CONSUMER_ID: "openclaw@2026.9.4",
-        HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
-    }
+    deferred_consumers = NATIVE_TARGET_IDS.keys() - {MINI_RESPONSE_CONSUMER_ID}
     renderer_id = binding["renderer_id"]
     if (
         version not in (1, 2, 3)
@@ -323,17 +309,13 @@ def _checked_target_binding(metadata: Mapping[str, Any]) -> Mapping[str, Any]:
         or version == 2
         and (
             renderer_id != MINI_RESPONSE_CONSUMER_ID
-            or binding.get("target_id") != "mini-swe-agent@2.4.6"
+            or binding.get("target_id") not in NATIVE_TARGET_IDS[MINI_RESPONSE_CONSUMER_ID]
             or not isinstance(binding.get("runtime_profile"), Mapping)
         )
         or version == 3
         and (
-            renderer_id not in deferred_targets
-            or (
-                binding.get("target_id") not in deferred_targets[renderer_id]
-                if isinstance(deferred_targets[renderer_id], (tuple, frozenset, set))
-                else binding.get("target_id") != deferred_targets[renderer_id]
-            )
+            renderer_id not in deferred_consumers
+            or binding.get("target_id") not in NATIVE_TARGET_IDS[renderer_id]
             or not isinstance(binding.get("runtime_profile"), Mapping)
             or binding.get("rendered_prompt_digest") is not None
         )
@@ -478,7 +460,7 @@ def _validate_request_features(
     if (
         target_projection is not None
         and target_projection.renderer_id in {
-            *NATIVE_CHAT_RESPONSE_TARGETS,
+            *NATIVE_CHAT_RESPONSE_CONSUMERS,
             OPENCLAW_RESPONSE_CONSUMER_ID,
             # Pinned 0.57.1 buildParams emits no n and, under custody compat
             # supportsStore=false, no store (openai-completions.js:295-356).
@@ -698,6 +680,7 @@ _NATIVE_HTTP_SECRET_HEADERS = frozenset(
 _NATIVE_HTTP_BODY_FIELDS = frozenset({
     "model", "messages", "tools", "stream", "temperature",
     "max_tokens", "max_completion_tokens", "reasoning_effort",
+    "tool_choice",
 })
 _CANONICAL_UUID_RE = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _UNPINNED = object()
@@ -797,7 +780,7 @@ class EpisodeOpenAICompletionsPolicyClient:
                 MINI_RESPONSE_CONSUMER_ID,
                 PI_RESPONSE_CONSUMER_ID,
                 PI_0_57_1_RESPONSE_CONSUMER_ID,
-                *NATIVE_CHAT_RESPONSE_TARGETS,
+                *NATIVE_CHAT_RESPONSE_CONSUMERS,
                 OMP_RESPONSE_CONSUMER_ID,
                 OMP_16_2_13_RESPONSE_CONSUMER_ID,
                 OPENCLAW_RESPONSE_CONSUMER_ID,
@@ -927,7 +910,7 @@ class EpisodeOpenAICompletionsPolicyClient:
         """Bind the measured worker's once-rendered, workspace-dependent tools."""
         target = self._target_projection
         if (
-            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            target is None or target.renderer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._native_binding is None or self._native_tool_schemas is not None
             or not isinstance(target.runtime_profile, Mapping)
             or type(tools) is not tuple
@@ -994,13 +977,153 @@ class EpisodeOpenAICompletionsPolicyClient:
         self._native_stream_prompt = system_prompt
         self._native_accept_truncated_stream = accept_truncated_stream
 
+    def _require_provider_exchanges(self) -> OpenAICompletionsProviderProfile:
+        target = self._target_projection
+        profile = self._profile
+        source = NATIVE_STREAM_PROFILES.get(target.renderer_id) if target is not None else None
+        if (
+            self._native_binding is None
+            or profile is None
+            or source is None
+            or not source.provider_exchanges
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchanges are not admitted",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        return profile
+
+    def native_provider_configuration(self) -> Mapping[str, Any]:
+        """Private worker initialization headers; never public configuration or traces.
+
+        Source SDK clients for declared provider exchanges construct themselves from
+        these real bound headers. The transport replaces the Authorization header
+        with the profile credential on send, so worker-held values never reach the wire.
+        """
+        profile = self._require_provider_exchanges()
+        return {
+            "headers": {
+                **dict(profile.caller_headers),
+                "Authorization": "Bearer " + profile.scoped_credential,
+            }
+        }
+
+    def _stage_native_provider_exchange(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
+        profile = self._require_provider_exchanges()
+        source = NATIVE_STREAM_PROFILES[self._target_projection.renderer_id]
+        exchange = request.get("provider_exchange")
+        if exchange not in source.provider_exchanges:
+            raise RunnerPolicyBindingError(
+                "native provider exchange is not admitted",
+                code="native_http_binding_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        expected_url = profile.base_url.rstrip("/") + "/" + exchange
+        if (
+            set(request) != {"provider_exchange", "method", "url", "header_names", "body_b64"}
+            or request["method"] != "POST"
+            or request["url"] != expected_url
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchange route differs from its binding",
+                code="native_http_route_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        # The transport adds caller headers and the profile Authorization on send
+        # (OpenAIChatRuntime.send_native_http_request); only Content-Type is staged.
+        expected_names = sorted(
+            {"content-type", "authorization"}
+            | {name.lower() for name in profile.caller_headers}
+        )
+        header_names = request["header_names"]
+        if (
+            type(header_names) is not list
+            or any(type(name) is not str for name in header_names)
+            or sorted(name.lower() for name in header_names) != expected_names
+        ):
+            raise RunnerPolicyBindingError(
+                "native provider exchange header names differ from its binding",
+                code="native_http_capability_mismatch",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            )
+        try:
+            body_b64 = request["body_b64"]
+            encoded = body_b64.encode("ascii") if type(body_b64) is str else b""
+            body = base64.b64decode(encoded, validate=True)
+            if (
+                not body
+                or len(body) > _MAX_NATIVE_HTTP_REQUEST_BYTES
+                or base64.b64encode(body) != encoded
+            ):
+                raise ValueError
+            payload = json.loads(body.decode("utf-8"))
+            if (
+                not isinstance(payload, dict)
+                or set(payload) != {"model", "input"}
+                or type(payload["model"]) is not str
+                or not payload["model"]
+                or type(payload["input"]) is not list
+                or not payload["input"]
+                or any(type(item) is not str for item in payload["input"])
+            ):
+                raise ValueError
+        except (UnicodeDecodeError, ValueError):
+            raise RunnerProtocolError(
+                "native provider exchange body is invalid",
+                code="native_http_request_invalid",
+                episode_id=self._episode_id,
+                effective_plan_digest=self._effective_plan_digest,
+            ) from None
+        public_request = {
+            "model": self._observation.model_id,
+            "native_http_request": {
+                "provider_exchange": exchange,
+                "method": "POST",
+                "url": expected_url,
+                "body_b64": body_b64,
+                "header_names": sorted(name.lower() for name in header_names),
+            },
+        }
+        request_digest = canonical_sha256(public_request)
+        with self._state_lock:
+            if self._native_pending is not None or self._native_private_responses:
+                raise RunnerProtocolError(
+                    "native provider exchange is already pending",
+                    code="native_http_request_duplicate",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            if self._closed or self._closing or self._cancelled.is_set():
+                raise RunnerDependencyError(
+                    "episode provider client is closed",
+                    code="provider_client_closed",
+                    episode_id=self._episode_id,
+                    effective_plan_digest=self._effective_plan_digest,
+                )
+            self._native_pending = _PendingNativeHTTPRequest(
+                method="POST",
+                url=expected_url,
+                headers=(("Content-Type", "application/json"),),
+                body=body,
+                request_payload=public_request,
+                request_digest=request_digest,
+            )
+        return public_request
+
     def stage_native_http_request(self, request: Mapping[str, Any]) -> Mapping[str, Any]:
         """Admit exactly one source SDK HTTP request without exposing its headers."""
+        if isinstance(request, Mapping) and "provider_exchange" in request:
+            return self._stage_native_provider_exchange(request)
         target = self._target_projection
         profile = self._profile
         if (
             target is None
-            or target.renderer_id not in NATIVE_CHAT_RESPONSE_TARGETS
+            or target.renderer_id not in NATIVE_CHAT_RESPONSE_CONSUMERS
             or self._native_binding is None
             or profile is None
         ):
@@ -1344,7 +1467,12 @@ class EpisodeOpenAICompletionsPolicyClient:
                         episode_id=request.episode_id,
                         effective_plan_digest=request.effective_plan_digest,
                     )
-                if self._max_requests is not None and self._request_attempts >= self._max_requests:
+                if (
+                    self._max_requests is not None
+                    and not request.compaction_summary
+                    and "provider_exchange" not in pending.request_payload["native_http_request"]
+                    and self._request_attempts >= self._max_requests
+                ):
                     raise RunnerDependencyError(
                         "episode provider request budget exhausted",
                         code="provider_request_budget_exhausted",
@@ -1356,7 +1484,12 @@ class EpisodeOpenAICompletionsPolicyClient:
 
                 def run() -> Any:
                     with self._state_lock:
-                        self._request_attempts += 1
+                        if (
+                            not request.compaction_summary
+                            and "provider_exchange"
+                            not in pending.request_payload["native_http_request"]
+                        ):
+                            self._request_attempts += 1
                     return self._runtime.send_native_http_request(
                         client=self._transport,
                         method=pending.method,
@@ -1503,7 +1636,10 @@ class EpisodeOpenAICompletionsPolicyClient:
         self, request: PolicyRuntimeInvokeRequest
     ) -> PolicyRuntimeInvokeResult:
         target = self._target_projection
-        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_TARGETS:
+        native_http = request.request_payload.get("native_http_request")
+        if isinstance(native_http, Mapping) and "provider_exchange" in native_http:
+            return await self._invoke_native_http(request)
+        if target is not None and target.renderer_id in NATIVE_CHAT_RESPONSE_CONSUMERS:
             if self._native_binding is None or self._native_plan is None:
                 raise RunnerPolicyBindingError(
                     "native Chat provider has no compiled-plan binding",
@@ -1708,13 +1844,22 @@ class EpisodeOpenAICompletionsPolicyClient:
                 None,
                 {},
                 stream=stream,
-                extra=(
+                native_request_body_json=request.native_request_body_json,
+                extra=dict(
                     {"response_consumer_id": native_binding.policy.consumer_id}
                     if native_binding is not None
                     and is_native_response_consumer_registered(
                         native_binding.policy.consumer_id
                     )
-                    else {}
+                    else {},
+                    # A summary request carries tool_choice exactly when the
+                    # source's own summary payload does; None omits it.
+                    **({"tool_choice": thaw_json(request.request_payload).get("tool_choice")}
+                       if request.compaction_summary
+                       and isinstance(thaw_json(request.request_payload), Mapping)
+                       else {}),
+                    **({"compaction_summary": request.compaction_summary}
+                       if request.native_request_body_json is not None else {}),
                 ),
                 session_id=request.episode_id,
                 input_id=request.request_digest,
@@ -1794,6 +1939,15 @@ class EpisodeOpenAICompletionsPolicyClient:
             except asyncio.CancelledError:
                 self._cancelled.set()
                 raise
+            except NativeRequestAuthorityError as exc:
+                if self._cancelled.is_set():
+                    raise asyncio.CancelledError
+                raise RunnerProtocolError(
+                    str(exc),
+                    code=exc.details["code"],
+                    episode_id=request.episode_id,
+                    effective_plan_digest=request.effective_plan_digest,
+                ) from exc
             except RunnerDependencyError:
                 raise
             except Exception as exc:
@@ -2173,14 +2327,25 @@ def _responses_request_to_chat(
         raise ProviderContractError(
             "policy request model does not match the admitted policy observation"
         )
+    summary_profile = (
+        NATIVE_STREAM_PROFILES.get(target_projection.renderer_id)
+        if compaction_summary and target_projection is not None
+        else None
+    )
     if compaction_summary and (
         target_projection is None
         or target_projection.runtime_profile is None
-        or target_projection.renderer_id != PI_RESPONSE_CONSUMER_ID
+        or summary_profile is None
+        or not (summary_profile.implements_compaction_phases or summary_profile.compaction_in_source)
     ):
-        raise ProviderContractError("compaction summary requests are admitted only for the Pi 0.73.1 native stream")
+        raise ProviderContractError("compaction summary requests are admitted only for compaction-capable native streams")
     if target_projection is not None and target_projection.runtime_profile is not None:
-        if set(request) != {"model", "messages", "tools"}:
+        admitted_keys = {"model", "messages", "tools"}
+        if compaction_summary and "tool_choice" in request:
+            if request.get("tool_choice") != "none":
+                raise ProviderContractError("compaction summary request admits tool_choice only with value 'none'")
+            admitted_keys = {"model", "messages", "tools", "tool_choice"}
+        if set(request) != admitted_keys:
             raise ProviderContractError("source-native request fields differ from its source protocol")
         messages = request["messages"]
         tools = request["tools"]
@@ -2217,14 +2382,32 @@ def _responses_request_to_chat(
             else [thaw_json(tool) for tool in target_projection.chat_tools]
         )
         if compaction_summary:
+            # The worker builds the source's own summary request; it carries
+            # the episode tools (deviation compaction_summary_episode_tools).
+            # A tool_choice "none" summary is a side request in the episode's
+            # own context (OMP handoff: session-handoff.ts:126-185), so it
+            # opens with the episode system message instead of the source's
+            # summarization system prompt.
+            if request.get("tool_choice") == "none":
+                if system_prompt is None:
+                    raise ProviderContractError("side-request compaction summary requires the episode system prompt")
+                expected_first = {"role": "system", "content": system_prompt}
+            elif summary_profile.compaction_summary_system_prompt is not None:
+                expected_first = {"role": "system", "content": summary_profile.compaction_summary_system_prompt}
+            else:
+                expected_first = None
             if (
                 type(messages) is not list
-                or len(messages) < 2
+                or not messages
                 or any(type(message) is not dict or "extra" in message for message in messages)
-                or messages[0] != {"role": "system", "content": PI_SUMMARIZATION_SYSTEM_PROMPT}
-                or messages[1].get("role") != "user"
+                or (
+                    messages[0] != expected_first
+                    if expected_first is not None
+                    else messages[0].get("role") != "user"
+                )
+                or messages[-1].get("role") != "user"
                 or any(message.get("role") not in {"system", "user", "assistant", "tool"} for message in messages)
-                or tools != []
+                or tools != expected_tools
             ):
                 raise ProviderContractError("source-native compaction summary request does not match its required schema")
         else:
