@@ -53,7 +53,7 @@ def test_stock_completion_must_be_observed_not_inferred_from_request_counts(vari
     assert compare_terminal_states(stock, bb, expected_provider_error=False)
 
 
-def _owned_sigterm_states():
+def _owned_sigterm_states(returncode=-15):
     stock, bb = _states(True)
     settlement = {"type": "auto_compaction_end", "willRetry": False}
     cleanup = {
@@ -62,18 +62,25 @@ def _owned_sigterm_states():
         "settlement_before_cleanup": True, "settlement_event": settlement,
         "process_running_before_terminate": True, "terminate_requested": True,
         "requested_signal": "SIGTERM", "kill_requested": False,
-        "wait_completed": True, "wait_returncode": -15,
+        "wait_completed": True, "wait_returncode": returncode,
     }
     stdout = json.dumps(stock["last_agent_end"]) + "\n" + json.dumps(settlement) + "\n"
-    stock = stock_terminal_evidence(CompletedProcess([], -15, stdout, ""), rpc_cleanup=cleanup)
+    stock = stock_terminal_evidence(CompletedProcess([], returncode, stdout, ""), rpc_cleanup=cleanup)
     return stock, bb
 
 
-def test_owned_sigterm_after_observed_native_terminal_state_is_recorded_not_hidden():
-    stock, bb = _owned_sigterm_states()
-    assert stock["returncode"] == -15
-    assert stock["rpc_cleanup"]["wait_returncode"] == -15
+# -15: signal before stock registers its handler; 143: rpc-mode.js shutdown(143).
+@pytest.mark.parametrize("returncode", [-15, 143])
+def test_owned_sigterm_after_observed_native_terminal_state_is_recorded_not_hidden(returncode):
+    stock, bb = _owned_sigterm_states(returncode)
+    assert stock["returncode"] == stock["rpc_cleanup"]["wait_returncode"] == returncode
     assert compare_terminal_states(stock, bb, expected_provider_error=True) == []
+
+
+@pytest.mark.parametrize("returncode", [1, 129, 137])
+def test_other_exit_status_is_not_owned_sigterm_cleanup(returncode):
+    stock, bb = _owned_sigterm_states(returncode)
+    assert compare_terminal_states(stock, bb, expected_provider_error=True)
 
 
 @pytest.mark.parametrize("field,value", [

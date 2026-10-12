@@ -74,19 +74,28 @@ async def _run_worker_async(
 ) -> dict[str, Any]:
     """Run one worker request without blocking the event loop.
 
-    Cancellation (for example the episode deadline) kills and reaps the worker.
+    Cancellation, including during launch, acquires, kills and reaps the worker.
     """
     payload = _encode_request(request)
+    launch = asyncio.create_task(asyncio.create_subprocess_exec(
+        _node_executable(),
+        str(_WORKER),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        cwd=str(cwd),
+        env=os.environ.copy(),
+    ))
     try:
-        process = await asyncio.create_subprocess_exec(
-            _node_executable(),
-            str(_WORKER),
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(cwd),
-            env=os.environ.copy(),
-        )
+        process = await asyncio.shield(launch)
+    except asyncio.CancelledError:
+        # Launch may already own a child before publishing its Process handle.
+        # Finish acquiring that handle so cancellation can kill and reap it.
+        process = await launch
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        raise
     except OSError as exc:
         raise PiNativeWorkerError(f"native worker could not start: {exc}") from exc
     try:

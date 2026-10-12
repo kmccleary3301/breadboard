@@ -47,7 +47,6 @@ from breadboard.rl.harness.policy_provider import (
     EpisodeOpenAICompletionsPolicyClient,
 )
 from breadboard.rl.harness.runners.base import (
-    RunnerDependencyError,
     RunnerOpenRequest,
     RunnerTermination,
     RunnerToolBinding,
@@ -84,6 +83,11 @@ _requires_stock_pi = pytest.mark.skipif(
     reason="pinned Pi 0.73.1 node_modules root is unavailable",
 )
 
+_OVERFLOW_MESSAGE = (
+    "This model maximum context length is 32768 tokens. "
+    "However, your messages resulted in 40000 tokens."
+)
+
 
 @contextmanager
 def _overflow_server(
@@ -113,7 +117,7 @@ def _overflow_server(
             if req_index in overflow_on_request_indices:
                 err_payload = json.dumps({
                     "error": {
-                        "message": f"This model maximum context length is 32768 tokens. However, your messages resulted in 40000 tokens.",
+                        "message": _OVERFLOW_MESSAGE,
                         "type": "invalid_request_error",
                         "code": overflow_error_code,
                     }
@@ -270,15 +274,19 @@ async def _run_test_episode(
 @_requires_stock_pi
 @pytest.mark.asyncio
 async def test_overflow_compaction_disabled_terminates_policy_incomplete(tmp_path: Path):
-    """When policy.provider.compaction is false (pi@0.73.1), context_length_exceeded raises RunnerDependencyError (unchanged from main)."""
+    """Disabled compaction retains the source SDK error as a terminal result."""
     with _overflow_server(overflow_on_request_indices={0}) as (base_url, requests):
-        with pytest.raises(RunnerDependencyError):
-            await _run_test_episode(
-                tmp_path,
-                base_url,
-                target_id="pi@0.73.1",
-            )
-        # Only 1 request was sent (the initial request that overflowed)
+        result, _ = await _run_test_episode(
+            tmp_path, base_url, target_id="pi@0.73.1",
+        )
+        assert result.termination == RunnerTermination.POLICY_INCOMPLETE
+        trace = thaw_json(result.response["replay_trace"])
+        terminal = trace["messages"][-1]
+        assert terminal["role"] == "assistant"
+        assert terminal["stopReason"] == "error"
+        assert terminal["errorMessage"] == f"400 {_OVERFLOW_MESSAGE}"
+        assert trace["request_count"] == 1
+        assert not any(request.get("_compaction_summary") for request in trace["requests"])
         assert len(requests) == 1
 
 @_requires_stock_pi
@@ -397,18 +405,24 @@ async def test_agent_end_overflow_respects_stock_continue(
 @_requires_stock_pi
 @pytest.mark.asyncio
 async def test_overflow_repeated_overflow_bounded_and_terminal(tmp_path: Path):
-    """Repeated overflow after compaction falls through to the original path and raises RunnerDependencyError for Pi."""
+    """A second overflow after one rescue retains the terminal source error."""
     large_prompt = "Initial prompt. " + ("Context padding data. " * 3000)
     # Request 0 (initial) and Request 2 (retried after compaction) both overflow
     with _overflow_server(overflow_on_request_indices={0, 2}) as (base_url, requests):
-        with pytest.raises(RunnerDependencyError):
-            await _run_test_episode(
-                tmp_path,
-                base_url,
-                target_id="pi-r3@0.73.1",
-                task_prompt=large_prompt,
-            )
-        # Exactly 3 requests: initial (failed), summary (succeeded), retried (failed)
+        result, _ = await _run_test_episode(
+            tmp_path,
+            base_url,
+            target_id="pi-r3@0.73.1",
+            task_prompt=large_prompt,
+        )
+        assert result.termination == RunnerTermination.POLICY_INCOMPLETE
+        trace = thaw_json(result.response["replay_trace"])
+        terminal = trace["messages"][-1]
+        assert terminal["role"] == "assistant"
+        assert terminal["stopReason"] == "error"
+        assert terminal["errorMessage"] == f"400 {_OVERFLOW_MESSAGE}"
+        assert sum(bool(request.get("_compaction_summary")) for request in trace["requests"]) == 1
+        # Initial failure, successful summary, failed retry; no second rescue.
         assert len(requests) == 3
 
 @_requires_stock_pi

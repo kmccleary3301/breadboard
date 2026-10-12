@@ -35,7 +35,9 @@ def bb_terminal_evidence(result: Any) -> dict[str, Any]:
 def _stock_exit_is_admitted(stock: dict[str, Any]) -> bool:
     if stock.get("returncode") == 0:
         return True
-    if stock.get("returncode") != -signal.SIGTERM:
+    # Stock rpc-mode.js:265-277 exits 143 from its SIGTERM handler; -SIGTERM
+    # means the signal arrived before that handler was registered.
+    if stock.get("returncode") not in (-signal.SIGTERM, 128 + signal.SIGTERM):
         return False
     cleanup = stock.get("rpc_cleanup") or {}
     pid = cleanup.get("pid")

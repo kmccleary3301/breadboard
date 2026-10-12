@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import time
 import pytest
 from pathlib import Path
 
@@ -305,22 +304,50 @@ def test_argument_parsing_preserves_lone_surrogates() -> None:
     assert _parse('{"a":"\ud83d"}') == {"a": "\ud83d"}
 
 
-def test_argument_parsing_cancellation_kills_the_worker(monkeypatch, tmp_path) -> None:
-    pidfile = tmp_path / "worker.pid"
+@pytest.mark.parametrize("cancel_during_launch", [True, False])
+def test_argument_parsing_cancellation_kills_the_worker(
+    monkeypatch, tmp_path, cancel_during_launch: bool,
+) -> None:
     node = tmp_path / "stalled-node"
-    node.write_text(f"#!/bin/sh\necho $$ > {pidfile}\nexec sleep 30\n")
+    node.write_text("#!/bin/sh\nexec sleep 30\n")
     node.chmod(0o755)
     monkeypatch.setenv("PI_NODE", str(node))
+    create_subprocess = asyncio.create_subprocess_exec
 
-    async def scenario() -> float:
-        start = time.monotonic()
-        with pytest.raises(TimeoutError):
-            await asyncio.wait_for(_parse_async('{"path":"x"}'), timeout=0.5)
-        return time.monotonic() - start
+    async def scenario() -> None:
+        ready = asyncio.Event()
+        release_launch = asyncio.Event()
+        processes = []
 
-    assert asyncio.run(scenario()) < 5
-    with pytest.raises(ProcessLookupError):
-        os.kill(int(pidfile.read_text()), 0)
+        async def launch(*args, **kwargs):
+            process = await create_subprocess(*args, **kwargs)
+            processes.append(process)
+            if cancel_during_launch:
+                ready.set()
+                await release_launch.wait()
+            else:
+                communicate = process.communicate
+
+                async def communicate_when_ready(payload):
+                    ready.set()
+                    return await communicate(payload)
+
+                process.communicate = communicate_when_ready
+            return process
+
+        monkeypatch.setattr(asyncio, "create_subprocess_exec", launch)
+        task = asyncio.create_task(_parse_async('{"path":"x"}'))
+        await asyncio.wait_for(ready.wait(), timeout=5)
+        task.cancel()
+        release_launch.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, timeout=5)
+        [process] = processes
+        assert process.returncode is not None
+        with pytest.raises(ProcessLookupError):
+            os.kill(process.pid, 0)
+
+    asyncio.run(scenario())
 
 
 @pytest.fixture
