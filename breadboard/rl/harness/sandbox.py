@@ -830,6 +830,16 @@ class InstalledRuntime:
             raise ValueError("fixed environment keys must be unique")
         if any(not key or "=" in key or "\x00" in key + value for key, value in self.fixed_environment):
             raise ValueError("invalid fixed environment")
+        # Trusted-process launches run the pinned host shell non-interactively
+        # (-c), which sources $BASH_ENV and imports BASH_FUNC_<name>%% functions
+        # (able to override exec/printf) before the requested argv. ENV is read
+        # only by interactive shells. Hardened backends exec argv in the
+        # container without that wrapper.
+        if self.runtime_class is RuntimeClass.TRUSTED_PROCESS and any(
+            key == "BASH_ENV" or key.startswith("BASH_FUNC_")
+            for key, _ in self.fixed_environment
+        ):
+            raise ValueError("fixed environment cannot carry shell startup hooks")
 
 
 @dataclass(frozen=True, slots=True)
@@ -2682,7 +2692,9 @@ class TrustedProcessHandle:
         return await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                # Not a login shell: setup and verifier argv are trusted, and the
+                # policy can write the profiles a login shell sources.
+                "-c",
                 'exec "$@"',
                 "breadboard-execute",
                 *execution_argv,
@@ -3005,7 +3017,9 @@ class TrustedProcessHandle:
         result = await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                # Not a login shell: a policy-written profile would run inside
+                # this trusted measurement.
+                "-c",
                 'exec "$2" -C "$1" rev-parse --verify "HEAD^{commit}"',
                 "breadboard-workspace-base",
                 relative_path,
@@ -3046,7 +3060,7 @@ class TrustedProcessHandle:
         result = await self._run_pinned_argv(
             (
                 self._executable.proc_fd_path,
-                "-lc",
+                "-c",
                 'exec "$2" -C "$1" diff --no-ext-diff --binary',
                 "breadboard-workspace-diff",
                 repositories[0].target_logical_path,
