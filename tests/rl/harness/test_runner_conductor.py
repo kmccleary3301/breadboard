@@ -4730,6 +4730,39 @@ async def test_native_stream_kit_target_requires_the_profile_request_cap(
     assert client.requests == []
 
 
+_ZERO_COST = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+_FACTORY_BOOTSTRAPS = {
+    "pi@0.73.1": {"model_config": {"id": "model-a", "provider": "openai"}},
+    "pi-r3@0.57.1": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "current_date_time": "2026-09-26",
+    },
+    "oh-my-pi@18.1.17": {"current_date": "2026-09-26"},
+    "oh-my-pi-r3@16.2.13": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "runtime_inputs": {"cwd": "/w", "home": "/h", "current_date": "2026-09-26", "package_dir": "/p"},
+        "length_aborted_message": "aborted",
+        "current_date_time": "2026-09-26",
+    },
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_FACTORY_BOOTSTRAPS))
+def test_production_state_admits_the_ninth_request_only_under_a_ceiling(target_id: str) -> None:
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES, NativeRunLimits
+
+    (profile,) = (item for item in NATIVE_STREAM_PROFILES.values() if item.target_id == target_id)
+    bootstrap = _FACTORY_BOOTSTRAPS[target_id]
+    kit = profile.state_factory("task", "system", bootstrap, None)
+    ceiling = profile.state_factory("task", "system", bootstrap, NativeRunLimits(max_requests=12, episode_seconds=600))
+    for state in (kit, ceiling):
+        # Eight requests already committed: the kit cap is spent.
+        state.request_count = state.stream_fn_issued = profile.max_turns
+    assert profile.max_turns == 8
+    assert kit.begin_query() is not None and kit.exit_status == "RequestLimitExceeded"
+    assert ceiling.begin_query() is None and ceiling.exit_status is None
+
+
 class _OpenHandsTraceClient(RecordingPolicyClient):
     def __init__(self, observation: c.PolicyCapabilityObservation) -> None:
         super().__init__(observation)
