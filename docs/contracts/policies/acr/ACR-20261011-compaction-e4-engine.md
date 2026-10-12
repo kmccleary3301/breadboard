@@ -69,6 +69,7 @@ The proof is a differential lane that compares raw request bytes against the pin
 - Two CI failures were environment gaps:
   - CLI-bridge `openapi.json` export drift: pydantic 2.14 emits `additionalProperties: false` for five authority models, and `main` at `0ab05604` drifts identically. The contract and the generated TS SDK (`openapi.v1.json`, `routes.ts`) are regenerated.
   - `longrun_phase1`: the gate installs a minimal dependency set without `jinja2`, a declared runtime dependency that `breadboard_engine.state` now reaches through `compaction`. The gate installs it.
+- The script index (`scripts/SCRIPT_INDEX.yaml`) registers the 23 new scripts, and the clean-wheel test pins the 17 shipped target revisions.
 
 ## 6) Rollout Plan
 

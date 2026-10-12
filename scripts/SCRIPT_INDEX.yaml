@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 438
+live_script_count: 451
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -844,6 +844,121 @@ entries:
     owner: kmccleary3301
     callers: [scripts/SCRIPT_INDEX.yaml, tests/test_script_wrapper_paths.py]
     expiry: none (durable tooling)
+  - path: scripts/compaction_lanes/__init__.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/claude_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/codex_lane.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [agent_configs/codex_0-139-0_gpt55_e4_10-9-2026.yaml, scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/codex@0.139.0/README.md]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_lanes/hermes_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/long_session_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/mock_provider.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, scripts/compaction_oracles/capture_codex_live.py]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/omp16_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/omp18_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/openclaw_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/opencode_lane.py
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
+  - path: scripts/compaction_lanes/stage_opencode_lsp.py
+    class: live-referenced
+    owner: kmccleary3301
+    callers: [agent_configs/README.md, scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_lanes/stage_opencode_stock_dependencies.py
+    class: live-referenced
+    owner: kmccleary3301
+    callers: [agent_configs/README.md, scripts/SCRIPT_INDEX.yaml]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_claude_code.js
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/claude_code@2.1.63/bridge_auto_continuation.json, tests/compaction/oracles/claude_code@2.1.63/bridge_manual_no_continuation.json, tests/compaction/oracles/claude_code@2.1.63/full_compaction_placement.json, tests/compaction/oracles/claude_code@2.1.63/microcompact_autocompact_disabled_warning.json, tests/compaction/oracles/claude_code@2.1.63/microcompact_persist_failure_fallback.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_codex.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/codex@0.139.0/accounting_bytes4_estimator_image_rule.json, tests/compaction/oracles/codex@0.139.0/accounting_usage_plus_trailing.json, tests/compaction/oracles/codex@0.139.0/local_installed_history_empty_summary_fallback.json, tests/compaction/oracles/codex@0.139.0/local_installed_history_retained_users_budget.json, tests/compaction/oracles/codex@0.139.0/remote_v2_retention_64000.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_codex_live.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/codex@0.139.0/local_installed_history_excludes_prior_summaries.json, tests/compaction/oracles/codex@0.139.0/local_summary_request.json, tests/compaction/oracles/codex@0.139.0/mid_turn_requires_follow_up.json, tests/compaction/oracles/codex@0.139.0/sampling_overflow_terminal.json, tests/compaction/oracles/codex@0.139.0/threshold_total_scope_above.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_hermes.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_cooldown_blocked.json, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_empty_content.json, tests/compaction/oracles/hermes_agent@2026.9.11/failure_guard_length_truncated.json, tests/compaction/oracles/hermes_agent@2026.9.11/placement_assistant_standalone.json, tests/compaction/oracles/hermes_agent@2026.9.11/placement_user_merged.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_mini_swe_agent.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_at_10k_elided_zero.json, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_over_10k_clipped.json, tests/compaction/oracles/mini_swe_agent@2.4.6/observation_under_10k_unclipped.json, tests/compaction/oracles/mini_swe_agent@2.4.6/overflow_terminal_failure.json, tests/compaction/oracles/mini_swe_agent@2.4.6/trigger_high_occupancy.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_omp.ts
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/omp@16.2.13/summary_basic_cut_at_user.json, tests/compaction/oracles/omp@16.2.13/summary_overflow_recovery.json, tests/compaction/oracles/omp@16.2.13/summary_snapcompact_text_only_fallback.json, tests/compaction/oracles/omp@16.2.13/summary_split_turn_with_tool_results.json, tests/compaction/oracles/omp@16.2.13/summary_update_with_previous_summary.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_openclaw.ts
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/openclaw@2026.9.4/cut_selection_recent_tokens_boundary.json, tests/compaction/oracles/openclaw@2026.9.4/placement_summary_as_user_wrapper.json, tests/compaction/oracles/openclaw@2026.9.4/reserve_cap_small_context_window.json, tests/compaction/oracles/openclaw@2026.9.4/reserve_floor_and_threshold_strict_gt.json, tests/compaction/oracles/openclaw@2026.9.4/safeguard_audit_missing_sections_rejected.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_opencode.ts
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/oh-my-opencode@3.10.0/preemptive_trigger_not_wired_in_3_10_0.json, tests/compaction/oracles/oh-my-opencode@3.10.0/recovery_largest_first_masking.json, tests/compaction/oracles/oh-my-opencode@3.10.0/todo_preservation_summary_contributor.json, tests/compaction/oracles/opencode@1.2.17/placement_auto_continuation.json, tests/compaction/oracles/opencode@1.2.17/placement_manual_no_continuation.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_openhands.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/openhands_sdk@1.47.0/adjacent_users_token_equality.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_batch_atomicity.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_thinking_loop.json, tests/compaction/oracles/openhands_sdk@1.47.0/atomic_boundary_tool_call_matching.json, tests/compaction/oracles/openhands_sdk@1.47.0/defaults_helper_variant_80_4.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/capture_pi.mjs
+    class: live-wired
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml, tests/compaction/oracles/pi@0.57.1/summary_basic_cut_at_user.json, tests/compaction/oracles/pi@0.57.1/summary_budget_never_reached_keeps_everything.json, tests/compaction/oracles/pi@0.57.1/summary_split_turn_with_tool_results.json, tests/compaction/oracles/pi@0.57.1/summary_update_with_previous_summary.json, tests/compaction/oracles/pi@0.57.1/threshold_components_when_total_zero.json]
+    expiry: none (durable tooling)
+  - path: scripts/compaction_oracles/opencode_source_runner.ts
+    class: campaign
+    owner: kmccleary3301
+    callers: [scripts/SCRIPT_INDEX.yaml]
+    expiry: archive-when-campaign-closes
   - path: scripts/compare_ground_truth_eval_runs.py
     class: campaign
     owner: kmccleary3301
