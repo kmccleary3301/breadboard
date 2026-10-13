@@ -262,3 +262,20 @@ def test_drop_images_composes_with_other_edits():
     assert check_tool_pairing(view) is None
     assert view[3]["content"] == [{"type": "text", "text": "[pruned]"}]
     assert not has_images(view[3])
+
+
+def test_summary_media_strip_keeps_typed_tool_output_answering_its_call():
+    from breadboard_engine.compaction.primitives.message_reduction import model_message
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+
+    call = {"role": "assistant", "content": "", "tool_calls": [
+        {"id": "call_read", "type": "function", "function": {"name": "read", "arguments": "{}"}}]}
+    result = responses_image_tool_result_message("call_read", [
+        {"type": "input_text", "text": "Image read successfully"},
+        {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+    ])
+    stripped = model_message(result, strip_media=True)
+    assert stripped["content"] == [
+        {"type": "tool_result", "call_id": "call_read", "content": "Image read successfully", "is_error": False}]
+    assert normalize_request_messages([call, stripped])[1]["content"] == stripped["content"]

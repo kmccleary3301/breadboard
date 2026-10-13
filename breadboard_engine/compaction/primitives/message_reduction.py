@@ -37,7 +37,15 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
             mime = match.group(1) if match else "image/png"
         media = isinstance(mime, str) and (mime.startswith("image/") or mime == "application/pdf")
         if strip_media and result.get("role") in {"tool", "tool_result"}:
-            if kind not in {"text", "tool_result"}:
+            if kind == "provider_replay" and part.get("schema_version") == "openai.responses.tool_output.v1":
+                # Typed output carries its call id only in the payload; keep the call answered with
+                # the text the tool session reports for it (OpenCodeToolSession.result).
+                payload = part.get("payload") if isinstance(part.get("payload"), Mapping) else {}
+                output = payload.get("output") if isinstance(payload.get("output"), list) else []
+                text = "\n".join(item.get("text", "") for item in output
+                                 if isinstance(item, Mapping) and item.get("type") in {"input_text", "output_text"})
+                part = {"type": "tool_result", "call_id": payload.get("call_id"), "content": text, "is_error": False}
+            elif kind not in {"text", "tool_result"}:
                 continue
             if kind == "tool_result":
                 part = {key: value for key, value in part.items() if key != "attachments"}
