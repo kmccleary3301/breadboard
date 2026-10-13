@@ -469,10 +469,14 @@ def _agent_tool(owner, name, args):
             # filtering subsequent ResponseItems (agent/control/spawn.rs:470-490).
             boundary = state.compaction_state.latest_boundary()
             kept_start = int(boundary.first_kept_index) if boundary is not None else 0
-            messages = deepcopy([m for index, m in enumerate(state.provider_messages)
+            # Post-boundary edits are applied before filtering, since filtering shifts their indices.
+            edited = {edit.index: edit.message for record in state.compaction_state.records for edit in record.edits}
+            messages = deepcopy([edited.get(index, m) if index >= kept_start else m
+                                 for index, m in enumerate(state.provider_messages)
                                  if index < kept_start or m.get("role") in ("system", "developer", "user")
                                  or (m.get("role") == "assistant" and m.get("phase") == "final_answer")])
-            compaction_state = state.compaction_state.to_list()
+            compaction_state = [{**record, "edits": [edit for edit in record["edits"] if edit["index"] < kept_start]}
+                                for record in state.compaction_state.to_list()]
         with registry.condition:
             registry.reserve(owner)
             child = _make_child(owner, registry, agent_id=_new_thread_id(),

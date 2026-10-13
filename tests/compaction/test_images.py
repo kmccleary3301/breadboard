@@ -316,3 +316,28 @@ def test_drop_images_strips_typed_tool_output_and_keeps_its_call():
     assert "input_image" not in repr(edit.message) and IMAGE_PLACEHOLDER in repr(edit.message)
     assert edit.message["content"][0]["payload"]["call_id"] == "call_view"
     normalize_request_messages([messages[1], edit.message])
+
+
+def test_drop_images_strips_the_protected_prefix():
+    from breadboard_engine.compaction.state import CompactionRecord
+
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": [{"type": "text", "text": "Original task"}, PNG_BLOCK]},
+        {"role": "assistant", "content": "Started"},
+        {"role": "user", "content": "Middle turn"},
+        {"role": "assistant", "content": "Middle answer"},
+        {"role": "user", "content": "Recent turn"},
+    ]
+    state = CompactionState()
+    state.append(CompactionRecord(
+        record_id="r1", sequence=0, method="summary", reason="threshold", created_at="t", tokens_before=1,
+        history_length=5, first_kept_index=5, prefix_end=3, summary="S",
+        summary_messages=({"role": "user", "content": "S"},),
+    ), messages[:5])
+
+    record = drop_images(_context(messages, state))
+
+    assert [edit.index for edit in record.edits] == [1]
+    state.append(record, messages)
+    assert not any(has_images(m) for m in state.project(messages, TARGET))

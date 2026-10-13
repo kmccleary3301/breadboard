@@ -11,7 +11,7 @@ import copy
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .methods import CompactionContext, MethodUnavailable
-from .state import CompactionRecord, MessageEdit
+from .state import CompactionRecord, MessageEdit, leading_system_count
 from .tokens import is_image_part
 
 IMAGE_PLACEHOLDER = "[image removed]"
@@ -69,6 +69,8 @@ def drop_images(context: CompactionContext) -> Optional[CompactionRecord]:
     Returns an edit-only ``CompactionRecord`` if any images were removed, or ``None``.
     """
     kept_start = context.state.kept_start(context.messages, context.target)
+    # A boundary's protected prefix stays visible alongside the kept suffix.
+    prefix = range(leading_system_count(context.messages), context.state.prefix_end(context.messages, context.target))
 
     current_messages: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in context.messages]
     for record in context.state.records:
@@ -78,7 +80,7 @@ def drop_images(context: CompactionContext) -> Optional[CompactionRecord]:
     edits: List[MessageEdit] = []
     total_removed = 0
 
-    for i in range(kept_start, len(current_messages)):
+    for i in [*prefix, *range(kept_start, len(current_messages))]:
         msg = current_messages[i]
         new_msg, count = strip_images_from_message(msg)
         if count > 0:

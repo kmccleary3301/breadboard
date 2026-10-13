@@ -495,3 +495,34 @@ def test_real_background_processes_are_thread_scoped_and_close_recursively(owner
         from breadboard_engine.execution.codex_exec import codex_runtime
 
         codex_runtime(owner).close_thread(root_id)
+
+def test_fork_keeps_post_boundary_edits_on_their_messages(owner, monkeypatch):
+    from breadboard_engine.compaction.state import CompactionRecord, CompactionState, MessageEdit
+
+    monkeypatch.setattr(native.AgentRegistry, "start", lambda self, child: None)
+    state = owner._active_session_state
+    for message in [
+        {"role": "user", "content": "Old task"},
+        {"role": "assistant", "content": "Old answer"},
+        {"role": "user", "content": "New task"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "exec_command", "arguments": "{}"}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "ok"},
+        {"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]},
+    ]:
+        state.add_message(message)
+    history = state.provider_messages
+    state.compaction_state.append(CompactionRecord(
+        record_id="r1", sequence=0, method="summary", reason="threshold", created_at="t", tokens_before=1,
+        history_length=2, first_kept_index=2, summary="S", summary_messages=({"role": "user", "content": "S"},),
+    ), history[:2])
+    state.compaction_state.append(CompactionRecord(
+        record_id="r2", sequence=1, method="drop_images", reason="manual", created_at="t", tokens_before=1,
+        history_length=6, edits=(MessageEdit(5, {"role": "user", "content": [{"type": "text", "text": "[image removed]"}]}),),
+    ), history)
+
+    id = value(owner, "multi_agent_v1.spawn_agent", message="Continue", fork_context=True)["agent_id"]
+
+    child = owner._codex_agent_registry.children[id]
+    view = CompactionState.from_list(child.compaction_state).project(child.messages)
+    assert "[image removed]" in repr(view) and "input_image" not in repr(view)
