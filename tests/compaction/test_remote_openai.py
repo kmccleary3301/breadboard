@@ -672,3 +672,13 @@ def test_codex_estimator_counts_a_native_marker_at_its_replacement_estimate():
 
     marker = {"role": "user", "content": "", NATIVE_MARKER_KEY: {"record_id": "r1", "token_estimate": 50_000}}
     assert bytes4([marker]) >= 50_000
+
+
+def test_codex_estimator_counts_a_typed_tool_result_as_its_wire_item():
+    from breadboard_engine.compaction.primitives.byte_estimator import bytes4
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    output = [{"type": "input_text", "text": "x" * 400},
+              {"type": "input_image", "image_url": "data:image/png;base64," + "A" * 4000}]
+    wire = {"type": "function_call_output", "call_id": "c1", "output": output}
+    assert bytes4([responses_image_tool_result_message("c1", output)]) == bytes4([wire])

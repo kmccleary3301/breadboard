@@ -28,6 +28,12 @@ def response_items(message: Mapping[str, Any]) -> list[Mapping[str, Any]]:
         return [message]
     if message.get("role") == "tool":
         return [{"type": "function_call_output", "call_id": message.get("tool_call_id"), "output": message.get("content", "")}]
+    if message.get("role") == "tool_result":
+        # A typed Responses output goes on the wire as its function_call_output payload.
+        payloads = [block["payload"] for block in message.get("content") or ()
+                    if isinstance(block, Mapping) and block.get("type") == "provider_replay" and isinstance(block.get("payload"), Mapping)]
+        if payloads:
+            return payloads
     parts = []
     content = message.get("content")
     text_type = "output_text" if message.get("role") == "assistant" else "input_text"

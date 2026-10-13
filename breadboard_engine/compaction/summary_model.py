@@ -15,6 +15,7 @@ from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional,
 
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
+from .images import IMAGE_PLACEHOLDER
 from .transcript import answers_tool_call, result_call_ids, result_text
 
 
@@ -50,8 +51,8 @@ def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, 
     """Messages another provider's runtime accepts, for a summary routed off the turn's API.
 
     Same-provider replay (typed Responses output, Claude continuations, signed reasoning) is
-    read only by its own runtime: results become chat tool messages with their text, and
-    reasoning and replay blocks are dropped.
+    read only by its own runtime: results become chat tool messages with their text,
+    reasoning and replay blocks are dropped, and provider-shaped images become a placeholder.
     """
     portable: List[Dict[str, Any]] = []
     for message in messages:
@@ -64,8 +65,9 @@ def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, 
             portable.extend({"role": "tool", "tool_call_id": result["call_id"], "content": result_text(result["content"])}
                             for result in results)
         else:
-            kept = [block for block in content if not (
-                isinstance(block, Mapping) and block.get("type") in {"thinking", "redacted_thinking", "provider_replay"})]
+            kept = [{"type": "text", "text": IMAGE_PLACEHOLDER} if isinstance(block, Mapping) and block.get("type") in {"image_url", "input_image", "image"}
+                    else block for block in content if not (
+                        isinstance(block, Mapping) and block.get("type") in {"thinking", "redacted_thinking", "provider_replay"})]
             if kept or message.get("tool_calls"):
                 portable.append({**message, "content": kept})
     return portable
@@ -135,7 +137,8 @@ class ConductorSummaryModel:
         messages: List[Dict[str, Any]] = []
         if request.system:
             messages.append({"role": "system", "content": request.system})
-        source = request.messages if _api_of(runtime) == _api_of(self.runtime) else _portable_messages(request.messages)
+        same_api = runtime is self.runtime or (None not in _api_of(runtime) and _api_of(runtime) == _api_of(self.runtime))
+        source = request.messages if same_api else _portable_messages(request.messages)
         messages.extend(copy.deepcopy(dict(message)) for message in source)
 
         turn_index = self.turn_index or 0

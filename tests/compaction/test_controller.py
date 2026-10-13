@@ -489,7 +489,8 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
             return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
 
     history = (
-        {"role": "user", "content": "look at the screen"},
+        {"role": "user", "content": [{"type": "text", "text": "look at the screen"},
+                                     {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]},
         {"role": "assistant", "content": [{"type": "provider_replay", "provider_id": "openai",
                                            "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
                                            "payload": {"type": "local_shell_call", "call_id": "c0"}}],

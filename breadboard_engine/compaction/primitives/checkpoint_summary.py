@@ -3,6 +3,7 @@
 import re
 
 from ..methods import MethodUnavailable, SummaryRequest
+from ..transcript import result_call_ids, result_parts
 from .protected_windows import visible_messages
 
 
@@ -44,14 +45,15 @@ class CheckpointSummary:
             role = message.get("role", "unknown")
             content = message.get("content") or ""
             if isinstance(content, (list, tuple)):
-                content = "\n".join(p if isinstance(p, str) else str(p.get("text") or "[image]") for p in content)
+                blocks = result_parts(list(content)) if role in ("tool", "tool_result") else content
+                content = "\n".join(p if isinstance(p, str) else str(p.get("text") or "[image]") for p in blocks)
             content = re.sub(r"MEDIA:\S+", "[media attachment]", str(content))
             if role == "assistant":
                 content = re.sub(r"<think>.*?</think>", "", content, flags=re.S)
             if len(content) > self.content_max:
                 content = content[:self.content_head] + "\n...[truncated]...\n" + content[-self.content_tail:]
-            if role == "tool":
-                parts.append(f"[TOOL RESULT {message.get('tool_call_id', '')}]: {content}")
+            if role in ("tool", "tool_result"):
+                parts.append(f"[TOOL RESULT {message.get('tool_call_id') or ','.join(result_call_ids(message))}]: {content}")
             else:
                 if role == "assistant" and message.get("tool_calls"):
                     calls = []

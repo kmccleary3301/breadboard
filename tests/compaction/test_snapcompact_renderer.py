@@ -127,3 +127,20 @@ def test_supported_chars():
     cjk = "你好"
     # 5x8 does not support CJK directly, but silver does
     assert snapcompact_supported_chars("silver", cjk) == cjk
+
+
+def test_archive_pairs_each_call_with_its_canonical_result():
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    call = lambda call_id: {"id": call_id, "type": "function", "function": {"name": "read", "arguments": "{}"}}
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": [call("c1"), call("c2"), call("c3")]},
+        responses_image_tool_result_message("c1", [{"type": "input_text", "text": "FIRST"},
+                                                   {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        AnthropicAdapter().create_tool_result_batch_message([{"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "c2", "content": "SECOND"},
+            {"type": "tool_result", "tool_use_id": "c3", "content": "THIRD"}]}]),
+    ]
+    text = serialize_conversation(messages, dim_tool_results=False)
+    assert text == "¶call:" + "\n".join(f"read()\n<out>\n{out}\n</out>" for out in ("FIRST", "SECOND", "THIRD"))

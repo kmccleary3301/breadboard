@@ -272,3 +272,22 @@ def test_codex_threshold_is_window_fraction_not_preempted_by_output_reserve(max_
     assert not fires(117963)
     assert fires(117964)
     assert controller.recipe.overflow_policy == "terminal"
+
+
+def test_hermes_checkpoint_summary_reads_typed_tool_results():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    recipe = build_recipe(load_compaction_config({"enabled": True, "preset": "hermes_agent@2026.9.11"}))
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        responses_image_tool_result_message("c1", [{"type": "input_text", "text": "SCREEN_TEXT"},
+                                                   {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        {"role": "user", "content": "next"},
+    ]
+    summaries = Summaries("checkpoint")
+    context = CompactionContext(messages, CompactionState(), recipe.settings, "manual", TARGET, 200000, 1,
+                                summarizer=summaries)
+    recipe.pipeline.stages["summary"].step.reducer.reduce(context, Selection(first_kept_index=3, summarize=(0, 1, 2)))
+    assert "[TOOL RESULT c1]: SCREEN_TEXT\\n[image]" in json.dumps(summaries.requests[0].messages)

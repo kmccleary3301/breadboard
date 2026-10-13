@@ -7,6 +7,7 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
+from ..transcript import result_call_ids, result_parts
 from .renderer import snapcompact_supported_chars
 
 NEWLINE_GLYPH = "\u2588"
@@ -285,20 +286,21 @@ def serialize_conversation(
     tool_results_by_id: Dict[str, Mapping[str, Any]] = {}
     for msg in messages:
         role = msg.get("role")
-        if role in ("tool", "toolResult"):
-            call_id = msg.get("tool_call_id")
-            if isinstance(call_id, str):
+        if role in ("tool", "toolResult", "tool_result"):
+            for call_id in result_call_ids(msg):
                 tool_results_by_id[call_id] = msg
                 if msg.get("useless") is True:
                     useless_call_ids.add(call_id)
 
     parts: List[str] = []
 
-    def _render_result(res_msg: Mapping[str, Any]) -> str:
+    def _render_result(res_msg: Mapping[str, Any], call_id: Optional[str] = None) -> str:
         content = res_msg.get("content", "")
         if isinstance(content, list):
+            # A batch continuation answers several calls; render the block for this one.
+            own = [b for b in content if isinstance(b, Mapping) and b.get("type") == "tool_result" and b.get("call_id") == call_id]
             text_blocks = []
-            for b in content:
+            for b in result_parts(own or content):
                 if isinstance(b, Mapping) and b.get("type") == "text":
                     text_blocks.append(str(b.get("text", "")))
                 elif isinstance(b, str):
@@ -402,7 +404,7 @@ def serialize_conversation(
                 paired = tool_results_by_id.get(c_id)
                 if paired is not None:
                     merged_call_ids.add(c_id)
-                    res_body = _render_result(paired)
+                    res_body = _render_result(paired, c_id)
                     call_lines.append(f"{call_header}\n<out>\n{res_body}\n</out>")
                 else:
                     call_lines.append(call_header)
@@ -410,9 +412,9 @@ def serialize_conversation(
             if call_lines:
                 parts.append(f"¶call:{chr(10).join(call_lines)}")
 
-        elif role in ("tool", "toolResult"):
-            call_id = str(msg.get("tool_call_id", ""))
-            if call_id in useless_call_ids or call_id in merged_call_ids:
+        elif role in ("tool", "toolResult", "tool_result"):
+            call_ids = result_call_ids(msg) or (str(msg.get("tool_call_id", "")),)
+            if all(call_id in useless_call_ids or call_id in merged_call_ids for call_id in call_ids):
                 continue
             res_body = _render_result(msg)
             parts.append(f"¶call:\n<out>\n{res_body}\n</out>")
