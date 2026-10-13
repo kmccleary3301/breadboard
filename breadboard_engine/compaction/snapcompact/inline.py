@@ -10,14 +10,12 @@ Ports OMP packages/coding-agent/src/session/snapcompact-inline.ts:
 from __future__ import annotations
 
 import copy
-import json
 import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from ..methods import MethodUnavailable
 from ..settings import CompactionSettings
 from ..tokens import estimate_text_tokens
-from ..transcript import content_text, has_images
+from ..transcript import content_text
 
 from .archive import count_frames, text_pages
 from .renderer import render_snapcompact_png

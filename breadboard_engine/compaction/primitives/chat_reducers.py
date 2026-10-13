@@ -5,7 +5,6 @@ import re
 
 from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
 from ..params import Params, PresetError
-from ..state import MessageEdit
 from .accounting import _text_parts
 from .reducers import Reduction, resolve_prompt
 from .selectors import Selection

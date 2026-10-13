@@ -16,18 +16,15 @@ from .normalize import (
 from .renderer import (
     DIM_OFF,
     DIM_ON,
-    cell_units,
     is_wide,
     render_snapcompact_png,
 )
 from .shapes import (
-    FRAME_DATA_BYTES_BUDGET,
     MAX_FRAMES_DEFAULT,
     SHAPE_VARIANTS,
     Shape,
     geometry,
     price_shape,
-    resolve_shape,
 )
 
 HQ_EDGE_FRAMES = 3

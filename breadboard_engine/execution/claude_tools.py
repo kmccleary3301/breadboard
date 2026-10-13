@@ -636,7 +636,7 @@ class ClaudeToolSession:
         """Drive stock's clear-and-restore transition, cli.js:2209,2211."""
         with self.lock:
             prior = sum(r["kind"] == "compact" for r in self.records)
-            operation = self._run({"kind": "compact", "summary": summary}, "/compact")
+            self._run({"kind": "compact", "summary": summary}, "/compact")
             if sum(r["kind"] == "compact" for r in self.records) != prior + 1:
                 raise StockExecutionError("Stock CLI did not execute its compaction transition")
             probe = self._run({"kind": "compact_probe"}, self.marker)

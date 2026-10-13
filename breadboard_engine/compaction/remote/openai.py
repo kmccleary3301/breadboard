@@ -7,7 +7,6 @@ Ports OMP ``packages/agent/src/compaction/openai.ts`` and
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 import urllib.error
 import urllib.request
@@ -18,14 +17,13 @@ from ..methods import (
     CompactionError,
     CompactionRecord,
     MethodUnavailable,
-    RemoteCompactionPort,
 )
 from ...provider.contract_messages import normalize_provider_replay
 from ...provider.contract_runtime import ProviderRuntimeContext
 from ...provider.input_media import resolve_input_media
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
-from ..transcript import is_tool_result, leading_system_count, role_of, tool_call_ids
+from ..transcript import leading_system_count
 
 CONTEXT_WINDOW_TRUNCATED_OUTPUT_MESSAGE = "Output: exceeded available model context → truncated."
 COMPACTION_TRIGGER_ITEM: Dict[str, Any] = {"type": "compaction_trigger"}

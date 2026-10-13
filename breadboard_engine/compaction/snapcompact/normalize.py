@@ -7,7 +7,7 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from .renderer import DIM_OFF, DIM_ON, FULL_BLOCK, snapcompact_supported_chars
+from .renderer import snapcompact_supported_chars
 
 NEWLINE_GLYPH = "\u2588"
 

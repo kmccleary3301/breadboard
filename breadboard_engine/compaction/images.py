@@ -8,11 +8,10 @@ replaces image content parts in kept messages with OMP's text placeholder
 from __future__ import annotations
 
 import copy
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .methods import CompactionContext, MethodUnavailable
 from .state import CompactionRecord, MessageEdit
-from .transcript import has_images
 
 IMAGE_PLACEHOLDER = "[image removed]"
 

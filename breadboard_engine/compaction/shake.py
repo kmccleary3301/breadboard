@@ -15,7 +15,6 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass
 import json
-import math
 import re
 from typing import (
     Any,
@@ -33,7 +32,7 @@ from .methods import CompactionContext, MethodUnavailable
 from .settings import ShakeSettings
 from .state import CompactionRecord, MessageEdit
 from .tokens import estimate_message_tokens, estimate_text_tokens
-from .transcript import is_tool_result, role_of, tool_call_ids
+from .transcript import is_tool_result, role_of
 
 # Token cost heuristic for placeholder line; used only for the savings gate.
 PLACEHOLDER_TOKEN_ESTIMATE = 16

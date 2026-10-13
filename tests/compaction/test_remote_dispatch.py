@@ -15,6 +15,7 @@ from breadboard_engine.compaction import (
     settings_from_config,
 )
 from .support import run_pipeline
+from breadboard_engine.compaction.prompts import UPDATE_SUMMARIZATION_PROMPT
 from breadboard_engine.compaction.remote import RemoteCompaction
 
 
@@ -242,5 +243,6 @@ def test_remote_endpoint_summarizes_tool_work_after_the_active_boundary():
     RemoteCompaction(http_poster=fake_poster).run(dataclasses.replace(context, state=state))
     [prompt] = prompts
     assert "Already summarized" not in prompt
-    assert "Earlier summary" in prompt
+    assert "<previous-summary>\nEarlier summary\n</previous-summary>" in prompt
+    assert prompt.endswith(UPDATE_SUMMARIZATION_PROMPT)
     assert "make all" in prompt and "build ok" in prompt

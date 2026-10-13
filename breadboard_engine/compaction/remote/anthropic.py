@@ -16,23 +16,18 @@ Official Anthropic docs:
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from ...provider.contracts import ProviderContractError
 from ..methods import (
     CompactionCancelled,
     CompactionContext,
-    CompactionError,
     MethodUnavailable,
     NativeCompactionError,
-    RemoteCompactionPort,
 )
 from ..state import (
     CompactionRecord,
     NativeCompaction,
-    NATIVE_MARKER_KEY,
 )
-from ..tokens import estimate_messages_tokens
 from ..transcript import (
     find_cut_point,
     is_tool_result,

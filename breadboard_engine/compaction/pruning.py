@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import copy
 from dataclasses import dataclass
-import json
 import math
-import re
 from typing import (
     Any,
     Callable,
@@ -26,10 +24,9 @@ from typing import (
     Sequence,
     Set,
     Tuple,
-    Union,
 )
 from .file_ops import split_read_selector
-from .methods import CompactionContext, MethodUnavailable
+from .methods import CompactionContext
 from .settings import PruneSettings
 from .shake import (
     DEFAULT_PROTECTED_TOOLS,
@@ -40,7 +37,7 @@ from .shake import (
 )
 from .state import CompactionRecord, MessageEdit
 from .tokens import estimate_message_tokens
-from .transcript import is_tool_result, role_of
+from .transcript import is_tool_result
 
 SUPERSEDED_NOTICE = "[Superseded by a newer read of this file]"
 USELESS_NOTICE = "[Uneventful result elided]"

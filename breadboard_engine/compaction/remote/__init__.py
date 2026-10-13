@@ -7,7 +7,7 @@ or to an optional self-hosted remote endpoint (OMP ``compaction.remoteEndpoint``
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Mapping, Optional, Sequence
+from typing import Any, Callable, Dict, Mapping, Optional
 import urllib.error
 import urllib.request
 
@@ -16,12 +16,11 @@ from ..methods import (
     CompactionError,
     CompactionRecord,
     MethodUnavailable,
-    RemoteCompactionPort,
 )
 from ..settings import MAX_SUMMARY_TOKENS
-from ..serialize import serialize_conversation_for_summary
+from ..serialize import escape_summary_boundary_tags, serialize_conversation_for_summary
 from ..transcript import find_cut_point
-from ..prompts import SUMMARIZATION_PROMPT, SUMMARIZATION_SYSTEM_PROMPT
+from ..prompts import SUMMARIZATION_PROMPT, SUMMARIZATION_SYSTEM_PROMPT, UPDATE_SUMMARIZATION_PROMPT
 
 
 
@@ -88,14 +87,16 @@ class RemoteCompaction:
             raise MethodUnavailable("No history messages eligible for remote endpoint summarization")
 
         conversation_text = serialize_conversation_for_summary(messages_to_summarize)
-        prompt_parts = [f"<conversation>\n{conversation_text}\n</conversation>\n"]
-        latest_boundary = context.state.latest_readable_boundary()
-        if latest_boundary and latest_boundary.summary:
-            prompt_parts.append(f"<previous-summary>\n{latest_boundary.summary}\n</previous-summary>\n")
+        # OMP compaction.ts summarizeConversationWindow: the endpoint replaces only the transport.
+        previous = context.state.latest_readable_boundary()
+        previous_summary = previous.summary if previous is not None else None
+        base = UPDATE_SUMMARIZATION_PROMPT if previous_summary else SUMMARIZATION_PROMPT
         if context.custom_instructions:
-            prompt_parts.append(f"Additional focus: {context.custom_instructions}\n")
-        prompt_parts.append(SUMMARIZATION_PROMPT)
-        prompt_text = "\n".join(prompt_parts)
+            base = f"{base}\n\nAdditional focus: {context.custom_instructions}"
+        prompt_text = f"<conversation>\n{conversation_text}\n</conversation>\n\n"
+        if previous_summary:
+            prompt_text += f"<previous-summary>\n{escape_summary_boundary_tags(previous_summary)}\n</previous-summary>\n\n"
+        prompt_text += base
 
         is_chat_completions = "/chat/completions" in endpoint
         max_tokens = MAX_SUMMARY_TOKENS

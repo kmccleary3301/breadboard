@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import time
 from typing import Any
 from .opencode_scenarios import PARITY_REFERENCE
 from .request_bytes import canonical, project_guarded_values, request_json_problem

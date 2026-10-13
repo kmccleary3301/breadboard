@@ -28,9 +28,9 @@ and sets that harness's own setting names:
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import importlib.resources
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Tuple
 
 import yaml
 

@@ -325,3 +325,22 @@ def test_native_port_leases_the_broker_client_for_each_compaction() -> None:
     assert (port.provider, port.api, port.supports("gpt-test"), leases) == ("openai", "responses", True, [])
     assert port.compact(None) == "leased-client"
     assert leases == ["route-a"]
+
+
+def test_native_boundary_for_the_route_counts_toward_threshold_pressure() -> None:
+    controller = _controller()
+    state = _session(turns=12)
+    assert controller.should_trigger_threshold(state, context_window=8000)
+    context = CompactionContext(
+        messages=state.provider_messages, state=state.compaction_state, settings=controller.settings,
+        reason="manual", target=_target(), context_window=8000, tokens_before=1,
+    )
+    # OpenAI native records carry no readable summary; only their own route can replay them.
+    native = NativeCompaction(provider="openai", api="chat", model="gpt-test", items=({"type": "compaction"},))
+    state.compaction_state.append(context.new_record(
+        method="remote", first_kept_index=len(state.provider_messages) - 2, native=native,
+    ), state.provider_messages)
+    controller.prepare_request(state, conductor=_conductor(controller), runtime=FakeRuntime(), client=object(),
+                               model="gpt-test", turn_index=1)
+    assert not [event for event in state.lifecycle_events
+                if event["type"] == "compaction_finished" and event["payload"]["reason"] == "threshold"]

@@ -1,15 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, List
 import pytest
 
 from breadboard_engine.compaction import (
     CompactionContext,
-    CompactionRecord,
     CompactionState,
-    MethodUnavailable,
-    NativeCompaction,
     ProjectionTarget,
     estimate_messages_tokens,
     settings_from_config,

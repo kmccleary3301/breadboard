@@ -10,27 +10,24 @@ Ports OMP session-maintenance.ts snapcompact execution:
 
 from __future__ import annotations
 
-import copy
 import json
 import math
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, List, Mapping, Sequence, Set
 
 from ..methods import CompactionContext, CompactionRecord, MethodUnavailable
 from ..settings import resolve_budget_reserve_tokens
 from ..state import CompactionState
-from ..tokens import CHARS_PER_TOKEN, MESSAGE_OVERHEAD_TOKENS, estimate_message_tokens, estimate_messages_tokens, estimate_text_tokens
+from ..tokens import estimate_messages_tokens
 from ..transcript import find_cut_point, leading_system_count
 
 from .archive import (
     Archive,
     compact_archive,
-    history_blocks,
 )
 from .normalize import compute_file_lists
 from .shapes import (
     FRAME_DATA_BYTES_BUDGET,
     MAX_FRAMES_DEFAULT,
-    Shape,
     frame_data_bytes,
     geometry,
     max_frames_for_data_budget,

@@ -15,9 +15,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 import gzip
 import io
-import math
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 # Pillow is imported lazily or guarded where required.
 try:

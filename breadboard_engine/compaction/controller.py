@@ -247,6 +247,7 @@ class CompactionController:
             max_input_tokens=max_input,
             max_output_tokens=max_output,
             checkpoint="every_request",
+            target=target,
         ):
             self.compact(
                 session_state, request_context=request_context, reason="threshold", target=target,
@@ -304,12 +305,13 @@ class CompactionController:
         if not any(getattr(trigger, "phase", None) == "assistant_step_end" for trigger in self.recipe.triggers):
             return source_compacted
         window = self.resolve_context_window(conductor=conductor, session_state=session_state, model=model)
+        target = projection_target_for(runtime, model)
         max_input, max_output = self.resolve_model_limits(session_state, conductor, model)
         if not self.should_trigger_threshold(
             session_state, context_window=window,
             last_usage=session_state.get_provider_metadata("usage"),
             max_input_tokens=max_input, max_output_tokens=max_output,
-            checkpoint="assistant_step_end",
+            checkpoint="assistant_step_end", target=target,
         ):
             return source_compacted
         pending = None
@@ -321,7 +323,7 @@ class CompactionController:
                     pending = parsed
         outcome = self.compact(
             session_state, request_context=request_context, reason="threshold",
-            target=projection_target_for(runtime, model),
+            target=target,
             conductor=conductor, runtime=runtime, client=client,
             context_window=window, turn_index=turn_index,
             supports_images=self.resolve_supports_images(conductor=conductor, model=model),
@@ -458,6 +460,7 @@ class CompactionController:
         max_input_tokens: Optional[int] = None,
         max_output_tokens: Optional[int] = None,
         checkpoint: Optional[str] = None,
+        target: Optional[ProjectionTarget] = None,
     ) -> bool:
         """Whether any preset trigger fires for the current history and last usage."""
         if not self.active:
@@ -468,7 +471,8 @@ class CompactionController:
             return False
 
         compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
-        view = compaction_state.project(messages, None) if compaction_state is not None else messages
+        # Count the view the provider receives, including a native boundary usable only for this target.
+        view = compaction_state.project(messages, target) if compaction_state is not None else messages
         # Provider usage describes the last request sent. If a record was
         # appended since (no new message arrived), that request predates the
         # compaction and its usage would retrigger it.
@@ -649,7 +653,7 @@ class CompactionController:
             supports_images=supports_images, clock=clock, max_output_tokens=max_output_tokens,
             overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
         )
-        messages, compaction_state = context.messages, context.state
+        compaction_state = context.state
         tokens_before = context.tokens_before
         target_tokens = self.recipe.target_tokens(
             reason, context.context_window, context.max_output_tokens, context.max_input_tokens,

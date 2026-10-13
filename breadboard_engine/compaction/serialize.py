@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import re
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Mapping, Sequence
 
 TOOL_RESULT_MAX_CHARS = 2000
 

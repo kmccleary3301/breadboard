@@ -1,26 +1,21 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import pytest
 
 from breadboard_engine.compaction.methods import (
     ArtifactSink,
     CompactionContext,
-    MethodUnavailable,
 )
 from breadboard_engine.compaction.settings import settings_from_config
 from breadboard_engine.compaction.shake import (
     AGGRESSIVE_SHAKE_CONFIG,
-    DEFAULT_SHAKE_CONFIG,
     RESCUE_SHAKE_CONFIG,
-    BlockShakeRegion,
     ShakeCompaction,
     ShakeConfig,
-    ToolResultShakeRegion,
     apply_shake_region,
     apply_shake_regions,
     collect_shake_regions,
-    scan_text_for_block_ranges,
     shake,
 )
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget

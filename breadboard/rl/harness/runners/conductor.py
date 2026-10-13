@@ -11,7 +11,6 @@ import json
 import math
 import re
 import time
-from collections.abc import Mapping
 from typing import Any, Awaitable, Callable, Literal
 
 from breadboard_engine.compilation.contracts import (
@@ -24,7 +23,6 @@ from breadboard_engine.compilation.provider_response import (
     NATIVE_TARGET_IDS,
     MINI_RESPONSE_CONSUMER_ID,
     OPENHANDS_RESPONSE_CONSUMER_ID,
-    PI_RESPONSE_CONSUMER_ID,
     NativeResponsePolicy,
 )
 from breadboard_engine.provider.contracts import NativeProviderRequestFailure
