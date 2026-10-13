@@ -270,26 +270,34 @@ def get_model_response(
     request_context: CompactionRequestContext | None = None,
 ) -> Any:
     """Get response from the model with proper tool configuration."""
-    previous_turn_index = session_state.get_provider_metadata("current_turn_index")
-    turn_index = len(session_state.transcript) + 1
-    try:
-        session_state.begin_turn(turn_index)
-    except Exception:
-        session_state.set_provider_metadata("current_turn_index", turn_index)
-    session_state.set_provider_metadata("loop_detection_payload", None)
-    session_state.set_provider_metadata("context_window_warning", None)
-    try:
-        conductor.loop_detector.turn_started()
-    except Exception:
-        pass
-    try:
-        injector = getattr(conductor, "_inject_multi_agent_wakeups", None)
-        if callable(injector):
-            injector(session_state, markdown_logger)
-    except Exception:
-        pass
-
     compaction_ctrl = getattr(conductor, "compaction_controller", None)
+    # An overflow retry resends the failed request of the same turn: it keeps that
+    # turn's indices and starts no new turn or transcript entry.
+    retry = compaction_ctrl is not None and compaction_ctrl.request_attempt > 0
+    if retry:
+        turn_index, previous_turn_index = compaction_ctrl.request_turn
+    else:
+        previous_turn_index = session_state.get_provider_metadata("current_turn_index")
+        turn_index = len(session_state.transcript) + 1
+        if compaction_ctrl is not None:
+            compaction_ctrl.request_turn = (turn_index, previous_turn_index)
+        try:
+            session_state.begin_turn(turn_index)
+        except Exception:
+            session_state.set_provider_metadata("current_turn_index", turn_index)
+        session_state.set_provider_metadata("loop_detection_payload", None)
+        session_state.set_provider_metadata("context_window_warning", None)
+        try:
+            conductor.loop_detector.turn_started()
+        except Exception:
+            pass
+        try:
+            injector = getattr(conductor, "_inject_multi_agent_wakeups", None)
+            if callable(injector):
+                injector(session_state, markdown_logger)
+        except Exception:
+            pass
+
     if compaction_ctrl is not None:
         send_messages = compaction_ctrl.prepare_request(
             session_state,
@@ -391,14 +399,15 @@ def get_model_response(
     except Exception:
         pass
 
-    session_state.add_transcript_entry(
-        {
-            "tools_context": {
-                "available_tools": conductor._dump_tool_defs(tool_defs),
-                "compiled_tools_prompt": local_tools_prompt,
+    if not retry:
+        session_state.add_transcript_entry(
+            {
+                "tools_context": {
+                    "available_tools": conductor._dump_tool_defs(tool_defs),
+                    "compiled_tools_prompt": local_tools_prompt,
+                }
             }
-        }
-    )
+        )
 
     context_payload = conductor.context_guard.maybe_compact(
         session_state, send_messages

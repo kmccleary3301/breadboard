@@ -391,7 +391,9 @@ into request DTOs only; canonical history is unchanged. Genuine queued native
 summary requests are served through BB's production provider path.
 Successful summarize retains pending state (`summarize-retry-strategy.ts:111-117`);
 the state clears on summary-last skip, native handled truncation, or the spent
-two-attempt budget (:159). A native handled outcome does not wait for a summary.
+two-attempt budget (:159). It is per session, as stock keys `pendingCompact` by
+session ID (`recovery-hook.ts:17,66`), so each BB run starts with none armed.
+A native handled outcome does not wait for a summary.
 Stock's handled branch submits `promptAsync({auto:true})` without the required
 `parts`, producing a genuine 400 rather than a continuation; BB preserves this
 dead end, and the next real human input may continue under the dated profile's

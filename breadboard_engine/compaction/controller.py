@@ -107,6 +107,8 @@ class CompactionController:
         # each successful overflow recovery so retried requests are recorded
         # as attempt 1, 2, ... instead of overwriting attempt 0.
         self.request_attempt = 0
+        # (turn index, previous turn index) of attempt 0, which the retries reuse.
+        self.request_turn: Optional[tuple[int, Any]] = None
         self.stock_driver = stock_driver
         self.tool_schema_provider = tool_schema_provider
 
@@ -116,6 +118,13 @@ class CompactionController:
 
     def begin_request(self) -> None:
         self.request_attempt = 0
+
+    def begin_run(self) -> None:
+        """Drop recovery state an earlier run armed; the conductor outlives its sessions."""
+        for trigger in self.recipe.triggers:
+            clear = getattr(trigger, "clear", None)
+            if callable(clear):
+                clear()
 
     @staticmethod
     def _ledger(session_state: Any) -> CompactionState:

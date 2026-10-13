@@ -5825,6 +5825,8 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             turn_id=provider_turn_id,
             turn_index=None,
         )
+        if getattr(self, "compaction_controller", None) is not None:
+            self.compaction_controller.begin_run()
         kernel_emitter_closed = False
 
         def _close_kernel_emitter(reason: str = "session_end") -> None:
