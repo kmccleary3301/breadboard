@@ -263,7 +263,10 @@ class CompactionState:
         if record.history_length != len(messages):
             raise CompactionStateError("compaction record was made for a different history length")
         head = 0 if record.reset_context else leading_system_count(messages)
-        previous = self.latest_boundary()
+        # The boundary this record supersedes: its own route's for a native payload, else the
+        # latest readable one (a portable record may cut before a native-only boundary).
+        native = record.native
+        previous = self._active_boundary(ProjectionTarget(native.provider, native.api, native.model) if native else None)
         if record.is_boundary:
             first = int(record.first_kept_index)
             if first < head or first > len(messages):

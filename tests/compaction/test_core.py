@@ -241,6 +241,19 @@ def test_boundary_cannot_move_backwards():
         state.validate(_Boundary(6).run(_context(messages, state)), messages)
 
 
+def test_portable_boundary_may_cut_before_a_later_native_only_boundary():
+    messages = _history()
+    state = CompactionState()
+    state.append(_Boundary(4).run(_context(messages, state)), messages)
+    native = NativeCompaction(provider="openai", api="responses", model="gpt-x", items=({"type": "compaction"},))
+    state.append(_context(messages, state).new_record(method="remote", first_kept_index=10, native=native), messages)
+    with pytest.raises(CompactionStateError, match="backwards"):
+        state.validate(_Boundary(2).run(_context(messages, state)), messages)
+    # The local summary covers the native-only prefix from the readable boundary on.
+    state.append(_Boundary(6).run(_context(messages, state)), messages)
+    assert state.project(messages, TARGET)[2:] == messages[6:]
+
+
 def test_edits_must_preserve_role_and_tool_identity():
     messages = _history()
     context = _context(messages)
