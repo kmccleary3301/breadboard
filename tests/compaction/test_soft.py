@@ -268,3 +268,26 @@ def test_soft_compaction_summarizes_the_edited_history():
 
     sent = "".join(m["content"] for r in summarizer.requests for m in r.messages)
     assert "[pruned]" in sent and "ORIGINAL_TOOL_OUTPUT" not in sent
+
+
+def test_soft_compaction_summarizes_typed_tool_results():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "turn 1: look at the screen"},
+        {"role": "assistant", "content": "looking", "tool_calls": [{"id": "c1", "function": {"name": "view_image", "arguments": {}}}]},
+        responses_image_tool_result_message("c1", [
+            {"type": "input_text", "text": "TYPED_TOOL_OUTPUT"},
+            {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        {"role": "tool_result", "content": [{"type": "tool_result", "call_id": "c2", "content": "CANONICAL_RESULT", "is_error": False}]},
+        {"role": "user", "content": "turn 2: what did it show?" + " context " * 20},
+        {"role": "assistant", "content": "a screen" + " context " * 20},
+    ]
+    summarizer = FakeSummaryModel(responses=["Summary", "Short"])
+    ctx = _make_context(messages, summarizer=summarizer)
+
+    omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
+
+    sent = "".join(m["content"] for r in summarizer.requests for m in r.messages)
+    assert "TYPED_TOOL_OUTPUT" in sent and "CANONICAL_RESULT" in sent and "base64" not in sent
