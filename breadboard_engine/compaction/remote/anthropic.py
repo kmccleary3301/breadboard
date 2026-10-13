@@ -364,7 +364,6 @@ class AnthropicCompactionPort:
             api=self.api,
             model=context.target.model,
             items=(compaction_block,),
-            token_estimate=tokens_used,
         )
 
         summary_messages = (

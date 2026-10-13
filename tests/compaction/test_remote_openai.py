@@ -557,3 +557,49 @@ def test_two_successive_remote_compactions_slice_from_latest_boundary():
     assert not any(it.get("content", [{}])[0].get("text") == "Turn 1 question" for it in second_input if it.get("role") == "user")
     assert not any(it.get("content", [{}])[0].get("text") == "Turn 1 answer" for it in second_input if it.get("role") == "assistant")
     assert any(it.get("content", [{}])[0].get("text") == "Turn 2 question" for it in second_input if it.get("role") == "user")
+
+
+def test_remote_record_estimate_counts_the_replacement_not_the_compacted_input():
+    def projected_estimate(input_tokens: int) -> int:
+        def fake_poster(url, payload, headers):
+            return (
+                'data: {"type": "response.output_item.done", "item": {"type": "compaction", "encrypted_content": "enc"}}\n\n'
+                'data: {"type": "response.completed", "response": {"usage": {"input_tokens": %d}}}\n\n' % input_tokens
+            )
+
+        ctx = _v2_context()
+        record = OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(ctx)
+        ctx.state.append(record, ctx.messages)
+        return estimate_messages_tokens(ctx.state.project(ctx.messages, ctx.target))
+
+    # The usage reports the history sent for compaction; the replacement is what later requests carry.
+    assert projected_estimate(1280) == projected_estimate(900000)
+
+
+def test_native_pass_after_a_readable_boundary_sends_its_summary_not_the_prefix():
+    posted = []
+
+    def fake_poster(url, payload, headers):
+        posted.append(payload)
+        return {"output": [{"type": "compaction", "encrypted_content": "enc"}]}
+
+    messages = [
+        {"role": "system", "content": "System instructions"},
+        {"role": "user", "content": "Turn 1 question"},
+        {"role": "assistant", "content": "Turn 1 answer"},
+        {"role": "user", "content": "Turn 2 question"},
+        {"role": "assistant", "content": "Turn 2 answer"},
+    ]
+    state = CompactionState()
+    ctx = CompactionContext(
+        messages=messages, state=state,
+        settings=settings_from_config({"enabled": True, "remote_streaming_v2_enabled": False}),
+        reason="threshold", target=ProjectionTarget("openai", "responses", "gpt-5"),
+        context_window=8000, tokens_before=100,
+    )
+    state.append(ctx.new_record(method="soft", first_kept_index=3, summary="S",
+                                summary_messages=({"role": "user", "content": "<summary>S</summary>"},)), messages)
+    OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(ctx)
+
+    texts = [part["text"] for item in posted[0]["input"] for part in item.get("content", []) if "text" in part]
+    assert texts == ["<summary>S</summary>", "Turn 2 question", "Turn 2 answer"]

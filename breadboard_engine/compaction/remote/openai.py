@@ -21,6 +21,7 @@ from ..methods import (
 from ...provider.contract_messages import normalize_provider_replay
 from ...provider.contract_runtime import ProviderRuntimeContext
 from ...provider.input_media import resolve_input_media
+from ..primitives.byte_estimator import bytes4
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
 from ..transcript import leading_system_count
@@ -541,16 +542,13 @@ class OpenAIResponsesCompactionPort:
     def compact(self, context: CompactionContext) -> CompactionRecord:
         head = leading_system_count(context.messages)
         prev_replacement: Optional[Sequence[Mapping[str, Any]]] = None
-        latest_boundary = context.state.latest_boundary()
-        if context.native_retention is None and latest_boundary and latest_boundary.native and latest_boundary.native.usable_for(context.target):
-            prev_replacement = latest_boundary.native.items
-
-        if prev_replacement is not None and latest_boundary is not None and latest_boundary.first_kept_index is not None:
-            remote_messages = context.messages[latest_boundary.first_kept_index:]
-        elif context.native_retention is not None:
-            remote_messages = context.projected()[head:]
+        boundary = context.state._active_boundary(context.target)
+        if context.native_retention is None and boundary and boundary.native and boundary.native.usable_for(context.target):
+            prev_replacement = boundary.native.items
+            remote_messages = context.messages[boundary.first_kept_index:]
         else:
-            remote_messages = context.messages[head:]
+            # The view the route reads: a readable boundary's summary and kept messages, or the history.
+            remote_messages = context.projected()[head:]
 
         if not remote_messages:
             raise MethodUnavailable("No messages to compact")
@@ -668,7 +666,7 @@ class OpenAIResponsesCompactionPort:
             api=self.api,
             model=model,
             items=tuple(replacement_history),
-            token_estimate=used_tokens,
+            token_estimate=bytes4(replacement_history),
         )
 
         return context.new_record(

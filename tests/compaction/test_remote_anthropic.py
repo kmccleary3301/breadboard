@@ -220,7 +220,13 @@ def test_anthropic_compaction_port_success() -> None:
     assert record.native.items == (
         {"type": "compaction", "content": summary_text, "signature": signature},
     )
-    assert record.native.token_estimate == 420
+    # The projected marker carries the summary as content, so it is estimated as that text,
+    # not as the compacted input the compaction iteration consumed.
+    state = CompactionState()
+    state.append(record, messages)
+    assert estimate_messages_tokens(state.project(messages, ctx.target)) == estimate_messages_tokens(
+        [{"role": "user", "content": summary_text}, *messages[record.first_kept_index:]]
+    )
     # Summary messages are readable for fallback routes
     assert len(record.summary_messages) == 1
     assert record.summary_messages[0]["content"] == summary_text
