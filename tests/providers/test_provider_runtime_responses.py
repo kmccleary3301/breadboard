@@ -46,7 +46,7 @@ def test_summary_history_is_complete_without_changing_ordinary_stateful_delta(su
     context = ProviderRuntimeContext(
         types.SimpleNamespace(get_provider_metadata=lambda key: {"previous_response_id": "resp_old"}.get(key)),
         {"provider_tools": {"openai": {"responses_stateful": True, "responses_use_developer_role": True}}},
-        extra={"compaction_summary": True, "compaction_stateless": True, "compaction_request_options_declared": True, "max_tokens": 32000} if summary else {},
+        extra={"compaction_summary": True, "compaction_request_options_declared": True, "max_tokens": 32000} if summary else {},
     )
     messages = [
         {"role": "system", "content": "You are helpful."},
@@ -106,22 +106,20 @@ def test_stateless_replay_keeps_raw_native_tool_arguments():
 
 @pytest.mark.parametrize("request_declared", [False, True])
 @pytest.mark.parametrize("state_reference", ["previous_response_id", "conversation_id"])
-def test_summary_without_stateless_opt_in_preserves_base_responses_delta(request_declared, state_reference):
+def test_summary_requests_never_chain_onto_the_live_responses_state(request_declared, state_reference):
     runtime = OpenAIResponsesRuntime(types.SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
     state = types.SimpleNamespace(get_provider_metadata=lambda key: "old_reference" if key == state_reference else None)
     config = {"provider_tools": {"openai": {"responses_stateful": True}}}
     messages = [{"role": "user", "content": "Task"}, {"role": "assistant", "content": "Answer"},
                 {"role": "user", "content": "Summarize"}]
-    base = runtime._request_payload(model="test", messages=messages, tools=None,
-                                    context=ProviderRuntimeContext(state, config))
     summary = runtime._request_payload(model="test", messages=messages, tools=None,
                                        context=ProviderRuntimeContext(state, config, extra={
                                            "compaction_summary": True,
                                            "compaction_request_options_declared": request_declared,
                                        }))
-    assert summary == base
-    assert summary["conversation" if state_reference == "conversation_id" else state_reference] == "old_reference"
-    assert len(summary["input"]) == 1
+    # The summary transcript is complete; the server-side history would duplicate it.
+    assert not {"previous_response_id", "conversation"} & set(summary)
+    assert len(summary["input"]) == 3
 
 
 def test_legacy_summary_budget_does_not_add_a_responses_wire_cap():

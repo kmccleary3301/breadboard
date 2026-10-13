@@ -27,10 +27,9 @@ def summary_request_options(params: Params):
     """Preserve omission versus explicit empty tools in the request block."""
     options = params.mapping("request", None)
     if options is None:
-        return False, (), None, False, False
+        return False, (), None, False
     request = params.child(options, "request")
     stream = request.bool("stream", False)
-    stateless = request.bool("stateless", False)
     names = request.list("tools", [])
     if any(not isinstance(name, str) or not name for name in names) or len(set(names)) != len(names):
         raise PresetError(f"{request.where}.tools must contain unique nonempty tool names")
@@ -39,7 +38,7 @@ def summary_request_options(params: Params):
     if any(key in raw_params for key in ("model", "messages", "tools", "stream", "max_tokens")):
         raise PresetError(f"{request.where}.params must not override model, messages, tools, stream, or max_tokens")
     request.done()
-    return stream, tuple(names), request_params, True, stateless
+    return stream, tuple(names), request_params, True
 
 
 class ChatSummary:
@@ -54,7 +53,7 @@ class ChatSummary:
         self.system_from_history = params.bool("system_from_history", False)
         from .context_markers import sampling_phases
         self.exclude_pending_user_on = sampling_phases(params, "exclude_pending_user_on")
-        self.stream, self.tool_names, self.request_params, self.request_options_declared, self.stateless = summary_request_options(params)
+        self.stream, self.tool_names, self.request_params, self.request_options_declared = summary_request_options(params)
         params.done()
 
     def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
@@ -93,7 +92,7 @@ class ChatSummary:
                                  max_tokens=self.max_tokens, purpose="summary",
                                  model=context.settings.summary_model or context.target.model,
                                  stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
-                                 request_options_declared=self.request_options_declared, stateless=self.stateless,
+                                 request_options_declared=self.request_options_declared,
                                  context_reason=context.reason)
         response = context.summarizer.complete(request)
         text = response.text

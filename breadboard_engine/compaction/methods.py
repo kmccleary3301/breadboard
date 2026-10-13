@@ -69,7 +69,6 @@ class SummaryRequest:
     tool_names: Tuple[str, ...] = ()
     request_params: Optional[Mapping[str, Any]] = None
     request_options_declared: bool = False
-    stateless: bool = False
     # Projection-only lifecycle metadata, never a provider request member.
     context_reason: Optional[str] = None
     native_request_field_order: Optional[Tuple[str, ...]] = None

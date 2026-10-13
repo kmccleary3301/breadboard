@@ -117,8 +117,7 @@ pipeline:
         file: ../opencode@1.2.17/marker.txt
       strip_media: true
       max_tokens: 32000
-      # OpenCode compaction.ts:202-220 sends the complete converted history.
-      request: {stream: true, stateless: true}
+      request: {stream: true}
       contributors:
       - file: contributor.txt
     place:

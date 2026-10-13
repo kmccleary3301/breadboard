@@ -55,7 +55,7 @@ class ConductorSummaryModel:
         turn_index: Optional[int] = None,
         recorder: Optional[Any] = None,
         client_lease: Optional[Callable[[str, Any], ContextManager[Any]]] = None,
-        tool_schema_provider: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
+        tool_schema_provider: Optional[Callable[[str], Sequence[Mapping[str, Any]]]] = None,
         route_id: Optional[str] = None,
         route_resolver: Optional[Callable[[str], Tuple[Any, str]]] = None,
     ) -> None:
@@ -82,11 +82,17 @@ class ConductorSummaryModel:
             request = projection.prepare(request)
         model = request.model or self.model
         budget = {} if request.max_tokens is None else {"max_tokens": request.max_tokens}
+        runtime, api_model = self.runtime, model
+        if model != self.model and self.route_resolver is not None:
+            runtime, api_model = self.route_resolver(model)
+        descriptor = getattr(runtime, "descriptor", None)
         tools = [copy.deepcopy(dict(tool)) for tool in request.tools]
         if not tools and request.request_params is None:
             tools = None
         if request.tool_names:
-            available = self.tool_schema_provider() if self.tool_schema_provider is not None else ()
+            # Schemas are provider-native, so they follow the summary route, not the turn.
+            provider = str(getattr(descriptor, "provider_id", None) or "unknown")
+            available = self.tool_schema_provider(provider) if self.tool_schema_provider is not None else ()
             schemas = {
                 tool.get("name") or (tool.get("function") or {}).get("name"): tool
                 for tool in available
@@ -103,10 +109,6 @@ class ConductorSummaryModel:
         turn_index = self.turn_index or 0
         self.requests_sent += 1
         label = f"compaction_{self.requests_sent}"
-        runtime, api_model = self.runtime, model
-        if model != self.model and self.route_resolver is not None:
-            runtime, api_model = self.route_resolver(model)
-        descriptor = getattr(runtime, "descriptor", None)
         if self.recorder is not None:
             self.recorder.record_request(
                 turn_index,
@@ -138,7 +140,6 @@ class ConductorSummaryModel:
                 "summary_purpose": request.purpose,
                 **budget,
                 **({"compaction_request_options_declared": True} if request.request_options_declared else {}),
-                **({"compaction_stateless": True} if request.stateless else {}),
                 **({"compaction_request_params": dict(request.request_params)} if request.request_params is not None else {}),
             },
             session_id=(get_meta("session_id") if callable(get_meta) else None)

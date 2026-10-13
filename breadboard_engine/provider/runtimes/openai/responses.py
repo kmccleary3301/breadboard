@@ -175,8 +175,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         responses_stateful = True
         if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
-        if context.extra.get("compaction_stateless") is True:
-            # Explicit full-history summaries must not become stateful deltas.
+        if context.extra.get("compaction_summary") is True:
+            # A summary is a constructed side request; chaining it would add the server-side history again.
             responses_stateful = False
 
         # Build instructions from system messages (if any)
@@ -1326,7 +1326,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         )
         provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
-        if context.extra.get("compaction_stateless") is True:
+        if context.extra.get("compaction_summary") is True:
             responses_stateful = False
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")

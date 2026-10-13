@@ -79,7 +79,7 @@ class MessageSummary:
                                   for value in params.list("contributors", []))
         self.strip_media = params.bool("strip_media", True)
         self.max_tokens = params.int("max_tokens", None, minimum=1)
-        self.stream, self.tool_names, self.request_params, self.request_options_declared, self.stateless = summary_request_options(params)
+        self.stream, self.tool_names, self.request_params, self.request_options_declared = summary_request_options(params)
         marker = params.value("marker", None)
         self.marker = None if marker is None else resolve_prompt(marker, params, "marker")
         params.done()
@@ -104,7 +104,7 @@ class MessageSummary:
             system=self.system, messages=tuple(request_messages), max_tokens=self.max_tokens,
             purpose="summary", model=context.settings.summary_model or context.target.model,
             stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
-            request_options_declared=self.request_options_declared, stateless=self.stateless,
+            request_options_declared=self.request_options_declared,
             context_reason=context.reason,
         )).text
         return Reduction(summary=summary, details={

@@ -228,11 +228,8 @@ def test_summary_boundary_invalidates_superseded_responses_reference(preset):
     assert controller.build_request_view(state, target=_target())[0]["role"] == "user"
 
 
-@pytest.mark.parametrize("request_declared", [False, True])
-def test_stateful_summary_boundary_still_invalidates_responses_state_references(request_declared):
+def test_summary_boundary_invalidates_responses_state_references():
     from breadboard_engine.compaction.state import ProjectionTarget
-    from breadboard_engine.compaction.params import BuildEnv, Params
-    from breadboard_engine.compaction.primitives.chat_reducers import ChatSummary
 
     state = _session()
     state.set_provider_metadata("previous_response_id", "resp_original")
@@ -244,9 +241,6 @@ def test_stateful_summary_boundary_still_invalidates_responses_state_references(
     assert outcome.compacted
     assert state.get_provider_metadata("previous_response_id") is None
     assert state.get_provider_metadata("conversation_id") is None
-    reducer = ChatSummary(Params({"system": "Summary", "prompt": "Summarize",
-                                  **({"request": {"stream": False}} if request_declared else {})}, "test", BuildEnv(None)))
-    assert reducer.stateless is False
 
 
 def test_other_presets_do_not_run_assistant_end_checkpoint():

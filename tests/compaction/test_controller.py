@@ -399,3 +399,28 @@ def test_routed_summary_model_uses_its_own_runtime_and_api_model(monkeypatch: py
     assert created and set(created) == {"openai"}
     assert set(calls) == {("openai/gpt-5.1-codex-mini", True), "gpt-5.1-codex-mini"}
     assert turn_runtime.summary_requests == []
+
+
+def test_routed_summary_tools_use_the_summary_providers_schema() -> None:
+    from breadboard_engine.compaction.methods import SummaryRequest
+    from breadboard_engine.compaction.summary_model import ConductorSummaryModel
+
+    sent: List[Any] = []
+
+    class SummaryRuntime:
+        descriptor = SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            sent.append(kwargs["tools"])
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
+
+    schemas = {"anthropic": {"name": "Read", "input_schema": {}}, "openai": {"type": "function", "name": "Read", "parameters": {}}}
+    summary = ConductorSummaryModel(
+        runtime=SimpleNamespace(descriptor=SimpleNamespace(provider_id="anthropic")), client="client", model="claude-test",
+        session_state=SessionState("ws", "image", {}), agent_config={},
+        tool_schema_provider=lambda provider: [schemas[provider]],
+        route_resolver=lambda route_id: (SummaryRuntime(), "gpt-5.1-codex-mini"),
+    )
+    summary.complete(SummaryRequest(None, (), 20, "summary", model="openai/gpt-5.1-codex-mini",
+                                    tool_names=("Read",), request_params={}))
+    assert sent == [[schemas["openai"]]]

@@ -2,7 +2,6 @@
 from copy import deepcopy
 import json
 import os
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -124,7 +123,7 @@ def test_summary_rejects_unknown_episode_tool_names():
     from breadboard_engine.compaction.summary_model import ConductorSummaryModel
     from breadboard_engine.state.session_state import SessionState
     summary = ConductorSummaryModel(runtime=None, client=None, model="model", session_state=SessionState("ws", "image", {}),
-                                    agent_config={}, tool_schema_provider=lambda: [{"name": "Read", "input_schema": {"type": "object"}}])
+                                    agent_config={}, tool_schema_provider=lambda provider: [{"name": "Read", "input_schema": {"type": "object"}}])
     request = SummaryRequest(None, (), 20, "summary", tool_names=("read",), request_params={})
     with pytest.raises(ValueError, match="Unknown summary tool names.*read"):
         summary.complete(request)
@@ -150,7 +149,7 @@ def test_summary_uses_production_route_lease_and_selected_tool_schema():
             return ProviderResult(messages=[ProviderMessage(role="assistant", content="checkpoint")], raw_response=None)
     summary = ConductorSummaryModel(runtime=Runtime(), client=None, model="native-model", route_id="anthropic/native-model",
                                     session_state=SessionState("ws", "image", {}), agent_config={}, client_lease=lease,
-                                    tool_schema_provider=lambda: [schema, {"name": "Bash"}])
+                                    tool_schema_provider=lambda provider: [schema, {"name": "Bash"}])
     request = SummaryRequest(None, (), 20, "summary", stream=True, tool_names=("Read",), request_params={"temperature": 1})
     assert summary.complete(request).text == "checkpoint"
     assert calls[0] == ("lease", "anthropic/native-model")

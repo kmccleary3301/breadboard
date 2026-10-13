@@ -234,8 +234,8 @@ reopened for compaction does not count as an idle zero-tool step. Bound native
 tool continuations carry tool results without synthesized user stubs. Lifecycle
 sources are OpenCode `session/processor.ts:281-287,419-423` and
 `session/prompt.ts:704-716`. Other presets keep their existing checkpoints.
-Summary caps require an explicit `request` block; full-history summary requests
-require `request.stateless: true` (default false). Every boundary on a Responses
+Summary caps require an explicit `request` block. Summary requests never chain
+onto the live Responses state; they send their whole transcript. Every boundary on a Responses
 route clears `previous_response_id` and `conversation_id`, so the next request
 sends the compacted history in full and later requests chain from its response.
 
@@ -454,11 +454,12 @@ Request stages use reason `request`, the threshold target, and one aggregated
 `compaction_finished` event with every stage result. A stage's own estimator
 always overrides the recipe's estimator. Ledger metadata stays in record details.
 
-Summary stages call the turn's provider runtime with no tools and no
+Summary stages call the turn's provider runtime, or the `summaryModel` route's, with no tools and no
 streaming, unless the reducer's `request` block (`chat_summary` or
-`message_summary`) selects them: `stream`, exact episode tool names, provider
-`params`, and `stateless` for full-history Responses summaries. The Codex,
-Claude Code, OpenCode and oh-my-opencode presets set it to match their stock
+`message_summary`) selects them: `stream`, exact episode tool names and provider
+`params`. On a Responses route a summary request never chains onto the live
+`previous_response_id` or conversation. The Codex,
+Claude Code, OpenCode and oh-my-opencode presets set the block to match their stock
 summary requests. Each summary request is recorded as
 `meta/requests/turn_N_compaction_K.json`. The retried request after an
 overflow is `turn_N_attempt_K.json`, and its `extra` carries

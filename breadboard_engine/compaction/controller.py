@@ -575,10 +575,6 @@ class CompactionController:
             remote_ports = self.remote_ports_for(runtime, client, target.model, conductor)
         summarizer = self.summary_model
         if summarizer is None and callable(getattr(runtime, "invoke", None)):
-            summary_tools = (
-                (lambda: self.tool_schema_provider(target.provider))
-                if self.tool_schema_provider is not None else None
-            )
             lease = getattr(conductor, "_provider_client_lease", None)
             summarizer = ConductorSummaryModel(
                 runtime=runtime, client=client, model=target.model,
@@ -586,7 +582,7 @@ class CompactionController:
                 turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
                 client_lease=lease,
                 route_id=getattr(conductor, "_current_route_id", None) or target.model,
-                tool_schema_provider=summary_tools,
+                tool_schema_provider=self.tool_schema_provider,
                 # Leased production clients come from the router, so a routed summaryModel gets its own runtime.
                 route_resolver=routed_runtime if lease is not None else None,
             )
