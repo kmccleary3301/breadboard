@@ -23,7 +23,7 @@ import hashlib
 import json
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .transcript import answers_tool_call, leading_system_count, result_call_id, role_of, tool_call_ids
+from .transcript import answers_tool_call, leading_system_count, result_call_ids, role_of, tool_call_ids
 
 NATIVE_MARKER_KEY = "bb_native_compaction"
 RECORD_SCHEMA = "bb.compaction_record.v1"
@@ -316,9 +316,9 @@ class CompactionState:
             open_calls: set[str] = set()
             for message in messages[head:prefix_end]:
                 open_calls.update(tool_call_ids(message))
-                open_calls.discard(result_call_id(message))
+                open_calls.difference_update(result_call_ids(message))
             for message in messages[prefix_end:first]:
-                if result_call_id(message) in open_calls:
+                if open_calls.intersection(result_call_ids(message)):
                     raise CompactionStateError("prefix_end splits a tool call from its result")
 
     def append(self, record: CompactionRecord, messages: Sequence[Mapping[str, Any]]) -> None:

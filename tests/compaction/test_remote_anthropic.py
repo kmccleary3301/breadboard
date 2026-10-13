@@ -138,14 +138,24 @@ def test_build_anthropic_compaction_instructions_rendering() -> None:
 # 3. Cut Calculation Tests
 # -----------------------------------------------------------------------------
 
-def test_find_anthropic_compaction_cut_moves_past_tool_pairs() -> None:
+def _claude_continuation(call_id: str, text: str) -> dict:
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+
+    return AnthropicAdapter().create_tool_result_message(call_id, "read", {"__claude_tool_result_messages": [
+        {"role": "user", "content": [{"type": "tool_result", "tool_use_id": call_id, "content": text}]}]})
+
+
+@pytest.mark.parametrize("result", [
+    {"role": "tool", "tool_call_id": "call-1", "content": "bytes"},
+    _claude_continuation("call-1", "bytes"),
+])
+def test_find_anthropic_compaction_cut_moves_past_tool_pairs(result) -> None:
     user = lambda text: {"role": "user", "content": text}
     call = {
         "role": "assistant",
         "content": "",
         "tool_calls": [{"id": "call-1", "type": "function", "function": {"name": "read", "arguments": "{}"}}],
     }
-    result = {"role": "tool", "tool_call_id": "call-1", "content": "bytes"}
     done = {"role": "assistant", "content": "done"}
 
     # Initial cut at 2 (before result) must advance past result to 3 (done)

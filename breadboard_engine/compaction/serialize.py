@@ -14,6 +14,8 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
+from .transcript import result_call_ids
+
 TOOL_RESULT_MAX_CHARS = 2000
 
 _SUMMARY_BOUNDARY_TAG_RE = re.compile(
@@ -92,28 +94,27 @@ def _render_tool_calls(calls: Sequence[Mapping[str, Any]]) -> str:
     return "; ".join(rendered)
 
 
-def _canonical_result(content: Any) -> tuple[Any, list[dict[str, str]]]:
-    """Call id and text parts of a canonical ``tool_result`` carrier.
-
-    Its blocks are ``tool_result`` blocks or a Responses replay whose payload holds the output.
-    """
-    call_id = None
-    parts: list[dict[str, str]] = []
+def _result_text(content: Any) -> str:
+    """Text of a tool result, including canonical ``tool_result`` blocks and Responses replay output."""
+    if isinstance(content, str):
+        return content
+    texts: list[str] = []
     for block in content if isinstance(content, list) else ():
         if not isinstance(block, Mapping):
             continue
-        if block.get("type") == "provider_replay" and isinstance(block.get("payload"), Mapping):
-            block = block["payload"]
-            value = block.get("output")
-        else:
+        if block.get("type") == "text":
+            value = block.get("text")
+        elif block.get("type") == "tool_result":
             value = block.get("content")
-        call_id = call_id or block.get("call_id")
+        elif block.get("type") == "provider_replay" and isinstance(block.get("payload"), Mapping):
+            value = block["payload"].get("output")
+        else:
+            continue
         if isinstance(value, str):
-            parts.append({"type": "text", "text": value})
+            texts.append(value)
         elif isinstance(value, list):
-            parts.extend({"type": "text", "text": item["text"]} for item in value
-                         if isinstance(item, Mapping) and isinstance(item.get("text"), str))
-    return call_id, parts
+            texts.extend(item["text"] for item in value if isinstance(item, Mapping) and isinstance(item.get("text"), str))
+    return "".join(texts)
 
 
 def serialize_conversation(
@@ -204,23 +205,10 @@ def serialize_conversation(
                 parts.append(f"{style.tool_calls}: {_render_tool_calls(valid_tool_calls)}")
 
         elif role in ("tool", "toolResult", "function", "tool_result"):
-            call_id = msg.get("tool_call_id") or msg.get("toolCallId")
-            content = msg.get("content")
-            if role == "tool_result":
-                call_id, content = _canonical_result(content)
-            if isinstance(call_id, str) and call_id in useless_call_ids:
+            call_ids = result_call_ids(msg) or (msg.get("toolCallId"),)
+            if all(call_id in useless_call_ids for call_id in call_ids):
                 continue
-            if isinstance(content, str):
-                text = content
-            elif isinstance(content, list):
-                text_parts = [
-                    p.get("text", "")
-                    for p in content
-                    if isinstance(p, Mapping) and p.get("type") == "text" and isinstance(p.get("text"), str)
-                ]
-                text = "".join(text_parts)
-            else:
-                text = ""
+            text = _result_text(msg.get("content"))
             if text:
                 parts.append(f"{style.tool_result}: {truncate_tool_result_for_summary(text, style.tool_result_max_chars)}")
 

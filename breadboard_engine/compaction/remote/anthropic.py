@@ -30,9 +30,10 @@ from ..state import (
     NativeCompaction,
 )
 from ..transcript import (
+    answers_tool_call,
     find_cut_point,
-    is_tool_result,
     leading_system_count,
+    result_call_ids,
     role_of,
     tool_call_ids,
 )
@@ -134,15 +135,11 @@ def find_anthropic_compaction_cut(
     last_result: Dict[int, int] = {}
     if calls:
         for i, msg in enumerate(messages):
-            if not is_tool_result(msg):
+            if not answers_tool_call(msg):
                 continue
-            call_id = (
-                msg.get("tool_call_id")
-                or msg.get("tool_use_id")
-                or msg.get("call_id")
-                or msg.get("id")
-            )
-            if isinstance(call_id, str) and call_id in calls:
+            for call_id in result_call_ids(msg):
+                if call_id not in calls:
+                    continue
                 call_index = calls[call_id]
                 last_result[call_index] = max(last_result.get(call_index, -1), i)
 

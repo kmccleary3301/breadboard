@@ -10,7 +10,7 @@ or assistant messages so a tool result never loses its call.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, List, Mapping, Optional, Sequence
+from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
 
 from .tokens import estimate_message_tokens, is_image_part
 
@@ -32,15 +32,17 @@ def answers_tool_call(message: Message) -> bool:
     return is_tool_result(message) or role_of(message) == "tool_result"
 
 
-def result_call_id(message: Message) -> Optional[str]:
-    """``tool_call_id``, or the call a canonical carrier's replay payload answers."""
+def result_call_ids(message: Message) -> Tuple[str, ...]:
+    """``tool_call_id``, or the calls a carrier's canonical ``tool_result`` blocks or replay payload answer."""
     call_id = message.get("tool_call_id")
-    if call_id is None and role_of(message) == "tool_result":
-        content = message.get("content")
-        block = content[0] if isinstance(content, list) and content else None
-        payload = block.get("payload") if isinstance(block, Mapping) else None
-        call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
-    return call_id if isinstance(call_id, str) else None
+    if isinstance(call_id, str):
+        return (call_id,)
+    content = message.get("content")
+    if not answers_tool_call(message) or not isinstance(content, list):
+        return ()
+    blocks = [block.get("payload") if block.get("type") == "provider_replay" else block
+              for block in content if isinstance(block, Mapping)]
+    return tuple(block["call_id"] for block in blocks if isinstance(block, Mapping) and isinstance(block.get("call_id"), str))
 
 
 def is_turn_start(message: Message) -> bool:
@@ -159,9 +161,9 @@ def check_tool_pairing(messages: Sequence[Message]) -> Optional[str]:
         if role_of(message) == "assistant":
             open_calls.update(tool_call_ids(message))
         elif answers_tool_call(message):
-            call_id = result_call_id(message)
-            if call_id not in open_calls:
-                return f"message {index} answers unknown tool call {call_id!r}"
+            for call_id in result_call_ids(message) or (None,):
+                if call_id not in open_calls:
+                    return f"message {index} answers unknown tool call {call_id!r}"
     return None
 
 

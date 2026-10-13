@@ -271,6 +271,7 @@ def test_soft_compaction_summarizes_the_edited_history():
 
 
 def test_soft_compaction_summarizes_typed_tool_results():
+    from breadboard_engine.provider.adapters import AnthropicAdapter
     from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
     messages = [
@@ -281,6 +282,8 @@ def test_soft_compaction_summarizes_typed_tool_results():
             {"type": "input_text", "text": "TYPED_TOOL_OUTPUT"},
             {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
         {"role": "tool_result", "content": [{"type": "tool_result", "call_id": "c2", "content": "CANONICAL_RESULT", "is_error": False}]},
+        AnthropicAdapter().create_tool_result_message("c3", "read", {"__claude_tool_result_messages": [
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c3", "content": "CLAUDE_RESULT"}]}]}),
         {"role": "user", "content": "turn 2: what did it show?" + " context " * 20},
         {"role": "assistant", "content": "a screen" + " context " * 20},
     ]
@@ -290,4 +293,4 @@ def test_soft_compaction_summarizes_typed_tool_results():
     omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
 
     sent = "".join(m["content"] for r in summarizer.requests for m in r.messages)
-    assert "TYPED_TOOL_OUTPUT" in sent and "CANONICAL_RESULT" in sent and "base64" not in sent
+    assert all(text in sent for text in ("TYPED_TOOL_OUTPUT", "CANONICAL_RESULT", "CLAUDE_RESULT")) and "base64" not in sent
