@@ -494,9 +494,11 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
         {"role": "assistant", "content": [{"type": "provider_replay", "provider_id": "openai",
                                            "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
                                            "payload": {"type": "local_shell_call", "call_id": "c0"}}],
-         "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+         "tool_calls": [{"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": "{}"}}
+                        for call_id in ("c1", "c2")]},
         responses_image_tool_result_message("c1", [{"type": "input_text", "text": "SCREEN_TEXT"},
                                                    {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        responses_image_tool_result_message("c2", [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
         {"role": "assistant", "content": "done"},
     )
     summary = ConductorSummaryModel(
@@ -506,4 +508,7 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
     )
     summary.complete(SummaryRequest(None, history, 20, "summary", model="anthropic/claude-sonnet-4-6"))
 
-    assert "SCREEN_TEXT" in str(sent) and "c1" in str(sent) and "openai" not in str(sent)
+    results = {block["tool_use_id"]: block["content"] for message in sent[0] for block in message["content"]
+               if isinstance(block, dict) and block.get("type") == "tool_result"}
+    assert results == {"c1": "SCREEN_TEXT[image removed]", "c2": "[image removed]"}
+    assert "openai" not in str(sent)

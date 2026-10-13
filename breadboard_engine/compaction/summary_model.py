@@ -16,7 +16,8 @@ from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional,
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
 from .images import IMAGE_PLACEHOLDER
-from .transcript import answers_tool_call, result_call_ids, result_text
+from .tokens import is_image_part
+from .transcript import answers_tool_call, result_call_ids, result_parts
 
 
 def _text_of(content: Any) -> str:
@@ -62,8 +63,9 @@ def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, 
         elif answers_tool_call(message) and "tool_call_id" not in message:
             results = [block for block in content if isinstance(block, Mapping) and block.get("type") == "tool_result"]
             results = results or [{"call_id": call_id, "content": content} for call_id in result_call_ids(message)]
-            portable.extend({"role": "tool", "tool_call_id": result["call_id"], "content": result_text(result["content"])}
-                            for result in results)
+            portable.extend({"role": "tool", "tool_call_id": result["call_id"], "content": "".join(
+                IMAGE_PLACEHOLDER if is_image_part(part) else str(part.get("text") or "")
+                for part in result_parts(result["content"]) if isinstance(part, Mapping))} for result in results)
         else:
             kept = [{"type": "text", "text": IMAGE_PLACEHOLDER} if isinstance(block, Mapping) and block.get("type") in {"image_url", "input_image", "image"}
                     else block for block in content if not (
