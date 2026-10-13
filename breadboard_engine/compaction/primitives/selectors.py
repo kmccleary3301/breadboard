@@ -14,6 +14,7 @@ from ..methods import CompactionContext, MethodUnavailable
 from ..params import Params
 from ..transcript import find_cut_point, find_cut_point_crossing, leading_system_count
 from .accounting import build_estimator
+from .protected_windows import visible_messages
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ class RecentTokens:
         return self.count([message])
 
     def select(self, context: CompactionContext) -> Selection:
-        messages = context.messages
+        messages = visible_messages(context)
         if self.boundary == "history_length":
             latest = context.state.latest_boundary()
             start = leading_system_count(messages) if latest is None else latest.history_length

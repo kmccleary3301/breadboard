@@ -246,3 +246,31 @@ def test_remote_endpoint_summarizes_tool_work_after_the_active_boundary():
     assert "<previous-summary>\nEarlier summary\n</previous-summary>" in prompt
     assert prompt.endswith(UPDATE_SUMMARIZATION_PROMPT)
     assert "make all" in prompt and "build ok" in prompt
+
+
+def test_remote_endpoint_summarizes_the_edited_history():
+    from breadboard_engine.compaction.state import MessageEdit
+
+    messages = [
+        {"role": "system", "content": "system instructions"},
+        {"role": "user", "content": "Read the log"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "bash", "arguments": "{\"command\": \"cat log\"}"}},
+        ]},
+        {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": "ORIGINAL_TOOL_OUTPUT " * 50},
+        {"role": "user", "content": "Recent" * 200},
+    ]
+    prompts = []
+
+    def fake_poster(url, payload, headers):
+        prompts.append(payload["prompt"])
+        return {"summary": "New summary"}
+
+    context = _make_context(messages, remote_endpoint="https://omp-summarizer.internal/api/compact",
+                            keep_recent_tokens=50)
+    context.state.append(context.new_record(method="prune", edits=(
+        MessageEdit(3, {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": "[pruned]"}),)), messages)
+    RemoteCompaction(http_poster=fake_poster).run(context)
+
+    [prompt] = prompts
+    assert "[pruned]" in prompt and "ORIGINAL_TOOL_OUTPUT" not in prompt

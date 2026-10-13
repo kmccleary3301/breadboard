@@ -246,3 +246,25 @@ def test_compactor_integration_with_soft():
     assert len(outcome.records) == 1
     assert outcome.records[0].method == "soft"
     assert outcome.tokens_after < outcome.tokens_before
+
+
+def test_soft_compaction_summarizes_the_edited_history():
+    from breadboard_engine.compaction.state import MessageEdit
+
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": "turn 1: read foo.py"},
+        {"role": "assistant", "content": "reading", "tool_calls": [{"id": "c1", "function": {"name": "read", "arguments": {"path": "foo.py"}}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "ORIGINAL_TOOL_OUTPUT " * 20},
+        {"role": "user", "content": "turn 2: what is in foo.py?" + " context " * 20},
+        {"role": "assistant", "content": "it has file contents" + " context " * 20},
+    ]
+    summarizer = FakeSummaryModel(responses=["Summary", "Short"])
+    ctx = _make_context(messages, summarizer=summarizer)
+    ctx.state.append(ctx.new_record(method="prune", edits=(
+        MessageEdit(3, {"role": "tool", "tool_call_id": "c1", "content": "[pruned]"}),)), messages)
+
+    omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
+
+    sent = "".join(m["content"] for r in summarizer.requests for m in r.messages)
+    assert "[pruned]" in sent and "ORIGINAL_TOOL_OUTPUT" not in sent

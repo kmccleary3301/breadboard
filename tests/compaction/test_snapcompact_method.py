@@ -292,3 +292,35 @@ def test_pillow_missing_raises_method_unavailable(monkeypatch):
     ctx = _make_context([{"role": "user", "content": "hi"}], supports_images=True)
     with pytest.raises(MethodUnavailable, match="Pillow is required"):
         method.run(ctx)
+
+
+def test_archive_renders_the_edited_history(monkeypatch):
+    from breadboard_engine.compaction.snapcompact import method as snapcompact_method
+    from breadboard_engine.compaction.state import MessageEdit
+
+    archived = []
+    original = snapcompact_method.compact_archive
+
+    def capture(messages, *args, **kwargs):
+        archived.extend(messages)
+        return original(messages, *args, **kwargs)
+
+    monkeypatch.setattr(snapcompact_method, "compact_archive", capture)
+    filler = "This is a detailed analysis of the performance characteristics of our distributed queue. " * 250
+    messages = [
+        {"role": "user", "content": f"Investigate latency issue: {filler}"},
+        {"role": "assistant", "content": "Reading", "tool_calls": [
+            {"id": "c1", "function": {"name": "read", "arguments": {"path": "src/queue.ts"}}}]},
+        {"role": "tool", "tool_call_id": "c1", "content": "ORIGINAL_TOOL_OUTPUT " * 500},
+        {"role": "assistant", "content": f"Found the lock contention:\n{filler}"},
+        {"role": "user", "content": "Recent question about next steps?"},
+        {"role": "assistant", "content": "I will proceed with the fix."},
+    ]
+    ctx = _make_context(messages, keep_recent_tokens=100)
+    ctx.state.append(ctx.new_record(method="prune", edits=(
+        MessageEdit(2, {"role": "tool", "tool_call_id": "c1", "content": "[pruned]"}),)), messages)
+
+    SnapcompactCompaction().run(ctx)
+
+    assert {"role": "tool", "tool_call_id": "c1", "content": "[pruned]"} in archived
+    assert "ORIGINAL_TOOL_OUTPUT" not in repr(archived)

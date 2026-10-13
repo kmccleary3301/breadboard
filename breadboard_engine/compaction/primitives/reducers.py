@@ -34,6 +34,7 @@ from ..serialize import (
 from ..settings import MAX_SUMMARY_TOKENS, resolve_budget_reserve_tokens, summary_max_tokens
 from ..state import MessageEdit
 from ..tokens import estimate_message_tokens, estimate_text_tokens
+from .protected_windows import visible_messages
 from .selectors import Selection
 
 
@@ -363,7 +364,7 @@ class Summarize:
     def reduce(self, context: CompactionContext, selection: Selection) -> Reduction:
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
-        messages = context.messages
+        messages = visible_messages(context)
         to_summarize = [messages[i] for i in selection.summarize]
         prefix = [messages[i] for i in selection.turn_prefix]
         previous = context.state.latest_readable_boundary()

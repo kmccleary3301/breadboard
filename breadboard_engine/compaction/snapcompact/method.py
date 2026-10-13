@@ -15,6 +15,7 @@ import math
 from typing import Any, Dict, List, Mapping, Sequence, Set
 
 from ..methods import CompactionContext, CompactionRecord, MethodUnavailable
+from ..primitives.protected_windows import visible_messages
 from ..settings import resolve_budget_reserve_tokens
 from ..state import CompactionState
 from ..tokens import estimate_messages_tokens
@@ -112,7 +113,7 @@ class SnapcompactCompaction:
             model_id=target.model,
         )
 
-        messages = context.messages
+        messages = visible_messages(context)
         head = leading_system_count(messages)
         active_boundary = context.state.latest_readable_boundary()
         start = active_boundary.first_kept_index if active_boundary else head

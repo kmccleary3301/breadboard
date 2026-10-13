@@ -19,6 +19,7 @@ from ..methods import (
 )
 from ..settings import MAX_SUMMARY_TOKENS
 from ..serialize import escape_summary_boundary_tags, serialize_conversation_for_summary
+from ..primitives.protected_windows import visible_messages
 from ..transcript import find_cut_point
 from ..prompts import SUMMARIZATION_PROMPT, SUMMARIZATION_SYSTEM_PROMPT, UPDATE_SUMMARIZATION_PROMPT
 
@@ -75,14 +76,15 @@ class RemoteCompaction:
 
     def _run_remote_endpoint(self, context: CompactionContext) -> CompactionRecord:
         endpoint = str(context.settings.remote_endpoint).strip()
-        start = context.state.kept_start(context.messages)
+        messages = visible_messages(context)
+        start = context.state.kept_start(messages)
         cut = find_cut_point(
-            context.messages,
+            messages,
             start,
-            len(context.messages),
+            len(messages),
             context.settings.keep_recent_tokens,
         )
-        messages_to_summarize = context.messages[start:cut.first_kept_index]
+        messages_to_summarize = messages[start:cut.first_kept_index]
         if not messages_to_summarize:
             raise MethodUnavailable("No history messages eligible for remote endpoint summarization")
 
