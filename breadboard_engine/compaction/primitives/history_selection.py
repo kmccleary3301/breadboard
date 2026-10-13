@@ -58,7 +58,7 @@ class ProtectedToolOutputs:
                 summary_tools.add(index)
         turns = total = savings = 0
         targets = []
-        for i in range(len(messages) - 1, context.state.kept_start(messages) - 1, -1):
+        for i in range(len(messages) - 1, context.state.kept_start(messages, context.target) - 1, -1):
             message = messages[i]
             if message.get("role") == "user":
                 turns += 1
@@ -105,7 +105,7 @@ class LargestFirstMasking:
         required = (current - target) * self.chars_per_token
         messages = visible_messages(context)
         candidates = []
-        for i in range(context.state.kept_start(messages), len(messages)):
+        for i in range(context.state.kept_start(messages, context.target), len(messages)):
             message = messages[i]
             text = output_text(message)
             if message.get("role") == "tool" and text and not message.get("compacted") and text != self.placeholder:

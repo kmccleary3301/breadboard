@@ -445,7 +445,7 @@ def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]
     if not settings.enabled:
         return None
 
-    kept_start = context.state.kept_start(context.messages)
+    kept_start = context.state.kept_start(context.messages, context.target)
 
     current_messages: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in context.messages]
     for record in context.state.records:

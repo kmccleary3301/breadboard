@@ -489,6 +489,12 @@ persisted at a boundary never contains a native payload: it is the latest
 readable boundary's view, or the full history, so a resumed session can switch
 models.
 
+A local summary starts after the latest readable boundary, so it also covers
+history that only an OpenAI native payload (which carries no readable summary)
+represents, as OMP does when it re-expands an unreadable remote compaction
+(`findReadableCompactionIndex`). Edit-only passes (pruning, masking, image
+dropping, shake) start after the boundary the route actually reads.
+
 ## Presets and primitives
 
 A preset is `breadboard_engine/compaction/presets/<harness>@<version>.yaml`

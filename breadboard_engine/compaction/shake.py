@@ -570,7 +570,7 @@ def shake(context: CompactionContext) -> Optional[CompactionRecord]:
     Returns an edit-only ``CompactionRecord`` if eligible regions meet the savings
     threshold, or ``None``.
     """
-    kept_start = context.state.kept_start(context.messages)
+    kept_start = context.state.kept_start(context.messages, context.target)
 
     # Reconstruct current active messages on top of prior edits
     current_messages: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in context.messages]

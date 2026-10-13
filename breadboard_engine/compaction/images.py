@@ -60,7 +60,7 @@ def drop_images(context: CompactionContext) -> Optional[CompactionRecord]:
 
     Returns an edit-only ``CompactionRecord`` if any images were removed, or ``None``.
     """
-    kept_start = context.state.kept_start(context.messages)
+    kept_start = context.state.kept_start(context.messages, context.target)
 
     current_messages: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in context.messages]
     for record in context.state.records:

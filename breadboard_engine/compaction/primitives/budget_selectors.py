@@ -121,7 +121,7 @@ class LatestToolOutputs:
     def select(self, context: CompactionContext) -> Selection:
         if self.disabled:
             raise MethodUnavailable("Tool-output masking disabled")
-        start = context.state.kept_start(context.messages)
+        start = context.state.kept_start(context.messages, context.target)
         calls = []
         results = {}
         edits = {e.index: e.message for r in context.state.records for e in r.edits}

@@ -406,7 +406,7 @@ class Summarize:
             summary = upsert_file_operations(summary, read_files, modified_files, ops.read)
             details = {"read_files": read_files, "modified_files": modified_files}
         elif self.file_ops == "read_modified_tags":
-            ops = _pi_file_ops([*to_summarize, *prefix], context.state.latest_boundary())
+            ops = _pi_file_ops([*to_summarize, *prefix], context.state.latest_readable_boundary())
             read_files, modified_files = _pi_file_lists(ops)
             summary += _pi_format_file_operations(read_files, modified_files)
             details = {"read_files": read_files, "modified_files": modified_files}

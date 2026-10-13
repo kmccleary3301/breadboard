@@ -105,8 +105,8 @@ class VisibleToolOutputs:
 
     def select(self, context):
         from .selectors import Selection
-        start = context.state.kept_start(context.messages)
-        prefix = context.state.prefix_end(context.messages)
+        start = context.state.kept_start(context.messages, context.target)
+        prefix = context.state.prefix_end(context.messages, context.target)
         head = leading_system_count(context.messages)
         return Selection(targets=tuple(i for i, m in enumerate(context.messages)
                                        if (head <= i < prefix or i >= start) and is_tool_result(m)))

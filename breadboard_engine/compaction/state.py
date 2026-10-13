@@ -231,16 +231,20 @@ class CompactionState:
                 return record
         return None
 
-    def kept_start(self, messages: Sequence[Mapping[str, Any]]) -> int:
-        """First message after the latest boundary (the system head if none)."""
-        boundary = self.latest_boundary()
+    def kept_start(self, messages: Sequence[Mapping[str, Any]], target: Optional["ProjectionTarget"] = None) -> int:
+        """First message after the boundary ``target`` reads (the system head if none).
+
+        Without a target this is the latest readable boundary. A local summary supersedes
+        every boundary before it, so it must cover what only a native payload represents.
+        """
+        boundary = self._active_boundary(target)
         if boundary is None:
             return leading_system_count(messages)
         return int(boundary.first_kept_index)
 
-    def prefix_end(self, messages: Sequence[Mapping[str, Any]]) -> int:
-        """End of the verbatim prefix kept by the latest boundary (the head if none)."""
-        boundary = self.latest_boundary()
+    def prefix_end(self, messages: Sequence[Mapping[str, Any]], target: Optional["ProjectionTarget"] = None) -> int:
+        """End of the verbatim prefix kept by the boundary ``target`` reads (the head if none)."""
+        boundary = self._active_boundary(target)
         head = leading_system_count(messages)
         if boundary is None:
             return head

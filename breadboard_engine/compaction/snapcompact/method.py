@@ -114,7 +114,7 @@ class SnapcompactCompaction:
 
         messages = context.messages
         head = leading_system_count(messages)
-        active_boundary = context.state.latest_boundary()
+        active_boundary = context.state.latest_readable_boundary()
         start = active_boundary.first_kept_index if active_boundary else head
         end = len(messages)
 

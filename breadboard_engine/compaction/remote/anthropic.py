@@ -254,7 +254,7 @@ class AnthropicCompactionPort:
         if not messages:
             raise MethodUnavailable("No messages to compact")
 
-        start = context.state.kept_start(messages)
+        start = context.state.kept_start(messages, context.target)
         cut_point = find_cut_point(
             messages,
             start=start,
