@@ -217,13 +217,23 @@ def _target() -> ProjectionTarget:
 
 
 @pytest.mark.parametrize("entry", [{"supports_images": True}, {"input": ["text", "image"]}])
-def test_image_capability_comes_from_model_config(entry: Dict[str, Any]) -> None:
-    controller = _controller()
-    conductor = SimpleNamespace(
-        config={"providers": {"models": [{"id": "vision-model", **entry}]}}, model="vision-model"
+def test_route_requests_stay_within_the_provider_image_contract(entry: Dict[str, Any]) -> None:
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+
+    controller = CompactionController({"compaction": {
+        "enabled": True, "preset": "omp@18.4.5", "snapcompact": {"system_prompt": "all", "inline_min_tokens": 50},
+    }})
+    conductor = SimpleNamespace(config={"providers": {"models": [{"id": "gemini-test", **entry}]}}, model="gemini-test")
+    runtime = SimpleNamespace(descriptor=SimpleNamespace(provider_id="google", default_api_variant="google-generative-ai"))
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "system", "content": "You are an engineering agent with extensive guidelines. " * 250})
+    state.add_message({"role": "user", "content": "Implement feature X."})
+
+    view = controller.prepare_request(
+        state, conductor=conductor, runtime=runtime, client=object(), model="gemini-test", turn_index=1
     )
-    assert controller.resolve_supports_images(conductor=conductor, model="vision-model")
-    assert not controller.resolve_supports_images(conductor=conductor, model="other-model")
+
+    normalize_request_messages(view)
 
 
 def test_context_window_resolves_from_id_shaped_model_entry() -> None:

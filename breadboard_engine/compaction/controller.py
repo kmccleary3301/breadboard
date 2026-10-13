@@ -191,18 +191,6 @@ class CompactionController:
             limits.append(value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None)
         return limits[0], limits[1]
 
-    def resolve_supports_images(self, *, conductor: Optional[Any] = None, model: Optional[str] = None) -> bool:
-        """Image input capability from the model's provider config entry.
-
-        Accepts ``supports_images: true`` or an OMP-style ``input`` list
-        containing ``"image"``. Unknown models are treated as text-only.
-        """
-        entry = _model_entry(conductor, model)
-        if entry.get("supports_images") is True:
-            return True
-        inputs = entry.get("input")
-        return isinstance(inputs, (list, tuple)) and "image" in inputs
-
     def remote_ports_for(
         self,
         runtime: Optional[Any],
@@ -238,12 +226,15 @@ class CompactionController:
         turn_index: Optional[int],
         request_context: Optional[CompactionRequestContext] = None,
     ) -> List[Dict[str, Any]]:
-        """Threshold-compact if due, then run the ordered request-view pass."""
+        """Threshold-compact if due, then run the ordered request-view pass.
+
+        Snapcompact stays off here: its frames are inline PNG data, and the
+        provider contract carries images only as authorized attachment media.
+        """
         target = projection_target_for(runtime, model)
         context_window = self.resolve_context_window(
             conductor=conductor, session_state=session_state, model=model
         )
-        supports_images = self.resolve_supports_images(conductor=conductor, model=model)
         max_input, max_output = self.resolve_model_limits(session_state, conductor, model)
         if self.should_trigger_threshold(
             session_state,
@@ -258,7 +249,7 @@ class CompactionController:
                 session_state, request_context=request_context, reason="threshold", target=target,
                 conductor=conductor, runtime=runtime, client=client,
                 context_window=context_window, turn_index=turn_index,
-                supports_images=supports_images, max_output_tokens=max_output,
+                max_output_tokens=max_output,
             )
         self._serve_native_summary_requests(
             session_state, request_context=request_context, conductor=conductor,
@@ -266,7 +257,7 @@ class CompactionController:
         )
         return self.build_request_view(
             session_state, request_context=request_context, target=target, runtime=runtime,
-            supports_images=supports_images, turn_index=turn_index,
+            turn_index=turn_index,
             context_window=context_window, conductor=conductor, client=client,
         )
 
@@ -289,7 +280,6 @@ class CompactionController:
                 context_window=self.resolve_context_window(
                     conductor=conductor, session_state=session_state, model=model),
                 turn_index=turn_index,
-                supports_images=self.resolve_supports_images(conductor=conductor, model=model),
                 max_output_tokens=max_output,
             )
             if not outcome.compacted or driver.pending_compaction(session_state) is pending:
@@ -331,7 +321,6 @@ class CompactionController:
             target=target,
             conductor=conductor, runtime=runtime, client=client,
             context_window=window, turn_index=turn_index,
-            supports_images=self.resolve_supports_images(conductor=conductor, model=model),
             max_output_tokens=max_output,
             overflow_tokens=pending.get("overflow_tokens") if pending is not None else None,
             overflow_limit=pending.get("overflow_limit") if pending is not None else None,
@@ -838,7 +827,6 @@ class CompactionController:
                 conductor=conductor, session_state=session_state, model=model,
             ),
             turn_index=turn_index,
-            supports_images=self.resolve_supports_images(conductor=conductor, model=model),
             overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
         )
         if not outcome.compacted:

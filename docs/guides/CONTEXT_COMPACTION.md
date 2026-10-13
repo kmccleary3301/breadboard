@@ -61,7 +61,7 @@ compaction:
 | Stage | Kind | What it does |
 |---|---|---|
 | `remote` | boundary | Provider-native compaction. OpenAI Responses `/responses/compact` (V1 and streaming V2) and Anthropic on-demand compaction (`compact-2026-09-04` beta). `remoteEndpoint` posts to a custom endpoint instead. |
-| `snapcompact` | boundary | Renders older history into PNG text frames (OMP bitmap fonts) and keeps recent turns as text. Vision models only. Needs the `snapcompact` extra (Pillow). |
+| `snapcompact` | boundary | Renders older history into PNG text frames (OMP bitmap fonts) and keeps recent turns as text. Vision models only. Needs the `snapcompact` extra (Pillow). Route requests skip it (see below). |
 | `handoff` | boundary | Summarizes the history before the cut point into a handoff document addressed to a successor, keeping recent turns. Not used for overflow recovery. |
 | `shake` | edit | Replaces large tool results and fenced/XML blocks outside the protected tail with `[shaken ~N tokens]` placeholders. |
 | `soft` | boundary | The OMP structured summary (Goal, Progress, Next Steps, Critical Context, files read and modified), with split-turn prefix summaries and updates on top of earlier summaries. |
@@ -80,6 +80,11 @@ run outside the pipeline:
   prompt (`all`) or its context-file sections (`agents-md`) are swapped only
   when the whole text fits in at most 6 frames and imaging saves tokens.
   Otherwise the text stays.
+
+Snapcompact frames are inline PNG data, and the provider contract carries
+images only as authorized attachment `media`, so the controller does not
+enable either snapcompact path for route requests. Both run when a caller
+passes `supports_images=True` to `compact()` or `build_request_view()`.
 
 ### `pi@0.73.1`
 
