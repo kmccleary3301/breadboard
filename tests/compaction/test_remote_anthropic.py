@@ -238,6 +238,29 @@ def test_anthropic_compaction_port_success() -> None:
     assert call_kwargs["extra_headers"]["anthropic-beta"] == COMPACTION_BETA
 
 
+def test_anthropic_compaction_input_carries_ledger_edits() -> None:
+    from breadboard_engine.compaction.state import MessageEdit
+
+    fake_response = SimpleNamespace(stop_reason="compaction", model="claude-sonnet-5",
+                                    content=[SimpleNamespace(type="compaction", content="S", signature="sig")],
+                                    usage=SimpleNamespace(input_tokens=0, output_tokens=0, iterations=[]))
+    fake_client = FakeAnthropicClient(response=fake_response)
+    messages = [
+        {"role": "user", "content": "ORIGINAL_OUTPUT " * 50},
+        {"role": "assistant", "content": "world"},
+        {"role": "user", "content": "next task"},
+        {"role": "assistant", "content": "done"},
+    ]
+    ctx = _context(messages)
+    ctx.state.append(ctx.new_record(method="prune", edits=(MessageEdit(0, {"role": "user", "content": "[pruned]"}),)),
+                     messages)
+    AnthropicCompactionPort(client=fake_client, model="claude-sonnet-5").compact(ctx)
+
+    sent = repr(fake_client.messages.calls[0]["messages"])
+    assert "[pruned]" in sent and "ORIGINAL_OUTPUT" not in sent
+
+
+
 def test_anthropic_compaction_port_rejects_unsupported_model() -> None:
     fake_client = FakeAnthropicClient()
     port = AnthropicCompactionPort(client=fake_client, model="claude-haiku-4-5")

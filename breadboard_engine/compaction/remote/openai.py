@@ -22,6 +22,7 @@ from ...provider.contract_messages import normalize_provider_replay
 from ...provider.contract_runtime import ProviderRuntimeContext
 from ...provider.input_media import resolve_input_media
 from ..primitives.byte_estimator import bytes4
+from ..primitives.protected_windows import visible_messages
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
 from ..transcript import leading_system_count
@@ -525,7 +526,7 @@ class OpenAIResponsesCompactionPort:
         boundary = context.state._active_boundary(context.target)
         if context.native_retention is None and boundary and boundary.native and boundary.native.usable_for(context.target):
             prev_replacement = boundary.native.items
-            remote_messages = context.messages[boundary.first_kept_index:]
+            remote_messages = visible_messages(context)[boundary.first_kept_index:]
         else:
             # The view the route reads: a readable boundary's summary and kept messages, or the history.
             remote_messages = context.projected()[head:]

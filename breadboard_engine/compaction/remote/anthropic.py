@@ -24,6 +24,7 @@ from ..methods import (
     MethodUnavailable,
     NativeCompactionError,
 )
+from ..primitives.protected_windows import visible_messages
 from ..state import (
     CompactionRecord,
     NativeCompaction,
@@ -250,7 +251,7 @@ class AnthropicCompactionPort:
                 f"Target {context.target} does not match {self.provider}/{self.api}"
             )
 
-        messages = context.messages
+        messages = visible_messages(context)
         if not messages:
             raise MethodUnavailable("No messages to compact")
 

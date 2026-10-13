@@ -633,3 +633,34 @@ def test_sdk_client_requests_are_authenticated_and_use_the_configured_base_url(v
 
     assert [(r.url.host, r.url.path) for r in seen] == [("api.example.test", path)]
     assert seen[0].headers["authorization"] == "Bearer sk-test"
+
+
+def test_native_pass_after_a_native_boundary_sends_edited_kept_messages():
+    from breadboard_engine.compaction.state import MessageEdit
+
+    posted = []
+
+    def fake_poster(url, payload, headers):
+        posted.append(payload)
+        return {"output": [{"type": "compaction", "encrypted_content": f"enc_{len(posted)}"}]}
+
+    port = OpenAIResponsesCompactionPort(http_poster=fake_poster)
+    settings = settings_from_config({"enabled": True, "remote_streaming_v2_enabled": False})
+    target = ProjectionTarget("openai", "responses", "gpt-5")
+    state = CompactionState()
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "Turn 1"}]
+
+    def context(history):
+        return CompactionContext(messages=history, state=state, settings=settings, reason="threshold",
+                                 target=target, context_window=8000, tokens_before=100)
+
+    state.append(port.compact(context(messages)), messages)
+    messages = [*messages, {"role": "user", "content": [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]},
+                {"role": "assistant", "content": "Saw it"}]
+    ctx = context(messages)
+    state.append(ctx.new_record(method="drop_images", edits=(
+        MessageEdit(2, {"role": "user", "content": [{"type": "text", "text": "[image removed]"}]}),)), messages)
+    port.compact(ctx)
+
+    sent = json.dumps(posted[1]["input"])
+    assert "[image removed]" in sent and "input_image" not in sent
