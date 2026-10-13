@@ -1875,3 +1875,16 @@ async def test_completed_run_keeps_agent_for_followup_until_session_stop(monkeyp
         assert agent.close_calls == 1
     finally:
         await runner.stop()
+
+
+def test_concurrent_permission_request_after_cancel_stays_pending_without_an_approval_event() -> None:
+    runner = _runner("concurrent-cancel")
+    session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task",
+                                   session_id="concurrent-cancel", concurrent_approvals=True)
+    runner.session.product_session = session
+    controller = runner._control_controller
+    controller.update_pending_permissions("permission_request", {"request_id": "first", "items": []})
+    session.cancel()
+    controller.update_pending_permissions("permission_request", {"request_id": "second", "items": []})
+    assert session.read_model.status == "canceled"
+    assert [item["request_id"] for item in runner.session.metadata["pending_permissions"]] == ["first", "second"]

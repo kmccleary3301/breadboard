@@ -1373,7 +1373,8 @@ class SessionControlController:
                 product_session
                 and activate
                 and (
-                    str(activate.get("request_id") or activate.get("id") or "")
+                    product_session.read_model.status in {"running", "awaiting_approval"}
+                    and str(activate.get("request_id") or activate.get("id") or "")
                     not in product_session.pending_approvals
                     if concurrent
                     else product_session.read_model.status == "running"
