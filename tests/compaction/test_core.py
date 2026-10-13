@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from breadboard_engine.compaction import (
@@ -20,6 +22,7 @@ from breadboard_engine.compaction import (
     settings_from_config,
     should_compact,
 )
+from breadboard_engine.compaction.controller import reproject_for_route
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeError
 from .support import omp_recipe, run_pipeline
 
@@ -278,6 +281,29 @@ def test_native_payload_replays_only_to_matching_route_and_falls_back_to_readabl
     assert NATIVE_MARKER_KEY not in other[1]
     assert other[1]["content"] == "<summary>S</summary>"
     assert other[2:] == messages[6:]
+
+
+def test_fallback_route_request_rebuilds_a_native_boundary_it_cannot_replay():
+    messages = _history()
+    state = CompactionState()
+    state.append(_Boundary(6).run(_context(messages, state)), messages)
+    native = NativeCompaction("openai", "responses", "gpt-x", ({"type": "compaction", "encrypted_content": "e"},), 50)
+    state.append(_context(messages, state).new_record(method="remote", first_kept_index=10, native=native), messages)
+    session = SimpleNamespace(compaction_state=state, provider_messages=messages)
+    stub = {"role": "user", "content": "Continue."}
+    request = state.project(messages, TARGET) + [stub]
+
+    def route(provider, api):
+        return SimpleNamespace(descriptor=SimpleNamespace(provider_id=provider, default_api_variant=api))
+
+    assert reproject_for_route(request, session, runtime=route("openai", "responses"), model="gpt-x") is request
+    claude = ProjectionTarget("anthropic", "messages", "claude")
+    rebuilt = reproject_for_route(request, session, runtime=route("anthropic", "messages"), model="claude")
+    assert rebuilt == state.project(messages, claude) + [stub]
+    # Another model on the same API cannot replay the opaque items either.
+    other_model = reproject_for_route(request, session, runtime=route("openai", "responses"), model="gpt-y")
+    assert not any(NATIVE_MARKER_KEY in message for message in other_model)
+    assert other_model[2:] == messages[6:] + [stub]
 
 
 def test_state_round_trips_and_record_ids_are_content_derived():

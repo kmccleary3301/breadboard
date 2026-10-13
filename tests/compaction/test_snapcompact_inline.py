@@ -7,6 +7,7 @@ import pytest
 from PIL import Image
 
 from breadboard_engine.compaction.settings import CompactionSettings, SnapcompactSettings
+from breadboard_engine.compaction.state import NATIVE_MARKER_KEY
 from breadboard_engine.compaction.snapcompact.inline import (
     CONTEXT_FRAMES_NOTE,
     CONTEXT_STUB,
@@ -148,6 +149,23 @@ def test_inline_system_prompt_all():
     images = [b for b in user_content if b.get("type") == "image_url"]
     assert len(images) > 0
     assert user_content[-1]["text"] == "Please implement feature X."
+
+
+def test_inline_system_prompt_frames_skip_a_native_boundary_marker():
+    """The marker is replayed as native items, so the frames go to the next real user message."""
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    marker = {"role": "user", "content": "", NATIVE_MARKER_KEY: {"record_id": "r", "items": []}}
+    messages = [
+        {"role": "system", "content": "You are an autonomous engineering agent with extensive guidelines. " * 250},
+        marker,
+        {"role": "user", "content": "Please implement feature X."},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+    assert transformed[0]["content"] == SYSTEM_STUB
+    assert transformed[1] == marker
+    assert transformed[2]["content"][0]["text"] == SYSTEM_FRAMES_NOTE
+
 
 
 def test_inline_system_prompt_agents_md():

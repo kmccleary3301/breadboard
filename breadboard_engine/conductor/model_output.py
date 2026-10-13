@@ -14,6 +14,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ..compaction.controller import reproject_for_route
 from ..compaction.overflow import is_context_overflow
 from ..core.core import ToolDefinition
 from .context import ConductorContext
@@ -1434,6 +1435,9 @@ def retry_with_fallback(
                 exchange_recorder=recorder,
                 cancel_requested=runtime_context.cancel_requested,
             )
+            fallback_messages = reproject_for_route(
+                messages, session_state, runtime=fallback_runtime, model=fallback_model_resolved
+            )
             project_request_body = getattr(
                 fallback_runtime, "project_request_body", None
             )
@@ -1441,7 +1445,7 @@ def retry_with_fallback(
             if callable(project_request_body):
                 fallback_request_body = project_request_body(
                     model=fallback_model_resolved,
-                    messages=messages,
+                    messages=fallback_messages,
                     tools=tools_schema,
                     stream=False,
                     context=fallback_runtime_context,
@@ -1455,7 +1459,7 @@ def retry_with_fallback(
             else:
                 fallback_request_body = {
                     "model": fallback_model_resolved,
-                    "messages": messages,
+                    "messages": fallback_messages,
                     "tools": tools_schema,
                     "stream": False,
                 }
@@ -1538,7 +1542,7 @@ def retry_with_fallback(
                         fallback_runtime.invoke(
                             client=fallback_client,
                             model=fallback_model_resolved,
-                            messages=messages,
+                            messages=fallback_messages,
                             tools=tools_schema,
                             stream=False,
                             context=fallback_runtime_context,
@@ -1556,7 +1560,7 @@ def retry_with_fallback(
                         fallback_runtime.invoke(
                             client=fallback_client,
                             model=fallback_model_resolved,
-                            messages=messages,
+                            messages=fallback_messages,
                             tools=tools_schema,
                             stream=False,
                             context=fallback_runtime_context,

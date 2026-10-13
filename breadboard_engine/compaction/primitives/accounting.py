@@ -189,7 +189,7 @@ def _rounded_content_tokens(content: Any) -> int:
             continue
         if part.get("type") in {"text", "input_text", "output_text"}:
             tokens += rounded_text_tokens(part.get("text") or "")
-        elif part.get("type") in {"image", "image_url", "input_image", "document"}:
+        elif part.get("type") in {"image", "image_url", "input_image", "media", "document"}:
             tokens += 2000
         elif part.get("type") == "tool_result":
             tokens += _rounded_content_tokens(part.get("content"))

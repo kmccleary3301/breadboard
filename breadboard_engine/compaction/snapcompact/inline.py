@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..settings import CompactionSettings
 from ..tokens import estimate_text_tokens
+from ..state import NATIVE_MARKER_KEY
 from ..transcript import content_text
 
 from .archive import count_frames, text_pages
@@ -174,8 +175,9 @@ def apply_inline_snapcompact(
     # planInlineSwaps: the selected text is replaced only when all of it fits
     # within min(budget, MAX_SYSTEM_PROMPT_FRAMES) and passes the savings gate.
     if sys_mode in ("all", "agents-md") and budget > 0:
+        # A native boundary is replayed as its items, so frames on it would never be sent.
         first_user_idx = next(
-            (i for i, m in enumerate(out_messages) if m.get("role") == "user"),
+            (i for i, m in enumerate(out_messages) if m.get("role") == "user" and NATIVE_MARKER_KEY not in m),
             None,
         )
         if first_user_idx is not None:

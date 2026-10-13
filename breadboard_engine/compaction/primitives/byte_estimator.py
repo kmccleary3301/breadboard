@@ -39,6 +39,12 @@ def response_items(message: Mapping[str, Any]) -> list[Mapping[str, Any]]:
             if "detail" in part["image_url"]:
                 image["detail"] = part["image_url"]["detail"]
             parts.append(image)
+        elif part.get("type") == "media":
+            # Runtimes send canonical media as a base64 data-URL input_image.
+            image = {"type": "input_image", "image_url": f"data:{part.get('mime', 'image/png')};base64,"}
+            if "detail" in part:
+                image["detail"] = part["detail"]
+            parts.append(image)
         else:
             parts.append(part)
     items = [{"type": "message", "role": message.get("role"), "content": parts}] if parts else []

@@ -15,6 +15,7 @@ from breadboard_engine.compaction.methods import (
 )
 from breadboard_engine.compaction.settings import settings_from_config
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
+from breadboard_engine.compaction.primitives.accounting import ESTIMATORS
 from breadboard_engine.compaction.tokens import estimate_message_tokens
 from breadboard_engine.compaction.transcript import check_tool_pairing, has_images
 
@@ -52,11 +53,12 @@ def _context(
         {"type": "media", "kind": "codex_image_url", "uri": "https://example.test/" + "a" * 64, "detail": "high"},
     ],
 )
-def test_canonical_media_image_is_estimated_as_an_image(media):
-    image = {"type": "input_image", "image_url": "data:image/png;base64,AA=="}
-    assert estimate_message_tokens({"role": "user", "content": [media]}) == estimate_message_tokens(
-        {"role": "user", "content": [image]}
-    )
+@pytest.mark.parametrize("estimator", sorted(ESTIMATORS))
+def test_canonical_media_image_is_estimated_as_an_image(media, estimator):
+    image = {"type": "input_image", "image_url": "data:image/png;base64,AA==",
+             **({"detail": media["detail"]} if "detail" in media else {})}
+    estimate = ESTIMATORS[estimator]
+    assert estimate([{"role": "user", "content": [media]}]) == estimate([{"role": "user", "content": [image]}])
 
 
 # -----------------------------------------------------------------------------
