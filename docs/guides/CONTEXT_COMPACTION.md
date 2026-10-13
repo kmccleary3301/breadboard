@@ -243,6 +243,9 @@ Summary caps require an explicit `request` block. Summary requests never chain
 onto the live Responses state; they send their whole transcript. Every boundary on a Responses
 route clears `previous_response_id` and `conversation_id`, so the next request
 sends the compacted history in full and later requests chain from its response.
+Stock-created turn origins transfer into task context once. Cancellation,
+setup failure and session shutdown release origins that never reached setup;
+the session does not retain a second prompt-history copy for completed turns.
 
 The two dated `10-9-2026` engine profiles select a digest-pinned, unmodified stock
 tool executor. Stock generates the live system text and catalog and executes
@@ -487,6 +490,14 @@ Compaction appends a `CompactionRecord` (`bb.compaction_record.v1`) to
 
 Cut points never separate a tool call from its result. A record that leaves an
 orphaned tool result is rejected before it is appended.
+
+Tool-result selection and edits read chat results, typed Responses outputs and
+Claude continuation batches. Edits preserve call IDs and update both canonical
+content and provider replay. Claude microcompact can mask an older result while
+keeping a newer result in the same batch. Nested Responses and Claude result
+images use the image token estimate, not their base64 size; mirrored Claude
+replay content is counted once. Both OpenCode Responses profiles enable typed
+native tool outputs.
 
 Native remote payloads (OpenAI compaction items, Anthropic compaction blocks)
 are replayed only to the same provider, API and model that produced them.

@@ -32,12 +32,12 @@ from .shake import (
     DEFAULT_PROTECTED_TOOLS,
     ProtectedToolMatcher,
     collect_tool_calls_by_id,
-    is_protected_tool_result,
+    is_protected_tool_result_message,
     is_useless_tool_result,
 )
 from .state import CompactionRecord, MessageEdit
 from .tokens import estimate_message_tokens
-from .transcript import is_tool_result
+from .transcript import answers_tool_call, result_call_ids, rewrite_result_content
 
 SUPERSEDED_NOTICE = "[Superseded by a newer read of this file]"
 USELESS_NOTICE = "[Uneventful result elided]"
@@ -113,6 +113,15 @@ def _unwrap_message(entry: Any) -> Tuple[Dict[str, Any], bool]:
     return {}, False
 
 
+def _replace_result_content(message: Dict[str, Any], notice: str) -> None:
+    if rewrite_result_content(message, notice):
+        return
+    if isinstance(message.get("content"), list):
+        message["content"] = [{"type": "text", "text": notice}]
+    else:
+        message["content"] = notice
+
+
 def compute_message_suffix_tokens(
     entries: Sequence[Any],
     count_tokens: Callable[[Mapping[str, Any]], int] = estimate_message_tokens,
@@ -149,22 +158,31 @@ def _collect_superseded_results(
     for i in range(len(entries) - 1, -1, -1):
         entry = entries[i]
         msg, is_wrapped = _unwrap_message(entry)
-        if not is_tool_result(msg) or msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
+        if not answers_tool_call(msg) or msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
             continue
-        call_id = msg.get("tool_call_id")
-        tool_call = tool_calls_by_id.get(call_id) if isinstance(call_id, str) else None
-        if not tool_call:
+        call_ids = result_call_ids(msg)
+        if not call_ids or is_protected_tool_result_message(msg, tool_calls_by_id, protected_tools):
             continue
-        if is_protected_tool_result(msg, tool_call, protected_tools):
+        result_keys: List[str] = []
+        valid_group = True
+        for call_id in reversed(call_ids):
+            tool_call = tool_calls_by_id.get(call_id)
+            if not tool_call:
+                valid_group = False
+                break
+            key = supersede_key(str(tool_call.get("name") or ""), tool_call.get("arguments") or {})
+            if key is None:
+                valid_group = False
+                break
+            result_keys.append(key)
+        if not valid_group:
             continue
-        name = str(tool_call.get("name") or "")
-        arguments = tool_call.get("arguments") or {}
-        key = supersede_key(name, arguments)
-        if key is None:
-            continue
-        sep = key.find("\u0000")
-        superseded = (key in seen_keys) or (sep >= 0 and key[:sep] in seen_keys)
-        seen_keys.add(key)
+        superseded = True
+        for key in result_keys:
+            sep = key.find("\u0000")
+            if key not in seen_keys and (sep < 0 or key[:sep] not in seen_keys):
+                superseded = False
+            seen_keys.add(key)
         if not superseded:
             continue
         target_dict = entry["message"] if is_wrapped else entry
@@ -196,9 +214,7 @@ def _collect_useless_results(
         target_dict = entry["message"] if is_wrapped else entry
         if id(target_dict) in exclude_messages:
             continue
-        call_id = msg.get("tool_call_id")
-        tool_call = tool_calls_by_id.get(call_id) if isinstance(call_id, str) else None
-        if is_protected_tool_result(msg, tool_call, protected_tools):
+        if is_protected_tool_result_message(msg, tool_calls_by_id, protected_tools):
             continue
         tokens = count_tokens(msg)
         if estimate_pruned_savings(tokens, USELESS_NOTICE) <= 0:
@@ -302,10 +318,7 @@ def prune_superseded_tool_results(
     tokens_saved = 0
     for candidate in to_prune:
         msg = candidate.message
-        if isinstance(msg.get("content"), list):
-            msg["content"] = [{"type": "text", "text": candidate.notice}]
-        else:
-            msg["content"] = candidate.notice
+        _replace_result_content(msg, candidate.notice)
         msg["pruned_at"] = now_val
         msg["prunedAt"] = now_val
         tokens_saved += estimate_pruned_savings(candidate.tokens, candidate.notice)
@@ -379,14 +392,12 @@ def prune_tool_outputs(
     for i in range(len(entries) - 1, -1, -1):
         entry = entries[i]
         msg, is_wrapped = _unwrap_message(entry)
-        if not is_tool_result(msg):
+        if not answers_tool_call(msg):
             continue
 
         target_dict = entry["message"] if is_wrapped else entry
         tokens = count_fn(msg)
-        call_id = msg.get("tool_call_id")
-        tool_call = tool_calls_by_id.get(call_id) if isinstance(call_id, str) else None
-        is_protected = is_protected_tool_result(msg, tool_call, protected_tools)
+        is_protected = is_protected_tool_result_message(msg, tool_calls_by_id, protected_tools)
 
         if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
             accumulated_tokens += tokens
@@ -424,10 +435,7 @@ def prune_tool_outputs(
 
     now_val = "now"
     for _, target_dict, _, notice in candidates:
-        if isinstance(target_dict.get("content"), list):
-            target_dict["content"] = [{"type": "text", "text": notice}]
-        else:
-            target_dict["content"] = notice
+        _replace_result_content(target_dict, notice)
         target_dict["pruned_at"] = now_val
         target_dict["prunedAt"] = now_val
 
@@ -485,13 +493,11 @@ def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]
 
     for i in range(len(raw_messages) - 1, -1, -1):
         msg = raw_messages[i]
-        if not is_tool_result(msg):
+        if not answers_tool_call(msg):
             continue
 
         tokens = estimate_message_tokens(msg)
-        call_id = msg.get("tool_call_id")
-        tool_call = tool_calls_by_id.get(call_id) if isinstance(call_id, str) else None
-        is_protected = is_protected_tool_result(msg, tool_call, DEFAULT_PROTECTED_TOOLS)
+        is_protected = is_protected_tool_result_message(msg, tool_calls_by_id, DEFAULT_PROTECTED_TOOLS)
 
         if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
             accumulated_tokens += tokens
@@ -528,10 +534,7 @@ def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]
 
     for idx, orig_msg, _, notice, _, _ in candidates:
         new_msg = copy.deepcopy(orig_msg)
-        if isinstance(new_msg.get("content"), list):
-            new_msg["content"] = [{"type": "text", "text": notice}]
-        else:
-            new_msg["content"] = notice
+        _replace_result_content(new_msg, notice)
         new_msg["pruned_at"] = now
         new_msg["prunedAt"] = now
         edits.append(MessageEdit(index=idx, message=new_msg))

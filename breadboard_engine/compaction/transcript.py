@@ -10,8 +10,9 @@ or assistant messages so a tool result never loses its call.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
+from ..provider.anthropic_replay import TOOL_RESULT_SCHEMA
 from .tokens import estimate_message_tokens, is_image_part
 
 Message = Mapping[str, Any]
@@ -72,6 +73,72 @@ def result_text(content: Any) -> str:
     return "".join(part["text"] for part in result_parts(content)
                    if isinstance(part, Mapping) and part.get("type") == "text" and isinstance(part.get("text"), str))
 
+
+def rewrite_result_content(
+    message: Dict[str, Any],
+    replacement: str,
+    selected_call_ids: Optional[Iterable[str]] = None,
+) -> bool:
+    """Rewrite selected canonical tool results while preserving replay envelopes."""
+    content = message.get("content")
+    if role_of(message) not in {"tool", "tool_result"} or not isinstance(content, list):
+        return False
+    selected = None if selected_call_ids is None else set(selected_call_ids)
+    rewritten: List[Any] = []
+    changed = False
+    for block in content:
+        if not isinstance(block, Mapping):
+            rewritten.append(block)
+            continue
+        kind = block.get("type")
+        call_id = block.get("call_id")
+        if kind == "tool_result" and isinstance(call_id, str) and (selected is None or call_id in selected):
+            result_block = {key: value for key, value in block.items() if key != "attachments"}
+            result_block["content"] = replacement
+            rewritten.append(result_block)
+            changed = True
+            continue
+        if kind == "provider_replay":
+            payload = block.get("payload")
+            payload = payload if isinstance(payload, Mapping) else {}
+            call_id = payload.get("call_id")
+            if (block.get("schema_version") == "openai.responses.tool_output.v1"
+                    and isinstance(call_id, str) and (selected is None or call_id in selected)
+                    and "output" in payload):
+                output = [{"type": "input_text", "text": replacement}] if isinstance(payload["output"], list) else replacement
+                rewritten.append({**block, "payload": {**payload, "output": output}})
+                changed = True
+                continue
+            if (block.get("provider_id") == "anthropic"
+                    and block.get("schema_version") == TOOL_RESULT_SCHEMA
+                    and block.get("replay_scope") == "same_provider"):
+                native_messages = payload.get("messages")
+                if isinstance(native_messages, list):
+                    updated_messages = list(native_messages)
+                    replay_changed = False
+                    for message_index, native_message in enumerate(native_messages):
+                        native_content = native_message.get("content") if isinstance(native_message, Mapping) else None
+                        if not isinstance(native_content, list):
+                            continue
+                        updated_content = list(native_content)
+                        message_changed = False
+                        for part_index, native_result in enumerate(native_content):
+                            call_id = native_result.get("tool_use_id") if isinstance(native_result, Mapping) else None
+                            if (isinstance(native_result, Mapping) and native_result.get("type") == "tool_result"
+                                    and isinstance(call_id, str) and (selected is None or call_id in selected)):
+                                updated_content[part_index] = {**native_result, "content": replacement}
+                                message_changed = True
+                        if message_changed:
+                            updated_messages[message_index] = {**native_message, "content": updated_content}
+                            replay_changed = True
+                    if replay_changed:
+                        rewritten.append({**block, "payload": {**payload, "messages": updated_messages}})
+                        changed = True
+                        continue
+        rewritten.append(block)
+    if changed:
+        message["content"] = rewritten
+    return changed
 
 
 def is_turn_start(message: Message) -> bool:

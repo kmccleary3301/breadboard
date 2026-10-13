@@ -61,6 +61,55 @@ def test_canonical_media_image_is_estimated_as_an_image(media, estimator):
     assert estimate([{"role": "user", "content": [media]}]) == estimate([{"role": "user", "content": [image]}])
 
 
+def test_responses_tool_result_images_are_estimated_as_images_not_base64_text():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    short_image = responses_image_tool_result_message(
+        "call_view", [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}],
+    )
+    large_image = responses_image_tool_result_message(
+        "call_view", [{"type": "input_image", "image_url": "data:image/png;base64," + "A" * 100_000}],
+    )
+    text_output = responses_image_tool_result_message(
+        "call_view", [{"type": "input_text", "text": "A" * 100_000}],
+    )
+
+    image_tokens = estimate_message_tokens(large_image)
+    assert estimate_message_tokens(short_image) == image_tokens
+    # 100,000 text characters cost 25,000 tokens; the image estimate is 1,200.
+    assert estimate_message_tokens(text_output) - image_tokens == 23_800
+
+
+def test_anthropic_batch_result_images_are_estimated_as_images_once():
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+
+    adapter = AnthropicAdapter()
+
+    def batch_result(content):
+        return adapter.create_tool_result_batch_message([{
+            "role": "user",
+            "content": [{
+                "type": "tool_result",
+                "tool_use_id": "call_view",
+                "content": content,
+            }],
+        }])
+
+    short_image = batch_result([{
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "A"},
+    }])
+    large_image = batch_result([{
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "A" * 100_000},
+    }])
+    text_result = batch_result([{"type": "text", "text": "A" * 100_000}])
+
+    image_tokens = estimate_message_tokens(large_image)
+    assert estimate_message_tokens(short_image) == image_tokens
+    assert estimate_message_tokens(text_result) - image_tokens == 23_800
+
+
 @pytest.mark.parametrize("media", CANONICAL_IMAGES)
 def test_drop_images_removes_canonical_media_images(media):
     messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": [media]}]

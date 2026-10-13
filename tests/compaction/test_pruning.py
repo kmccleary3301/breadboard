@@ -20,12 +20,27 @@ from breadboard_engine.compaction.settings import settings_from_config
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
 from breadboard_engine.compaction.tokens import estimate_message_tokens
 from breadboard_engine.compaction.transcript import check_tool_pairing
+from breadboard_engine.provider.adapters import AnthropicAdapter
+from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
 TARGET = ProjectionTarget("openai", "responses", "gpt-x")
 
 T0 = 1770000000000.0
 FILE_CONTENT = "export function alpha() { return 1; }\n" * 50
 BIG_TEXT = "const value = computeSomething(12345);\n" * 500
+
+
+def _native_result_carrier(carrier: str, text: str) -> Dict[str, Any]:
+    if carrier == "responses":
+        return responses_image_tool_result_message(
+            "c1", [{"type": "input_text", "text": text}],
+        )
+    return AnthropicAdapter().create_tool_result_message(
+        "c1", "bash", {"__claude_tool_result_messages": [{
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "c1", "content": text}],
+        }]},
+    )
 
 
 def _context(
@@ -212,6 +227,32 @@ def test_superseded_and_useless_gets_superseded_notice():
     assert entries[1]["content"] == SUPERSEDED_NOTICE
 
 
+def test_prune_superseded_responses_tool_result_uses_replay_call_id():
+    first_call = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "read", "arguments": {"path": "src/a.py"}}}],
+    }
+    latest_call = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "c2", "type": "function", "function": {"name": "read", "arguments": {"path": "src/a.py"}}}],
+    }
+    first_result = _native_result_carrier("responses", FILE_CONTENT)
+    latest_result = _native_result_carrier("responses", FILE_CONTENT)
+    first_result["content"][0]["payload"]["call_id"] = "c1"
+    latest_result["content"][0]["payload"]["call_id"] = "c2"
+    entries = [first_call, first_result, latest_call, latest_result]
+
+    outcome = prune_superseded_tool_results(entries, now=T0 + 1000)
+
+    assert outcome.pruned_count == 1
+    assert entries[1]["content"][0]["payload"]["call_id"] == "c1"
+    assert entries[1]["content"][0]["payload"]["output"][0]["text"] == SUPERSEDED_NOTICE
+    assert entries[3]["content"][0]["payload"]["output"][0]["text"] == FILE_CONTENT
+    assert check_tool_pairing(entries) is None
+
+
 # -----------------------------------------------------------------------------
 # prune_tool_outputs and prune_tool_results integration tests
 # -----------------------------------------------------------------------------
@@ -235,6 +276,32 @@ def test_prune_tool_outputs_age_and_savings_gate():
     assert res.pruned_count == 2
     assert "Output truncated" in r1["content"]
     assert "Output truncated" in r2["content"]
+
+
+@pytest.mark.parametrize("carrier", ["responses", "anthropic"])
+def test_prune_tool_outputs_rewrites_native_result_carriers(carrier):
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash"}}],
+    }
+    result = _native_result_carrier(carrier, "large native result " * 500)
+    messages = [assistant, result, {"role": "user", "content": "recent"}]
+
+    outcome = prune_tool_outputs(messages, protect_tokens=0, minimum_savings=50)
+
+    assert outcome.pruned_count == 1
+    assert check_tool_pairing(messages) is None
+    if carrier == "responses":
+        [replay] = messages[1]["content"]
+        assert replay["payload"]["call_id"] == "c1"
+        assert "Output truncated" in replay["payload"]["output"][0]["text"]
+    else:
+        canonical, replay = messages[1]["content"]
+        native = replay["payload"]["messages"][0]["content"][0]
+        assert canonical["call_id"] == "c1"
+        assert native["tool_use_id"] == "c1"
+        assert native["content"] == canonical["content"]
 
 
 def test_prune_tool_results_disabled_by_default_returns_none():
@@ -295,6 +362,80 @@ def test_prune_tool_results_runs_and_produces_valid_record():
     assert check_tool_pairing(view) is None
     assert view[3]["content"] == SUPERSEDED_NOTICE
     assert view[5]["content"] == FILE_CONTENT
+
+
+@pytest.mark.parametrize("carrier", ["responses", "anthropic"])
+def test_prune_tool_results_rewrites_native_result_without_losing_correlation(carrier):
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash"}}],
+    }
+    result = _native_result_carrier(carrier, "large native result " * 500)
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "run"}, assistant, result]
+    context = _context(
+        messages,
+        prune={"enabled": True, "protect_tokens": 0, "minimum_savings": 50},
+    )
+
+    record = prune_tool_results(context)
+
+    assert record is not None
+    [edit] = record.edits
+    assert edit.index == 3
+    assert edit.message["role"] == result["role"]
+    assert edit.message["pruned_at"]
+    assert check_tool_pairing([assistant, edit.message]) is None
+    if carrier == "responses":
+        [replay] = edit.message["content"]
+        assert replay["schema_version"] == "openai.responses.tool_output.v1"
+        assert replay["replay_scope"] == "same_provider"
+        assert replay["payload"]["call_id"] == "c1"
+        assert replay["payload"]["output"][0]["type"] == "input_text"
+        assert "Output truncated" in replay["payload"]["output"][0]["text"]
+    else:
+        canonical, replay = edit.message["content"]
+        native = replay["payload"]["messages"][0]["content"][0]
+        assert canonical["call_id"] == "c1"
+        assert native["tool_use_id"] == "c1"
+        assert "Output truncated" in canonical["content"]
+        assert native["content"] == canonical["content"]
+        assert replay["schema_version"] == "anthropic.messages.tool_result.v1"
+
+
+def test_prune_tool_results_preserves_anthropic_batch_call_correlations():
+    first_text = "first native result " * 500
+    second_text = "second native result " * 500
+    assistant = _read_pair("src/first.py", "", T0, "c1", tool="bash")[0]
+    assistant["tool_calls"].extend(
+        _read_pair("src/second.py", "", T0, "c2", tool="bash")[0]["tool_calls"]
+    )
+    result = AnthropicAdapter().create_tool_result_batch_message([{
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "c1", "content": first_text},
+            {"type": "tool_result", "tool_use_id": "c2", "content": second_text},
+        ],
+    }])
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "run"}, assistant, result]
+    context = _context(
+        messages,
+        prune={"enabled": True, "protect_tokens": 0, "minimum_savings": 50},
+    )
+
+    record = prune_tool_results(context)
+
+    assert record is not None
+    [edit] = record.edits
+    first, second, replay = edit.message["content"]
+    native_first, native_second = replay["payload"]["messages"][0]["content"]
+    assert first["call_id"] == native_first["tool_use_id"] == "c1"
+    assert second["call_id"] == native_second["tool_use_id"] == "c2"
+    assert first["content"] == native_first["content"]
+    assert second["content"] == native_second["content"]
+    assert "Output truncated" in first["content"]
+    assert "Output truncated" in second["content"]
+    assert check_tool_pairing([assistant, edit.message]) is None
 
 
 def test_prune_persistence_across_state_roundtrip():

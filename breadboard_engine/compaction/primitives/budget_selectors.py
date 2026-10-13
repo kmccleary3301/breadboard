@@ -1,15 +1,19 @@
 """Whole-history replacement, retained user text, and latest-call protection."""
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 from ..methods import CompactionContext, MethodUnavailable
 from ..params import Params
-from .accounting import _text_parts, normalize_usage, _usage_total, rounded_text_tokens
+from .accounting import normalize_usage, _usage_total, rounded_text_tokens
 from .byte_estimator import text_tokens
 from .selectors import Selection
 from .triggers import build_limit
 from .native_retention import truncate_middle
 from .context_markers import contextual_user, marker_pairs, sampling_phases
 from .protected_windows import visible_messages
+
+from ..transcript import result_call_ids, result_text
 
 
 
@@ -104,6 +108,34 @@ class UserMessagesBudget:
         return Selection(first_kept_index=end, summarize=tuple(range(start, end)),
                          replay=tuple(replay), details={"retained_messages": tuple(retained)})
 
+def _result_texts_by_call_id(message: Mapping[str, Any]) -> dict[str, str]:
+    call_ids = result_call_ids(message)
+    if not call_ids:
+        return {}
+    content = message.get("content")
+    call_id = message.get("tool_call_id")
+    if isinstance(call_id, str):
+        return {call_id: result_text(content)}
+
+    texts = {}
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, Mapping):
+                continue
+            if part.get("type") == "tool_result":
+                call_id = part.get("call_id")
+                if isinstance(call_id, str):
+                    texts[call_id] = result_text(part.get("content"))
+            elif part.get("type") == "provider_replay":
+                payload = part.get("payload")
+                call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
+                if isinstance(call_id, str):
+                    texts[call_id] = result_text([part])
+    if not texts and len(call_ids) == 1:
+        texts[call_ids[0]] = result_text(content)
+    return texts
+
+
 class LatestToolOutputs:
     kind = "latest_tool_outputs"
 
@@ -132,24 +164,35 @@ class LatestToolOutputs:
                 function = call.get("function", call)
                 if function.get("name") in self.eligible_tools:
                     calls.append(call["id"])
-            call_id = message.get("tool_call_id")
-            text = "".join(_text_parts(message.get("content")))
-            if call_id and not text.startswith(("<persisted-output>", "[Old tool result content cleared]")):
-                results[call_id] = (index, rounded_text_tokens(text))
+            result_texts = _result_texts_by_call_id(message)
+            for call_id in result_call_ids(message):
+                text = result_texts.get(call_id, "")
+                if call_id and not text.startswith(("<persisted-output>", "[Old tool result content cleared]")):
+                    results[call_id] = (index, rounded_text_tokens(text))
         eligible = [c for c in calls if c in results]
         total = sum(results[c][1] for c in eligible)
         protected = set(eligible[-self.keep_latest_calls:]) if self.keep_latest_calls else set()
         selected = []
+        selected_call_ids_by_index = {}
         saved = 0
-        for call in eligible:
-            if call not in protected and total - saved > self.residual_target:
-                selected.append(results[call][0])
-                saved += results[call][1]
+        for call_id in eligible:
+            if call_id not in protected and total - saved > self.residual_target:
+                index, cost = results[call_id]
+                selected.append(index)
+                selected_call_ids_by_index.setdefault(index, []).append(call_id)
+                saved += cost
         usage = normalize_usage(context.last_usage)
         limit = self.limit if self.auto_compact_enabled else self.disabled_auto_limit
         warning = limit.tokens(context.context_window, context.max_output_tokens) - self.warning_delta
         if not context.usage_fresh or usage is None or _usage_total(usage, "components") < warning or saved < self.min_savings:
             selected = []
+            selected_call_ids_by_index.clear()
         if not selected:
             raise MethodUnavailable("No eligible tool outputs meet warning and savings gates")
-        return Selection(targets=tuple(selected))
+        mask_call_ids_by_index = {}
+        for index, selected_call_ids in selected_call_ids_by_index.items():
+            message = edits.get(index, context.messages[index])
+            if set(selected_call_ids) != set(result_call_ids(message)):
+                mask_call_ids_by_index[str(index)] = tuple(selected_call_ids)
+        details = {"mask_call_ids_by_index": mask_call_ids_by_index} if mask_call_ids_by_index else {}
+        return Selection(targets=tuple(dict.fromkeys(selected)), details=details)

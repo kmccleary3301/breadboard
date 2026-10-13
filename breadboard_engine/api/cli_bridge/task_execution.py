@@ -1155,7 +1155,9 @@ class TaskExecutionOwner:
                 task_context["opencode_stock_input_handler"] = stock_inputs.receive
                 task_context["opencode_stock_headless"] = stock_inputs.headless
                 task_context.pop("opencode_stock_origin", None)
-                stock_origin = stock_inputs.origins.get(correlation["turn_id"])
+                stock_origin = stock_inputs.origins.pop(
+                    correlation["turn_id"], None
+                )
                 if stock_origin is not None:
                     task_context["opencode_stock_origin"] = stock_origin
             task_context["attachment_capabilities"] = dict(
@@ -1642,6 +1644,8 @@ class TaskExecutionOwner:
                 turn.terminal_outcome = None
                 turn.state = previous_state
             raise RuntimeError("turn_terminal_persistence_failed")
+        runner._release_stock_origin(turn.turn_id)
+
         if not advance_queue:
             return True
         async with runner.session.admission_lock:

@@ -32,7 +32,13 @@ from .methods import CompactionContext, MethodUnavailable
 from .settings import ShakeSettings
 from .state import CompactionRecord, MessageEdit
 from .tokens import estimate_message_tokens, estimate_text_tokens
-from .transcript import is_tool_result, role_of
+from .transcript import (
+    answers_tool_call,
+    result_call_ids,
+    result_text,
+    rewrite_result_content,
+    role_of,
+)
 
 # Token cost heuristic for placeholder line; used only for the savings gate.
 PLACEHOLDER_TOKEN_ESTIMATE = 16
@@ -168,8 +174,22 @@ def is_protected_tool_result(
     return False
 
 
+def is_protected_tool_result_message(
+    tool_result: Mapping[str, Any],
+    tool_calls_by_id: Mapping[str, Mapping[str, Any]],
+    matchers: Sequence[ProtectedToolMatcher],
+) -> bool:
+    call_ids = result_call_ids(tool_result)
+    if not call_ids:
+        return is_protected_tool_result(tool_result, None, matchers)
+    return any(
+        is_protected_tool_result(tool_result, tool_calls_by_id.get(call_id), matchers)
+        for call_id in call_ids
+    )
+
+
 def is_useless_tool_result(message: Mapping[str, Any]) -> bool:
-    if not is_tool_result(message):
+    if not answers_tool_call(message):
         return False
     is_error = bool(
         message.get("is_error")
@@ -312,6 +332,11 @@ def _extract_tool_result_text(
             return None
         return content, count_text_tokens(content)
     if isinstance(content, list):
+        if any(isinstance(block, Mapping) and block.get("type") in {"tool_result", "provider_replay"}
+               for block in content):
+            text = result_text(content)
+            if text:
+                return text, count_text_tokens(text)
         fragments: List[str] = []
         for block in content:
             if isinstance(block, Mapping) and block.get("type") == "text":
@@ -385,14 +410,14 @@ def collect_shake_regions(
         if not useless_res and accumulated_after[i] < cfg.protect_tokens:
             continue
 
-        if is_tool_result(msg):
+        if answers_tool_call(msg):
             # Already pruned or shaken
             if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
                 continue
-            call_id = msg.get("tool_call_id")
-            tool_call = tool_calls_by_id.get(call_id) if isinstance(call_id, str) else None
-            if is_protected_tool_result(msg, tool_call, cfg.protected_tools):
+            call_ids = result_call_ids(msg)
+            if is_protected_tool_result_message(msg, tool_calls_by_id, cfg.protected_tools):
                 continue
+            tool_call = tool_calls_by_id.get(call_ids[0]) if call_ids else None
             res = _extract_tool_result_text(msg, count_text_tokens)
             if not res:
                 continue
@@ -488,6 +513,8 @@ def shake_elide_placeholder(region: ShakeRegion, index: int, artifact_ref: Optio
     return f"[shaken ~{region.tokens} tokens]"
 
 
+
+
 def apply_shake_region(
     message: Dict[str, Any],
     region: ShakeRegion,
@@ -496,29 +523,30 @@ def apply_shake_region(
 ) -> None:
     """Apply a single shake region in place to a message dict."""
     if region.kind == "toolResult":
-        content = message.get("content")
-        if isinstance(content, str):
-            message["content"] = replacement
-        elif isinstance(content, list):
-            rep_idx = -1
-            for idx, b in enumerate(content):
-                if isinstance(b, Mapping) and b.get("type") == "text":
-                    txt = b.get("text")
-                    if isinstance(txt, str) and txt:
-                        rep_idx = idx
-                        break
-            if rep_idx < 0:
-                message["content"] = [{"type": "text", "text": replacement}]
-            else:
-                kept: List[Any] = []
+        if not rewrite_result_content(message, replacement):
+            content = message.get("content")
+            if isinstance(content, str):
+                message["content"] = replacement
+            elif isinstance(content, list):
+                rep_idx = -1
                 for idx, b in enumerate(content):
-                    if isinstance(b, Mapping) and b.get("type") != "text":
-                        kept.append(b)
-                    elif idx == rep_idx:
-                        kept.append({"type": "text", "text": replacement})
-                message["content"] = kept
-        else:
-            message["content"] = replacement
+                    if isinstance(b, Mapping) and b.get("type") == "text":
+                        txt = b.get("text")
+                        if isinstance(txt, str) and txt:
+                            rep_idx = idx
+                            break
+                if rep_idx < 0:
+                    message["content"] = [{"type": "text", "text": replacement}]
+                else:
+                    kept: List[Any] = []
+                    for idx, b in enumerate(content):
+                        if isinstance(b, Mapping) and b.get("type") != "text":
+                            kept.append(b)
+                        elif idx == rep_idx:
+                            kept.append({"type": "text", "text": replacement})
+                    message["content"] = kept
+            else:
+                message["content"] = replacement
         now = clock_now or "now"
         message["pruned_at"] = now
         message["prunedAt"] = now

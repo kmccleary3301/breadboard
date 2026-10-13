@@ -9,25 +9,23 @@ from ..params import Params, PresetError
 from .accounting import _utf16_len
 from .protected_windows import visible_messages
 from .selectors import Selection
+from ..transcript import result_call_ids, result_text
 
 
 def tool_name(messages: list[Mapping[str, Any]], index: int) -> str:
     message = messages[index]
     if message.get("name") or message.get("tool"):
         return str(message.get("name") or message.get("tool"))
-    call_id = message.get("tool_call_id")
+    call_ids = result_call_ids(message)
     for previous in reversed(messages[:index]):
         for call in previous.get("tool_calls") or ():
-            if call.get("id") == call_id:
+            if call.get("id") in call_ids:
                 return str((call.get("function") or call).get("name") or "")
     return ""
 
 
 def output_text(message: Mapping[str, Any]) -> str:
-    content = message.get("content")
-    if isinstance(content, str):
-        return content
-    return "".join(p.get("text", "") for p in content or () if p.get("type") == "text")
+    return result_text(message.get("content"))
 
 
 class ProtectedToolOutputs:
@@ -54,7 +52,7 @@ class ProtectedToolOutputs:
         for index, message in enumerate(messages):
             if message.get("role") == "assistant":
                 owner_summary = bool(message.get("summary"))
-            elif message.get("role") == "tool" and owner_summary:
+            elif message.get("role") in {"tool", "tool_result"} and owner_summary:
                 summary_tools.add(index)
         turns = total = savings = 0
         targets = []
@@ -68,7 +66,7 @@ class ProtectedToolOutputs:
                 break
             if self.stop_at_summary and i in summary_tools:
                 break
-            if message.get("role") != "tool" or message.get("status", "completed") != "completed":
+            if message.get("role") not in {"tool", "tool_result"} or message.get("status", "completed") != "completed":
                 continue
             if tool_name(messages, i) in self.exempt:
                 continue
@@ -108,7 +106,7 @@ class LargestFirstMasking:
         for i in range(context.state.kept_start(messages, context.target), len(messages)):
             message = messages[i]
             text = output_text(message)
-            if message.get("role") == "tool" and text and not message.get("compacted") and text != self.placeholder:
+            if message.get("role") in {"tool", "tool_result"} and text and not message.get("compacted") and text != self.placeholder:
                 candidates.append((i, _utf16_len(text)))
         candidates.sort(key=lambda pair: -pair[1])
         removed = 0

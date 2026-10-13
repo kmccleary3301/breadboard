@@ -2,17 +2,28 @@
 
 import json
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from breadboard_engine.compaction import (
     CompactionContext, CompactionState, ProjectionTarget, SummaryResponse, load_compaction_config,
+    settings_from_config,
 )
 from breadboard_engine.compaction.controller import CompactionController
 from breadboard_engine.compaction.pipeline import AlgorithmStep, ComposedStep, Pipeline, Stage
 from breadboard_engine.compaction.presets import build_recipe, load_preset_document
 from breadboard_engine.compaction.primitives.selectors import Selection
 from breadboard_engine.state.session_state import SessionState
+from breadboard_engine.compaction.params import BuildEnv, Params
+from breadboard_engine.compaction.primitives.budget_selectors import LatestToolOutputs
+from breadboard_engine.compaction.primitives.history_selection import LargestFirstMasking, ProtectedToolOutputs
+from breadboard_engine.compaction.primitives.message_reduction import MaskOutputs
+from breadboard_engine.compaction.transcript import check_tool_pairing, result_call_ids
+from breadboard_engine.provider.adapters import AnthropicAdapter
+from breadboard_engine.provider.anthropic_replay import replay_messages
+from breadboard_engine.provider.contracts import ProviderRuntimeContext
+from breadboard_engine.provider.runtimes.openai.responses import OpenAIResponsesRuntime
 
 TARGET = ProjectionTarget("oracle", "oracle", "oracle")
 HEADINGS = "\n".join(("## Decisions", "## Open TODOs", "## Constraints/Rules",
@@ -291,3 +302,143 @@ def test_hermes_checkpoint_summary_reads_typed_tool_results():
                                 summarizer=summaries)
     recipe.pipeline.stages["summary"].step.reducer.reduce(context, Selection(first_kept_index=3, summarize=(0, 1, 2)))
     assert "[TOOL RESULT c1]: SCREEN_TEXT\\n[image]" in json.dumps(summaries.requests[0].messages)
+
+
+CARRIER_PLACEHOLDER = "[Old tool result content cleared]"
+CARRIER_ANTHROPIC = ProjectionTarget("anthropic", "messages", "claude-sonnet")
+CARRIER_OPENAI = ProjectionTarget("openai", "responses", "gpt-x")
+
+
+def _carrier_context(messages, *, target=CARRIER_ANTHROPIC, overflow_tokens=None, overflow_limit=None):
+    return CompactionContext(
+        messages=messages,
+        state=CompactionState(),
+        settings=settings_from_config({"enabled": True}),
+        reason="request",
+        target=target,
+        context_window=10_000,
+        tokens_before=0,
+        last_usage={"input_tokens": 20_000},
+        max_output_tokens=100,
+        overflow_tokens=overflow_tokens,
+        overflow_limit=overflow_limit,
+    )
+
+
+def _carrier_latest_selector(keep_latest_calls):
+    return LatestToolOutputs(Params({
+        "keep_latest_calls": keep_latest_calls,
+        "residual_target": 0,
+        "min_savings": 0,
+        "warning_delta": 0,
+        "eligible_tools": ["Read"],
+        "limit": {"kind": "window_minus_reserve", "reserve": 0},
+        "disabled_auto_limit": {"kind": "window_minus_reserve", "reserve": 0},
+    }, "test.select", BuildEnv(None)))
+
+
+def _carrier_masker():
+    return MaskOutputs(Params({"placeholder": CARRIER_PLACEHOLDER}, "test.reduce", BuildEnv(None)))
+
+
+def _carrier_call(call_id):
+    return {"id": call_id, "type": "function", "function": {"name": "Read", "arguments": "{}"}}
+
+
+def test_latest_tool_outputs_masks_only_selected_result_in_native_batch():
+    calls = [_carrier_call("older"), _carrier_call("latest")]
+    assistant = {"role": "assistant", "content": "", "tool_calls": calls}
+    native = [{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "older", "content": "older result " * 100},
+        {"type": "tool_result", "tool_use_id": "latest", "content": "latest result"},
+    ]}]
+    carrier = AnthropicAdapter().create_tool_result_batch_message(native)
+    messages = [{"role": "user", "content": "Read both files."}, assistant, carrier]
+    context = _carrier_context(messages)
+
+    selection = _carrier_latest_selector(keep_latest_calls=1).select(context)
+    assert selection.targets == (2,)
+    reduction = _carrier_masker().reduce(context, selection)
+    masked = reduction.edits[0].message
+
+    assert check_tool_pairing([messages[0], assistant, masked]) is None
+    assert result_call_ids(masked) == ("older", "latest")
+    canonical = {block["call_id"]: block["content"] for block in masked["content"]
+                 if block.get("type") == "tool_result"}
+    assert canonical == {"older": CARRIER_PLACEHOLDER, "latest": "latest result"}
+    replayed = replay_messages(masked["content"])
+    assert replayed[0]["content"] == [
+        {"type": "tool_result", "tool_use_id": "older", "content": CARRIER_PLACEHOLDER},
+        {"type": "tool_result", "tool_use_id": "latest", "content": "latest result"},
+    ]
+
+
+def test_latest_tool_outputs_keeps_chat_result_wire_bytes():
+    assistant = {"role": "assistant", "content": "", "tool_calls": [_carrier_call("chat-call")]}
+    result = {"role": "tool", "tool_call_id": "chat-call", "content": "chat result " * 100}
+    context = _carrier_context([assistant, result])
+
+    selection = _carrier_latest_selector(keep_latest_calls=0).select(context)
+    masked = _carrier_masker().reduce(context, selection).edits[0].message
+
+    assert check_tool_pairing([assistant, masked]) is None
+    assert json.dumps(masked, ensure_ascii=False, separators=(",", ":")) == json.dumps(
+        {"role": "tool", "tool_call_id": "chat-call", "content": CARRIER_PLACEHOLDER},
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+
+
+def _carrier_history_selector(kind):
+    if kind == "protected_tool_outputs":
+        return ProtectedToolOutputs(Params({
+            "enabled": True,
+            "protect_tokens": 0,
+            "protect_user_turns": 0,
+            "min_savings": 0,
+            "exempt_tools": [],
+            "stop_at_summary": True,
+            "placeholder": CARRIER_PLACEHOLDER,
+        }, "test.select", BuildEnv(None)))
+    return LargestFirstMasking(Params({
+        "target_ratio": 0.5,
+        "chars_per_token": 4,
+        "placeholder": CARRIER_PLACEHOLDER,
+    }, "test.select", BuildEnv(None)))
+
+
+@pytest.mark.parametrize("kind", ["protected_tool_outputs", "largest_first_masking"])
+def test_history_selectors_mask_typed_responses_output_and_preserve_consumable_pair(kind):
+    call_id = "typed-output"
+    assistant = {"role": "assistant", "content": "", "tool_calls": [_carrier_call(call_id)]}
+    output = "typed tool output " * 2_000
+    result = {"role": "tool_result", "content": [{
+        "type": "provider_replay",
+        "provider_id": "openai",
+        "schema_version": "openai.responses.tool_output.v1",
+        "replay_scope": "same_provider",
+        "payload": {"type": "function_call_output", "call_id": call_id, "output": output},
+    }]}
+    context = _carrier_context([assistant, result], target=CARRIER_OPENAI,
+                               overflow_tokens=5_000, overflow_limit=1_000)
+
+    selection = _carrier_history_selector(kind).select(context)
+    assert selection.targets == (1,)
+    masked = _carrier_masker().reduce(context, selection).edits[0].message
+
+    assert check_tool_pairing([assistant, masked]) is None
+    assert result_call_ids(masked) == (call_id,)
+    replay = masked["content"][0]
+    assert replay["payload"] == {
+        "type": "function_call_output", "call_id": call_id, "output": CARRIER_PLACEHOLDER,
+    }
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    runtime_context = ProviderRuntimeContext(None, {
+        "provider_tools": {"openai": {"responses_tool_output_items": True}},
+    })
+    input_items = runtime._convert_messages_to_input(
+        [assistant, masked], include_tool_calls=True, context=runtime_context,
+    )
+    assert input_items[-1] == {
+        "type": "function_call_output", "call_id": call_id, "output": CARRIER_PLACEHOLDER,
+    }

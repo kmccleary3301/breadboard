@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Dict, Mapping, Optional, Sequence
+
+from ..provider.anthropic_replay import is_tool_result_replay, replay_messages
+from ..provider.contract_wire import ProviderContractError
 
 CHARS_PER_TOKEN = 4
 MESSAGE_OVERHEAD_TOKENS = 4
@@ -39,6 +42,23 @@ def _part_tokens(part: Any) -> int:
         return estimate_text_tokens(str(part))
     if is_image_part(part):
         return IMAGE_TOKEN_ESTIMATE
+
+    kind = part.get("type")
+    metadata: Optional[Dict[str, Any]] = None
+    if kind == "tool_result":
+        metadata = {key: value for key, value in part.items() if key != "content"}
+    elif kind == "provider_replay" and part.get("schema_version") == "openai.responses.tool_output.v1":
+        payload = part.get("payload")
+        if isinstance(payload, Mapping):
+            metadata = dict(part)
+            metadata["payload"] = {key: value for key, value in payload.items() if key != "output"}
+    if metadata is not None:
+        from .transcript import result_parts
+
+        parts = result_parts([part])
+        metadata_tokens = estimate_text_tokens(json.dumps(metadata, sort_keys=True, default=str))
+        return metadata_tokens + sum(_part_tokens(result_part) for result_part in parts)
+
     for key in ("text", "content", "thinking"):
         value = part.get(key)
         if isinstance(value, str):
@@ -53,7 +73,26 @@ def estimate_message_tokens(message: Mapping[str, Any]) -> int:
     if isinstance(content, str):
         total += estimate_text_tokens(content)
     elif isinstance(content, list):
-        total += sum(_part_tokens(part) for part in content)
+        native_messages = None
+        if content and all(isinstance(part, dict) for part in content):
+            replay_blocks = [part for part in content if is_tool_result_replay(part)]
+            if len(replay_blocks) == 1 and isinstance(replay_blocks[0].get("payload"), Mapping):
+                try:
+                    native_messages = replay_messages(content)
+                except (ProviderContractError, KeyError):
+                    pass
+        if native_messages is None:
+            total += sum(_part_tokens(part) for part in content)
+        else:
+            replay = next(part for part in content if is_tool_result_replay(part))
+            metadata = dict(replay)
+            payload = replay["payload"]
+            metadata["payload"] = {key: value for key, value in payload.items() if key != "messages"}
+            total += estimate_text_tokens(json.dumps(metadata, sort_keys=True, default=str))
+            for native_message in native_messages:
+                message_metadata = {key: value for key, value in native_message.items() if key != "content"}
+                total += estimate_text_tokens(json.dumps(message_metadata, sort_keys=True, default=str))
+                total += sum(_part_tokens(block) for block in native_message["content"])
     for call in message.get("tool_calls") or ():
         if not isinstance(call, Mapping):
             continue

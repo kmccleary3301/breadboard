@@ -8,6 +8,7 @@ from typing import Any, Mapping
 from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
 from ..params import Params
 from ..state import MessageEdit
+from ..transcript import rewrite_result_content
 from .chat_reducers import summary_request_options
 from .protected_windows import visible_messages
 from .reducers import Reduction, resolve_prompt
@@ -57,6 +58,8 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
     return result
 
 
+
+
 class MaskOutputs:
     kind = "mask_outputs"
 
@@ -69,12 +72,22 @@ class MaskOutputs:
         if not selection.targets:
             raise MethodUnavailable(str(selection.details.get("noop") or "No eligible tool outputs"))
         messages = visible_messages(context)
-        edits = tuple(
-            MessageEdit(i, {key: value for key, value in {**messages[i], "content": self.placeholder}.items()
-                            if key not in self.remove_fields})
-            for i in selection.targets
-        )
-        return Reduction(edits=edits, details=selection.details)
+        mask_call_ids_by_index = selection.details.get("mask_call_ids_by_index", {})
+        edits = []
+        for index in selection.targets:
+            selected_call_ids = (
+                mask_call_ids_by_index.get(str(index))
+                if isinstance(mask_call_ids_by_index, Mapping) else None
+            )
+            message = messages[index]
+            masked = dict(message)
+            if not rewrite_result_content(masked, self.placeholder, selected_call_ids):
+                masked["content"] = self.placeholder
+            edits.append(MessageEdit(index, {
+                key: value for key, value in masked.items() if key not in self.remove_fields
+            }))
+        details = {key: value for key, value in selection.details.items() if key != "mask_call_ids_by_index"}
+        return Reduction(edits=tuple(edits), details=details)
 
 
 class MessageSummary:

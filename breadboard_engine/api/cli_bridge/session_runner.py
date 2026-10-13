@@ -209,10 +209,24 @@ class SessionRunner:
     def bind_stock_inputs(self, submit: Callable[..., Awaitable[Any]]) -> None:
         """Bind the stock producer to existing input admission, never user transport."""
         from ...execution.stock_tools import native_concurrent_prompts
+
         if not native_concurrent_prompts(self.prepare_runtime_config()):
             return
         from .stock_inputs import StockInputController
+
         self._stock_input_controller = StockInputController(self, submit)
+
+    def _release_stock_origin(self, turn_id: str) -> None:
+        stock_inputs = self._stock_input_controller
+        if stock_inputs is not None:
+            stock_inputs.origins.pop(turn_id, None)
+
+
+    def _clear_stock_origins(self) -> None:
+        stock_inputs = self._stock_input_controller
+        if stock_inputs is not None:
+            stock_inputs.origins.clear()
+
 
     def wait_for_stock_source_input(self) -> None:
         owner = getattr(self._agent, "agent", None)
@@ -958,6 +972,8 @@ class SessionRunner:
             raise RuntimeError("module cleanup could not be confirmed")
         await self._release_generation_admission()
         if cancelled_before_start:
+            self._clear_stock_origins()
+
             product_state = getattr(
                 getattr(
                     getattr(self.session, "product_session", None),
@@ -1771,6 +1787,7 @@ class SessionRunner:
         try:
             await self._lifecycle_owner.run()
         finally:
+            self._clear_stock_origins()
             try:
                 await self._close_agent()
             finally:

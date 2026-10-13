@@ -21,8 +21,23 @@ from breadboard_engine.compaction.shake import (
 from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
 from breadboard_engine.compaction.tokens import estimate_message_tokens
 from breadboard_engine.compaction.transcript import check_tool_pairing
+from breadboard_engine.provider.adapters import AnthropicAdapter
+from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
 TARGET = ProjectionTarget("openai", "responses", "gpt-x")
+
+
+def _native_result_carrier(carrier: str, text: str) -> Dict[str, Any]:
+    if carrier == "responses":
+        return responses_image_tool_result_message(
+            "c1", [{"type": "input_text", "text": text}],
+        )
+    return AnthropicAdapter().create_tool_result_message(
+        "c1", "bash", {"__claude_tool_result_messages": [{
+            "role": "user",
+            "content": [{"type": "tool_result", "tool_use_id": "c1", "content": text}],
+        }]},
+    )
 
 
 class MemoryArtifactSink(ArtifactSink):
@@ -437,6 +452,41 @@ def test_shake_executes_stores_artifact_and_validates():
     view = ctx.state.project(messages, TARGET)
     assert check_tool_pairing(view) is None
     assert "massive output line" not in view[3]["content"]
+
+
+@pytest.mark.parametrize("carrier", ["responses", "anthropic"])
+def test_shake_rewrites_native_result_without_losing_replay_identity(carrier):
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash"}}],
+    }
+    result = _native_result_carrier(carrier, "large native result " * 500)
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": "run"}, assistant, result]
+    context = _context(messages, shake={"protect_tokens": 0, "min_savings": 100})
+
+    record = ShakeCompaction().run(context)
+
+    [edit] = record.edits
+    assert edit.index == 3
+    assert edit.message["role"] == result["role"]
+    assert edit.message["pruned_at"]
+    assert check_tool_pairing([assistant, edit.message]) is None
+    if carrier == "responses":
+        [replay] = edit.message["content"]
+        assert replay["schema_version"] == "openai.responses.tool_output.v1"
+        assert replay["replay_scope"] == "same_provider"
+        assert replay["payload"]["call_id"] == "c1"
+        assert replay["payload"]["output"][0]["type"] == "input_text"
+        assert "shaken" in replay["payload"]["output"][0]["text"]
+    else:
+        canonical, replay = edit.message["content"]
+        native = replay["payload"]["messages"][0]["content"][0]
+        assert canonical["call_id"] == "c1"
+        assert native["tool_use_id"] == "c1"
+        assert "shaken" in canonical["content"]
+        assert native["content"] == canonical["content"]
+        assert replay["schema_version"] == "anthropic.messages.tool_result.v1"
 
 
 def test_shake_repeated_passes_compose_on_top_of_earlier_edits():
