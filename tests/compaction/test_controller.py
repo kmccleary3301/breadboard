@@ -469,3 +469,40 @@ def test_final_product_context_never_carries_the_native_request_surface() -> Non
     state.record_provider_request_surface(sent)
     # The boundary predates the last request, yet a resumed session may switch models.
     assert state.final_provider_context() == state.provider_messages
+
+
+def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
+    from breadboard_engine.compaction.methods import SummaryRequest
+    from breadboard_engine.compaction.summary_model import ConductorSummaryModel
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+    from breadboard_engine.provider.routing import provider_router
+    from breadboard_engine.provider.runtime import provider_registry
+
+    anthropic = provider_registry.create_runtime(provider_router.get_runtime_descriptor("anthropic/claude-sonnet-4-6")[0])
+    sent: List[Any] = []
+
+    class SummaryRuntime:
+        descriptor = anthropic.descriptor
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            sent.append(anthropic._convert_messages(kwargs["messages"], context=kwargs["context"])[1])
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
+
+    history = (
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": [{"type": "provider_replay", "provider_id": "openai",
+                                           "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
+                                           "payload": {"type": "local_shell_call", "call_id": "c0"}}],
+         "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        responses_image_tool_result_message("c1", [{"type": "input_text", "text": "SCREEN_TEXT"},
+                                                   {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        {"role": "assistant", "content": "done"},
+    )
+    summary = ConductorSummaryModel(
+        runtime=SimpleNamespace(descriptor=SimpleNamespace(provider_id="openai", default_api_variant="responses")),
+        client="client", model="gpt-5.5", session_state=SessionState("ws", "image", {}), agent_config={},
+        route_resolver=lambda route_id: (SummaryRuntime(), "claude-sonnet-4-6"),
+    )
+    summary.complete(SummaryRequest(None, history, 20, "summary", model="anthropic/claude-sonnet-4-6"))
+
+    assert "SCREEN_TEXT" in str(sent) and "c1" in str(sent) and "openai" not in str(sent)

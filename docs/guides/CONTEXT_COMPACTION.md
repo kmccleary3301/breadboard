@@ -29,7 +29,7 @@ compaction:
 | `preset` | A packaged preset below; defaults to `omp@18.4.5`. |
 | `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. |
 | `contextWindow` | Optional; otherwise provider or model metadata. |
-| `summaryModel` | Optional route ID such as `openai/gpt-5.1-codex-mini`; defaults to the turn's model. A route on another provider gets that provider's runtime and credentials. |
+| `summaryModel` | Optional route ID such as `openai/gpt-5.1-codex-mini`; defaults to the turn's model. A route on another provider gets that provider's runtime and credentials, and its summary input drops the turn provider's replay: results are sent as plain tool text, reasoning is left out. |
 | `maxPassesPerTurn` | Optional; overrides the preset's overflow attempts per turn. |
 
 An unknown key, a bad value or an unknown preset fails config loading with

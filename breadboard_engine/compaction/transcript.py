@@ -45,6 +45,35 @@ def result_call_ids(message: Message) -> Tuple[str, ...]:
     return tuple(block["call_id"] for block in blocks if isinstance(block, Mapping) and isinstance(block.get("call_id"), str))
 
 
+def result_parts(content: Any) -> List[Any]:
+    """A result's content as chat parts, with canonical ``tool_result`` blocks and typed Responses output inlined.
+
+    Other replay payloads (a Claude continuation's) repeat their ``tool_result`` blocks, so they add nothing.
+    """
+    if isinstance(content, str):
+        return [{"type": "text", "text": content}]
+    parts: List[Any] = []
+    for block in content if isinstance(content, list) else ():
+        kind = block.get("type") if isinstance(block, Mapping) else None
+        if kind == "tool_result":
+            parts.extend(result_parts(block.get("content")))
+        elif kind == "provider_replay":
+            payload = block.get("payload")
+            for item in result_parts(payload.get("output") if isinstance(payload, Mapping) else None):
+                if isinstance(item, Mapping) and item.get("type") in {"input_text", "output_text"}:
+                    item = {"type": "text", "text": item.get("text")}
+                parts.append(item)
+        else:
+            parts.append(block)
+    return parts
+
+
+def result_text(content: Any) -> str:
+    return "".join(part["text"] for part in result_parts(content)
+                   if isinstance(part, Mapping) and part.get("type") == "text" and isinstance(part.get("text"), str))
+
+
+
 def is_turn_start(message: Message) -> bool:
     return role_of(message) == "user"
 

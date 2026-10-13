@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Mapping, Optional, Sequence
 
 from ..params import Params
 from ..tokens import context_tokens_from_usage, estimate_messages_tokens
+from ..transcript import result_parts
 from .byte_estimator import bytes4
 
 Message = Mapping[str, Any]
@@ -161,9 +162,10 @@ def pi_estimate_message(message: Message) -> int:
         for call in message.get("tool_calls") or ():
             if isinstance(call, Mapping):
                 chars += _pi_tool_call_chars(call)
-    elif role in {"tool", "function"}:
-        chars = sum(_utf16_len(text) for text in _text_parts(content))
-        chars += 4800 * _image_parts(content)
+    elif role in {"tool", "function", "tool_result"}:
+        parts = result_parts(content)
+        chars = sum(_utf16_len(text) for text in _text_parts(parts))
+        chars += 4800 * _image_parts(parts)
     else:
         return 0
     return math.ceil(chars / 4)

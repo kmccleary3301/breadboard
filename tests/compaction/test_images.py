@@ -341,3 +341,12 @@ def test_drop_images_strips_the_protected_prefix():
     assert [edit.index for edit in record.edits] == [1]
     state.append(record, messages)
     assert not any(has_images(m) for m in state.project(messages, TARGET))
+
+
+def test_pi_estimator_counts_a_typed_tool_result_as_a_tool_result():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    typed = responses_image_tool_result_message("c1", [{"type": "input_text", "text": "x" * 400}, INPUT_IMAGE_BLOCK])
+    chat = {"role": "tool", "tool_call_id": "c1", "content": [{"type": "text", "text": "x" * 400}, INPUT_IMAGE_BLOCK]}
+    estimate = ESTIMATORS["pi_chars4"]
+    assert estimate([typed]) == estimate([chat]) == (400 + 4800) // 4

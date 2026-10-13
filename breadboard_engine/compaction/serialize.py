@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
-from .transcript import result_call_ids
+from .transcript import result_call_ids, result_text
 
 TOOL_RESULT_MAX_CHARS = 2000
 
@@ -92,29 +92,6 @@ def _render_tool_calls(calls: Sequence[Mapping[str, Any]]) -> str:
             args_str = ""
         rendered.append(f"{name}({args_str})")
     return "; ".join(rendered)
-
-
-def _result_text(content: Any) -> str:
-    """Text of a tool result, including canonical ``tool_result`` blocks and Responses replay output."""
-    if isinstance(content, str):
-        return content
-    texts: list[str] = []
-    for block in content if isinstance(content, list) else ():
-        if not isinstance(block, Mapping):
-            continue
-        if block.get("type") == "text":
-            value = block.get("text")
-        elif block.get("type") == "tool_result":
-            value = block.get("content")
-        elif block.get("type") == "provider_replay" and isinstance(block.get("payload"), Mapping):
-            value = block["payload"].get("output")
-        else:
-            continue
-        if isinstance(value, str):
-            texts.append(value)
-        elif isinstance(value, list):
-            texts.extend(item["text"] for item in value if isinstance(item, Mapping) and isinstance(item.get("text"), str))
-    return "".join(texts)
 
 
 def serialize_conversation(
@@ -208,7 +185,7 @@ def serialize_conversation(
             call_ids = result_call_ids(msg) or (msg.get("toolCallId"),)
             if all(call_id in useless_call_ids for call_id in call_ids):
                 continue
-            text = _result_text(msg.get("content"))
+            text = result_text(msg.get("content"))
             if text:
                 parts.append(f"{style.tool_result}: {truncate_tool_result_for_summary(text, style.tool_result_max_chars)}")
 

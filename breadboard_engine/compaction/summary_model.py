@@ -15,6 +15,7 @@ from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional,
 
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
+from .transcript import answers_tool_call, result_call_ids, result_text
 
 
 def _text_of(content: Any) -> str:
@@ -38,6 +39,36 @@ def routed_runtime(route_id: str) -> Tuple[Any, str]:
 
     descriptor, api_model = provider_router.get_runtime_descriptor(route_id)
     return provider_registry.create_runtime(descriptor), api_model
+
+
+def _api_of(runtime: Any) -> Tuple[Any, Any]:
+    descriptor = getattr(runtime, "descriptor", None)
+    return getattr(descriptor, "provider_id", None), getattr(descriptor, "default_api_variant", None)
+
+
+def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Messages another provider's runtime accepts, for a summary routed off the turn's API.
+
+    Same-provider replay (typed Responses output, Claude continuations, signed reasoning) is
+    read only by its own runtime: results become chat tool messages with their text, and
+    reasoning and replay blocks are dropped.
+    """
+    portable: List[Dict[str, Any]] = []
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            portable.append(dict(message))
+        elif answers_tool_call(message) and "tool_call_id" not in message:
+            results = [block for block in content if isinstance(block, Mapping) and block.get("type") == "tool_result"]
+            results = results or [{"call_id": call_id, "content": content} for call_id in result_call_ids(message)]
+            portable.extend({"role": "tool", "tool_call_id": result["call_id"], "content": result_text(result["content"])}
+                            for result in results)
+        else:
+            kept = [block for block in content if not (
+                isinstance(block, Mapping) and block.get("type") in {"thinking", "redacted_thinking", "provider_replay"})]
+            if kept or message.get("tool_calls"):
+                portable.append({**message, "content": kept})
+    return portable
 
 
 
@@ -104,7 +135,8 @@ class ConductorSummaryModel:
         messages: List[Dict[str, Any]] = []
         if request.system:
             messages.append({"role": "system", "content": request.system})
-        messages.extend(copy.deepcopy(dict(message)) for message in request.messages)
+        source = request.messages if _api_of(runtime) == _api_of(self.runtime) else _portable_messages(request.messages)
+        messages.extend(copy.deepcopy(dict(message)) for message in source)
 
         turn_index = self.turn_index or 0
         self.requests_sent += 1
