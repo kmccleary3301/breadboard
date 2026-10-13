@@ -125,7 +125,7 @@ def build_context(owner, state, run_context, *, fresh, user_message):
     if skill_config.get("include_instructions", True):
         disabled = {Path(item["path"]).expanduser().resolve() for item in skill_config.get("config", []) if item.get("enabled") is False}
         roots = _skill_roots(home, Path(workspace))
-        window = owner.config["compaction"]["contextWindow"]
+        window = owner.compaction_controller.resolve_context_window(conductor=owner, session_state=state)
         skills = render_skills(load_skills(roots, disabled), roots, window)
         if skills is not None:
             sections.append(skills)

@@ -63,3 +63,31 @@ def test_production_recipe_restores_initial_context_at_explicit_phase(phase):
         assert projected[:3] == [developer, environment, old]
         assert output.record.first_kept_index == len(messages)
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize("models,whole", [([], False), ([{"id": "gpt-5.5", "context_window": 272000}], True)])
+def test_codex_skills_budget_without_a_configured_context_window(tmp_path, monkeypatch, models, whole):
+    from breadboard_engine.compaction.controller import CompactionController
+    from breadboard_engine.compilation.context_builders.codex import build_context
+    from breadboard_engine.state.session_state import SessionState
+
+    workspace = (tmp_path / "workspace").resolve()
+    (workspace / ".git").mkdir(parents=True)
+    for index in range(12):
+        skill = workspace / ".agents/skills" / f"skill{index:02}"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text(f"---\nname: skill{index:02}\ndescription: {'d' * 1000}\n---\n")
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
+    config = {"prompts": {"initial_context": {}}, "providers": {"models": models},
+              "compaction": {"enabled": True, "preset": "codex@0.139.0"}}
+    owner = SimpleNamespace(config=config, workspace=str(workspace), model="gpt-5.5",
+                            compaction_controller=CompactionController(config))
+    state = SessionState(str(workspace), "image", {})
+    state.messages.append({"role": "system", "content": ""})
+    state.provider_messages.append({"role": "system", "content": ""})
+    developer, _ = build_context(owner, state, {"native_environment": {"cwd": str(workspace), "shell": "zsh"}},
+                                 fresh=True, user_message=None)
+    skills = next(part["text"] for part in developer["content"] if part["text"].startswith("<skills_instructions>"))
+    # render.rs:143-158: a known window budgets 2% in tokens; an unknown one budgets 8000 characters.
+    assert (skills.count("d" * 1000) == 12) is whole

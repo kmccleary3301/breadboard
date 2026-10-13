@@ -77,6 +77,7 @@ def test_installed_wheel_lowers_compaction_targets_and_discovers_native_workspac
         import os
         from breadboard_engine.execution import codex_agents, codex_search
         from breadboard_engine.compilation.context_builders import codex
+        from breadboard_engine.compaction.controller import CompactionController
         from breadboard_engine.state.session_state import SessionState
 
         # Import-time model capabilities are consumed by Codex child routing.
@@ -116,7 +117,7 @@ def test_installed_wheel_lowers_compaction_targets_and_discovers_native_workspac
         }
         state = SessionState(str(workspace), "wheel-proof", config)
         state.add_message({"role": "system", "content": "initial"})
-        owner = SimpleNamespace(workspace=str(workspace), config=config)
+        owner = SimpleNamespace(workspace=str(workspace), config=config, compaction_controller=CompactionController(config))
         context = codex.build_context(
             owner, state,
             {"native_environment": {"cwd": str(workspace), "shell": "bash", "current_date": "2026-10-11"}},

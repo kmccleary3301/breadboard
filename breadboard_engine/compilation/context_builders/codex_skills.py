@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -93,12 +94,12 @@ def _body(roots: list[str], lines: list[str]) -> str:
     return "\n" + "\n".join(parts) + "\n"
 
 
-def _render(skills: list[Skill], paths: list[str], budget: int) -> tuple[list[str], int]:
+def _render(skills: list[Skill], paths: list[str], budget: int, cost: Callable[[str], int]) -> tuple[list[str], int]:
     full = [_line(skill, path, skill.description) for skill, path in zip(skills, paths)]
-    if sum(_cost(line + "\n") for line in full) <= budget:
+    if sum(cost(line + "\n") for line in full) <= budget:
         return full, 0
     minimum = [_line(skill, path, "") for skill, path in zip(skills, paths)]
-    costs = [_cost(line + "\n") for line in minimum]
+    costs = [cost(line + "\n") for line in minimum]
     if sum(costs) > budget:
         result = []
         for line, cost in zip(minimum, costs):
@@ -115,7 +116,7 @@ def _render(skills: list[Skill], paths: list[str], budget: int) -> tuple[list[st
             if allocation[index] == len(skill.description):
                 continue
             next_count = allocation[index] + 1
-            new_cost = _cost(_line(skill, paths[index], skill.description[:next_count]) + "\n") - costs[index]
+            new_cost = cost(_line(skill, paths[index], skill.description[:next_count]) + "\n") - costs[index]
             delta = new_cost - extra_cost[index]
             if delta <= remaining:
                 allocation[index] = next_count
@@ -128,12 +129,13 @@ def _render(skills: list[Skill], paths: list[str], budget: int) -> tuple[list[st
             sum(len(skill.description) - count for skill, count in zip(skills, allocation)))
 
 
-def render_skills(skills: list[Skill], roots: list[tuple[Path, int]], context_window: int) -> str | None:
+def render_skills(skills: list[Skill], roots: list[tuple[Path, int]], context_window: int | None) -> str | None:
     if not skills:
         return None
-    budget = max(context_window * 2 // 100, 1)
+    # render.rs:143-158: 2% of a known window in tokens, else 8000 characters.
+    budget, cost = (max(context_window * 2 // 100, 1), _cost) if context_window else (8000, len)
     paths = [str(skill.path) for skill in skills]
-    absolute, truncated = _render(skills, paths, budget)
+    absolute, truncated = _render(skills, paths, budget, cost)
     if not truncated and len(absolute) == len(skills):
         return "<skills_instructions>" + _body([], absolute) + "</skills_instructions>"
     used = []
@@ -142,15 +144,15 @@ def render_skills(skills: list[Skill], roots: list[tuple[Path, int]], context_wi
         if root not in used and any(skill.root == root for skill in skills):
             used.append(root)
     root_lines = [f"- `r{index}` = `{root}`" for index, root in enumerate(used)]
-    overhead = max(_cost(_body(root_lines, [])) - _cost(_body([], [])), 0)
+    overhead = max(cost(_body(root_lines, [])) - cost(_body([], [])), 0)
     if overhead < budget:
         aliases = {root: f"r{index}" for index, root in enumerate(used)}
         aliased_paths = [aliases[skill.root] + "/" + skill.path.relative_to(skill.root).as_posix() for skill in skills]
-        aliased, alias_truncated = _render(skills, aliased_paths, budget - overhead)
+        aliased, alias_truncated = _render(skills, aliased_paths, budget - overhead, cost)
         better = (len(aliased) > len(absolute) or
                   (len(aliased) == len(absolute) and (alias_truncated < truncated or
-                   (alias_truncated == truncated and overhead + sum(_cost(line + "\n") for line in aliased) <
-                    sum(_cost(line + "\n") for line in absolute)))))
+                   (alias_truncated == truncated and overhead + sum(cost(line + "\n") for line in aliased) <
+                    sum(cost(line + "\n") for line in absolute)))))
         if better:
             return "<skills_instructions>" + _body(root_lines, aliased) + "</skills_instructions>"
     return "<skills_instructions>" + _body([], absolute) + "</skills_instructions>"
