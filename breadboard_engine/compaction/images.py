@@ -47,8 +47,15 @@ def strip_images_from_message(
         for part in content:
             if is_image_part(part):
                 removed += 1
-            else:
-                kept.append(part)
+                continue
+            payload = part.get("payload") if isinstance(part, Mapping) and part.get("schema_version") == "openai.responses.tool_output.v1" else None
+            output = payload.get("output") if isinstance(payload, Mapping) else None
+            if isinstance(output, list) and any(is_image_part(item) for item in output):
+                # Typed Responses tool output: keep the envelope and its call id, drop its images.
+                text = [item for item in output if not is_image_part(item)]
+                removed += len(output) - len(text)
+                part = {**part, "payload": {**payload, "output": text or [{"type": "input_text", "text": placeholder}]}}
+            kept.append(part)
         if removed > 0:
             if not kept:
                 kept.append({"type": "text", "text": placeholder})

@@ -664,3 +664,11 @@ def test_native_pass_after_a_native_boundary_sends_edited_kept_messages():
 
     sent = json.dumps(posted[1]["input"])
     assert "[image removed]" in sent and "input_image" not in sent
+
+
+def test_codex_estimator_counts_a_native_marker_at_its_replacement_estimate():
+    from breadboard_engine.compaction.primitives.byte_estimator import bytes4
+    from breadboard_engine.compaction.state import NATIVE_MARKER_KEY
+
+    marker = {"role": "user", "content": "", NATIVE_MARKER_KEY: {"record_id": "r1", "token_estimate": 50_000}}
+    assert bytes4([marker]) >= 50_000

@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping, Sequence
 
+from ..state import NATIVE_MARKER_KEY
+
 
 def text_tokens(text: str) -> int:
     return (len(text.encode("utf-8")) + 3) // 4
@@ -65,4 +67,7 @@ def bytes4(messages: Sequence[Mapping[str, Any]]) -> int:
                 raw = json.dumps(item, ensure_ascii=False, separators=(",", ":"))
                 size = max(0, len(raw.encode("utf-8")) + _image_adjustment(item))
             tokens += (size + 3) // 4
+        native = message.get(NATIVE_MARKER_KEY)
+        if isinstance(native, Mapping):
+            tokens += int(native.get("token_estimate") or 0)
     return tokens

@@ -298,3 +298,21 @@ def test_summary_carries_a_dropped_image_as_its_placeholder(preset):
     placed = step.placement.place(ctx, step.selector.select(ctx), Reduction(summary="S"))
 
     assert IMAGE_PLACEHOLDER in repr(placed)
+
+
+def test_drop_images_strips_typed_tool_output_and_keeps_its_call():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+
+    messages = [
+        {"role": "user", "content": "Look at the screenshot."},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call_view", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        responses_image_tool_result_message("call_view", [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+    ]
+    record = drop_images(_context(messages))
+
+    [edit] = record.edits
+    assert "input_image" not in repr(edit.message) and IMAGE_PLACEHOLDER in repr(edit.message)
+    assert edit.message["content"][0]["payload"]["call_id"] == "call_view"
+    normalize_request_messages([messages[1], edit.message])
