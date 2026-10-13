@@ -285,6 +285,9 @@ events carry the matching optional discriminator. The recorder and normalizer
 keep it as text. Stock's own repair (`llm.ts:167-191`) turns the call into the
 `invalid` tool; BreadBoard never parses or repairs these arguments. Every other
 profile keeps the strict `ProviderToolCall` contract.
+Persisted assistant `tool_calls` retain their `id` and explicit `raw_arguments`
+discriminator, so the next stateless request validates the same union without
+losing call/result pairing. Unmarked malformed calls remain rejected.
 
 The lane imports the same pre-run empty stock root session on both sides
 (`cli/cmd/import.ts:134-169`). That real source-created ID exists before either

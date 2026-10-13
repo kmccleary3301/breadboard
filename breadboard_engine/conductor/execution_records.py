@@ -110,6 +110,8 @@ def legacy_message_view(provider_message: ProviderMessage) -> SimpleNamespace:
             name=call.name,
             arguments=call.arguments,
         )
+        if call.raw_arguments is not None:
+            function_ns.raw_arguments = call.raw_arguments
         tool_calls_ns.append(
             SimpleNamespace(
                 id=call.id,

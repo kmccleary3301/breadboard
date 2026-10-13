@@ -91,6 +91,45 @@ def _assistant_history_message(
                 history[field_name] = field_value
     return history
 
+def _native_tool_call_payloads(
+    call: Any,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    function = getattr(call, "function", None)
+    fn_name = getattr(function, "name", None)
+    arg_str = getattr(function, "arguments", "{}")
+    payload = {
+        "id": getattr(call, "id", None),
+        "type": "function",
+        "function": {
+            "name": fn_name,
+            "arguments": arg_str
+            if isinstance(arg_str, str)
+            else json.dumps(arg_str or {}),
+        },
+    }
+    raw_tool_call = getattr(call, "raw", None)
+    if hasattr(raw_tool_call, "model_dump"):
+        try:
+            raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
+        except Exception:
+            raw_tool_call = None
+    if isinstance(raw_tool_call, dict):
+        for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
+            if raw_tool_call.get(field_name) is not None:
+                payload[field_name] = raw_tool_call[field_name]
+
+    raw_arguments = getattr(function, "raw_arguments", None)
+    if raw_arguments is None:
+        return payload, payload
+    return payload, {
+        "id": getattr(call, "id", None),
+        "type": "function",
+        "name": fn_name,
+        "raw_arguments": raw_arguments,
+    }
+
+
+
 
 def log_provider_message(conductor: ConductorContext, provider_message: ProviderMessage, session_state: SessionState, markdown_logger: MarkdownLogger, stream_responses: bool) -> None:
     legacy_msg = legacy_message_view(provider_message)
@@ -770,30 +809,11 @@ def handle_native_tool_calls(
     relay_strategy = turn_policy.relay_strategy()
 
     tool_calls_payload: List[Dict[str, Any]] = []
+    provider_tool_calls_payload: List[Dict[str, Any]] = []
     for tc in msg.tool_calls:
-        fn_name = getattr(getattr(tc, "function", None), "name", None)
-        arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-        payload = {
-            "id": getattr(tc, "id", None),
-            "type": "function",
-            "function": {
-                "name": fn_name,
-                "arguments": arg_str
-                if isinstance(arg_str, str)
-                else json.dumps(arg_str or {}),
-            },
-        }
-        raw_tool_call = getattr(tc, "raw", None)
-        if hasattr(raw_tool_call, "model_dump"):
-            try:
-                raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
-            except Exception:
-                raw_tool_call = None
-        if isinstance(raw_tool_call, dict):
-            for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
-                if raw_tool_call.get(field_name) is not None:
-                    payload[field_name] = raw_tool_call[field_name]
+        payload, provider_payload = _native_tool_call_payloads(tc)
         tool_calls_payload.append(payload)
+        provider_tool_calls_payload.append(provider_payload)
 
     try:
         if conductor.logger_v2.run_dir and tool_calls_payload:
@@ -822,7 +842,7 @@ def handle_native_tool_calls(
     )
     provider_assistant_tool_message = _assistant_history_message(
         msg,
-        tool_calls=tool_calls_payload,
+        tool_calls=provider_tool_calls_payload,
     )
     native_tools = conductor.config.get("tools") or {}
     if (native_tools.get("group_native_calls_by_turn") is True

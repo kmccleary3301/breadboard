@@ -250,11 +250,25 @@ def normalize_tool_call_dict(raw: Any, index: int = 0) -> ProviderToolCall:
             "name",
             "arguments",
             "arguments_json",
+            "raw_arguments",
             "type",
             "tool_type",
             "function",
         },
     )
+    has_raw_arguments = "raw_arguments" in raw
+    raw_arguments = raw.get("raw_arguments")
+    if has_raw_arguments:
+        if not isinstance(raw_arguments, str):
+            raise ProviderContractError(
+                f"tool_calls[{index}].raw_arguments must be text"
+            )
+        if any(
+            key in raw for key in ("arguments", "arguments_json", "function")
+        ):
+            raise ProviderContractError(
+                "raw tool arguments cannot include parsed JSON arguments"
+            )
     raw_function = raw.get("function")
     if raw_function is not None:
         fn = _strict_dict(
@@ -274,15 +288,11 @@ def normalize_tool_call_dict(raw: Any, index: int = 0) -> ProviderToolCall:
         raise ProviderContractError(f"tool_calls[{index}] names disagree")
     top_arguments_json = raw.get("arguments_json")
     function_arguments_json = fn.get("arguments")
-    if "arguments_json" in raw and not isinstance(
-        top_arguments_json, str
-    ):
+    if "arguments_json" in raw and not isinstance(top_arguments_json, str):
         raise ProviderContractError(
             f"tool_calls[{index}].arguments_json must be text"
         )
-    if "arguments" in fn and not isinstance(
-        function_arguments_json, str
-    ):
+    if "arguments" in fn and not isinstance(function_arguments_json, str):
         raise ProviderContractError(
             f"tool_calls[{index}].function.arguments must be text"
         )
@@ -295,7 +305,8 @@ def normalize_tool_call_dict(raw: Any, index: int = 0) -> ProviderToolCall:
             f"tool_calls[{index}] arguments_json aliases disagree"
         )
     if (
-        "arguments" not in raw
+        not has_raw_arguments
+        and "arguments" not in raw
         and top_arguments_json is None
         and function_arguments_json is None
     ):
@@ -323,6 +334,8 @@ def normalize_tool_call_dict(raw: Any, index: int = 0) -> ProviderToolCall:
             if top_arguments_json is not None
             else function_arguments_json
         ),
+        allow_raw_arguments=has_raw_arguments,
+        raw_arguments=raw_arguments if has_raw_arguments else None,
         type=_coalesce_text_fields(
             raw,
             ("type", "tool_type"),

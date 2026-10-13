@@ -6,6 +6,10 @@ import pytest
 from jsonschema import Draft202012Validator
 import json
 from pathlib import Path
+from breadboard_engine.conductor.execution_records import legacy_message_view
+from breadboard_engine.conductor.model_output import _assistant_history_message
+from breadboard_engine.provider.contract_messages import ProviderMessage
+from breadboard_engine.state.session_state import SessionState
 
 from breadboard_engine.provider.contract_tools import ProviderToolCall
 from breadboard_engine.provider.contract_runtime import sanitize_provider_result
@@ -84,6 +88,185 @@ def test_native_raw_arguments_roundtrip_recording_and_sanitization(semantics, st
     end = next(event for event in encoded["events"] if event["kind"] == "tool_call_end")
     assert end["raw_arguments"] == raw
     assert "arguments_json" not in end and "arguments" not in end
+
+def test_native_raw_arguments_survive_persisted_history_request_and_responses_projection():
+    from breadboard_engine.compaction.state import CompactionRecord, CompactionState
+    from breadboard_engine.compaction.transcript import check_tool_pairing
+    from breadboard_engine.conductor.model_output import _native_tool_call_payloads
+
+    raw = ' { "command" : "printf repair", '
+    message = ProviderMessage(
+        role="assistant",
+        content=None,
+        tool_calls=[
+            ProviderToolCall(
+                id="call_raw",
+                name="bash",
+                arguments=raw,
+                allow_raw_arguments=True,
+            )
+        ],
+    )
+    legacy_message = legacy_message_view(message)
+    wire_call, history_call = _native_tool_call_payloads(
+        legacy_message.tool_calls[0]
+    )
+    assert wire_call["function"]["arguments"] == raw
+    assert history_call == {
+        "id": "call_raw",
+        "type": "function",
+        "name": "bash",
+        "raw_arguments": raw,
+    }
+
+    state = SessionState("workspace", "python-dev:latest", {})
+    history_message = _assistant_history_message(
+        legacy_message,
+        tool_calls=[history_call],
+    )
+    state.add_message(history_message)
+    state.add_message({
+        "role": "tool",
+        "tool_call_id": "call_raw",
+        "content": "stock repaired the call",
+    })
+    state.add_message({"role": "user", "content": "Continue."})
+    history = state.provider_messages
+    assert history[0]["tool_calls"][0]["id"] == "call_raw"
+    assert check_tool_pairing(history) is None
+
+    compaction = CompactionState()
+    compaction.append(
+        CompactionRecord(
+            record_id="raw-call-pair",
+            sequence=0,
+            method="summary",
+            reason="threshold",
+            created_at="t",
+            tokens_before=1,
+            history_length=len(history),
+            first_kept_index=2,
+            summary="The tool call was repaired.",
+            summary_messages=(
+                {"role": "user", "content": "The tool call was repaired."},
+            ),
+        ),
+        history,
+    )
+    projected_history = compaction.project(history)
+    assert check_tool_pairing(projected_history) is None
+
+    request = ProviderRequest(
+        stream=False,
+        messages=history,
+        tools=[],
+    )
+    assert request.messages[0]["content"] == [{
+        "type": "tool_call",
+        "call_id": "call_raw",
+        "name": "bash",
+        "raw_arguments": raw,
+    }]
+
+    context = ProviderRuntimeContext(
+        state,
+        {
+            "tools": {"native_semantics": "opencode_1_2_17"},
+            "provider_tools": {"openai": {"responses_stateful": False}},
+        },
+    )
+    runtime = OpenAIResponsesRuntime(
+        SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
+    )
+    payload = runtime._request_payload(
+        model="test",
+        messages=request.messages,
+        tools=None,
+        context=context,
+    )
+    projected_call = next(
+        item for item in payload["input"] if item.get("type") == "function_call"
+    )
+    projected_result = next(
+        item
+        for item in payload["input"]
+        if item.get("type") == "function_call_output"
+    )
+    assert projected_call["arguments"].encode("utf-8") == raw.encode("utf-8")
+    assert projected_result["call_id"] == "call_raw"
+
+
+def test_raw_history_carrier_keeps_strict_and_non_admitted_routes():
+    raw = '{"command":'
+    ordinary_history = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "call_ordinary",
+            "type": "function",
+            "function": {"name": "bash", "arguments": raw},
+        }],
+    }
+    with pytest.raises(ProviderContractError, match="malformed"):
+        ProviderRequest(
+            stream=False,
+            messages=[ordinary_history],
+            tools=[],
+        )
+
+    admitted_history = {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [{
+            "id": "call_raw",
+            "type": "function",
+            "name": "bash",
+            "raw_arguments": raw,
+        }],
+    }
+    request = ProviderRequest(
+        stream=False,
+        messages=[admitted_history],
+        tools=[],
+    )
+    overlapping_call = {
+        **admitted_history["tool_calls"][0],
+        "arguments": None,
+    }
+    with pytest.raises(
+        ProviderContractError,
+        match="raw tool arguments cannot include parsed JSON arguments",
+    ):
+        ProviderRequest(
+            stream=False,
+            messages=[{
+                **admitted_history,
+                "tool_calls": [overlapping_call],
+            }],
+            tools=[],
+        )
+
+    state = SimpleNamespace(
+        get_provider_metadata=lambda key: None,
+        compaction_state=None,
+    )
+    context = ProviderRuntimeContext(
+        state,
+        {"provider_tools": {"openai": {"responses_stateful": False}}},
+    )
+    runtime = OpenAIResponsesRuntime(
+        SimpleNamespace(provider_id="openai", runtime_id="openai_responses")
+    )
+    with pytest.raises(
+        ProviderContractError,
+        match="raw tool arguments require explicit native admission",
+    ):
+        runtime._request_payload(
+            model="test",
+            messages=request.messages,
+            tools=None,
+            context=context,
+        )
 
 
 @pytest.mark.parametrize("raw", ["", "   ", "{", "NaN", "Infinity", "-Infinity"])
