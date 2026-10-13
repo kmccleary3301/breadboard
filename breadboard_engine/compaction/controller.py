@@ -32,7 +32,7 @@ from .primitives.triggers import TriggerInput
 from .pruning import prune_tool_results
 from .snapcompact.inline import apply_inline_snapcompact
 from .state import CompactionRecord, CompactionState, ProjectionTarget, strip_native_markers
-from .summary_model import ConductorSummaryModel
+from .summary_model import ConductorSummaryModel, routed_runtime
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,19 @@ class CompactionRequestContext:
 
     sampling_phase: Optional[str] = None
     pending_user_index: Optional[int] = None
+
+
+def _model_entry(conductor: Optional[Any], model: Optional[str]) -> Mapping[str, Any]:
+    """The ``providers.models`` entry for the turn, keyed by API model or by its routed ID."""
+    config = getattr(conductor, "config", None)
+    providers = config.get("providers") if isinstance(config, Mapping) else None
+    entries = providers.get("models") or [] if isinstance(providers, Mapping) else []
+    # The conductor resolves a route such as ``openai/gpt-5.1-codex-mini`` to its API model before compaction runs.
+    for wanted in (model or getattr(conductor, "model", None), getattr(conductor, "_current_route_id", None)):
+        for entry in entries:
+            if wanted and isinstance(entry, Mapping) and entry.get("id") == wanted:
+                return entry
+    return {}
 
 
 @dataclass(frozen=True)
@@ -142,15 +155,10 @@ class CompactionController:
             if isinstance(cw_meta, int) and cw_meta > 0:
                 return cw_meta
 
-        if conductor is not None and getattr(conductor, "config", None):
-            providers = conductor.config.get("providers") or {}
-            models = providers.get("models") or []
-            target_model = model or getattr(conductor, "model", None)
-            for m in models:
-                if isinstance(m, Mapping) and m.get("id") == target_model:
-                    cw = m.get("context_window") or m.get("context_length")
-                    if isinstance(cw, int) and cw > 0:
-                        return cw
+        entry = _model_entry(conductor, model)
+        cw = entry.get("context_window") or entry.get("context_length")
+        if isinstance(cw, int) and cw > 0:
+            return cw
 
         return None
 
@@ -160,11 +168,7 @@ class CompactionController:
         """Resolve current route input/output limits without inventing an input cap."""
         get_metadata = getattr(session_state, "get_provider_metadata", None)
         profile = getattr(session_state, "_episode_provider_profile", None)
-        config = getattr(conductor, "config", None) or {}
-        entries = (config.get("providers") or {}).get("models") or []
-        entry = next(
-            (item for item in entries if isinstance(item, Mapping) and item.get("id") == (model or getattr(conductor, "model", None))), {},
-        )
+        entry = _model_entry(conductor, model)
         limits = []
         for key in ("max_input_tokens", "max_output_tokens"):
             value = getattr(profile, key, None)
@@ -183,20 +187,11 @@ class CompactionController:
         Accepts ``supports_images: true`` or an OMP-style ``input`` list
         containing ``"image"``. Unknown models are treated as text-only.
         """
-        config = getattr(conductor, "config", None) if conductor is not None else None
-        if not isinstance(config, Mapping):
-            return False
-        providers = config.get("providers") or {}
-        models = providers.get("models") or [] if isinstance(providers, Mapping) else []
-        target_model = model or getattr(conductor, "model", None)
-        for entry in models:
-            if not isinstance(entry, Mapping) or entry.get("id") != target_model:
-                continue
-            if entry.get("supports_images") is True:
-                return True
-            inputs = entry.get("input")
-            return isinstance(inputs, (list, tuple)) and "image" in inputs
-        return False
+        entry = _model_entry(conductor, model)
+        if entry.get("supports_images") is True:
+            return True
+        inputs = entry.get("input")
+        return isinstance(inputs, (list, tuple)) and "image" in inputs
 
     def remote_ports_for(
         self,
@@ -544,7 +539,8 @@ class CompactionController:
             try:
                 compaction_state: CompactionState = getattr(session_state, "compaction_state", None)
                 if compaction_state is not None:
-                    projected = compaction_state.project(session_state.provider_messages, target)
+                    # Persist a route-independent view: a native boundary is valid only for the route that made it.
+                    projected = compaction_state.project(session_state.provider_messages)
                     session_state.persist_compaction_snapshot(projected)
             except Exception as exc:
                 logger.warning("Failed to persist compaction snapshot: %s", exc)
@@ -583,13 +579,16 @@ class CompactionController:
                 (lambda: self.tool_schema_provider(target.provider))
                 if self.tool_schema_provider is not None else None
             )
+            lease = getattr(conductor, "_provider_client_lease", None)
             summarizer = ConductorSummaryModel(
-                runtime=runtime, client=client, model=self.settings.summary_model or target.model,
+                runtime=runtime, client=client, model=target.model,
                 session_state=session_state, agent_config=getattr(conductor, "config", None) or {},
                 turn_index=turn_index, recorder=getattr(conductor, "structured_request_recorder", None),
-                client_lease=getattr(conductor, "_provider_client_lease", None),
-                route_id=self.settings.summary_model or getattr(conductor, "_current_route_id", None) or target.model,
+                client_lease=lease,
+                route_id=getattr(conductor, "_current_route_id", None) or target.model,
                 tool_schema_provider=summary_tools,
+                # Leased production clients come from the router, so a routed summaryModel gets its own runtime.
+                route_resolver=routed_runtime if lease is not None else None,
             )
         projected = state.project(messages, target)
         window = context_window or self.settings.context_window or _FALLBACK_CONTEXT_WINDOW

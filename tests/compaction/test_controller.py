@@ -255,6 +255,15 @@ def test_model_limits_resolve_from_id_shaped_model_entry() -> None:
     assert controller.resolve_model_limits(session, conductor) == (272000, 32000)
 
 
+def test_model_limits_match_the_routed_id_after_the_conductor_resolves_the_api_model() -> None:
+    conductor = SimpleNamespace(
+        config={"providers": {"models": [{"id": "openai/gpt-5.1-codex-mini", "max_input_tokens": 272000}]}},
+        model="gpt-5.1-codex-mini", _current_route_id="openai/gpt-5.1-codex-mini",
+    )
+    session = SimpleNamespace(get_provider_metadata=lambda key: None)
+    assert CompactionController({}).resolve_model_limits(session, conductor, "gpt-5.1-codex-mini") == (272000, None)
+
+
 def test_overflow_budget_is_scoped_to_session_state() -> None:
     controller = CompactionController({"compaction": {
         "enabled": True, "contextWindow": 8000, "reserveTokens": 1000,
@@ -344,3 +353,49 @@ def test_native_boundary_for_the_route_counts_toward_threshold_pressure() -> Non
                                model="gpt-test", turn_index=1)
     assert not [event for event in state.lifecycle_events
                 if event["type"] == "compaction_finished" and event["payload"]["reason"] == "threshold"]
+
+
+def test_persisted_snapshot_never_carries_a_native_boundary() -> None:
+    controller = _controller()
+    state = _session()
+    persisted: List[Any] = []
+    state.can_persist_compaction = lambda: True
+    state.persist_compaction_snapshot = persisted.append
+    context = CompactionContext(
+        messages=state.provider_messages, state=state.compaction_state, settings=controller.settings,
+        reason="manual", target=_target(), context_window=8000, tokens_before=1,
+    )
+    native = NativeCompaction(provider="openai", api="chat", model="gpt-test", items=({"type": "compaction"},))
+    record = context.new_record(method="remote", first_kept_index=len(state.provider_messages) - 2, native=native)
+    state.compaction_state.append(record, state.provider_messages)
+    controller._after_record_appended(state, record, _target())
+    # A resumed session may switch models, so it must get the history, not another route's opaque token.
+    assert persisted == [state.provider_messages]
+
+
+def test_routed_summary_model_uses_its_own_runtime_and_api_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    from breadboard_engine.provider.runtime import provider_registry
+
+    summary_runtime = FakeRuntime()
+    created: List[Any] = []
+    monkeypatch.setattr(provider_registry, "create_runtime",
+                        lambda descriptor: created.append(descriptor.provider_id) or summary_runtime)
+    calls: List[Any] = []
+    summary_runtime.invoke = lambda **kwargs: calls.append(kwargs["model"]) or FakeRuntime.invoke(summary_runtime, **kwargs)
+
+    @contextmanager
+    def lease(route_id: str, runtime: Any):
+        calls.append((route_id, runtime is summary_runtime))
+        yield "leased-client"
+
+    turn_runtime = FakeRuntime()
+    turn_runtime.descriptor = SimpleNamespace(provider_id="anthropic", default_api_variant="messages",
+                                              runtime_id="anthropic_messages")
+    controller = _controller(summaryModel="openai/gpt-5.1-codex-mini")
+    conductor = SimpleNamespace(config={}, model="claude-test", structured_request_recorder=None,
+                                _provider_client_lease=lease, _current_route_id="anthropic/claude-test")
+    controller.prepare_request(_session(turns=12), conductor=conductor, runtime=turn_runtime, client=None,
+                               model="claude-test", turn_index=1)
+    assert created and set(created) == {"openai"}
+    assert set(calls) == {("openai/gpt-5.1-codex-mini", True), "gpt-5.1-codex-mini"}
+    assert turn_runtime.summary_requests == []

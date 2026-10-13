@@ -1,7 +1,8 @@
 """Runtime-backed :class:`SummaryModel` for LLM compaction methods.
 
-Summaries use the conductor's active provider runtime and preset-selected
-request options. Each one is recorded as a labelled side request
+Summaries use the conductor's active provider runtime, or the runtime of a
+routed ``summaryModel``, and preset-selected request options. Each one is
+recorded as a labelled side request
 (``meta/requests/turn_N_compaction_K.json``) so it never overwrites the
 turn's model request record and is distinguishable in evidence.
 """
@@ -10,7 +11,7 @@ from __future__ import annotations
 
 import copy
 from contextlib import nullcontext
-from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence
+from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
@@ -30,6 +31,16 @@ def _text_of(content: Any) -> str:
     return ""
 
 
+def routed_runtime(route_id: str) -> Tuple[Any, str]:
+    """Provider runtime and API model for a routed model ID such as ``openai/gpt-5.1-codex-mini``."""
+    from ..provider.routing import provider_router
+    from ..provider.runtime import provider_registry
+
+    descriptor, api_model = provider_router.get_runtime_descriptor(route_id)
+    return provider_registry.create_runtime(descriptor), api_model
+
+
+
 class ConductorSummaryModel:
     """Preset-selected summary completions through a conductor provider runtime."""
 
@@ -46,6 +57,7 @@ class ConductorSummaryModel:
         client_lease: Optional[Callable[[str, Any], ContextManager[Any]]] = None,
         tool_schema_provider: Optional[Callable[[], Sequence[Mapping[str, Any]]]] = None,
         route_id: Optional[str] = None,
+        route_resolver: Optional[Callable[[str], Tuple[Any, str]]] = None,
     ) -> None:
         self.runtime = runtime
         self.client = client
@@ -57,6 +69,7 @@ class ConductorSummaryModel:
         self.client_lease = client_lease
         self.tool_schema_provider = tool_schema_provider
         self.route_id = route_id
+        self.route_resolver = route_resolver
         self.requests_sent = 0
 
     def complete(self, request: SummaryRequest) -> SummaryResponse:
@@ -90,13 +103,16 @@ class ConductorSummaryModel:
         turn_index = self.turn_index or 0
         self.requests_sent += 1
         label = f"compaction_{self.requests_sent}"
-        descriptor = getattr(self.runtime, "descriptor", None)
+        runtime, api_model = self.runtime, model
+        if model != self.model and self.route_resolver is not None:
+            runtime, api_model = self.route_resolver(model)
+        descriptor = getattr(runtime, "descriptor", None)
         if self.recorder is not None:
             self.recorder.record_request(
                 turn_index,
                 provider_id=getattr(descriptor, "provider_id", "unknown"),
                 runtime_id=getattr(descriptor, "runtime_id", "unknown"),
-                model=model,
+                model=api_model,
                 request_headers={},
                 request_body={"messages": messages, **budget, **(request.request_params or {}),
                               **({"tools": tools} if tools else {})},
@@ -131,11 +147,11 @@ class ConductorSummaryModel:
         # Production clients are scoped to a broker lease per provider call.
         # Explicit supplied clients preserve the standalone/test contract.
         route_id = self.route_id if model == self.model and self.route_id is not None else model
-        lease = self.client_lease(route_id, self.runtime) if self.client is None and self.client_lease is not None else nullcontext(self.client)
+        lease = self.client_lease(route_id, runtime) if self.client is None and self.client_lease is not None else nullcontext(self.client)
         with lease as client:
-            result = self.runtime.invoke(
+            result = runtime.invoke(
                 client=client,
-                model=model,
+                model=api_model,
                 messages=messages,
                 tools=tools,
                 stream=request.stream,

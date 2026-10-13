@@ -29,7 +29,7 @@ compaction:
 | `preset` | A packaged preset below; defaults to `omp@18.4.5`. |
 | `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. |
 | `contextWindow` | Optional; otherwise provider or model metadata. |
-| `summaryModel` | Optional; defaults to the turn's model. |
+| `summaryModel` | Optional route ID such as `openai/gpt-5.1-codex-mini`; defaults to the turn's model. A route on another provider gets that provider's runtime and credentials. |
 | `maxPassesPerTurn` | Optional; overrides the preset's overflow attempts per turn. |
 
 An unknown key, a bad value or an unknown preset fails config loading with
@@ -483,7 +483,10 @@ orphaned tool result is rejected before it is appended.
 Native remote payloads (OpenAI compaction items, Anthropic compaction blocks)
 are replayed only to the same provider, API and model that produced them.
 Runtimes without a compaction port get the plain-text summary instead. Session
-snapshots include `compaction_state` once a record exists.
+snapshots include `compaction_state` once a record exists. The Product context
+persisted at a boundary never contains a native payload: it is the latest
+readable boundary's view, or the full history, so a resumed session can switch
+models.
 
 ## Presets and primitives
 
