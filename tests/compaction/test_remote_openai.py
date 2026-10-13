@@ -603,3 +603,33 @@ def test_native_pass_after_a_readable_boundary_sends_its_summary_not_the_prefix(
 
     texts = [part["text"] for item in posted[0]["input"] for part in item.get("content", []) if "text" in part]
     assert texts == ["<summary>S</summary>", "Turn 2 question", "Turn 2 answer"]
+
+
+@pytest.mark.parametrize(("v2", "path"), [(True, "/v1/responses"), (False, "/v1/responses/compact")])
+def test_sdk_client_requests_are_authenticated_and_use_the_configured_base_url(v2, path):
+    import httpx
+    import openai
+
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        item = {"type": "compaction", "encrypted_content": "enc"}
+        if v2:
+            body = ('data: {"type": "response.output_item.done", "item": %s}\n\n'
+                    'data: {"type": "response.completed", "response": {}}\n\n') % json.dumps(item)
+            return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+        return httpx.Response(200, json={"output": [item]})
+
+    client = openai.OpenAI(api_key="sk-test", base_url="https://api.example.test/v1",
+                           http_client=httpx.Client(transport=httpx.MockTransport(handler)))
+    ctx = _v2_context()
+    ctx = CompactionContext(
+        messages=ctx.messages, state=ctx.state, reason="threshold", context_window=8000, tokens_before=ctx.tokens_before,
+        settings=settings_from_config({"enabled": True, "remote_streaming_v2_enabled": v2}),
+        target=ProjectionTarget("openai", "responses", "gpt-5.1-codex-mini"),
+    )
+    OpenAIResponsesCompactionPort(client=client, model="gpt-5.1-codex-mini").compact(ctx)
+
+    assert [(r.url.host, r.url.path) for r in seen] == [("api.example.test", path)]
+    assert seen[0].headers["authorization"] == "Bearer sk-test"

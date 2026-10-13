@@ -466,37 +466,14 @@ class OpenAIResponsesCompactionPort:
         # Responses compaction supports OpenAI responses models
         return True
 
-    def _resolve_endpoints(self, model: str) -> Tuple[str, str]:
-        # Determine base URL from client, runtime, or default
+    def _resolve_endpoints(self) -> Tuple[str, str]:
+        # Stock Codex resolves both paths against the provider base URL (`codex-api` `CompactClient::path`).
         base_url = "https://api.openai.com/v1"
         if hasattr(self.client, "base_url") and self.client.base_url:
             base_url = str(self.client.base_url).rstrip("/")
         elif hasattr(self.runtime, "descriptor") and getattr(self.runtime.descriptor, "base_url", None):
             base_url = str(self.runtime.descriptor.base_url).rstrip("/")
-
-        # V1 compact endpoint
-        if self.endpoint:
-            v1_url = self.endpoint
-        elif "/codex" in base_url or "codex" in model:
-            v1_url = f"{base_url}/responses/compact" if base_url.endswith("/codex") else f"{base_url}/codex/responses/compact"
-        elif base_url.endswith("/v1"):
-            v1_url = f"{base_url}/responses/compact"
-        else:
-            v1_url = f"{base_url}/v1/responses/compact"
-
-        # V2 streaming endpoint
-        if self.v2_endpoint:
-            v2_url = self.v2_endpoint
-        elif "/codex" in base_url or "codex" in model:
-            v2_url = f"{base_url}/responses" if base_url.endswith("/codex") else f"{base_url}/codex/responses"
-        elif base_url.endswith("/responses"):
-            v2_url = base_url
-        elif base_url.endswith("/v1"):
-            v2_url = f"{base_url}/responses"
-        else:
-            v2_url = f"{base_url}/v1/responses"
-
-        return v1_url, v2_url
+        return self.endpoint or f"{base_url}/responses/compact", self.v2_endpoint or f"{base_url}/responses"
 
     def _post(
         self,
@@ -507,12 +484,15 @@ class OpenAIResponsesCompactionPort:
         if self._http_poster is not None:
             return self._http_poster(url, payload, headers)
 
-        # Use client._client (httpx.Client) if available
-        httpx_client = getattr(self.client, "_client", None)
-        if httpx_client is not None and hasattr(httpx_client, "post"):
-            resp = httpx_client.post(url, json=payload, headers=headers or {})
-            if resp.status_code >= 400:
-                raise CompactionError(f"HTTP {resp.status_code} from {url}: {resp.text}")
+        # The SDK request path adds authentication and the client's default headers.
+        if callable(getattr(self.client, "post", None)) and getattr(self.client, "_client", None) is not None:
+            import httpx
+
+            try:
+                resp = self.client.post(url, cast_to=httpx.Response, body=dict(payload),
+                                        options={"headers": dict(headers)} if headers else {})
+            except Exception as exc:
+                raise CompactionError(f"Request to {url} failed: {exc}") from exc
             if "text/event-stream" in resp.headers.get("content-type", ""):
                 return resp.text
             return resp.json()
@@ -571,7 +551,7 @@ class OpenAIResponsesCompactionPort:
         input_items = trimmed["input"]
         instructions = context.custom_instructions or "You are a helpful coding assistant."
 
-        v1_url, v2_url = self._resolve_endpoints(model)
+        v1_url, v2_url = self._resolve_endpoints()
         used_v2 = False
         replacement_history: list[dict[str, Any]] = []
         used_tokens = 0
