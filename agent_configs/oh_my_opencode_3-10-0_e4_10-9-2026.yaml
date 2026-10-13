@@ -126,6 +126,8 @@ provider_tools:
     responses_developer_content: string
     responses_group_tool_results: true
     responses_preserve_tool_call_items: true
+    # Stock sends an image read as a typed function_call_output list (opencode/interception.py records it).
+    responses_tool_output_items: true
     responses_max_output_tokens_from_context: true
     store: false
     reasoning: {effort: medium, summary: auto}

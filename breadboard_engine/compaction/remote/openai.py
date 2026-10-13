@@ -351,8 +351,12 @@ def _estimate_input_tokens(input_items: Sequence[Mapping[str, Any]]) -> int:
             tokens += _message_content_tokens(item)
         elif itype in ("function_call_output", "custom_tool_call_output"):
             out = item.get("output")
-            if isinstance(out, str):
-                tokens += _approx_token_count(out)
+            parts = [{"text": out}] if isinstance(out, str) else out if isinstance(out, list) else []
+            for part in parts:
+                if isinstance(part, Mapping) and part.get("type") == "input_image":
+                    tokens += REMOTE_COMPACTION_IMAGE_TOKEN_ESTIMATE
+                elif isinstance(part, Mapping) and isinstance(part.get("text"), str):
+                    tokens += _approx_token_count(part["text"])
         elif itype == "function_call":
             args = item.get("arguments")
             if isinstance(args, str):

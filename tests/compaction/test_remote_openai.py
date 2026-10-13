@@ -203,11 +203,12 @@ def test_build_openai_native_history_with_previous_replacement():
     assert items[2]["content"][0]["text"] == "Follow-up question"
 
 
-def test_trim_remote_compaction_input_to_context_window():
+@pytest.mark.parametrize("output", ["x" * 10000, [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]])
+def test_trim_remote_compaction_input_to_context_window(output):
     items = [
         {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "start"}]},
         {"type": "function_call", "call_id": "c1", "name": "read", "arguments": "{}"},
-        {"type": "function_call_output", "call_id": "c1", "output": "x" * 10000},
+        {"type": "function_call_output", "call_id": "c1", "output": output},
     ]
     result = trim_remote_compaction_input_to_context_window(items, context_window=500)
     assert result["fits"] is True

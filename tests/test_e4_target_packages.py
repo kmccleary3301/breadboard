@@ -146,7 +146,7 @@ def test_current_agent_configs_are_their_previous_profiles_plus_native_compactio
                 "responses_stateful": False, "responses_developer_content": "string",
                 "responses_use_developer_role": True, "tool_choice": "auto",
                 "responses_group_tool_results": True, "responses_max_output_tokens_from_context": True,
-                "responses_preserve_tool_call_items": True,
+                "responses_preserve_tool_call_items": True, "responses_tool_output_items": True,
                 "store": False, "reasoning": {"effort": "medium", "summary": "auto"},
                 "session_params": {"prompt_cache_key": "{session_id}"}}
             # Stock processor persists assistant text without BB's suffix.
@@ -293,3 +293,21 @@ def test_stock_lsp_root_is_optional_but_its_pin_is_closed_and_complete() -> None
                     {**pin, "digest": "A" * 64}, {**pin, "writable": True},
                     None, pin["path"]):
         assert not validator.is_valid(invalid), invalid
+
+
+def test_opencode_profiles_replay_a_stock_image_read() -> None:
+    from types import SimpleNamespace
+    from breadboard_engine.provider.adapters import OpenAIAdapter
+    from breadboard_engine.provider.contract_requests import normalize_request_messages
+    from breadboard_engine.provider.runtime import OpenAIResponsesRuntime, ProviderRuntimeContext
+    from breadboard_engine.state.session_state import SessionState
+
+    output = [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]
+    message = OpenAIAdapter().create_tool_result_message(
+        "read-1", "read", {"__mvi_native_responses_output": True, "__mvi_content_output": output})
+    runtime = OpenAIResponsesRuntime(SimpleNamespace(provider_id="openai", runtime_id="openai_responses"))
+    for family in ("opencode", "oh-my-opencode"):
+        config = load_agent_config(str(CURRENT_AGENT_CONFIGS[family]))
+        context = ProviderRuntimeContext(SessionState("ws", "image", config), config)
+        assert runtime._convert_messages_to_input(normalize_request_messages([message]), context=context) == [
+            {"type": "function_call_output", "call_id": "read-1", "output": output}], family
