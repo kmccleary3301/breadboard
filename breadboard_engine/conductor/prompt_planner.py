@@ -26,7 +26,7 @@ class ToolPromptPlanner:
             return None
 
         def append_directive(messages: List[dict], text: str) -> None:
-            if messages[-1].get("role") == "tool":
+            if messages[-1].get("role") in {"tool", "tool_result"}:
                 messages.append({"role": "user", "content": text})
             else:
                 append_text_block(messages[-1], text)

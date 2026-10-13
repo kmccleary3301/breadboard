@@ -3,7 +3,10 @@ from contextlib import nullcontext
 
 from types import SimpleNamespace
 
+import pytest
+
 from breadboard_engine.conductor.prompt_planner import ToolPromptPlanner
+from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
 
 class DummySessionState:
@@ -73,10 +76,13 @@ def test_system_compiled_mode_injects_per_turn_block() -> None:
     assert "NATIVE TOOLS AVAILABLE" in text
 
 
-def test_tool_directives_preserve_correlated_result_payload() -> None:
+@pytest.mark.parametrize("tool_result", [
+    {"role": "tool", "tool_call_id": "call_read", "content": "file contents\n"},
+    responses_image_tool_result_message("call_read", [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+])
+def test_tool_directives_preserve_correlated_result_payload(tool_result) -> None:
     from copy import deepcopy
 
-    tool_result = {"role": "tool", "tool_call_id": "call_read", "content": "file contents\n"}
     for mode in ("none", "per_turn_append", "system_compiled_and_persistent_per_turn"):
         session = DummySessionState()
         session.provider_messages = [deepcopy(tool_result)]
