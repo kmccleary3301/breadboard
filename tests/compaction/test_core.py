@@ -236,6 +236,23 @@ def test_invalid_boundaries_are_rejected(first_kept, error):
         context.state.validate(_Boundary(first_kept).run(context), messages)
 
 
+def test_boundary_cannot_orphan_a_canonical_typed_tool_result():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    image = [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]
+    calls = [{"id": c, "type": "function", "function": {"name": "view_image", "arguments": "{}"}} for c in ("a", "b")]
+    messages = [
+        {"role": "system", "content": "sys"}, {"role": "user", "content": "look"},
+        {"role": "assistant", "content": "", "tool_calls": calls},
+        responses_image_tool_result_message("a", image), responses_image_tool_result_message("b", image),
+    ]
+    assert check_tool_pairing(messages) is None
+    context = _context(messages)
+    with pytest.raises(CompactionStateError, match="orphans a tool result"):
+        context.state.validate(_Boundary(4).run(context), messages)
+    assert check_tool_pairing(messages[:2] + messages[4:]) == "message 2 answers unknown tool call 'b'"
+
+
 def test_boundary_cannot_move_backwards():
     messages = _history()
     state = CompactionState()

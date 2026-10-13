@@ -1,7 +1,8 @@
 """Protected prefix/tail selection and edit-only target selection."""
 
 from ..methods import MethodUnavailable
-from ..state import leading_system_count, is_tool_result
+from ..state import leading_system_count
+from ..transcript import answers_tool_call, is_tool_result
 from .accounting import build_estimator
 
 
@@ -15,14 +16,14 @@ def visible_messages(context):
 
 def align_backward(messages, index):
     if 0 < index < len(messages):
-        previous = next((i for i in range(index - 1, -1, -1) if not is_tool_result(messages[i])), -1)
+        previous = next((i for i in range(index - 1, -1, -1) if not answers_tool_call(messages[i])), -1)
         if previous >= 0 and messages[previous].get("role") == "assistant" and messages[previous].get("tool_calls"):
             return previous
     return index
 
 
 def align_forward(messages, index):
-    while index < len(messages) and is_tool_result(messages[index]):
+    while index < len(messages) and answers_tool_call(messages[index]):
         index += 1
     return index
 

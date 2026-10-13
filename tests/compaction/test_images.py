@@ -46,19 +46,27 @@ def _context(
     )
 
 
-@pytest.mark.parametrize(
-    "media",
-    [
-        {"type": "media", "kind": "image", "uri": "attachment://" + "a" * 64, "mime": "image/png"},
-        {"type": "media", "kind": "codex_image_url", "uri": "https://example.test/" + "a" * 64, "detail": "high"},
-    ],
-)
+CANONICAL_IMAGES = [
+    {"type": "media", "kind": "image", "uri": "attachment://" + "a" * 64, "mime": "image/png"},
+    {"type": "media", "kind": "codex_image_url", "uri": "https://example.test/" + "a" * 64, "detail": "high"},
+]
+
+
+@pytest.mark.parametrize("media", CANONICAL_IMAGES)
 @pytest.mark.parametrize("estimator", sorted(ESTIMATORS))
 def test_canonical_media_image_is_estimated_as_an_image(media, estimator):
     image = {"type": "input_image", "image_url": "data:image/png;base64,AA==",
              **({"detail": media["detail"]} if "detail" in media else {})}
     estimate = ESTIMATORS[estimator]
     assert estimate([{"role": "user", "content": [media]}]) == estimate([{"role": "user", "content": [image]}])
+
+
+@pytest.mark.parametrize("media", CANONICAL_IMAGES)
+def test_drop_images_removes_canonical_media_images(media):
+    messages = [{"role": "system", "content": "sys"}, {"role": "user", "content": [media]}]
+    record = drop_images(_context(messages))
+    assert record is not None
+    assert record.edits[0].message["content"] == [{"type": "text", "text": IMAGE_PLACEHOLDER}]
 
 
 # -----------------------------------------------------------------------------

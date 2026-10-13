@@ -24,13 +24,20 @@ def estimate_text_tokens(text: str) -> int:
     return math.ceil(len(text) / CHARS_PER_TOKEN)
 
 
+def is_image_part(part: Any) -> bool:
+    """Provider image blocks and the canonical ``media`` image kinds."""
+    if not isinstance(part, Mapping):
+        return False
+    kind = part.get("type")
+    return kind in {"image_url", "image", "input_image"} or (kind == "media" and part.get("kind") in {"image", "codex_image_url"})
+
+
 def _part_tokens(part: Any) -> int:
     if isinstance(part, str):
         return estimate_text_tokens(part)
     if not isinstance(part, Mapping):
         return estimate_text_tokens(str(part))
-    kind = part.get("type")
-    if kind in {"image_url", "image", "input_image"} or (kind == "media" and part.get("kind") in {"image", "codex_image_url"}):
+    if is_image_part(part):
         return IMAGE_TOKEN_ESTIMATE
     for key in ("text", "content", "thinking"):
         value = part.get(key)

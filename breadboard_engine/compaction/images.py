@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 from .methods import CompactionContext, MethodUnavailable
 from .state import CompactionRecord, MessageEdit
+from .tokens import is_image_part
 
 IMAGE_PLACEHOLDER = "[image removed]"
 
@@ -44,7 +45,7 @@ def strip_images_from_message(
     if isinstance(content, list):
         kept: List[Any] = []
         for part in content:
-            if isinstance(part, Mapping) and part.get("type") in {"image", "image_url", "input_image"}:
+            if is_image_part(part):
                 removed += 1
             else:
                 kept.append(part)

@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, List, Mapping, Optional, Sequence
 
-from .tokens import estimate_message_tokens
+from .tokens import estimate_message_tokens, is_image_part
 
 Message = Mapping[str, Any]
 
@@ -23,7 +23,24 @@ def role_of(message: Message) -> str:
 
 
 def is_tool_result(message: Message) -> bool:
+    """A chat-format result whose content compaction may rewrite."""
     return role_of(message) in {"tool", "function"}
+
+
+def answers_tool_call(message: Message) -> bool:
+    """Any result tied to a call, including canonical ``tool_result`` carriers (typed image output)."""
+    return is_tool_result(message) or role_of(message) == "tool_result"
+
+
+def result_call_id(message: Message) -> Optional[str]:
+    """``tool_call_id``, or the call a canonical carrier's replay payload answers."""
+    call_id = message.get("tool_call_id")
+    if call_id is None and role_of(message) == "tool_result":
+        content = message.get("content")
+        block = content[0] if isinstance(content, list) and content else None
+        payload = block.get("payload") if isinstance(block, Mapping) else None
+        call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
+    return call_id if isinstance(call_id, str) else None
 
 
 def is_turn_start(message: Message) -> bool:
@@ -141,9 +158,9 @@ def check_tool_pairing(messages: Sequence[Message]) -> Optional[str]:
     for index, message in enumerate(messages):
         if role_of(message) == "assistant":
             open_calls.update(tool_call_ids(message))
-        elif is_tool_result(message):
-            call_id = message.get("tool_call_id")
-            if not isinstance(call_id, str) or call_id not in open_calls:
+        elif answers_tool_call(message):
+            call_id = result_call_id(message)
+            if call_id not in open_calls:
                 return f"message {index} answers unknown tool call {call_id!r}"
     return None
 
@@ -165,7 +182,4 @@ def content_text(message: Message) -> str:
 
 def has_images(message: Message) -> bool:
     content = message.get("content")
-    return isinstance(content, list) and any(
-        isinstance(part, Mapping) and part.get("type") in {"image_url", "image", "input_image"}
-        for part in content
-    )
+    return isinstance(content, list) and any(is_image_part(part) for part in content)

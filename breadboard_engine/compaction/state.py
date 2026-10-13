@@ -23,7 +23,7 @@ import hashlib
 import json
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
-from .transcript import is_tool_result, leading_system_count, role_of, tool_call_ids
+from .transcript import answers_tool_call, leading_system_count, result_call_id, role_of, tool_call_ids
 
 NATIVE_MARKER_KEY = "bb_native_compaction"
 RECORD_SCHEMA = "bb.compaction_record.v1"
@@ -273,7 +273,7 @@ class CompactionState:
                 raise CompactionStateError("first_kept_index is outside the compactable range")
             if previous is not None and first < int(previous.first_kept_index):
                 raise CompactionStateError("compaction boundary moved backwards")
-            if first < len(messages) and is_tool_result(messages[first]):
+            if first < len(messages) and answers_tool_call(messages[first]):
                 raise CompactionStateError("compaction boundary orphans a tool result")
             if not record.readable and record.native is None:
                 raise CompactionStateError("boundary record has neither summary nor native payload")
@@ -311,16 +311,14 @@ class CompactionState:
             if prefix_end > ceiling:
                 raise CompactionStateError("prefix_end revives summarized messages")
         if prefix_end < first:
-            if is_tool_result(messages[prefix_end]):
+            if answers_tool_call(messages[prefix_end]):
                 raise CompactionStateError("prefix_end orphans a tool result")
             open_calls: set[str] = set()
             for message in messages[head:prefix_end]:
                 open_calls.update(tool_call_ids(message))
-                call_id = message.get("tool_call_id")
-                if isinstance(call_id, str):
-                    open_calls.discard(call_id)
+                open_calls.discard(result_call_id(message))
             for message in messages[prefix_end:first]:
-                if message.get("tool_call_id") in open_calls:
+                if result_call_id(message) in open_calls:
                     raise CompactionStateError("prefix_end splits a tool call from its result")
 
     def append(self, record: CompactionRecord, messages: Sequence[Mapping[str, Any]]) -> None:
