@@ -6,7 +6,6 @@ import math
 import os
 import shlex
 import signal
-import time
 from types import SimpleNamespace
 
 from PIL import Image
@@ -98,19 +97,19 @@ def test_detached_setsid_descendant_does_not_hold_reader_join_forever(tmp_path):
     pid_file = tmp_path / "detached.pid"
     script = (
         "import subprocess,sys,pathlib; "
-        "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(20)'],start_new_session=True); "
+        "child=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'],start_new_session=True); "
         f"pathlib.Path({str(pid_file)!r}).write_text(str(child.pid)); "
         "print('parent-exit',flush=True)"
     )
     instance = manager(tmp_path)
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            started = time.monotonic()
             future = executor.submit(instance.exec_command, {
-                "cmd": f"/usr/bin/python3 -c {shlex.quote(script)}", "login": False})
+                "cmd": f"/usr/bin/python3 -c {shlex.quote(script)}", "login": False, "yield_time_ms": 30000})
             try:
-                result = future.result(timeout=2)
-                assert time.monotonic() - started < 1
+                # Without the post-exit drain bound the join waits out the 30 s yield. The parent
+                # itself can take a few seconds to exit under the restricted launcher.
+                result = future.result(timeout=15)
                 assert result["exit"] == 0
                 assert result["stdout"] == "parent-exit\n"
                 assert os.getsid(int(pid_file.read_text())) == int(pid_file.read_text())
