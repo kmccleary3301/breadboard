@@ -148,6 +148,20 @@ def test_custom_tool_results_emitted_as_custom_tool_call_output():
     assert outputs["call_func_1"]["type"] == "function_call_output"
 
 
+def test_typed_tool_output_envelope_is_replayed_in_remote_history():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    image = [{"type": "input_image", "image_url": "data:image/png;base64,AAAA"}]
+    messages = [
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "call_view", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        responses_image_tool_result_message("call_view", image),
+    ]
+    items = build_openai_native_history(messages, "gpt-5")
+    assert {"type": "function_call_output", "call_id": "call_view", "output": image} in items
+
+
+
 def test_live_custom_tool_call_replays_native_item_in_call_order():
     custom = {"type": "custom_tool_call", "call_id": "call_patch", "name": "apply_patch", "input": "*** Begin Patch"}
     replay = {

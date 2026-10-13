@@ -311,6 +311,15 @@ def build_openai_native_history(
             continue
 
         if role in ("tool", "tool_result"):
+            content = message.get("content")
+            typed = [block["payload"] for block in content if isinstance(block, Mapping)
+                     and block.get("type") == "provider_replay"
+                     and block.get("schema_version") == "openai.responses.tool_output.v1"] if isinstance(content, list) else []
+            if typed:
+                # Typed outputs (images) carry their call ID only inside the envelope, as the runtime replays them.
+                input_items.extend(dict(payload) for payload in typed if payload.get("call_id") in known_call_ids)
+                msg_index += 1
+                continue
             call_id = message.get("tool_call_id") or message.get("call_id")
             if not isinstance(call_id, str) or call_id not in known_call_ids:
                 msg_index += 1
