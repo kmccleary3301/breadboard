@@ -279,3 +279,22 @@ def test_summary_media_strip_keeps_typed_tool_output_answering_its_call():
     assert stripped["content"] == [
         {"type": "tool_result", "call_id": "call_read", "content": "Image read successfully", "is_error": False}]
     assert normalize_request_messages([call, stripped])[1]["content"] == stripped["content"]
+
+
+@pytest.mark.parametrize("preset", ["codex@0.139.0", "opencode@1.2.17"])
+def test_summary_carries_a_dropped_image_as_its_placeholder(preset):
+    from breadboard_engine.compaction.presets import CompactionConfig, build_recipe
+    from breadboard_engine.compaction.primitives.reducers import Reduction
+
+    messages = [
+        {"role": "user", "content": "Describe the screenshot I send next."},
+        {"role": "assistant", "content": "Ready"},
+        {"role": "user", "content": [PNG_BLOCK]},
+    ]
+    ctx = _context(messages, reason="overflow")
+    ctx.state.append(drop_images(ctx), messages)
+    step = build_recipe(CompactionConfig(True, preset, ctx.settings, {}, None, None)).pipeline.stages["summary"].step
+
+    placed = step.placement.place(ctx, step.selector.select(ctx), Reduction(summary="S"))
+
+    assert IMAGE_PLACEHOLDER in repr(placed)

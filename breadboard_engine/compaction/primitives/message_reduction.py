@@ -141,7 +141,8 @@ class SummaryReplay:
         if context.reason not in self.auto_reasons:
             return result
         if selection.replay:
-            result.extend(model_message(context.messages[i], strip_media=True) for i in selection.replay)
+            visible = visible_messages(context)
+            result.extend(model_message(visible[i], strip_media=True) for i in selection.replay)
         else:
             prefix = self.overflow_prefix if context.reason == "overflow" else ""
             result.append({"role": "user", "content": [{"type": "text", "text": prefix + self.continuation}]})

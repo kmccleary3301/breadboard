@@ -9,6 +9,7 @@ from .selectors import Selection
 from .triggers import build_limit
 from .native_retention import truncate_middle
 from .context_markers import contextual_user, marker_pairs, sampling_phases
+from .protected_windows import visible_messages
 
 
 
@@ -73,7 +74,7 @@ class UserMessagesBudget:
         previous = boundary.native.items if boundary is not None and boundary.native is not None else (
             boundary.summary_messages if boundary is not None else ()
         )
-        candidates = [(None, m) for m in previous] + list(enumerate(context.messages[start:end], start))
+        candidates = [(None, m) for m in previous] + list(enumerate(visible_messages(context)[start:end], start))
         for index, message in reversed(candidates):
             if message.get("role") != "user":
                 continue
