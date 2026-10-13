@@ -441,3 +441,21 @@ def test_local_summary_after_a_native_boundary_covers_the_history_it_replaced() 
     # The remote pass failed, so a local method runs; its boundary supersedes the native one.
     assert controller.compact_now(state, target=_target(), runtime=runtime, client=object()).compacted
     assert "f0.py" in str(runtime.summary_requests)
+
+
+def test_final_product_context_never_carries_the_native_request_surface() -> None:
+    controller = _controller()
+    state = _session()
+    context = CompactionContext(
+        messages=state.provider_messages, state=state.compaction_state, settings=controller.settings,
+        reason="manual", target=_target(), context_window=8000, tokens_before=1,
+    )
+    native = NativeCompaction(provider="openai", api="chat", model="gpt-test", items=({"type": "compaction"},))
+    state.compaction_state.append(context.new_record(
+        method="remote", first_kept_index=len(state.provider_messages) - 2, native=native,
+    ), state.provider_messages)
+    sent = state.compaction_state.project(state.provider_messages, _target())
+    assert any(NATIVE_MARKER_KEY in message for message in sent)
+    state.record_provider_request_surface(sent)
+    # The boundary predates the last request, yet a resumed session may switch models.
+    assert state.final_provider_context() == state.provider_messages

@@ -27,7 +27,7 @@ from ..provider.ir import (
 )
 from ..orchestration.coordination import build_coordination_inspection_snapshot
 from ..todo.projection import project_store_snapshot_to_tui_envelope
-from ..compaction.state import CompactionState
+from ..compaction.state import NATIVE_MARKER_KEY, CompactionState
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
@@ -586,9 +586,12 @@ class SessionState:
 
     def final_provider_context(self) -> List[Dict[str, Any]]:
         with self._compaction_lock:
-            if len(self.compaction_state.records) > getattr(self, "_compaction_records_at_last_send", 0):
-                # A response-end edit is newer than the last transmitted view.
-                # Persist the ledger projection, not that superseded surface.
+            if len(self.compaction_state.records) > getattr(self, "_compaction_records_at_last_send", 0) or any(
+                NATIVE_MARKER_KEY in message for message in self._last_sent_provider_messages or ()
+            ):
+                # A response-end edit is newer than the last transmitted view, or that
+                # view carries a native payload only its own route can replay.
+                # Persist the portable ledger projection instead.
                 return copy.deepcopy(self.compaction_state.project(self.provider_messages, None))
             if (
                 self._last_sent_provider_messages is None

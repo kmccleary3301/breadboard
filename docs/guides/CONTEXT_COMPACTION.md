@@ -484,10 +484,10 @@ orphaned tool result is rejected before it is appended.
 Native remote payloads (OpenAI compaction items, Anthropic compaction blocks)
 are replayed only to the same provider, API and model that produced them.
 Runtimes without a compaction port get the plain-text summary instead. Session
-snapshots include `compaction_state` once a record exists. The Product context
-persisted at a boundary never contains a native payload: it is the latest
-readable boundary's view, or the full history, so a resumed session can switch
-models.
+snapshots include `compaction_state` once a record exists. Persisted Product
+context (at a boundary and at the end of a run) never contains a native payload:
+it is the latest readable boundary's view, or the full history, so a resumed
+session can switch models.
 
 A local summary starts after the latest readable boundary, so it also covers
 history that only an OpenAI native payload (which carries no readable summary)
