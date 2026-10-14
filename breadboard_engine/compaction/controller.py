@@ -12,6 +12,8 @@ import copy
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence
+from breadboard.product.runtime.artifacts import put_workspace_artifact
+from ..provider.input_media import parse_provider_image_url
 from ..execution.stock_driver import StockDriver
 from ..provider.contract_runtime import ProviderRuntimeContext
 from ..provider.history_projection import portable_provider_messages
@@ -227,16 +229,16 @@ class CompactionController:
         turn_index: Optional[int],
         request_context: Optional[CompactionRequestContext] = None,
     ) -> List[Dict[str, Any]]:
-        """Threshold-compact if due, then run the ordered request-view pass.
-
-        Snapcompact stays off here: its frames are inline PNG data, and the
-        provider contract carries images only as authorized attachment media.
-        """
+        """Threshold-compact if due, then run the ordered request-view pass."""
         target = projection_target_for(runtime, model)
         context_window = self.resolve_context_window(
             conductor=conductor, session_state=session_state, model=model
         )
         max_input, max_output = self.resolve_model_limits(session_state, conductor, model)
+        entry = _model_entry(conductor, model)
+        supports_images = entry.get("supports_images") is True or (
+            isinstance(entry.get("input"), (list, tuple, set)) and "image" in entry.get("input")
+        )
         if self.should_trigger_threshold(
             session_state,
             context_window=context_window,
@@ -250,7 +252,7 @@ class CompactionController:
                 session_state, request_context=request_context, reason="threshold", target=target,
                 conductor=conductor, runtime=runtime, client=client,
                 context_window=context_window, turn_index=turn_index,
-                max_output_tokens=max_output,
+                max_output_tokens=max_output, supports_images=supports_images,
             )
         self._serve_native_summary_requests(
             session_state, request_context=request_context, conductor=conductor,
@@ -260,6 +262,7 @@ class CompactionController:
             session_state, request_context=request_context, target=target, runtime=runtime,
             turn_index=turn_index,
             context_window=context_window, conductor=conductor, client=client,
+            supports_images=supports_images,
         )
 
     def _serve_native_summary_requests(
@@ -422,6 +425,7 @@ class CompactionController:
                     view, self.settings, supports_images=supports_images,
                     provider=target.provider, api=target.api, model_id=target.model,
                 )
+            view = self._materialize_snapcompact_frames(session_state, view)
         except Exception as exc:
             request_error = exc
             raise
@@ -445,6 +449,62 @@ class CompactionController:
                     request_error.compaction_outcome = aggregate
                 self._record_finished(session_state, aggregate, turn_index, "request", request_error)
         return view
+
+    def _materialize_snapcompact_frames(
+        self, session_state: Any, view: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        has_snapcompact_frame = any(
+            NATIVE_MARKER_KEY not in message
+            and isinstance(message.get("content"), list)
+            and any(
+                isinstance(block, Mapping)
+                and block.get("type") == "image_url"
+                and isinstance(block.get("image_url"), Mapping)
+                and isinstance(block["image_url"].get("url"), str)
+                and block["image_url"]["url"].startswith("data:image/png;base64,")
+                for block in message["content"]
+            )
+            for message in view
+        )
+        if not has_snapcompact_frame:
+            return view
+
+        capabilities = dict(session_state.get_provider_metadata("attachment_capabilities") or {})
+        materialized_view: List[Dict[str, Any]] = []
+        for message in view:
+            if NATIVE_MARKER_KEY in message:
+                materialized_view.append(message)
+                continue
+            content = message.get("content")
+            if not isinstance(content, list):
+                materialized_view.append(message)
+                continue
+            new_blocks: List[Dict[str, Any]] = []
+            for block in content:
+                if (
+                    not isinstance(block, Mapping)
+                    or block.get("type") != "image_url"
+                    or not isinstance(block.get("image_url"), Mapping)
+                    or not isinstance(block["image_url"].get("url"), str)
+                    or not block["image_url"]["url"].startswith("data:image/png;base64,")
+                ):
+                    new_blocks.append(block)
+                    continue
+                url = block["image_url"]["url"]
+                resolved = parse_provider_image_url(url)
+                ref = put_workspace_artifact(
+                    session_state.workspace, resolved.content, media_type="image/png"
+                )
+                uri = f"attachment://{ref.digest}"
+                capabilities[uri] = ref.as_dict()
+                new_blocks.append(
+                    {"type": "media", "kind": "image", "uri": uri, "mime": "image/png"}
+                )
+            materialized_message = dict(message)
+            materialized_message["content"] = new_blocks
+            materialized_view.append(materialized_message)
+        session_state.set_provider_metadata("attachment_capabilities", capabilities)
+        return materialized_view
 
     def should_trigger_threshold(
         self,

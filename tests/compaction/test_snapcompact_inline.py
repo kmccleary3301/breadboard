@@ -275,3 +275,129 @@ def test_inline_does_not_mutate_input():
 
     assert messages == snapshot
     assert messages[1]["content"] == orig_text
+
+
+def test_inline_canonical_media_at_budget_allocates_no_frames_and_preserves_images():
+    """When incoming canonical media fills the provider budget, inline snapcompact adds no frames."""
+    from breadboard_engine.compaction.snapcompact.shapes import provider_image_budget
+    from breadboard_engine.provider.history_projection import portable_provider_messages
+
+    budget_limit = provider_image_budget(None)  # 20
+    canonical_att = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
+        "mime": "image/png",
+    }
+    codex_img = {
+        "type": "media",
+        "kind": "codex_image_url",
+        "uri": "https://example.com/canonical_photo.png",
+        "detail": "high",
+    }
+    legacy_ctrl = {
+        "type": "image_url",
+        "image_url": {"url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg=="},
+    }
+
+    # 20 total incoming images: alternating canonical attachment, codex_image_url, and legacy
+    incoming_images = []
+    for i in range(8):
+        incoming_images.append(dict(canonical_att))
+        incoming_images.append(dict(codex_img, uri=f"{codex_img['uri']}_{i}"))
+    incoming_images.append(legacy_ctrl)
+    incoming_images.append(dict(canonical_att))
+    incoming_images.append(dict(codex_img, uri=f"{codex_img['uri']}_final"))
+    incoming_images.append(dict(legacy_ctrl))
+    assert len(incoming_images) == budget_limit  # 20
+
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    system_prompt = "Operating instructions for autonomous agents. " * 300
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": [{"type": "text", "text": "Process items:"}, *incoming_images]},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    # Budget is fully saturated by incoming canonical images; no system frames should be added
+    assert transformed[0]["content"] == system_prompt
+    assert len(transformed) == 2
+    user_content = transformed[1]["content"]
+    new_frames = [b for b in user_content if b.get("type") == "image_url" and b != legacy_ctrl]
+    assert len(new_frames) == 0
+
+    # Preserves incoming images and order
+    user_media_and_images = [b for b in user_content if b.get("type") in {"media", "image_url"}]
+    assert user_media_and_images == incoming_images
+
+    # Downstream portable conversion preserves count and budget
+    portable = portable_provider_messages(
+        transformed,
+        source_provider="openai",
+        source_api="chat",
+        target_provider="openai",
+        target_api="chat",
+    )
+    portable_user = next(m for m in portable if m.get("role") == "user")
+    converted_images = [b for b in portable_user["content"] if b.get("type") == "media"]
+    assert len(converted_images) == budget_limit
+
+
+def test_inline_canonical_media_residual_slots_cap():
+    """When incoming canonical media leaves fewer slots than needed frames, no frames are added."""
+    canonical_att = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899",
+        "mime": "image/png",
+    }
+    # 19 incoming images leaves 1 residual slot out of 20
+    incoming_19 = [dict(canonical_att) for _ in range(19)]
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    system_prompt = "Operating instructions with detailed guidance for agents. " * 600
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": [{"type": "text", "text": "Instructions follow:"}, *incoming_19]},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    # System prompt requiring multiple frames cannot fit into 1 slot -> no frames added
+    assert transformed[0]["content"] == system_prompt
+    user_content = transformed[1]["content"]
+    new_frames = [b for b in user_content if b.get("type") == "image_url"]
+    assert len(new_frames) == 0
+    user_media = [b for b in user_content if b.get("type") == "media"]
+    assert user_media == incoming_19
+
+
+def test_inline_already_over_budget_canonical_media_does_not_add_frames_or_drop():
+    """When already over budget, inline snapcompact adds no frames and preserves all existing images."""
+    codex_img = {
+        "type": "media",
+        "kind": "codex_image_url",
+        "uri": "https://example.com/img.png",
+        "detail": "high",
+    }
+    # 21 incoming images (over 20 budget)
+    incoming_21 = [dict(codex_img, uri=f"{codex_img['uri']}_{i}") for i in range(21)]
+    settings = _make_settings(system_prompt="all", inline_min_tokens=50)
+    system_prompt = "Operating instructions for autonomous agents. " * 300
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": [{"type": "text", "text": "Run analysis:"}, *incoming_21]},
+    ]
+
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    # No frames added
+    assert transformed[0]["content"] == system_prompt
+    user_content = transformed[1]["content"]
+    new_frames = [b for b in user_content if b.get("type") == "image_url"]
+    assert len(new_frames) == 0
+
+    # Preexisting overage is NOT dropped or mutated
+    user_media = [b for b in user_content if b.get("type") == "media"]
+    assert len(user_media) == 21
+    assert user_media == incoming_21

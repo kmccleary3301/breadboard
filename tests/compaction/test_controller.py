@@ -223,24 +223,123 @@ def _target() -> ProjectionTarget:
 
 
 @pytest.mark.parametrize("entry", [{"supports_images": True}, {"input": ["text", "image"]}])
-def test_route_requests_stay_within_the_provider_image_contract(entry: Dict[str, Any]) -> None:
+def test_route_requests_stay_within_the_provider_image_contract(entry: Dict[str, Any], tmp_path: Any) -> None:
     from breadboard_engine.provider.contract_requests import normalize_request_messages
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
+    from breadboard_engine.provider.runtimes.anthropic import AnthropicMessagesRuntime
+    from breadboard_engine.provider.runtimes.openai.conversion import OpenAIConversionMixin
 
     controller = CompactionController({"compaction": {
         "enabled": True, "preset": "omp@18.4.5", "snapcompact": {"system_prompt": "all", "inline_min_tokens": 50},
     }})
     conductor = SimpleNamespace(config={"providers": {"models": [{"id": "gemini-test", **entry}]}}, model="gemini-test")
     runtime = SimpleNamespace(descriptor=SimpleNamespace(provider_id="google", default_api_variant="google-generative-ai"))
-    state = SessionState("ws", "image", {})
-    state.add_message({"role": "system", "content": "You are an engineering agent with extensive guidelines. " * 250})
-    state.add_message({"role": "user", "content": "Implement feature X."})
+    state = SessionState(str(tmp_path), "image", {})
+    system_prompt = "You are an engineering agent with extensive guidelines. " * 250
+    user_prompt = "Implement feature X."
+    state.add_message({"role": "system", "content": system_prompt})
+    state.add_message({"role": "user", "content": user_prompt})
 
     view = controller.prepare_request(
         state, conductor=conductor, runtime=runtime, client=object(), model="gemini-test", turn_index=1
     )
 
-    normalize_request_messages(view)
+    # Production wrapper resolves vision capability, applies inline snapcompact frames,
+    # and canonicalizes outgoing request view into authorized workspace attachments
+    assert len(view) == 2
+    assert isinstance(view[1]["content"], list)
+    image_part = next(part for part in view[1]["content"] if part.get("type") == "media")
+    assert image_part["kind"] == "image"
+    assert image_part["mime"] == "image/png"
+    assert image_part["uri"].startswith("attachment://sha256:")
+    capabilities = state.get_provider_metadata("attachment_capabilities") or {}
+    assert image_part["uri"] in capabilities
+    assert capabilities[image_part["uri"]]["media_type"] == "image/png"
 
+    # Source immutability
+    assert state.provider_messages[0]["content"] == system_prompt
+    assert state.provider_messages[1]["content"] == user_prompt
+
+    # Canonical normalization without driver portable adapter bridge
+    canonical = normalize_request_messages(view)
+    canonical_media = [
+        part
+        for message in canonical
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+        if part.get("type") == "media"
+    ]
+    assert len(canonical_media) == 1
+    assert canonical_media[0]["kind"] == "image"
+    assert canonical_media[0]["mime"] == "image/png"
+    assert canonical_media[0]["uri"] == image_part["uri"]
+
+    # Direct offline converter to OpenAI Chat wire payload without portable_image_urls flag
+    ctx = ProviderRuntimeContext(state, {})
+    wire_chat = OpenAIConversionMixin()._convert_messages_to_chat(canonical, context=ctx)
+    wire_images = [
+        part
+        for message in wire_chat
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+        if part.get("type") == "image_url"
+    ]
+    assert len(wire_images) == 1
+    assert wire_images[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+    # Direct offline converter to Anthropic messages wire payload without portable flag
+    anthropic_runtime = AnthropicMessagesRuntime(SimpleNamespace(
+        provider_id="anthropic", runtime_id="anthropic_messages", default_api_variant="messages",
+    ))
+    _, anthropic_messages = anthropic_runtime._convert_messages(canonical, context=ctx)
+    anthropic_images = [
+        part
+        for message in anthropic_messages
+        if isinstance(message.get("content"), list)
+        for part in message["content"]
+        if part.get("type") == "image"
+    ]
+    assert len(anthropic_images) == 1
+    assert anthropic_images[0]["source"]["type"] == "base64"
+    assert anthropic_images[0]["source"]["media_type"] == "image/png"
+    import base64
+    import io
+    openai_raw_bytes = base64.b64decode(wire_images[0]["image_url"]["url"].split(",", 1)[1])
+    anthropic_raw_bytes = base64.b64decode(anthropic_images[0]["source"]["data"])
+    assert openai_raw_bytes == anthropic_raw_bytes
+    assert openai_raw_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    try:
+        from PIL import Image
+        img = Image.open(io.BytesIO(openai_raw_bytes))
+        assert img.format == "PNG"
+    except ImportError:
+        pass
+    user_blocks = canonical[1]["content"]
+    assert any(
+        part.get("type") == "text" and "Implement feature X." in part.get("text", "")
+        for part in user_blocks
+    )
+
+@pytest.mark.parametrize("entry", [{"supports_images": False}, {"input": ["text"]}, {}])
+def test_route_requests_non_vision_control_remains_unchanged(entry: Dict[str, Any]) -> None:
+    controller = CompactionController({"compaction": {
+        "enabled": True, "preset": "omp@18.4.5", "snapcompact": {"system_prompt": "all", "inline_min_tokens": 50},
+    }})
+    conductor = SimpleNamespace(config={"providers": {"models": [{"id": "text-test", **entry}]}}, model="text-test")
+    runtime = SimpleNamespace(descriptor=SimpleNamespace(provider_id="google", default_api_variant="google-generative-ai"))
+    state = SessionState("ws", "image", {})
+    system_prompt = "You are an engineering agent with extensive guidelines. " * 250
+    user_prompt = "Implement feature X."
+    state.add_message({"role": "system", "content": system_prompt})
+    state.add_message({"role": "user", "content": user_prompt})
+
+    view = controller.prepare_request(
+        state, conductor=conductor, runtime=runtime, client=object(), model="text-test", turn_index=1
+    )
+
+    assert len(view) == 2
+    assert view[0]["content"] == system_prompt
+    assert view[1]["content"] == user_prompt
 
 def test_context_window_resolves_from_id_shaped_model_entry() -> None:
     controller = CompactionController({})

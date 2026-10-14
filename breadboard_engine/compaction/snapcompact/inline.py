@@ -14,7 +14,7 @@ import re
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from ..settings import CompactionSettings
-from ..tokens import estimate_text_tokens
+from ..tokens import estimate_text_tokens, is_image_part
 from ..state import NATIVE_MARKER_KEY
 from ..transcript import content_text
 
@@ -59,7 +59,7 @@ def _count_existing_images(messages: Sequence[Mapping[str, Any]]) -> int:
         content = m.get("content")
         if isinstance(content, list):
             for part in content:
-                if isinstance(part, Mapping) and part.get("type") in ("image_url", "image", "input_image"):
+                if is_image_part(part):
                     count += 1
     return count
 
