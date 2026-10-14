@@ -169,7 +169,7 @@ function pinnedSystemPrompt(): string[] {
   return prompt;
 }
 
-async function initialize(payload: Record<string, any>): Promise<Record<string, any>> {
+async function initialize(payload: Record<string, unknown>) {
   // The sandbox launch environment (sandbox.py native phase environment) owns the root.
   const nodeModulesRoot = process.env.OMP16213_CODING_AGENT_NODE_MODULES;
   if (typeof nodeModulesRoot !== "string" || nodeModulesRoot.length === 0) {
@@ -410,7 +410,7 @@ async function initialize(payload: Record<string, any>): Promise<Record<string, 
 }
 
 
-async function prepareTools(payload: Record<string, any>): Promise<Record<string, any>> {
+async function prepareTools(payload: Record<string, unknown>) {
   if (!sessionState.session) throw new Error("worker must be initialized before prepare_tools");
   if (!sessionState.validateToolArguments) throw new Error("pinned validateToolArguments is unavailable");
 
@@ -570,7 +570,7 @@ function createToolSignalAbortedResult(signal: AbortSignal): {
   };
 }
 
-async function executeBatch(_payload: Record<string, any>): Promise<Record<string, any>> {
+async function executeBatch(_payload: Record<string, unknown>) {
   if (!sessionState.session) throw new Error("worker must be initialized before execute_batch");
 
   // agent.ts:1147, 1159, 1165, 1166

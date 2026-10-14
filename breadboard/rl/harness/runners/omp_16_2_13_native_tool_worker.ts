@@ -9,8 +9,12 @@ import { finalizeCompactionPhase, prepareCompactionPhase } from "./omp_16_2_13/c
 
 
 const RPC_SCHEMA = "bb.native-worker.rpc.v1";
+type RpcPayload = Record<string, unknown>;
+type RpcResult = Record<string, unknown>;
+type RpcFrame = { schema_version: string; request_id: number; operation: string; payload: RpcPayload };
+type ProviderUsagePayload = { usage: object | null };
 
-async function dispatch(operation: string, payload: Record<string, any>): Promise<Record<string, any>> {
+async function dispatch(operation: string, payload: RpcPayload): Promise<RpcResult> {
   switch (operation) {
     case "initialize":
       return initialize(payload);
@@ -25,7 +29,7 @@ async function dispatch(operation: string, payload: Record<string, any>): Promis
     case "parse_streaming_json_batch":
       return parseStreamingJsonBatch(payload);
     case "parse_provider_usage":
-      return parseProviderUsage(payload);
+      return parseProviderUsage(payload as ProviderUsagePayload);
     case "prepare_compaction":
       return prepareCompactionPhase(payload);
     case "finalize_compaction":
@@ -49,7 +53,7 @@ function append(chunk: Uint8Array) {
   buffer = next;
 }
 
-async function writeFrame(value: Record<string, any>) {
+async function writeFrame(value: RpcResult) {
   const encoded = new TextEncoder().encode(JSON.stringify(value));
   const frame = new Uint8Array(4 + encoded.length);
   new DataView(frame.buffer).setUint32(0, encoded.length, false);
@@ -66,7 +70,7 @@ while (true) {
   while (buffer.length >= 4) {
     const length = new DataView(buffer.buffer, buffer.byteOffset, 4).getUint32(0, false);
     if (buffer.length < 4 + length) break;
-    const payload = JSON.parse(decoder.decode(buffer.slice(4, 4 + length)));
+    const payload = JSON.parse(decoder.decode(buffer.slice(4, 4 + length))) as RpcFrame;
     buffer = buffer.slice(4 + length);
     if (payload.schema_version !== RPC_SCHEMA || typeof payload.request_id !== "number") {
       throw new Error("invalid worker frame");
