@@ -20,7 +20,7 @@ from ..methods import (
 )
 from ...provider.contract_messages import normalize_provider_replay
 from ...provider.contract_runtime import ProviderRuntimeContext
-from ...provider.input_media import resolve_input_media
+from ...provider.input_media import portable_image_media, resolve_input_media
 from ..primitives.byte_estimator import bytes4, text_tokens
 from ..primitives.protected_windows import visible_messages
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
@@ -238,6 +238,12 @@ def build_openai_native_history(
                             image: dict[str, Any] = {"type": "input_image", "image_url": media.data_url}
                             if media.detail is not None:
                                 image["detail"] = media.detail
+                            content_blocks.append(image)
+                        elif btype == "image_url":
+                            image_media = portable_image_media(block)
+                            image = {"type": "input_image", "image_url": image_media["uri"]}
+                            if "detail" in image_media:
+                                image["detail"] = image_media["detail"]
                             content_blocks.append(image)
                         elif btype in ("image", "input_image"):
                             url = block.get("image_url") or block.get("url")

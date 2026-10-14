@@ -628,6 +628,53 @@ def test_native_pass_after_a_readable_boundary_sends_its_summary_not_the_prefix(
     assert texts == ["<summary>S</summary>", "Turn 2 question", "Turn 2 answer"]
 
 
+def test_native_pass_after_snapcompact_boundary_preserves_archived_frames():
+    posted = []
+
+    def fake_poster(url, payload, headers):
+        posted.append(payload)
+        return {"output": [{"type": "compaction", "encrypted_content": "enc"}]}
+
+    raw_png = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15c4\x00\x00\x00\nIDATx\x9cc\x00\x01\x00"
+        b"\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    import base64
+    b64_png = base64.b64encode(raw_png).decode("ascii")
+    frame_url = f"data:image/png;base64,{b64_png}"
+
+    snap_content = [
+        {"type": "text", "text": "=== SNAPCOMPACT ARCHIVE ==="},
+        {"type": "image_url", "image_url": {"url": frame_url, "detail": "high"}},
+        {"type": "text", "text": "middle history omitted"},
+    ]
+    messages = [
+        {"role": "system", "content": "System instructions"},
+        {"role": "user", "content": "Turn 1 question"},
+        {"role": "assistant", "content": "Turn 1 answer"},
+        {"role": "user", "content": "Turn 2 question"},
+        {"role": "assistant", "content": "Turn 2 answer"},
+    ]
+    state = CompactionState()
+    ctx = CompactionContext(
+        messages=messages, state=state,
+        settings=settings_from_config({"enabled": True, "remote_streaming_v2_enabled": False}),
+        reason="threshold", target=ProjectionTarget("openai", "responses", "gpt-5"),
+        context_window=8000, tokens_before=100,
+    )
+    state.append(ctx.new_record(
+        method="snapcompact", first_kept_index=3, summary="Archived frames",
+        summary_messages=({"role": "user", "content": snap_content},),
+    ), messages)
+    OpenAIResponsesCompactionPort(http_poster=fake_poster).compact(ctx)
+
+    assert len(posted) == 1
+    user_blocks = posted[0]["input"][0]["content"]
+    assert user_blocks[0] == {"type": "input_text", "text": "=== SNAPCOMPACT ARCHIVE ==="}
+    assert user_blocks[1] == {"type": "input_image", "image_url": frame_url, "detail": "high"}
+    assert user_blocks[2] == {"type": "input_text", "text": "middle history omitted"}
+
 @pytest.mark.parametrize(("v2", "path"), [(True, "/v1/responses"), (False, "/v1/responses/compact")])
 def test_sdk_client_requests_are_authenticated_and_use_the_configured_base_url(v2, path):
     import httpx

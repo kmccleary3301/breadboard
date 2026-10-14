@@ -90,6 +90,7 @@ The proof is a differential lane that compares raw request bytes against the pin
 - All shipped and test Python compiles under Python 3.11.
 - CI's Compat core, Conformance gate, Conformance matrix sync and E4 target-freeze manifest guard pass.
 - The script index (`scripts/SCRIPT_INDEX.yaml`) registers the 21 new scripts, and the clean-wheel test pins the 23 shipped target revisions.
+- Native Responses snapcompact frames (2026-10-14): `image_url` uses the existing portable-image normalizer to preserve nested URL/detail; the legacy `image`/`input_image` branch is unchanged. The frozen repair passed 288 focused tests, Ruff with no new diagnostics, and Python 3.11 grammar checks under preserved Python 3.13.14. A real SDK/MockTransport sequence observed HTTP 503, rendered five real snapcompact PNGs, then transmitted all five byte-matching frames in order before committing and projecting the native end boundary. Published-builder substitution reproduced zero frames before the fix. This is an explicit port → snapshot → port sequence, not automatic controller fallback, live-provider semantics, or full parity. Receipts: `t90-final-focused-result.json`, `t90-final-parent-runtime-identity.json`, `t90-final-static.json`.
 
 ## 6) Rollout Plan
 
