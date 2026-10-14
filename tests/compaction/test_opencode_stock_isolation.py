@@ -18,6 +18,7 @@ from breadboard_engine.security.stock_install import stock_install_digest
 import shlex
 import shutil
 import subprocess
+import sys
 import uuid
 from tests.compaction.test_opencode_stock_omo_groups import PLUGIN
 from tests.compaction.test_opencode_stock_omo_groups import PLUGIN_DIGEST
@@ -25,7 +26,7 @@ from tests.compaction.test_opencode_stock_omo_groups import LSP_PIN
 import os
 from breadboard_engine.compaction_lanes.opencode_recording import ResponsesProvider
 from breadboard_engine.execution.opencode.wire import responses_payload
-from breadboard_engine.security.launch_policy import ProcessIsolationUnavailable
+from breadboard_engine.security.launch_policy import ProcessIsolationUnavailable, build_restricted_process_command
 
 """Pinned stock process isolation and opt-in auxiliary provider routing."""
 
@@ -207,6 +208,97 @@ def test_stock_tmux_pane_cannot_read_protected_path_with_pty_enabled(tmp_path, b
 """Stock snapshot discovery and scoped worktree access, never a sandbox bypass."""
 
 
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS sandbox profile behavior")
+def test_darwin_sandbox_launches_python_through_symlinked_runtime_parent(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    venv = tmp_path / "runtime-target" / "venv"
+    canonical_bin = venv / "bin"
+    canonical_bin.mkdir(parents=True)
+    canonical_python = Path(sys.executable).resolve(strict=True)
+    (venv / "pyvenv.cfg").write_text(
+        f"home = {canonical_python.parent}\ninclude-system-site-packages = false\n"
+    )
+    site_packages = venv / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    site_packages.mkdir(parents=True)
+    (site_packages / "ssd_runtime_probe.py").write_text("value = 7\n")
+    canonical_executable = canonical_bin / "python"
+    canonical_executable.symlink_to(canonical_python)
+    blocked_executable = venv.parent / "unadmitted-python"
+    blocked_executable.symlink_to(canonical_python)
+    runtime_alias = tmp_path / "runtime-alias"
+    runtime_alias.symlink_to(venv, target_is_directory=True)
+    executable = runtime_alias / "bin" / "python"
+
+    probe = (
+        "import errno, subprocess, sys, ssd_runtime_probe\n"
+        "print(sys.executable)\n"
+        "print(sys.prefix)\n"
+        "print(ssd_runtime_probe.value)\n"
+        "try:\n"
+        "    subprocess.run([sys.argv[1], '-I', '-c', 'pass'], check=True)\n"
+        "except PermissionError as exc:\n"
+        "    if exc.errno != errno.EPERM or exc.filename != sys.argv[1]:\n"
+        "        raise\n"
+        "    print('blocked')\n"
+        "else:\n"
+        "    raise SystemExit('sibling executable unexpectedly ran')\n"
+    )
+    command, child_environment = build_restricted_process_command(
+        [str(executable), "-I", "-c", probe, str(blocked_executable)],
+        workspace=workspace,
+        shell=False,
+        environment=os.environ,
+        working_directory=workspace,
+    )
+    result = subprocess.run(
+        command,
+        cwd=workspace,
+        env=child_environment,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == [str(executable), str(runtime_alias), "7", "blocked"]
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS sandbox path admission")
+def test_darwin_runtime_alias_cannot_grant_workspace_ancestor_reads(tmp_path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    runtime_bin = tmp_path / "bin"
+    runtime_bin.mkdir()
+    (runtime_bin / "python").symlink_to(Path(sys.executable).resolve(strict=True))
+    runtime_alias = tmp_path / "runtime-alias"
+    runtime_alias.symlink_to(tmp_path, target_is_directory=True)
+    neighbor = tmp_path / "neighbor.txt"
+    neighbor.write_text("synthetic sibling outside the workspace")
+    probe = (
+        "from pathlib import Path\n"
+        "import sys\n"
+        "try:\n"
+        "    Path(sys.argv[1]).read_text()\n"
+        "except PermissionError:\n"
+        "    print('denied')\n"
+        "else:\n"
+        "    raise SystemExit('runtime alias exposed workspace sibling')\n"
+    )
+    command, child_environment = build_restricted_process_command(
+        [str(runtime_alias / "bin" / "python"), "-I", "-c", probe, str(neighbor)],
+        workspace=workspace,
+        shell=False,
+        environment={"PATH": "/usr/bin:/bin", "HOME": str(Path.home())},
+        working_directory=workspace,
+    )
+    result = subprocess.run(
+        command, cwd=workspace, env=child_environment,
+        capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "denied"
 
 
 def test_nested_git_workspace_snapshots_with_read_only_worktree(tmp_path, binary):

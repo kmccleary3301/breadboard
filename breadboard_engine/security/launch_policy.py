@@ -354,7 +354,12 @@ def _darwin_read_roots(
         roots[str(root)] = root
     return tuple(
         sorted(
-            (root for root in roots.values() if not _paths_overlap(root, workspace)),
+            (
+                root
+                for root in roots.values()
+                if not _paths_overlap(root, workspace)
+                and not _paths_overlap(root.resolve(strict=False), workspace)
+            ),
             key=str,
         )
     )
@@ -384,13 +389,20 @@ def _darwin_profile(
     def selector(path: Path, operation: str) -> str:
         return f'({operation} "{_profile_string(path)}")'
 
+    # Canonical aliases need read access, not a broader executable-directory grant.
+    readable_roots = tuple(
+        dict.fromkeys(
+            (*read_roots, *(root.resolve(strict=False) for root in read_roots))
+        )
+    )
+
     read_rules = " ".join(
         (
             '(literal "/")',
             selector(workspace, "subpath"),
             *(
                 selector(path, "subpath" if path.is_dir() else "literal")
-                for path in read_roots
+                for path in readable_roots
             ),
             '(literal "/dev/null")',
             '(literal "/dev/zero")',
@@ -401,7 +413,7 @@ def _darwin_profile(
         )
     )
     metadata_roots: dict[str, Path] = {}
-    for readable in (workspace, *read_roots):
+    for readable in (workspace, *readable_roots):
         for ancestor in readable.parents:
             if ancestor == Path("/"):
                 continue
