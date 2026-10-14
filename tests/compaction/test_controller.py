@@ -477,9 +477,21 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
     from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
     from breadboard_engine.provider.routing import provider_router
     from breadboard_engine.provider.runtime import provider_registry
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.runtimes.openai.responses import OpenAIResponsesRuntime
+    from breadboard_engine.provider.anthropic_replay import TOOL_RESULT_SCHEMA
+    from breadboard_engine.provider.contract_requests import ProviderRequest
 
     anthropic = provider_registry.create_runtime(provider_router.get_runtime_descriptor("anthropic/claude-sonnet-4-6")[0])
+    same_api_sent: List[Any] = []
     sent: List[Any] = []
+
+    class SourceRuntime:
+        descriptor = SimpleNamespace(provider_id="openai", default_api_variant="responses", runtime_id="openai_responses")
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            same_api_sent.append(copy.deepcopy(kwargs["messages"]))
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
 
     class SummaryRuntime:
         descriptor = anthropic.descriptor
@@ -488,27 +500,140 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
             sent.append(anthropic._convert_messages(kwargs["messages"], context=kwargs["context"])[1])
             return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
 
+    legacy_raw = '{ "legacy": }'
+    canonical_raw = '{"canonical": "unterminated}'
     history = (
         {"role": "user", "content": [{"type": "text", "text": "look at the screen"},
                                      {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]},
         {"role": "assistant", "content": [{"type": "provider_replay", "provider_id": "openai",
                                            "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
-                                           "payload": {"type": "local_shell_call", "call_id": "c0"}}],
-         "tool_calls": [{"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": "{}"}}
-                        for call_id in ("c1", "c2")]},
-        responses_image_tool_result_message("c1", [{"type": "input_text", "text": "SCREEN_TEXT"},
-                                                   {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
-        responses_image_tool_result_message("c2", [{"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+                                           "payload": {"type": "local_shell_call", "call_id": "ignored"}},
+                                          {"type": "tool_call", "call_id": "raw-canonical",
+                                           "name": "canonical_tool", "raw_arguments": canonical_raw}],
+         "tool_calls": [
+             {"id": "raw-legacy", "type": "function", "name": "legacy_tool", "raw_arguments": legacy_raw},
+             {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}},
+             {"id": "c2", "type": "function", "function": {"name": "read_file", "arguments": "{}"}},
+         ]},
+        responses_image_tool_result_message("raw-legacy", [{"type": "input_text", "text": "LEGACY_RAW_RESULT"},
+                                                           {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
+        {"role": "tool_result", "content": [
+            {"type": "tool_result", "call_id": "raw-canonical", "content": [
+                {"type": "input_text", "text": "CANONICAL_RAW_RESULT"},
+                {"type": "input_image", "image_url": "data:image/png;base64,AA=="},
+            ]},
+            {"type": "tool_result", "call_id": "c1", "content": "ORDINARY_RESULT_1"},
+        ]},
+        {"role": "tool", "tool_call_id": "c2", "content": "ORDINARY_RESULT_2"},
         {"role": "assistant", "content": "done"},
     )
+    original_history = copy.deepcopy(history)
     summary = ConductorSummaryModel(
-        runtime=SimpleNamespace(descriptor=SimpleNamespace(provider_id="openai", default_api_variant="responses")),
+        runtime=SourceRuntime(),
         client="client", model="gpt-5.5", session_state=SessionState("ws", "image", {}), agent_config={},
         route_resolver=lambda route_id: (SummaryRuntime(), "claude-sonnet-4-6"),
     )
+    summary.complete(SummaryRequest(None, history, 20, "summary"))
+    assert same_api_sent == [list(history)]
+
     summary.complete(SummaryRequest(None, history, 20, "summary", model="anthropic/claude-sonnet-4-6"))
 
-    results = {block["tool_use_id"]: block["content"] for message in sent[0] for block in message["content"]
-               if isinstance(block, dict) and block.get("type") == "tool_result"}
-    assert results == {"c1": "SCREEN_TEXT[image removed]", "c2": "[image removed]"}
+    assert history == original_history
+    converted = sent[0]
+    assistant_index = next(
+        index for index, message in enumerate(converted)
+        if message["role"] == "assistant"
+        and any(block.get("type") == "tool_use" for block in message["content"])
+    )
+    assistant_blocks = converted[assistant_index]["content"]
+    assistant_text = "\n".join(block["text"] for block in assistant_blocks if block.get("type") == "text")
+    assert "legacy_tool" in assistant_text and "call ID raw-legacy" in assistant_text
+    assert "canonical_tool" in assistant_text and "call ID raw-canonical" in assistant_text
+    assert legacy_raw in assistant_text
+    assert canonical_raw in assistant_text
+    assert "LEGACY_RAW_RESULT[image removed]" in assistant_text
+    assert "CANONICAL_RAW_RESULT[image removed]" in assistant_text
+    assert "Tool result for call ID raw-legacy" in assistant_text
+    assert "Tool result for call ID raw-canonical" in assistant_text
+
+    tool_uses = {
+        block["id"] for block in assistant_blocks if block.get("type") == "tool_use"
+    }
+    assert tool_uses == {"c1", "c2"}
+    results = {block["tool_use_id"]: block["content"] for message in converted
+               for block in message["content"] if block.get("type") == "tool_result"}
+    assert results == {"c1": "ORDINARY_RESULT_1", "c2": "ORDINARY_RESULT_2"}
+    result_message_indices = [
+        index for index, message in enumerate(converted)
+        if any(block.get("type") == "tool_result" for block in message["content"])
+    ]
+    assert result_message_indices == list(range(assistant_index + 1, assistant_index + 3))
     assert "openai" not in str(sent)
+
+    responses = OpenAIResponsesRuntime(SimpleNamespace(
+        provider_id="openai", runtime_id="openai_responses", default_api_variant="responses"
+    ))
+    responses_sent: List[Any] = []
+
+    class ResponsesSummaryRuntime:
+        descriptor = responses.descriptor
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            responses_sent.append(responses._convert_messages_to_input(
+                kwargs["messages"], include_tool_calls=True, context=kwargs["context"]
+            ))
+            return ProviderResult(messages=[ProviderMessage(role="assistant", content="summary")], raw_response=None)
+
+    claude_history = (
+        {"role": "assistant", "content": [{
+            "type": "tool_call", "call_id": "claude-image", "name": "view_image", "arguments": {},
+        }]},
+        AnthropicAdapter().create_tool_result_batch_message([{
+            "role": "user", "content": [{
+                "type": "tool_result", "tool_use_id": "claude-image", "content": [{
+                    "type": "image",
+                    "source": {"type": "base64", "media_type": "image/png", "data": "AA=="},
+                }],
+            }],
+        }]),
+    )
+    claude_summary = ConductorSummaryModel(
+        runtime=anthropic,
+        client="client", model="claude-sonnet-4-6", session_state=SessionState("ws", "image", {}),
+        agent_config={},
+        route_resolver=lambda route_id: (ResponsesSummaryRuntime(), "gpt-5.1-codex-mini"),
+    )
+    claude_summary.complete(SummaryRequest(
+        None, claude_history, 20, "summary", model="openai/gpt-5.1-codex-mini"
+    ))
+    assert {"type": "function_call_output", "call_id": "claude-image", "output": "[image removed]"} in responses_sent[0]
+    assert "AA==" not in str(responses_sent[0])
+
+    for case, include_content in (("missing", False), ("none", True)):
+        call_id = f"claude-{case}-content"
+        native_result = {"type": "tool_result", "tool_use_id": call_id}
+        if include_content:
+            native_result["content"] = None
+        request = ProviderRequest(
+            stream=False,
+            messages=[
+                {"role": "assistant", "tool_calls": [{
+                    "id": call_id, "type": "function",
+                    "function": {"name": "view_image", "arguments": "{}"},
+                }]},
+                {"role": "tool", "content": [
+                    {"type": "tool_result", "call_id": call_id, "content": "null"},
+                    {"type": "provider_replay", "provider_id": "anthropic",
+                     "schema_version": TOOL_RESULT_SCHEMA, "replay_scope": "same_provider",
+                     "payload": {"messages": [{"role": "user", "content": [native_result]}]}},
+                ]},
+            ],
+            tools=[],
+        )
+        assert request.messages[1]["content"][0]["content"] == "null"
+        claude_summary.complete(SummaryRequest(
+            None, request.messages, 20, "summary", model="openai/gpt-5.1-codex-mini"
+        ))
+        assert {
+            "type": "function_call_output", "call_id": call_id, "output": "null"
+        } in responses_sent[-1]

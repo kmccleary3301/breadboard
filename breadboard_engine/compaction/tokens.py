@@ -98,7 +98,7 @@ def estimate_message_tokens(message: Mapping[str, Any]) -> int:
             continue
         function = call.get("function") if isinstance(call.get("function"), Mapping) else call
         total += estimate_text_tokens(str(function.get("name") or ""))
-        arguments = function.get("arguments")
+        arguments = function.get("raw_arguments", function.get("arguments"))
         if isinstance(arguments, str):
             total += estimate_text_tokens(arguments)
         elif arguments is not None:

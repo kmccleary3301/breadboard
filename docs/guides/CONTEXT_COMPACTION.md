@@ -289,6 +289,11 @@ Persisted assistant `tool_calls` retain their `id` and explicit `raw_arguments`
 discriminator, so the next stateless request validates the same union without
 losing call/result pairing. Unmarked malformed calls remain rejected.
 
+Cross-provider summaries replace admitted raw calls and their correlated results
+with text observations, preserving the exact argument bytes. Ordinary calls stay
+paired native calls. Portable result images become placeholders, including images
+in Claude replay batches. Approximate token accounting charges raw argument text.
+
 The lane imports the same pre-run empty stock root session on both sides
 (`cli/cmd/import.ts:134-169`). That real source-created ID exists before either
 model request. `tools.stock_session_imports` is a runtime lane setting, never

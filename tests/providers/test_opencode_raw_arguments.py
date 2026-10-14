@@ -284,3 +284,15 @@ def test_raw_union_is_bounded_and_exclusive(raw):
             ProviderToolCall(id="call", name="bash", allow_raw_arguments=True, **arguments)
     copied = copy.deepcopy(block)
     assert copied == block
+
+
+def test_raw_history_arguments_contribute_to_context_budget():
+    from breadboard_engine.compaction.tokens import estimate_message_tokens
+
+    def history(raw):
+        return {"role": "assistant", "tool_calls": [
+            {"id": "raw", "name": "bash", "raw_arguments": raw},
+        ]}
+
+    short = '{"command":'
+    assert estimate_message_tokens(history(short + "x" * 10000)) - estimate_message_tokens(history(short)) == 2500

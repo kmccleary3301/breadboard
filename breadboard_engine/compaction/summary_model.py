@@ -13,6 +13,8 @@ import copy
 from contextlib import nullcontext
 from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from ..provider.anthropic_replay import is_tool_result_replay, replay_messages
+from ..provider.contract_messages import canonical_json
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
 from .images import IMAGE_PLACEHOLDER
@@ -48,30 +50,147 @@ def _api_of(runtime: Any) -> Tuple[Any, Any]:
     return getattr(descriptor, "provider_id", None), getattr(descriptor, "default_api_variant", None)
 
 
-def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
-    """Messages another provider's runtime accepts, for a summary routed off the turn's API.
+def _raw_tool_call(call: Any) -> Optional[Tuple[str, str, str]]:
+    if not isinstance(call, Mapping) or not isinstance(call.get("raw_arguments"), str):
+        return None
+    call_id = call.get("call_id") or call.get("id")
+    name = call.get("name")
+    if not isinstance(call_id, str) or not call_id or not isinstance(name, str) or not name:
+        return None
+    return call_id, name, call["raw_arguments"]
 
-    Same-provider replay (typed Responses output, Claude continuations, signed reasoning) is
-    read only by its own runtime: results become chat tool messages with their text,
-    reasoning and replay blocks are dropped, and provider-shaped images become a placeholder.
-    """
+
+def _raw_call_text(call_id: str, name: str, raw_arguments: str) -> Dict[str, str]:
+    return {
+        "type": "text",
+        "text": f"[Tool call {name}; call ID {call_id}; raw arguments]\n{raw_arguments}",
+    }
+
+
+def _result_entries(message: Mapping[str, Any]) -> List[Tuple[str, Any]]:
+    content = message.get("content")
+    if isinstance(content, list):
+        if any(isinstance(block, dict) and is_tool_result_replay(block) for block in content):
+            return [
+                (block["tool_use_id"], block.get("content"))
+                for native_message in replay_messages(content)
+                for block in native_message["content"]
+                if block.get("type") == "tool_result"
+            ]
+        entries = []
+        for block in content:
+            if not isinstance(block, Mapping) or block.get("type") != "tool_result":
+                continue
+            call_id = block.get("call_id") or block.get("tool_call_id")
+            if isinstance(call_id, str) and call_id:
+                entries.append((call_id, block.get("content")))
+        entries.extend(
+            (payload["call_id"], payload["output"])
+            for block in content
+            if isinstance(block, Mapping)
+            and block.get("type") == "provider_replay"
+            and block.get("schema_version") == "openai.responses.tool_output.v1"
+            and isinstance((payload := block.get("payload")), Mapping)
+            and isinstance(payload.get("call_id"), str) and payload["call_id"]
+            and "output" in payload
+        )
+        if entries:
+            return entries
+    call_id = message.get("tool_call_id")
+    if isinstance(call_id, str) and call_id:
+        return [(call_id, content)]
+    return [(call_id, content) for call_id in result_call_ids(message)]
+
+
+def _portable_result_text(content: Any) -> str:
+    if not isinstance(content, (str, list)):
+        content = canonical_json(content)
+    return "".join(
+        IMAGE_PLACEHOLDER if is_image_part(part) else str(part.get("text") or "")
+        for part in result_parts(content) if isinstance(part, Mapping)
+    )
+
+
+def _portable_messages(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Keep raw call observations textual while preserving ordinary tool protocol."""
     portable: List[Dict[str, Any]] = []
+    raw_call_messages: Dict[str, Dict[str, Any]] = {}
     for message in messages:
         content = message.get("content")
-        if not isinstance(content, list):
-            portable.append(dict(message))
-        elif answers_tool_call(message) and "tool_call_id" not in message:
-            results = [block for block in content if isinstance(block, Mapping) and block.get("type") == "tool_result"]
-            results = results or [{"call_id": call_id, "content": content} for call_id in result_call_ids(message)]
-            portable.extend({"role": "tool", "tool_call_id": result["call_id"], "content": "".join(
-                IMAGE_PLACEHOLDER if is_image_part(part) else str(part.get("text") or "")
-                for part in result_parts(result["content"]) if isinstance(part, Mapping))} for result in results)
-        else:
-            kept = [{"type": "text", "text": IMAGE_PLACEHOLDER} if isinstance(block, Mapping) and block.get("type") in {"image_url", "input_image", "image"}
-                    else block for block in content if not (
-                        isinstance(block, Mapping) and block.get("type") in {"thinking", "redacted_thinking", "provider_replay"})]
-            if kept or message.get("tool_calls"):
-                portable.append({**message, "content": kept})
+        if answers_tool_call(message):
+            ordinary_results = []
+            entries = _result_entries(message)
+            for call_id, result_content in entries:
+                result_text = _portable_result_text(result_content)
+                raw_message = raw_call_messages.get(call_id)
+                if raw_message is not None:
+                    raw_message["content"].append({
+                        "type": "text",
+                        "text": f"[Tool result for call ID {call_id}]\n{result_text}",
+                    })
+                else:
+                    ordinary_results.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": result_text,
+                    })
+            if entries:
+                portable.extend(ordinary_results)
+                continue
+
+        projected = dict(message)
+        raw_calls: List[Tuple[str, str, str]] = []
+        if isinstance(content, list):
+            kept = []
+            for block in content:
+                raw_call = (
+                    _raw_tool_call(block)
+                    if message.get("role") == "assistant" and isinstance(block, Mapping)
+                    and block.get("type") == "tool_call"
+                    else None
+                )
+                if raw_call is not None:
+                    raw_calls.append(raw_call)
+                    kept.append(_raw_call_text(*raw_call))
+                elif isinstance(block, Mapping) and block.get("type") in {
+                    "image_url", "input_image", "image"
+                }:
+                    kept.append({"type": "text", "text": IMAGE_PLACEHOLDER})
+                elif not (
+                    isinstance(block, Mapping)
+                    and block.get("type") in {"thinking", "redacted_thinking", "provider_replay"}
+                ):
+                    kept.append(block)
+            projected["content"] = kept
+
+        if message.get("role") == "assistant" and isinstance(message.get("tool_calls"), list):
+            tool_calls = message["tool_calls"]
+            ordinary_calls = []
+            for call in tool_calls:
+                raw_call = _raw_tool_call(call)
+                if raw_call is None:
+                    ordinary_calls.append(call)
+                    continue
+                raw_calls.append(raw_call)
+                if not isinstance(projected.get("content"), list):
+                    projected["content"] = (
+                        [{"type": "text", "text": content}] if isinstance(content, str) and content else []
+                    )
+                projected["content"].append(_raw_call_text(*raw_call))
+            if len(ordinary_calls) != len(tool_calls):
+                if ordinary_calls:
+                    projected["tool_calls"] = ordinary_calls
+                else:
+                    projected.pop("tool_calls", None)
+
+        keep_message = (
+            bool(projected.get("content") or message.get("tool_calls"))
+            if isinstance(content, list) else True
+        )
+        if keep_message:
+            portable.append(projected)
+            for call_id, _, _ in raw_calls:
+                raw_call_messages[call_id] = projected
     return portable
 
 
