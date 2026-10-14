@@ -79,8 +79,8 @@ def result_text(content: Any) -> str:
                    if isinstance(part, Mapping) and part.get("type") == "text" and isinstance(part.get("text"), str))
 
 
-def anthropic_replay_result_parts(message: Message) -> Optional[List[Any]]:
-    """Return validated native Anthropic tool-result content, or ``None`` when unavailable."""
+def anthropic_replay_result_groups(message: Message) -> Optional[List[Tuple[str, List[Any]]]]:
+    """Return validated native Anthropic results grouped by call ID, or ``None`` when unavailable."""
     content = message.get("content")
     if not isinstance(content, (list, tuple)):
         return None
@@ -106,13 +106,16 @@ def anthropic_replay_result_parts(message: Message) -> Optional[List[Any]]:
     ):
         return None
 
-    parts = []
+    groups = []
     for result in native_results:
+        result_call_id = result.get("tool_use_id")
+        if not isinstance(result_call_id, str):
+            return None
         result_content = result.get("content")
         if not isinstance(result_content, (str, list)):
             result_content = canonical_json(result_content)
-        parts.extend(result_parts(result_content))
-    return parts or None
+        groups.append((result_call_id, result_parts(result_content)))
+    return groups if any(parts for _, parts in groups) else None
 
 
 def rewrite_result_content(

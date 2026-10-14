@@ -675,12 +675,12 @@ def build_restricted_process_command(
             ),
             *authorized_provider_roots,
             *stock_read_roots,
-            *worktree_read_roots,
         )
+        read_data_roots = worktree_read_roots
         if any(
             _paths_overlap(protected_path, read_root)
             for protected_path in effective_protected
-            for read_root in read_roots
+            for read_root in (*read_roots, *read_data_roots)
         ):
             raise ProcessIsolationUnavailable(
                 "protected credential location overlaps a Linux read root"
@@ -710,6 +710,8 @@ def build_restricted_process_command(
         ]
         for read_root in read_roots:
             wrapper.extend(("--read-root", str(read_root)))
+        for read_data_root in read_data_roots:
+            wrapper.extend(("--read-data-root", str(read_data_root)))
         for write_root in provider_write_roots:
             wrapper.extend(("--write-root", str(write_root)))
         for launcher in trusted_launcher_paths:

@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
-from .transcript import anthropic_replay_result_parts, result_call_ids, result_text
+from .transcript import anthropic_replay_result_groups, result_call_ids, result_text
 
 TOOL_RESULT_MAX_CHARS = 2000
 
@@ -185,8 +185,8 @@ def serialize_conversation(
             call_ids = result_call_ids(msg) or (msg.get("toolCallId"),)
             if all(call_id in useless_call_ids for call_id in call_ids):
                 continue
-            native_parts = anthropic_replay_result_parts(msg)
-            if native_parts is None:
+            native_groups = anthropic_replay_result_groups(msg)
+            if native_groups is None:
                 text = result_text(msg.get("content"))
             else:
                 text = "".join(
@@ -196,6 +196,7 @@ def serialize_conversation(
                     else "[image]"
                     if isinstance(part, Mapping) and part.get("type") == "image"
                     else ""
+                    for _, native_parts in native_groups
                     for part in native_parts
                 )
             if text:

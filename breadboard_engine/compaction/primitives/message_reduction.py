@@ -8,7 +8,7 @@ from typing import Any, Mapping
 from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
 from ..params import Params
 from ..state import MessageEdit
-from ..transcript import rewrite_result_content
+from ..transcript import anthropic_replay_result_groups, rewrite_result_content
 from .chat_reducers import summary_request_options
 from .protected_windows import visible_messages
 from .reducers import Reduction, resolve_prompt
@@ -19,6 +19,35 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
     """Normalize text and replace user image/PDF parts without retaining tool attachments."""
     result = copy.deepcopy(dict(message))
     content = result.get("content")
+    if strip_media and result.get("role") in {"tool", "tool_result"} and isinstance(content, list):
+        native_groups = anthropic_replay_result_groups(message)
+        if native_groups is not None:
+            canonical_results = [
+                (index, part) for index, part in enumerate(content)
+                if isinstance(part, Mapping) and part.get("type") == "tool_result"
+            ]
+            native_call_ids = [call_id for call_id, _ in native_groups]
+            canonical_call_ids = [part.get("call_id") for _, part in canonical_results]
+            if (
+                len(canonical_results) == len(native_groups)
+                and all(isinstance(call_id, str) for call_id in native_call_ids + canonical_call_ids)
+                and len(set(native_call_ids)) == len(native_call_ids)
+                and len(set(canonical_call_ids)) == len(canonical_call_ids)
+                and set(native_call_ids) == set(canonical_call_ids)
+            ):
+                projected_by_id = {
+                    call_id: model_message(
+                        {"role": "user", "content": native_parts},
+                        strip_media=True,
+                    )["content"]
+                    for call_id, native_parts in native_groups
+                }
+                for index, part in canonical_results:
+                    content[index] = {
+                        **part,
+                        "content": projected_by_id[part["call_id"]],
+                    }
+
     if isinstance(content, str):
         if result.get("role") not in {"tool", "tool_result"}:
             result["content"] = [{"type": "text", "text": content}]
@@ -31,6 +60,13 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
             continue
         kind = part.get("type")
         mime = part.get("mediaType") or part.get("mime")
+        if kind in {"image", "document"} and not mime:
+            source = part.get("source")
+            if isinstance(source, Mapping):
+                source_mime = source.get("media_type")
+                mime = source_mime if isinstance(source_mime, str) and source_mime else (
+                    "application/pdf" if kind == "document" else None
+                )
         if kind in {"image_url", "image", "input_image"} and not mime:
             image = part.get("image_url") or {}
             url = image.get("url", "") if isinstance(image, Mapping) else str(image)

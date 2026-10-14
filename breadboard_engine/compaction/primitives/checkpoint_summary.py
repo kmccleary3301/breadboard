@@ -3,7 +3,7 @@
 import re
 
 from ..methods import MethodUnavailable, SummaryRequest
-from ..transcript import anthropic_replay_result_parts, result_call_ids, result_parts
+from ..transcript import anthropic_replay_result_groups, result_call_ids, result_parts
 from .protected_windows import visible_messages
 
 
@@ -47,9 +47,11 @@ class CheckpointSummary:
             if isinstance(content, (list, tuple)):
                 blocks = content
                 if role in ("tool", "tool_result"):
-                    blocks = anthropic_replay_result_parts(message)
-                    if blocks is None:
+                    groups = anthropic_replay_result_groups(message)
+                    if groups is None:
                         blocks = result_parts(list(content) if isinstance(content, tuple) else content)
+                    else:
+                        blocks = [part for _, native_parts in groups for part in native_parts]
                 content = "\n".join(p if isinstance(p, str) else str(p.get("text") or "[image]") for p in blocks)
             content = re.sub(r"MEDIA:\S+", "[media attachment]", str(content))
             if role == "assistant":
