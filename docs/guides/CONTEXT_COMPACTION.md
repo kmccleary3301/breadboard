@@ -520,6 +520,13 @@ system messages, the existing coding-assistant default remains.
 Reset-context summaries stay in user input, not instructions. Later native
 boundaries preserve that reset rather than restoring the discarded system head.
 
+OpenAI request sizing includes rendered `instructions` as well as native input
+items. For a known positive context window, trailing tool outputs may be shortened
+to leave room for those instructions. Encrypted native reasoning and compaction
+payloads use the shared encoded-size estimate and are never truncated; if the
+input and instructions cannot fit together, compaction is rejected before posting.
+
+
 Runtimes without a compaction port get the plain-text summary instead, and a
 model fallback route gets the history projected for its own target. Session
 snapshots include `compaction_state` once a record exists. Persisted Product

@@ -21,7 +21,7 @@ from ..methods import (
 from ...provider.contract_messages import normalize_provider_replay
 from ...provider.contract_runtime import ProviderRuntimeContext
 from ...provider.input_media import resolve_input_media
-from ..primitives.byte_estimator import bytes4
+from ..primitives.byte_estimator import bytes4, text_tokens
 from ..primitives.protected_windows import visible_messages
 from ..settings import V2_RETAINED_MESSAGE_TOKEN_BUDGET
 from ..state import NATIVE_MARKER_KEY, NativeCompaction
@@ -367,6 +367,11 @@ def _estimate_input_tokens(input_items: Sequence[Mapping[str, Any]]) -> int:
             args = item.get("arguments")
             if isinstance(args, str):
                 tokens += _approx_token_count(args)
+        elif (
+            itype in ("reasoning", "compaction", "compaction_summary", "context_compaction")
+            and isinstance(item.get("encrypted_content"), str)
+        ):
+            tokens += max(20, bytes4([item]))
         else:
             tokens += 20
     return tokens
@@ -552,15 +557,6 @@ class OpenAIResponsesCompactionPort:
         if not native_history:
             raise MethodUnavailable("Native history construction produced no items")
 
-        # Trim oversized trailing outputs to context window
-        trimmed = trim_remote_compaction_input_to_context_window(
-            native_history, context.context_window
-        )
-        if not trimmed["fits"]:
-            raise MethodUnavailable(
-                f"Remote compaction input exceeds context window: {trimmed['estimated_tokens_after']} > {context.context_window}"
-            )
-        input_items = trimmed["input"]
         instructions = context.custom_instructions
         if not instructions and head:
             from ...provider.runtimes.openai.conversion import OpenAIConversionMixin
@@ -569,6 +565,31 @@ class OpenAIResponsesCompactionPort:
                 projected_messages[:head]
             )
         instructions = instructions or "You are a helpful coding assistant."
+
+        # Instructions share the context window with the compacted input.
+        input_context_window = context.context_window
+        instruction_tokens = 0
+        if input_context_window is not None and input_context_window > 0:
+            instruction_tokens = text_tokens(instructions)
+            input_context_window -= instruction_tokens
+            if input_context_window <= 0:
+                raise MethodUnavailable(
+                    "Remote compaction instructions leave no input budget: "
+                    f"{instruction_tokens} tokens for {context.context_window}-token context"
+                )
+
+        trimmed = trim_remote_compaction_input_to_context_window(
+            native_history, input_context_window
+        )
+        if not trimmed["fits"]:
+            combined_tokens = trimmed["estimated_tokens_after"] + instruction_tokens
+            raise MethodUnavailable(
+                "Remote compaction input and instructions exceed context window: "
+                f"{combined_tokens} > {context.context_window} "
+                f"({trimmed['estimated_tokens_after']} input + "
+                f"{instruction_tokens} instructions)"
+            )
+        input_items = trimmed["input"]
 
         v1_url, v2_url = self._resolve_endpoints()
         used_v2 = False
