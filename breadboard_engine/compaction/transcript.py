@@ -85,9 +85,9 @@ def media_placeholder(part: Any, *, image_label: Optional[str] = "[image]") -> O
     if not isinstance(part, Mapping):
         return None
     kind = part.get("type")
-    image_kinds = ("image", "image_url", "input_image")
+    is_image = is_image_part(part)
     if image_label is not None:
-        if kind in image_kinds:
+        if is_image:
             return image_label
         if kind != "document":
             return None
@@ -99,17 +99,20 @@ def media_placeholder(part: Any, *, image_label: Optional[str] = "[image]") -> O
         return f"[Attached {mime}: {part.get('filename') or 'file'}]"
 
     mime = part.get("mediaType") or part.get("mime")
-    if kind in {"image", "document"} and not mime:
+    if not isinstance(mime, str) or not mime:
+        mime = None
         source = part.get("source")
-        source = source if isinstance(source, Mapping) else {}
-        source_mime = source.get("media_type")
-        mime = source_mime if isinstance(source_mime, str) and source_mime else (
-            "application/pdf" if kind == "document" else None
-        )
-    if kind in image_kinds and not mime:
+        if isinstance(source, Mapping):
+            source_mime = source.get("media_type") or source.get("mime")
+            if isinstance(source_mime, str) and source_mime:
+                mime = source_mime
+    if not mime and kind == "document":
+        mime = "application/pdf"
+    elif not mime and is_image:
         image = part.get("image_url") or {}
-        url = image.get("url", "") if isinstance(image, Mapping) else str(image)
-        match = re.match(r"data:([^;,]+)", url) if isinstance(url, str) else None
+        url = image.get("url", "") if isinstance(image, Mapping) else (image if isinstance(image, str) else "")
+        target = url or part.get("uri") or part.get("url") or ""
+        match = re.match(r"data:([^;,]+)", target) if isinstance(target, str) else None
         mime = match.group(1) if match else "image/png"
     if isinstance(mime, str) and (mime.startswith("image/") or mime == "application/pdf"):
         return f"[Attached {mime}: {part.get('filename') or 'file'}]"

@@ -749,3 +749,35 @@ def test_queued_replay_reminder_expires_when_canonical_history_advances(preset, 
     texts = [part["text"] for item in payload["input"] for part in item.get("content", []) if isinstance(part, dict) and "text" in part]
     assert original in texts
     assert all("<system-reminder>" not in text for text in texts)
+
+
+@pytest.mark.parametrize("preset", PRESETS)
+def test_summary_request_strips_canonical_media_attachment(preset):
+    state = SessionState("ws", "image", {})
+    canonical_media = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:" + "a" * 64,
+    }
+    state.add_message({
+        "role": "user",
+        "content": [{"type": "text", "text": "Inspect canonical attachment"}, canonical_media],
+    })
+    state.add_message({"role": "assistant", "content": "Done inspection."})
+    state.add_message({"role": "user", "content": "Continue"})
+    state.add_message({"role": "assistant", "content": "Continuing."})
+
+    original_history = copy.deepcopy(state.provider_messages)
+    runtime = FakeRuntime()
+    outcome = CompactionController({"compaction": {"enabled": True, "preset": preset}}).compact_now(
+        state, target=_target(), runtime=runtime, client=object(),
+    )
+    assert outcome.compacted, outcome.stages
+    assert len(runtime.summary_requests) == 1
+    req = runtime.summary_requests[0]
+    user_message = next(msg for msg in req if msg["role"] == "user")
+    assert user_message["content"] == [
+        {"type": "text", "text": "Inspect canonical attachment"},
+        {"type": "text", "text": "[Attached image/png: file]"},
+    ]
+    assert state.provider_messages == original_history

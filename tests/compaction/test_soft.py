@@ -300,3 +300,25 @@ def test_soft_compaction_summarizes_typed_tool_results():
 
     assert all(text in sent for text in ("TYPED_TOOL_OUTPUT", "CANONICAL_RESULT", "[Attached application/pdf: report.pdf]"))
     assert "REPORT_PDF_CANARY" not in sent and "base64" not in sent
+
+
+def test_soft_compaction_summarizes_canonical_media_attachment():
+    canonical_media = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:" + "a" * 64,
+    }
+    messages = [
+        {"role": "system", "content": "system prompt"},
+        {"role": "user", "content": [{"type": "text", "text": "Inspect canonical attachment"}, canonical_media]},
+        {"role": "assistant", "content": "Inspecting image"},
+        {"role": "user", "content": "What did it show?" + " context " * 20},
+        {"role": "assistant", "content": "An image" + " context " * 20},
+    ]
+    summarizer = FakeSummaryModel(responses=["Summary", "Short"])
+    ctx = _make_context(messages, summarizer=summarizer)
+
+    omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
+    sent = "".join(m["content"] for request in summarizer.requests for m in request.messages)
+    assert "[User]: Inspect canonical attachment[image]" in sent
+    assert "attachment://" not in sent
