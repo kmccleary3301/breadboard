@@ -63,6 +63,28 @@ def test_build_openai_native_history_formats():
     assert items[3]["output"] == "file1.py\nfile2.py"
 
 
+def test_build_openai_native_history_preserves_raw_and_legacy_arguments():
+    raw_arguments = '{"command": "echo", "invalid": }'
+    legacy_arguments = '{ "command" : "pwd" }'
+    items = build_openai_native_history([{
+        "role": "assistant",
+        "tool_calls": [
+            {"id": "call_raw", "name": "bash", "raw_arguments": raw_arguments},
+            {
+                "id": "call_legacy",
+                "function": {"name": "legacy_shell", "arguments": legacy_arguments},
+            },
+        ],
+    }], "gpt-5")
+
+    assert items == [
+        {"type": "function_call", "call_id": "call_raw", "name": "bash",
+         "arguments": raw_arguments},
+        {"type": "function_call", "call_id": "call_legacy", "name": "legacy_shell",
+         "arguments": legacy_arguments},
+    ]
+
+
 def test_authorized_canonical_media_encoded_in_remote_history(tmp_path):
     from breadboard.product.runtime.artifacts import ArtifactStore
 
@@ -634,6 +656,79 @@ def test_sdk_client_requests_are_authenticated_and_use_the_configured_base_url(v
 
     assert [(r.url.host, r.url.path) for r in seen] == [("api.example.test", path)]
     assert seen[0].headers["authorization"] == "Bearer sk-test"
+
+@pytest.mark.parametrize(
+    ("v2", "custom_instructions", "expected_instructions"),
+    [
+        (
+            True, None,
+            "Active Codex policy: preserve user data.\n\nFollow repository instructions.",
+        ),
+        (
+            False, None,
+            "Active Codex policy: preserve user data.\n\nFollow repository instructions.",
+        ),
+        (True, "Explicit caller instructions.", "Explicit caller instructions."),
+        (False, "Explicit caller instructions.", "Explicit caller instructions."),
+    ],
+)
+def test_sdk_compaction_instructions_preserve_policy_and_precedence(
+    v2, custom_instructions, expected_instructions
+):
+    import httpx
+    import openai
+
+    seen = []
+    system_messages = [
+        {"role": "system", "content": "Active Codex policy: preserve user data."},
+        {"role": "system", "content": [
+            {"type": "text", "text": "Follow "},
+            {"type": "output_text", "text": "repository instructions."},
+        ]},
+        {"role": "system", "content": ""},
+    ]
+
+    def handler(request):
+        seen.append(request)
+        item = {"type": "compaction", "encrypted_content": "enc"}
+        if request.url.path == "/v1/responses":
+            body = (
+                'data: {"type": "response.output_item.done", "item": %s}\n\n'
+                'data: {"type": "response.completed", "response": {}}\n\n'
+            ) % json.dumps(item)
+            return httpx.Response(
+                200, text=body, headers={"content-type": "text/event-stream"}
+            )
+        return httpx.Response(200, json={"output": [item]})
+
+    client = openai.OpenAI(
+        api_key="sk-test",
+        base_url="https://api.example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    messages = [
+        *system_messages,
+        {"role": "user", "content": "Inspect the code."},
+        {"role": "assistant", "content": "I will inspect the code."},
+    ]
+    context = CompactionContext(
+        messages=messages,
+        state=CompactionState(),
+        settings=settings_from_config({
+            "enabled": True,
+            "remote_streaming_v2_enabled": v2,
+        }),
+        reason="threshold",
+        target=ProjectionTarget("openai", "responses", "gpt-5"),
+        context_window=8000,
+        tokens_before=100,
+        custom_instructions=custom_instructions,
+    )
+    OpenAIResponsesCompactionPort(client=client, model="gpt-5").compact(context)
+
+    expected_path = "/v1/responses" if v2 else "/v1/responses/compact"
+    assert [(request.url.path, json.loads(request.content)["instructions"])
+            for request in seen] == [(expected_path, expected_instructions)]
 
 
 def test_native_pass_after_a_native_boundary_sends_edited_kept_messages():

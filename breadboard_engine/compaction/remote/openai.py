@@ -42,6 +42,23 @@ CONTEXTUAL_USER_PREFIXES = (
     "<model_switch>",
 )
 
+def _leading_system_instructions(
+    projected_messages: Sequence[Mapping[str, Any]],
+) -> Optional[str]:
+    """Use the same content conversion and joining as the Responses runtime."""
+    if not projected_messages:
+        return None
+
+    from ...provider.runtimes.openai.conversion import OpenAIConversionMixin
+
+    converter = OpenAIConversionMixin()
+    parts = []
+    for message in projected_messages:
+        text = converter._message_content_to_text(message.get("content"))
+        if text:
+            parts.append(text)
+    return "\n\n".join(parts) if parts else None
+
 
 def format_remote_compaction_summary(input_tokens: int) -> str:
     """OMP formatRemoteCompactionSummary."""
@@ -294,9 +311,15 @@ def build_openai_native_history(
                 if call_id in native_calls:
                     input_items.append(native_calls.pop(call_id))
                     continue
-                func = call.get("function") or {}
-                name = func.get("name") if isinstance(func, Mapping) else call.get("name")
-                args = func.get("arguments") if isinstance(func, Mapping) else call.get("arguments")
+                func = call.get("function")
+                if isinstance(func, Mapping):
+                    name = func.get("name")
+                    args = func.get("arguments")
+                else:
+                    name = call.get("name")
+                    args = call.get("raw_arguments")
+                    if args is None:
+                        args = call.get("arguments")
                 if not isinstance(args, str):
                     args = json.dumps(args if args is not None else {})
                 input_items.append({
@@ -526,6 +549,7 @@ class OpenAIResponsesCompactionPort:
 
     def compact(self, context: CompactionContext) -> CompactionRecord:
         head = leading_system_count(context.messages)
+        projected_messages = context.projected()
         prev_replacement: Optional[Sequence[Mapping[str, Any]]] = None
         boundary = context.state._active_boundary(context.target)
         if context.native_retention is None and boundary and boundary.native and boundary.native.usable_for(context.target):
@@ -533,7 +557,7 @@ class OpenAIResponsesCompactionPort:
             remote_messages = visible_messages(context)[boundary.first_kept_index:]
         else:
             # The view the route reads: a readable boundary's summary and kept messages, or the history.
-            remote_messages = context.projected()[head:]
+            remote_messages = projected_messages[head:]
 
         if not remote_messages:
             raise MethodUnavailable("No messages to compact")
@@ -554,7 +578,11 @@ class OpenAIResponsesCompactionPort:
                 f"Remote compaction input exceeds context window: {trimmed['estimated_tokens_after']} > {context.context_window}"
             )
         input_items = trimmed["input"]
-        instructions = context.custom_instructions or "You are a helpful coding assistant."
+        instructions = (
+            context.custom_instructions
+            or _leading_system_instructions(projected_messages[:head])
+            or "You are a helpful coding assistant."
+        )
 
         v1_url, v2_url = self._resolve_endpoints()
         used_v2 = False

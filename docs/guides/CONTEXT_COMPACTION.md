@@ -513,6 +513,11 @@ native tool outputs.
 
 Native remote payloads (OpenAI compaction items, Anthropic compaction blocks)
 are replayed only to the same provider, API and model that produced them.
+On both OpenAI Responses compaction routes, leading projected system messages
+are sent as `instructions`, converted like ordinary Responses messages and
+joined by blank lines. Nonempty `custom_instructions` takes precedence; without
+system messages, the existing coding-assistant default remains.
+
 Runtimes without a compaction port get the plain-text summary instead, and a
 model fallback route gets the history projected for its own target. Session
 snapshots include `compaction_state` once a record exists. Persisted Product
@@ -532,7 +537,8 @@ Unsupported native side blocks fail cross-API projection instead of disappearing
 same-API continuations remain native.
 Image detail is retained for destination codecs that support it.
 Malformed raw arguments and their results remain textual observations rather
-than invented JSON calls. Portable summary requests use image placeholders;
+than invented JSON calls; OpenAI native history retains admitted raw argument
+text verbatim. Portable summary requests use image placeholders;
 main fallback requests retain the images. Neither path rewrites source history.
 
 A local summary starts after the latest readable boundary, so it also covers
