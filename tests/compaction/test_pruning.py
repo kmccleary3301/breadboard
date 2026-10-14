@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Dict, List, Mapping, Optional
 import pytest
 
@@ -17,10 +18,14 @@ from breadboard_engine.compaction.pruning import (
     read_tool_supersede_key,
 )
 from breadboard_engine.compaction.settings import settings_from_config
-from breadboard_engine.compaction.state import CompactionState, ProjectionTarget
+from breadboard_engine.compaction.state import CompactionState, MessageEdit, ProjectionTarget
+from breadboard_engine.compaction.params import BuildEnv, Params
+from breadboard_engine.compaction.primitives.observation_edits import DuplicateToolResults
+from breadboard_engine.compaction.primitives.selectors import Selection
 from breadboard_engine.compaction.tokens import estimate_message_tokens
 from breadboard_engine.compaction.transcript import check_tool_pairing
 from breadboard_engine.provider.adapters import AnthropicAdapter
+from breadboard_engine.provider.anthropic_replay import replay_messages
 from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
 TARGET = ProjectionTarget("openai", "responses", "gpt-x")
@@ -473,3 +478,188 @@ def test_prune_persistence_across_state_roundtrip():
 
     assert live_view == restored_view
     assert check_tool_pairing(restored_view) is None
+
+
+# -----------------------------------------------------------------------------
+# DuplicateToolResults consumer-visible regressions
+# -----------------------------------------------------------------------------
+
+
+def _duplicate_reducer(min_chars: int = 100) -> DuplicateToolResults:
+    return DuplicateToolResults(Params(
+        {"min_chars": min_chars, "placeholder": "[duplicate tool result]"},
+        "test.duplicate",
+        BuildEnv(None),
+    ))
+
+
+def test_duplicate_tool_results_prunes_anthropic_batch_and_preserves_unique_replay_results():
+    duplicate_text = "same native result " * 150
+    unique_text = "unique native result " * 150
+    structured_result = [
+        {"type": "text", "text": duplicate_text},
+        {"type": "image", "source": {
+            "type": "base64", "media_type": "image/png", "data": "AA==",
+        }},
+    ]
+    call_ids = ["c1", "c2", "c3", "c4"]
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "bash", "arguments": {}}}
+            for call_id in call_ids
+        ],
+    }
+    native_results = [{
+        "role": "user",
+        "content": [
+            {
+                "type": "tool_result", "tool_use_id": "c1", "content": duplicate_text,
+                "is_error": True, "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "tool_result", "tool_use_id": "c2",
+                "content": [{"type": "text", "text": duplicate_text}],
+                "is_error": True, "cache_control": {"type": "ephemeral"},
+            },
+            {"type": "tool_result", "tool_use_id": "c3", "content": unique_text},
+            {"type": "tool_result", "tool_use_id": "c4", "content": structured_result},
+        ],
+    }]
+    carrier = AnthropicAdapter().create_tool_result_batch_message(native_results)
+    messages = [{"role": "user", "content": "before"}, assistant, carrier]
+    context = _context(messages)
+    context.state.append(
+        context.new_record(method="prior", edits=(
+            MessageEdit(0, {"role": "user", "content": "[already edited]"}),
+        )),
+        messages,
+    )
+    original_messages = deepcopy(messages)
+
+    reduction = _duplicate_reducer().reduce(context, Selection(targets=(2,)))
+    assert [edit.index for edit in reduction.edits] == [2]
+    context.state.append(
+        context.new_record(method="duplicate_tool_results", edits=reduction.edits),
+        messages,
+    )
+    visible = context.state.project(messages, TARGET)
+
+    assert messages == original_messages
+    assert visible[0]["content"] == "[already edited]"
+    assert check_tool_pairing(visible) is None
+    projected_carrier = visible[2]
+    canonical = [
+        block for block in projected_carrier["content"]
+        if block.get("type") == "tool_result"
+    ]
+    assert [block["call_id"] for block in canonical] == call_ids
+    canonical_by_call = {block["call_id"]: block for block in canonical}
+    assert canonical_by_call["c1"]["content"] == "[duplicate tool result]"
+    assert canonical_by_call["c1"]["is_error"] is True
+    assert canonical_by_call["c2"]["content"] != "[duplicate tool result]"
+    assert canonical_by_call["c3"]["content"] == unique_text
+    assert canonical_by_call["c4"]["content"] != "[duplicate tool result]"
+
+    replayed = replay_messages(projected_carrier["content"])[0]["content"]
+    assert [result["tool_use_id"] for result in replayed] == call_ids
+    assert replayed[0]["content"] == "[duplicate tool result]"
+    assert replayed[0]["is_error"] is True
+    assert replayed[0]["cache_control"] == {"type": "ephemeral"}
+    assert replayed[1]["content"] == [{"type": "text", "text": duplicate_text}]
+    assert replayed[2]["content"] == unique_text
+    assert replayed[3]["content"] == structured_result
+
+
+def test_duplicate_tool_results_preserve_structured_order_and_distinct_payloads():
+    text = "same visible text " * 150
+    image_a = {"type": "input_image", "image_url": {"url": "data:image/png;base64,AAAA"}}
+    image_b = {"type": "input_image", "image_url": {"url": "data:image/png;base64,BBBB"}}
+    text_part = {"type": "input_text", "text": text}
+    first = responses_image_tool_result_message("c1", [text_part, image_a])
+    reordered = responses_image_tool_result_message("c2", [image_a, text_part])
+    different_image = responses_image_tool_result_message("c3", [text_part, image_b])
+    call_ids = ("c1", "c2", "c3")
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": {}}}
+            for call_id in call_ids
+        ],
+    }
+    messages = [assistant, first, reordered, different_image]
+    original_messages = deepcopy(messages)
+
+    with pytest.raises(MethodUnavailable, match="No duplicate tool results"):
+        _duplicate_reducer().reduce(_context(messages), Selection(targets=(1, 2, 3)))
+
+    assert messages == original_messages
+
+
+def test_duplicate_tool_results_keeps_legacy_threshold_placeholder_and_latest_behavior():
+    short_text = "short"
+    repeated_text = "legacy duplicate output " * 20
+    call_ids = ["short-1", "short-2", "long-1", "long-2"]
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "bash", "arguments": {}}}
+            for call_id in call_ids
+        ],
+    }
+    messages = [
+        {"role": "user", "content": "before"},
+        assistant,
+        {"role": "tool", "tool_call_id": "short-1", "content": short_text},
+        {"role": "tool", "tool_call_id": "short-2", "content": short_text},
+        {"role": "tool", "tool_call_id": "long-1", "content": repeated_text},
+        {"role": "tool", "tool_call_id": "long-2", "content": repeated_text},
+    ]
+    context = _context(messages)
+    context.state.append(
+        context.new_record(method="prior", edits=(
+            MessageEdit(0, {"role": "user", "content": "[already edited]"}),
+        )),
+        messages,
+    )
+    original_messages = deepcopy(messages)
+
+    reduction = _duplicate_reducer(min_chars=100).reduce(context, Selection(targets=(2, 3, 4, 5)))
+    assert [(edit.index, edit.message["content"]) for edit in reduction.edits] == [
+        (4, "[duplicate tool result]"),
+    ]
+    context.state.append(
+        context.new_record(method="duplicate_tool_results", edits=reduction.edits),
+        messages,
+    )
+    visible = context.state.project(messages, TARGET)
+
+    assert messages == original_messages
+    assert visible[0]["content"] == "[already edited]"
+    assert visible[2]["content"] == short_text
+    assert visible[3]["content"] == short_text
+    assert visible[4]["content"] == "[duplicate tool result]"
+    assert visible[5]["content"] == repeated_text
+    assert check_tool_pairing(visible) is None
+
+
+def test_duplicate_tool_results_is_unavailable_without_an_eligible_duplicate():
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "bash", "arguments": {}}}
+            for call_id in ("c1", "c2")
+        ],
+    }
+    messages = [
+        assistant,
+        {"role": "tool", "tool_call_id": "c1", "content": "short"},
+        {"role": "tool", "tool_call_id": "c2", "content": "short"},
+    ]
+
+    with pytest.raises(MethodUnavailable, match="No duplicate tool results"):
+        _duplicate_reducer(min_chars=100).reduce(_context(messages), Selection(targets=(1, 2)))

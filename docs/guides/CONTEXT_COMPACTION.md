@@ -208,8 +208,11 @@ full request parity until the report passes.
 
 Accepts `threshold`, `context_length`, `max_tokens`, `threshold_tokens`,
 `protect_first_n`, `protect_last_n`, `tail_mode`, `min_tail_user_messages`
-and `target_ratio`. Prunes duplicate tool results, selects a decaying protected
-prefix/tail, and writes checkpoint summaries with alternation-safe carriers.
+and `target_ratio`. Prunes repeated raw-string, canonical and typed tool results
+across OpenAI Responses and Anthropic replay carriers. It retains unique
+structured batch siblings and rewrites matching native replay results in sync.
+It selects a decaying protected prefix/tail and writes checkpoint summaries
+with alternation-safe carriers.
 Merged carrier facts live in the ledger, not provider messages. Empty and
 length-truncated summaries fail explicitly. Overflow compacts and retries.
 Captured compressor helpers do not establish parity with the whole agent.
