@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, ContextManager, Dict, List, Mapping, Optional, Sequence
 from ..execution.stock_driver import StockDriver
 from ..provider.contract_runtime import ProviderRuntimeContext
+from ..provider.history_projection import portable_provider_messages
 
 from .methods import (
     CompactionCancelled,
@@ -846,24 +847,48 @@ def projection_target_for(runtime: Optional[Any], model: Any) -> ProjectionTarge
 
 
 def reproject_for_route(
-    messages: List[Dict[str, Any]], session_state: Any, *, runtime: Any, model: str,
+    messages: List[Dict[str, Any]],
+    session_state: Any,
+    *,
+    source_runtime: Any,
+    source_model: str,
+    runtime: Any,
+    model: str,
 ) -> List[Dict[str, Any]]:
-    """Rebuild a request for another route when it carries a native boundary only its own target reads."""
-    marker = next((index for index, message in enumerate(messages) if NATIVE_MARKER_KEY in message), None)
-    if marker is None:
-        return messages
+    """Select the destination compaction view, then make foreign replay portable."""
+    source = projection_target_for(source_runtime, source_model)
     target = projection_target_for(runtime, model)
-    state: CompactionState = session_state.compaction_state
-    record_id = messages[marker][NATIVE_MARKER_KEY]["record_id"]
-    native = next(record for record in state.records if record.record_id == record_id)
-    if native.native is not None and native.native.usable_for(target):
-        return messages
-    # After the marker the request is history[start:] as decorated for this turn; keep that tail.
-    history = session_state.provider_messages
-    start = int(native.first_kept_index)
-    keep = max(start, state.kept_start(history, target))
-    view = state.project(history, target)
-    systems = leading_system_count(view)
-    head = messages[:leading_system_count(messages)] or view[:systems]
-    rebuilt = head + view[systems:len(view) - (len(history) - keep)] + messages[marker + 1 + keep - start:]
-    return rebuilt if callable(getattr(runtime, "compaction_port", None)) else strip_native_markers(rebuilt)
+    rebuilt = messages
+    marker = next((index for index, message in enumerate(messages) if NATIVE_MARKER_KEY in message), None)
+    if marker is not None:
+        state: CompactionState = session_state.compaction_state
+        record_id = messages[marker][NATIVE_MARKER_KEY]["record_id"]
+        native = next(record for record in state.records if record.record_id == record_id)
+        if not (
+            source == target
+            and native.native is not None
+            and native.native.usable_for(target)
+        ):
+            # Rebuild from append-only history so a fallback can recover facts
+            # covered by a native boundary that only the source route reads.
+            history = session_state.provider_messages
+            start = int(native.first_kept_index)
+            keep = max(start, state.kept_start(history, target))
+            view = state.project(history, target)
+            systems = leading_system_count(view)
+            head = messages[:leading_system_count(messages)] or view[:systems]
+            rebuilt = head + view[systems:len(view) - (len(history) - keep)] + messages[
+                marker + 1 + keep - start:
+            ]
+            if not callable(getattr(runtime, "compaction_port", None)):
+                rebuilt = strip_native_markers(rebuilt)
+    if source == target:
+        return rebuilt
+    return portable_provider_messages(
+        rebuilt,
+        source_provider=source.provider,
+        source_api=source.api,
+        target_provider=target.provider,
+        target_api=target.api,
+        session_state=session_state,
+    )

@@ -3,7 +3,7 @@ Provider-specific adapters for handling tool calling formats, ID matching, and r
 
 Handles the translation between our internal tool calling system and provider-specific formats.
 """
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Mapping
 from abc import ABC, abstractmethod
 import json
 import re
@@ -333,6 +333,88 @@ class AnthropicAdapter(ProviderAdapter):
         # based on their actual response format
         return []
     
+    def to_native_image_source(
+        self, media: Any, *, context: Any = None,
+    ) -> Dict[str, str]:
+        """Encode resolved image bytes or a validated URL as an Anthropic source."""
+        from .input_media import parse_provider_image_url
+
+        if media.wire_url is not None:
+            state = getattr(context, "session_state", None)
+            config = getattr(state, "config", {}) or {}
+            native_codex = (
+                (config.get("tools") or {}).get("native_semantics")
+                == "codex_0_139"
+            )
+            if media.wire_url.startswith("data:") or native_codex:
+                media = parse_provider_image_url(
+                    media.wire_url,
+                    detail=media.detail or "high",
+                )
+        if media.wire_url is not None:
+            return {"type": "url", "url": media.wire_url}
+        return {
+            "type": "base64",
+            "media_type": media.mime,
+            "data": media.base64_data,
+        }
+
+    def to_native_tool_result_content(
+        self, content: Any, session_state: Any,
+    ) -> Any:
+        """Convert observed tool output into ordered Anthropic result content."""
+        from .contract_messages import canonical_json
+        from .contracts import ProviderRuntimeContext
+        from .input_media import (
+            is_provider_image_part,
+            parse_provider_image_url,
+            portable_image_media,
+            resolve_input_media,
+        )
+        from .contract_wire import ProviderContractError
+
+        if isinstance(content, str):
+            return content
+        if content is None or not isinstance(content, list):
+            return canonical_json(content)
+
+        context = ProviderRuntimeContext(
+            session_state=session_state,
+            agent_config={},
+            stream=False,
+        )
+
+        def image_source(block: Mapping[str, Any]) -> Dict[str, str]:
+            media_block = portable_image_media(block)
+            if media_block.get("kind") == "codex_image_url":
+                uri = media_block.get("uri")
+                if not isinstance(uri, str):
+                    raise ProviderContractError("provider image URL is malformed")
+                media = parse_provider_image_url(uri)
+            else:
+                media = resolve_input_media(media_block, context)
+            return self.to_native_image_source(media)
+
+        native: List[Dict[str, Any]] = []
+        for part in content:
+            if isinstance(part, str):
+                native.append({"type": "text", "text": part})
+            elif isinstance(part, Mapping) and is_provider_image_part(part):
+                native.append({
+                    "type": "image",
+                    "source": image_source(part),
+                })
+            elif isinstance(part, Mapping) and part.get("type") in {
+                "text", "input_text", "output_text",
+            } and isinstance(part.get("text"), str):
+                native.append({"type": "text", "text": part["text"]})
+            elif isinstance(part, Mapping):
+                native.append({"type": "text", "text": canonical_json(dict(part))})
+            else:
+                native.append({"type": "text", "text": canonical_json(part)})
+        return native
+
+
     def create_tool_result_batch_message(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Bind all stock results to one lossless continuation in stock order."""
         from .anthropic_replay import TOOL_RESULT_SCHEMA, replay_messages

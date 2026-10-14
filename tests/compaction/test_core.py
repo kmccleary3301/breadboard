@@ -311,14 +311,88 @@ def test_fallback_route_request_rebuilds_a_native_boundary_it_cannot_replay():
     request = state.project(messages, TARGET) + [stub]
 
     def route(provider, api):
-        return SimpleNamespace(descriptor=SimpleNamespace(provider_id=provider, default_api_variant=api))
+        return SimpleNamespace(
+            descriptor=SimpleNamespace(
+                provider_id=provider,
+                runtime_id=f"{provider}_{api}",
+                default_api_variant=api,
+            ),
+        )
 
-    assert reproject_for_route(request, session, runtime=route("openai", "responses"), model="gpt-x") is request
-    claude = ProjectionTarget("anthropic", "messages", "claude")
-    rebuilt = reproject_for_route(request, session, runtime=route("anthropic", "messages"), model="claude")
-    assert rebuilt == state.project(messages, claude) + [stub]
+    assert reproject_for_route(
+        request, session, source_runtime=route("openai", "responses"), source_model="gpt-x",
+        runtime=route("openai", "responses"), model="gpt-x",
+    ) is request
+    rebuilt = reproject_for_route(
+        request, session, source_runtime=route("openai", "responses"), source_model="gpt-x",
+        runtime=route("anthropic", "messages"), model="claude",
+    )
+    from breadboard_engine.provider.contract_requests import ProviderRequest
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
+    from breadboard_engine.provider.runtime import ProviderMessage, ProviderResult
+    from breadboard_engine.provider.runtimes.anthropic import AnthropicMessagesRuntime
+
+    strict_request = ProviderRequest(stream=False, messages=rebuilt, tools=[])
+
+    class CapturingAnthropicRuntime(AnthropicMessagesRuntime):
+        def _call_non_streaming(self, client, request):
+            self.wire_messages = request["messages"]
+            return None, None, {}, 200, ""
+
+        def _normalize_response(self, response, usage_override=None):
+            return ProviderResult(
+                messages=[ProviderMessage(role="assistant", content="ok")],
+                raw_response=None,
+                model="claude",
+            )
+
+    runtime = CapturingAnthropicRuntime(route("anthropic", "messages").descriptor)
+    result = runtime.invoke(
+        client=object(),
+        model="claude",
+        messages=strict_request.messages,
+        tools=strict_request.tools,
+        stream=False,
+        context=ProviderRuntimeContext(
+            session_state=session,
+            agent_config={
+                "provider_tools": {
+                    "anthropic": {"native_tool_result_replay": True},
+                },
+            },
+            stream=False,
+        ),
+    )
+    assert result is not None
+    wire = runtime.wire_messages
+    assert not any(NATIVE_MARKER_KEY in message for message in strict_request.messages)
+    assert any(
+        block.get("type") == "text" and block.get("text") == "<summary>S</summary>"
+        for message in wire
+        for block in message["content"]
+    )
+    assert [
+        block["id"]
+        for message in wire
+        for block in message["content"]
+        if block.get("type") == "tool_use"
+    ] == [f"c{i}" for i in range(2, 6)]
+    assert [
+        block["tool_use_id"]
+        for message in wire
+        for block in message["content"]
+        if block.get("type") == "tool_result"
+    ] == [f"c{i}" for i in range(2, 6)]
+    assert any(
+        block.get("type") == "text" and block.get("text") == "Continue."
+        for message in wire
+        for block in message["content"]
+    )
     # Another model on the same API cannot replay the opaque items either.
-    other_model = reproject_for_route(request, session, runtime=route("openai", "responses"), model="gpt-y")
+    other_model = reproject_for_route(
+        request, session, source_runtime=route("openai", "responses"), source_model="gpt-x",
+        runtime=route("openai", "responses"), model="gpt-y",
+    )
     assert not any(NATIVE_MARKER_KEY in message for message in other_model)
     assert other_model[2:] == messages[6:] + [stub]
 

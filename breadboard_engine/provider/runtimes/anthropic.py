@@ -103,16 +103,13 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     blocks.append({"type": "text", "text": text})
                 elif block_type == "media":
                     media = resolve_input_media(block, context)
-                    blocks.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media.mime,
-                                "data": media.base64_data,
-                            },
-                        }
+                    from ..adapters import AnthropicAdapter
+
+                    source = AnthropicAdapter().to_native_image_source(
+                        media,
+                        context=context,
                     )
+                    blocks.append({"type": "image", "source": source})
                 elif block_type == "thinking" and "text" in block:
                     if not isinstance(block["text"], str):
                         raise ProviderContractError("canonical thinking requires text")
@@ -125,7 +122,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     "compaction",
                 }:
                     blocks.append(dict(block))
-                elif block_type in {"tool_call", "tool_result"}:
+                elif block_type == "tool_call":
                     blocks.append(dict(block))
                 elif block_type == "provider_replay":
                     if (
@@ -231,8 +228,11 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     continue
                 result_blocks: List[Dict[str, Any]] = []
                 if isinstance(content, list):
-                    for block in text_blocks(content):
-                        if block.get("type") != "tool_result":
+                    for block in content:
+                        if (
+                            not isinstance(block, dict)
+                            or block.get("type") != "tool_result"
+                        ):
                             raise ProviderContractError(
                                 "tool-result messages require tool_result blocks"
                             )
@@ -305,6 +305,14 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 raise ProviderContractError(
                     f"unsupported Anthropic role: {role!r}"
                 )
+            if role == "user" and isinstance(content, list) and any(
+                isinstance(block, dict)
+                and block.get("type") in {"tool_call", "tool_result"}
+                for block in content
+            ):
+                raise ProviderContractError(
+                    "user content cannot contain tool calls or tool results"
+                )
             blocks = text_blocks(content)
             if role == "assistant":
                 reasoning = message.get("reasoning")
@@ -350,13 +358,6 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         }
                     )
                 blocks = converted_blocks
-            elif any(
-                block.get("type") in {"tool_call", "tool_result"}
-                for block in blocks
-            ):
-                raise ProviderContractError(
-                    "user content cannot contain tool call/result blocks"
-                )
             if blocks:
                 if layout_enabled and role == "user":
                     user_indices.append(len(converted))

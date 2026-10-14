@@ -142,11 +142,11 @@ class OpenAIConversionMixin:
                         )
                     elif block_type == "media":
                         media = resolve_input_media(block, context)
+                        image_url = {"url": media.data_url}
+                        if media.detail is not None:
+                            image_url["detail"] = media.detail
                         visible_blocks.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": media.data_url},
-                            }
+                            {"type": "image_url", "image_url": image_url}
                         )
                     else:
                         raise ProviderContractError(

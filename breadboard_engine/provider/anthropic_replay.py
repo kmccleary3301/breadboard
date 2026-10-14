@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .contract_wire import ProviderContractError
+from .contract_wire import ProviderContractError, canonical_json
 
 TOOL_RESULT_SCHEMA = "anthropic.messages.tool_result.v1"
 
@@ -15,8 +15,6 @@ def is_tool_result_replay(block: dict) -> bool:
 
 
 def replay_messages(blocks: list[dict]) -> list[dict]:
-    from .contract_messages import canonical_json
-
     replays = [block for block in blocks if is_tool_result_replay(block)]
     results = [block for block in blocks if block.get("type") == "tool_result"]
     if len(replays) != 1 or not results or len(replays) + len(results) != len(blocks):
@@ -46,3 +44,41 @@ def replay_messages(blocks: list[dict]) -> list[dict]:
             raise ProviderContractError("native tool continuation disagrees with canonical result")
     canonical_json(payload["messages"])
     return payload["messages"]
+
+
+def portable_tool_continuation(blocks: list[dict]) -> list[dict[str, Any]] | None:
+    """Expand a validated native continuation into results, then user observations."""
+    if not any(is_tool_result_replay(block) for block in blocks):
+        return None
+
+    results = []
+    observations = []
+    for message in replay_messages(blocks):
+        user_content = []
+        for block in message["content"]:
+            if block["type"] == "tool_result":
+                results.append({
+                    "role": "tool",
+                    "content": [{
+                        "type": "tool_result",
+                        "call_id": block["tool_use_id"],
+                        "content": block.get("content"),
+                        "is_error": block.get("is_error", False),
+                    }],
+                })
+            elif block["type"] == "text":
+                text = block.get("text")
+                if not isinstance(text, str):
+                    raise ProviderContractError(
+                        "native continuation observation text must be text"
+                    )
+                user_content.append({"type": "text", "text": text})
+            elif block["type"] == "image":
+                user_content.append(dict(block))
+            else:
+                raise ProviderContractError(
+                    "unsupported native continuation observation block"
+                )
+        if user_content:
+            observations.append({"role": "user", "content": user_content})
+    return results + observations

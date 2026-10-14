@@ -695,12 +695,25 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
             "type": "tool_call", "call_id": "claude-image", "name": "view_image", "arguments": {},
         }]},
         AnthropicAdapter().create_tool_result_batch_message([{
-            "role": "user", "content": [{
-                "type": "tool_result", "tool_use_id": "claude-image", "content": [{
+            "role": "user", "content": [
+                {
+                    "type": "tool_result", "tool_use_id": "claude-image",
+                    "content": [{
+                        "type": "image",
+                        "source": {"type": "base64", "media_type": "image/png", "data": "AA=="},
+                    }],
+                },
+                {
+                    "type": "text",
+                    "text": "SIDEFACT_BEFORE_IMAGE",
+                    "cache_control": {"type": "ephemeral"},
+                },
+                {
                     "type": "image",
                     "source": {"type": "base64", "media_type": "image/png", "data": "AA=="},
-                }],
-            }],
+                },
+                {"type": "text", "text": "SIDEFACT_AFTER_IMAGE"},
+            ],
         }]),
     )
     claude_summary = ConductorSummaryModel(
@@ -714,6 +727,18 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
     ))
     assert {"type": "function_call_output", "call_id": "claude-image", "output": "[image removed]"} in responses_sent[0]
     assert "AA==" not in str(responses_sent[0])
+
+    side_observation = next(
+        item for item in responses_sent[0] if item.get("role") == "user"
+    )
+    assert [block["type"] for block in side_observation["content"]] == [
+        "input_text", "input_text", "input_text",
+    ]
+    assert [block["text"] for block in side_observation["content"]] == [
+        "SIDEFACT_BEFORE_IMAGE",
+        "[image removed]",
+        "SIDEFACT_AFTER_IMAGE",
+    ]
 
     for case, include_content in (("missing", False), ("none", True)):
         call_id = f"claude-{case}-content"
@@ -743,3 +768,56 @@ def test_summary_routed_to_another_provider_sends_messages_it_accepts() -> None:
         assert {
             "type": "function_call_output", "call_id": call_id, "output": "null"
         } in responses_sent[-1]
+
+
+
+def test_fallback_reprojects_native_marker_from_original_history_before_sanitizing() -> None:
+    from breadboard_engine.compaction.controller import reproject_for_route
+
+    state = _session()
+    history = copy.deepcopy(state.provider_messages)
+    controller = _controller()
+    source_target = ProjectionTarget("openai", "responses", "gpt-source")
+    context = CompactionContext(
+        messages=state.provider_messages,
+        state=state.compaction_state,
+        settings=controller.settings,
+        reason="manual",
+        target=source_target,
+        context_window=8000,
+        tokens_before=1,
+    )
+    opaque_item = {"type": "compaction", "encrypted_content": "opaque-source-token"}
+    record = context.new_record(
+        method="remote",
+        first_kept_index=len(state.provider_messages) - 2,
+        summary="Native summary",
+        summary_messages=({"role": "user", "content": "Covered source facts"},),
+        native=NativeCompaction(
+            "openai", "responses", "gpt-source", (opaque_item,),
+        ),
+    )
+    state.compaction_state.append(record, state.provider_messages)
+    source_runtime = SimpleNamespace(
+        descriptor=SimpleNamespace(provider_id="openai", default_api_variant="responses"),
+    )
+    fallback_runtime = SimpleNamespace(
+        descriptor=SimpleNamespace(provider_id="anthropic", default_api_variant="messages"),
+    )
+    request = state.compaction_state.project(state.provider_messages, source_target) + [
+        {"role": "user", "content": "Continue."},
+    ]
+
+    rebuilt = reproject_for_route(
+        request,
+        state,
+        source_runtime=source_runtime,
+        source_model="gpt-source",
+        runtime=fallback_runtime,
+        model="claude",
+    )
+
+    assert not any(NATIVE_MARKER_KEY in message for message in rebuilt)
+    assert "Covered source facts" in str(rebuilt)
+    assert "opaque-source-token" not in str(rebuilt)
+    assert state.provider_messages == history

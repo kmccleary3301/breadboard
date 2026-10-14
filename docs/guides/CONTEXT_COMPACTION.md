@@ -516,6 +516,21 @@ context (at a boundary and at the end of a run) never contains a native payload:
 it is the latest readable boundary's view, or the full history, so a resumed
 session can switch models.
 
+Provider/API fallback also converts ordinary history without a native marker.
+Foreign reasoning is removed; typed tool outputs retain their observations.
+Anthropic fallback keeps call/result IDs and ordered text, base64 images and
+HTTP(S) images inside correlated tool results. Its native-result replay capability
+is enabled only in a copied fallback context, not the session configuration.
+APIs with text-only tool results receive call-correlated image references and
+labelled images after the complete result batch, never between pending results.
+Validated Claude continuations retain user text and images outside tool results.
+Unsupported native side blocks fail cross-API projection instead of disappearing;
+same-API continuations remain native.
+Image detail is retained for destination codecs that support it.
+Malformed raw arguments and their results remain textual observations rather
+than invented JSON calls. Portable summary requests use image placeholders;
+main fallback requests retain the images. Neither path rewrites source history.
+
 A local summary starts after the latest readable boundary, so it also covers
 history that only an OpenAI native payload (which carries no readable summary)
 represents, as OMP does when it re-expands an unreadable remote compaction

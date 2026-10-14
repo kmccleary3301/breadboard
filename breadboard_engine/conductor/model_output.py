@@ -1440,15 +1440,17 @@ def retry_with_fallback(
             fallback_client_config = (
                 active_provider_router.create_client_config(fallback_model)
             )
+            fallback_extra = dict(runtime_context.extra or {})
+            fallback_extra.pop("portable_image_urls", None)
+            fallback_extra.update(
+                fallback_of=current_route,
+                route_id=fallback_model,
+            )
             fallback_runtime_context = ProviderRuntimeContext(
                 session_state=runtime_context.session_state,
                 agent_config=runtime_context.agent_config,
                 stream=False,
-                extra=dict(
-                    runtime_context.extra or {},
-                    fallback_of=current_route,
-                    route_id=fallback_model,
-                ),
+                extra=fallback_extra,
                 session_id=runtime_context.session_id,
                 input_id=runtime_context.input_id,
                 turn_id=runtime_context.turn_id,
@@ -1456,8 +1458,52 @@ def retry_with_fallback(
                 cancel_requested=runtime_context.cancel_requested,
             )
             fallback_messages = reproject_for_route(
-                messages, session_state, runtime=fallback_runtime, model=fallback_model_resolved
+                messages,
+                session_state,
+                source_runtime=runtime,
+                source_model=model,
+                runtime=fallback_runtime,
+                model=fallback_model_resolved,
             )
+            if fallback_messages is not messages:
+                fallback_runtime_context.extra["portable_image_urls"] = True
+
+            source_descriptor = getattr(runtime, "descriptor", None)
+            if (
+                fallback_runtime_descriptor.provider_id == "anthropic"
+                and source_descriptor is not None
+                and (
+                    getattr(source_descriptor, "provider_id", None)
+                    != fallback_runtime_descriptor.provider_id
+                    or getattr(source_descriptor, "default_api_variant", None)
+                    != fallback_runtime_descriptor.default_api_variant
+                    or model != fallback_model_resolved
+                )
+                and any(
+                    isinstance(message, dict)
+                    and isinstance(message.get("content"), list)
+                    and any(
+                        isinstance(block, dict)
+                        and block.get("type") == "provider_replay"
+                        and block.get("provider_id") == "anthropic"
+                        and block.get("schema_version")
+                        == "anthropic.messages.tool_result.v1"
+                        for block in message["content"]
+                    )
+                    for message in fallback_messages
+                )
+            ):
+                fallback_agent_config = dict(runtime_context.agent_config or {})
+                fallback_provider_tools = dict(
+                    fallback_agent_config.get("provider_tools") or {}
+                )
+                fallback_anthropic_tools = dict(
+                    fallback_provider_tools.get("anthropic") or {}
+                )
+                fallback_anthropic_tools["native_tool_result_replay"] = True
+                fallback_provider_tools["anthropic"] = fallback_anthropic_tools
+                fallback_agent_config["provider_tools"] = fallback_provider_tools
+                fallback_runtime_context.agent_config = fallback_agent_config
             project_request_body = getattr(
                 fallback_runtime, "project_request_body", None
             )
