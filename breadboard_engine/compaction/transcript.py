@@ -12,7 +12,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from ..provider.anthropic_replay import TOOL_RESULT_SCHEMA
+from ..provider.anthropic_replay import (
+    TOOL_RESULT_SCHEMA,
+    is_tool_result_replay,
+    replay_messages,
+)
+from ..provider.contract_wire import ProviderContractError, canonical_json
 from .tokens import estimate_message_tokens, is_image_part
 
 Message = Mapping[str, Any]
@@ -72,6 +77,42 @@ def result_parts(content: Any) -> List[Any]:
 def result_text(content: Any) -> str:
     return "".join(part["text"] for part in result_parts(content)
                    if isinstance(part, Mapping) and part.get("type") == "text" and isinstance(part.get("text"), str))
+
+
+def anthropic_replay_result_parts(message: Message) -> Optional[List[Any]]:
+    """Return validated native Anthropic tool-result content, or ``None`` when unavailable."""
+    content = message.get("content")
+    if not isinstance(content, (list, tuple)):
+        return None
+
+    content = list(content)
+    if not any(isinstance(block, dict) and is_tool_result_replay(block) for block in content):
+        return None
+
+    try:
+        native_messages = replay_messages(content)
+    except ProviderContractError:
+        return None
+
+    native_results = [
+        result
+        for native_message in native_messages
+        for result in native_message["content"]
+        if result["type"] == "tool_result"
+    ]
+    call_id = message.get("tool_call_id")
+    if isinstance(call_id, str) and (
+        len(native_results) != 1 or native_results[0].get("tool_use_id") != call_id
+    ):
+        return None
+
+    parts = []
+    for result in native_results:
+        result_content = result.get("content")
+        if not isinstance(result_content, (str, list)):
+            result_content = canonical_json(result_content)
+        parts.extend(result_parts(result_content))
+    return parts or None
 
 
 def rewrite_result_content(

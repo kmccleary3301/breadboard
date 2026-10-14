@@ -591,6 +591,10 @@ that consumed that projection publishes usage. History appends do not refresh it
 Full session snapshots preserve this state; record-only restores use estimates
 until new usage arrives.
 
+Checkpoint and OMP/Pi summaries decode validated Anthropic tool replay before
+truncating results. Ordered text and image placeholders enter the summary;
+encoded image data stays in the original replay.
+
 `native_settings.adapter: paths` maps each harness setting to recipe paths;
 `omp_settings` hands the block to OMP's parser, and recipe values read it
 with `{setting: <field>}`.

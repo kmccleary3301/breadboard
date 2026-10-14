@@ -20,6 +20,7 @@ from breadboard_engine.compaction.primitives.budget_selectors import LatestToolO
 from breadboard_engine.compaction.primitives.history_selection import LargestFirstMasking, ProtectedToolOutputs
 from breadboard_engine.compaction.primitives.message_reduction import MaskOutputs
 from breadboard_engine.compaction.transcript import check_tool_pairing, result_call_ids
+from breadboard_engine.compaction.serialize import serialize_conversation
 from breadboard_engine.provider.adapters import AnthropicAdapter
 from breadboard_engine.provider.anthropic_replay import replay_messages
 from breadboard_engine.provider.contracts import ProviderRuntimeContext
@@ -341,6 +342,50 @@ def test_hermes_checkpoint_summary_reads_anthropic_replay_result_blocks():
     request = _hermes_checkpoint_request(messages)
     assert "[TOOL RESULT c1,c2]: [image]\nSCREEN_TEXT\nSECOND_RESULT" in request
     assert "AA==" not in request
+
+
+def test_summary_serializer_reads_anthropic_image_results_before_truncation():
+    native_messages = [{"role": "user", "content": [{
+        "type": "tool_result",
+        "tool_use_id": "c1",
+        "content": [
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/png", "data": "A" * 12000,
+            }},
+            {"type": "text", "text": "SCREEN_OBSERVATION_AFTER_IMAGE"},
+        ],
+    }]}]
+    result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__claude_tool_result_messages": native_messages},
+    )
+    source_before = json.dumps(result, sort_keys=True)
+
+    transcript = serialize_conversation([result])
+
+    assert "[image]SCREEN_OBSERVATION_AFTER_IMAGE" in transcript
+    assert "A" * 256 not in transcript
+    assert json.dumps(result, sort_keys=True) == source_before
+
+
+def test_summary_serializer_preserves_plain_json_and_typed_foreign_results():
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    plain_json = (
+        '[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}},'
+        '{"type":"text","text":"SCREEN_TEXT"}]'
+    )
+    plain_result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__mvi_text_output": plain_json},
+    )
+    foreign_result = responses_image_tool_result_message(
+        "c2", [{"type": "input_text", "text": "FOREIGN_TEXT"},
+               {"type": "input_image", "image_url": "data:image/png;base64,AA=="}],
+    )
+
+    transcript = serialize_conversation([plain_result, foreign_result])
+    assert plain_json in transcript
+    assert "FOREIGN_TEXT" in transcript
+    assert transcript.index(plain_json) < transcript.index("FOREIGN_TEXT")
 
 
 def test_hermes_checkpoint_summary_preserves_json_shaped_plain_tool_text():

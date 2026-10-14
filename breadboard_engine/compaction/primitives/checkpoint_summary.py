@@ -3,10 +3,7 @@
 import re
 
 from ..methods import MethodUnavailable, SummaryRequest
-from ...provider.anthropic_replay import is_tool_result_replay, replay_messages
-from ...provider.contract_messages import canonical_json
-from ...provider.contract_wire import ProviderContractError
-from ..transcript import result_call_ids, result_parts
+from ..transcript import anthropic_replay_result_parts, result_call_ids, result_parts
 from .protected_windows import visible_messages
 
 
@@ -14,41 +11,6 @@ class SummaryFailure(RuntimeError):
     def __init__(self, kind, message):
         self.kind = kind
         super().__init__(message)
-
-
-def _checkpoint_result_parts(message):
-    content = message.get("content")
-    if not isinstance(content, (list, tuple)):
-        return result_parts(content)
-
-    content = list(content)
-    if not any(isinstance(block, dict) and is_tool_result_replay(block) for block in content):
-        return result_parts(content)
-
-    try:
-        native_messages = replay_messages(content)
-    except ProviderContractError:
-        return result_parts(content)
-
-    native_results = [
-        result
-        for native_message in native_messages
-        for result in native_message["content"]
-        if result["type"] == "tool_result"
-    ]
-    call_id = message.get("tool_call_id")
-    if isinstance(call_id, str) and (
-        len(native_results) != 1 or native_results[0].get("tool_use_id") != call_id
-    ):
-        return result_parts(content)
-
-    parts = []
-    for result in native_results:
-        result_content = result.get("content")
-        if not isinstance(result_content, (str, list)):
-            result_content = canonical_json(result_content)
-        parts.extend(result_parts(result_content))
-    return parts or result_parts(content)
 
 
 class CheckpointSummary:
@@ -83,7 +45,11 @@ class CheckpointSummary:
             role = message.get("role", "unknown")
             content = message.get("content") or ""
             if isinstance(content, (list, tuple)):
-                blocks = _checkpoint_result_parts(message) if role in ("tool", "tool_result") else content
+                blocks = content
+                if role in ("tool", "tool_result"):
+                    blocks = anthropic_replay_result_parts(message)
+                    if blocks is None:
+                        blocks = result_parts(list(content) if isinstance(content, tuple) else content)
                 content = "\n".join(p if isinstance(p, str) else str(p.get("text") or "[image]") for p in blocks)
             content = re.sub(r"MEDIA:\S+", "[media attachment]", str(content))
             if role == "assistant":
