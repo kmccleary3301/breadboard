@@ -435,6 +435,112 @@ def test_routed_summary_tools_use_the_summary_providers_schema() -> None:
                                     tool_names=("Read",), request_params={}))
     assert sent == [[schemas["openai"]]]
 
+def test_routed_summary_projects_history_for_resolved_model_before_runtime_conversion() -> None:
+    from breadboard_engine.compaction.primitives.selectors import Selection
+    from breadboard_engine.compaction.summary_model import ConductorSummaryModel
+    from breadboard_engine.compaction.params import BuildEnv, Params
+    from breadboard_engine.compaction.primitives.chat_reducers import ChatSummary
+    from breadboard_engine.provider.runtimes.openai.responses import OpenAIResponsesRuntime
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    route_descriptor = SimpleNamespace(
+        provider_id="openai", default_api_variant="responses", runtime_id="openai_responses",
+    )
+    responses = OpenAIResponsesRuntime(route_descriptor)
+    source_target = ProjectionTarget("openai", "responses", "gpt-source")
+    opaque_item = {"type": "compaction", "encrypted_content": "opaque-source-model-token"}
+    converted_requests: List[Any] = []
+    sent_messages: List[Any] = []
+    invoked_models: List[str] = []
+
+    class SummaryRuntime:
+        def __init__(self) -> None:
+            self.descriptor = route_descriptor
+
+        def invoke(self, **kwargs: Any) -> ProviderResult:
+            sent_messages.append(copy.deepcopy(kwargs["messages"]))
+            invoked_models.append(kwargs["model"])
+            converted_requests.append(responses._convert_messages_to_input(
+                kwargs["messages"], include_tool_calls=True, context=kwargs["context"],
+            ))
+            return ProviderResult(
+                messages=[ProviderMessage(role="assistant", content="summary")],
+                raw_response=None,
+                model=kwargs["model"],
+            )
+
+    def summarize_on(route_id: str, api_model: str, *, same_runtime: bool = False) -> None:
+        controller = _controller(summaryModel=route_id)
+        session = _session(turns=1)
+        session.add_message({
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{
+                "id": "replay-call", "type": "function",
+                "function": {"name": "read", "arguments": "{}"},
+            }],
+        })
+        session.add_message(responses_image_tool_result_message(
+            "replay-call", [{"type": "input_text", "text": "PORTABLE_REPLAY_OBSERVATION"}],
+        ))
+        source_runtime = SummaryRuntime()
+        if same_runtime:
+            source_runtime.descriptor = None
+        summary_runtime = source_runtime if same_runtime else SummaryRuntime()
+        summary = ConductorSummaryModel(
+            runtime=source_runtime,
+            client="summary-client",
+            model="gpt-source",
+            session_state=session,
+            agent_config={},
+            route_resolver=lambda _: (summary_runtime, api_model),
+        )
+        context = CompactionContext(
+            messages=session.provider_messages,
+            state=session.compaction_state,
+            settings=controller.settings,
+            reason="manual",
+            target=source_target,
+            context_window=8000,
+            tokens_before=1,
+            summarizer=summary,
+        )
+        record = context.new_record(
+            method="remote",
+            first_kept_index=len(context.messages),
+            summary="Remote compaction",
+            native=NativeCompaction(
+                provider="openai", api="responses", model="gpt-source", items=(opaque_item,),
+            ),
+        )
+        context.state.append(record, context.messages)
+        reducer = ChatSummary(Params(
+            {"prompt": "Summarize the conversation."}, "test.summary", BuildEnv(controller.settings),
+        ))
+        reducer.reduce(context, Selection())
+
+    summarize_on("openai/gpt-summary", "gpt-summary")
+    assert not any(NATIVE_MARKER_KEY in message for message in sent_messages[0])
+    assert "provider_replay" not in str(sent_messages[0])
+    assert "PORTABLE_REPLAY_OBSERVATION" in str(sent_messages[0])
+    assert any(item.get("type") == "function_call_output"
+               and item.get("call_id") == "replay-call" for item in converted_requests[0])
+    assert not any(item.get("type") == "compaction" for item in converted_requests[0])
+    assert "opaque-source-model-token" not in str(converted_requests[0])
+    assert "f0.py" in str(converted_requests[0])
+
+    summarize_on("openai/gpt-source-alias", "gpt-source")
+    assert invoked_models[:2] == ["gpt-summary", "gpt-source"]
+    assert any(NATIVE_MARKER_KEY in message for message in sent_messages[1])
+    assert opaque_item in converted_requests[1]
+
+    summarize_on("openai/gpt-source-identity-alias", "gpt-source", same_runtime=True)
+    assert invoked_models[-1] == "gpt-source"
+    assert any(NATIVE_MARKER_KEY in message for message in sent_messages[2])
+    assert opaque_item in converted_requests[2]
+
+
+
 
 def test_local_summary_after_a_native_boundary_covers_the_history_it_replaced() -> None:
     controller = _controller()

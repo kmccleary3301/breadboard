@@ -144,8 +144,8 @@ class CompactionContext:
     pending_user_index: Optional[int] = None
     runtime_context: Optional[ProviderRuntimeContext] = None
 
-    def projected(self) -> List[Dict[str, Any]]:
-        return self.state.project(self.messages, self.target)
+    def projected(self, target: Optional[ProjectionTarget] = None) -> List[Dict[str, Any]]:
+        return self.state.project(self.messages, target or self.target)
 
     def new_record(
         self,

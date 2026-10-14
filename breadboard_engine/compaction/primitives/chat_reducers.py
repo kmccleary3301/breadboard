@@ -68,11 +68,16 @@ class ChatSummary:
             return Reduction(native=record.native, details=record.details)
         if context.summarizer is None:
             raise MethodUnavailable("No summarizer configured")
-        view = context.projected()
+        model_name = context.settings.summary_model or context.target.model
+        target = context.target
+        resolve_target = getattr(context.summarizer, "projection_target", None)
+        if callable(resolve_target):
+            target = resolve_target(model_name, context.target)
+        view = context.projected(target)
         if context.sampling_phase in self.exclude_pending_user_on:
             if context.pending_user_index is None:
                 raise ValueError("Compaction sampling phase requires the pending user boundary")
-            view = context.state.project(context.messages[:context.pending_user_index], context.target)
+            view = context.state.project(context.messages[:context.pending_user_index], target)
         systems = ["".join(_text_parts(m.get("content"))) for m in view if m.get("role") == "system"]
         messages = [m for m in view if m.get("role") != "system"]
         if selection.replay and not selection.details:
@@ -90,7 +95,7 @@ class ChatSummary:
         request = SummaryRequest(system="\n\n".join(systems) if self.system_from_history else self.system,
                                  messages=tuple([*messages, {"role": "user", "content": prompt}]),
                                  max_tokens=self.max_tokens, purpose="summary",
-                                 model=context.settings.summary_model or context.target.model,
+                                 model=model_name,
                                  stream=self.stream, tool_names=self.tool_names, request_params=self.request_params,
                                  request_options_declared=self.request_options_declared,
                                  context_reason=context.reason)

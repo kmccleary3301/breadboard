@@ -17,6 +17,7 @@ from ..provider.anthropic_replay import is_tool_result_replay, replay_messages
 from ..provider.contract_messages import canonical_json
 from ..provider.contract_runtime import ProviderRuntimeContext
 from .methods import SummaryRequest, SummaryResponse
+from .state import ProjectionTarget
 from .images import IMAGE_PLACEHOLDER
 from .tokens import is_image_part
 from .transcript import answers_tool_call, result_call_ids, result_parts
@@ -224,7 +225,31 @@ class ConductorSummaryModel:
         self.tool_schema_provider = tool_schema_provider
         self.route_id = route_id
         self.route_resolver = route_resolver
+        self._resolved_routes: Dict[str, Tuple[Any, str]] = {}
         self.requests_sent = 0
+
+    def _route_for(self, model: str) -> Tuple[Any, str]:
+        if model == self.model or self.route_resolver is None:
+            return self.runtime, model
+        resolved = self._resolved_routes.get(model)
+        if resolved is None:
+            resolved = self.route_resolver(model)
+            self._resolved_routes[model] = resolved
+        return resolved
+
+    def projection_target(
+        self, model: Optional[str] = None, source_target: Optional[ProjectionTarget] = None,
+    ) -> ProjectionTarget:
+        """Resolve the route identity used to build this summary's history view."""
+        runtime, api_model = self._route_for(model or self.model)
+        provider, api = _api_of(runtime)
+        if source_target is not None and runtime is self.runtime and (provider is None or api is None):
+            return ProjectionTarget(source_target.provider, source_target.api, str(api_model))
+        return ProjectionTarget(
+            provider=str(provider or "unknown"),
+            api=str(api or "unknown"),
+            model=str(api_model),
+        )
 
     def complete(self, request: SummaryRequest) -> SummaryResponse:
         projection = None
@@ -236,9 +261,7 @@ class ConductorSummaryModel:
             request = projection.prepare(request)
         model = request.model or self.model
         budget = {} if request.max_tokens is None else {"max_tokens": request.max_tokens}
-        runtime, api_model = self.runtime, model
-        if model != self.model and self.route_resolver is not None:
-            runtime, api_model = self.route_resolver(model)
+        runtime, api_model = self._route_for(model)
         descriptor = getattr(runtime, "descriptor", None)
         tools = [copy.deepcopy(dict(tool)) for tool in request.tools]
         if not tools and request.request_params is None:
@@ -258,8 +281,11 @@ class ConductorSummaryModel:
         messages: List[Dict[str, Any]] = []
         if request.system:
             messages.append({"role": "system", "content": request.system})
-        same_api = runtime is self.runtime or (None not in _api_of(runtime) and _api_of(runtime) == _api_of(self.runtime))
-        source = request.messages if same_api else _portable_messages(request.messages)
+        route_api, source_api = _api_of(runtime), _api_of(self.runtime)
+        same_route = api_model == self.model and (
+            runtime is self.runtime or (None not in route_api and route_api == source_api)
+        )
+        source = request.messages if same_route else _portable_messages(request.messages)
         messages.extend(copy.deepcopy(dict(message)) for message in source)
 
         turn_index = self.turn_index or 0

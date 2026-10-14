@@ -29,7 +29,7 @@ compaction:
 | `preset` | A packaged preset below; defaults to `omp@18.4.5`. |
 | `overflowPolicy` | Optional; overrides the preset's `overflow.policy`. `compact` retries after compacting; `terminal` lets the overflow error end the run. |
 | `contextWindow` | Optional; otherwise provider or model metadata. |
-| `summaryModel` | Optional route ID such as `openai/gpt-5.1-codex-mini`; defaults to the turn's model. A route on another provider gets that provider's runtime and credentials, and its summary input drops the turn provider's replay: results are sent as plain tool text, reasoning is left out. |
+| `summaryModel` | Optional route ID such as `openai/gpt-5.1-codex-mini`; defaults to the turn's model. The resolved provider/API/model selects the history projection and runtime. A different model cannot reuse a source-model native boundary: it gets readable history and portable tool observations without provider replay or reasoning. An alias resolving to the same provider/API/model keeps native continuity. |
 | `maxPassesPerTurn` | Optional; overrides the preset's overflow attempts per turn. |
 
 An unknown key, a bad value or an unknown preset fails config loading with
@@ -289,8 +289,8 @@ Persisted assistant `tool_calls` retain their `id` and explicit `raw_arguments`
 discriminator, so the next stateless request validates the same union without
 losing call/result pairing. Unmarked malformed calls remain rejected.
 
-Cross-provider summaries replace admitted raw calls and their correlated results
-with text observations, preserving the exact argument bytes. Ordinary calls stay
+Summaries on a different provider/API/model replace admitted raw calls and their
+correlated results with text observations, preserving exact argument bytes. Ordinary calls stay
 paired native calls. Portable result images become placeholders, including images
 in Claude replay batches. Approximate token accounting charges raw argument text.
 
