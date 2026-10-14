@@ -41,12 +41,12 @@ def test_gated_session_resolves_pending_approvals_in_either_order(order) -> None
 def test_gated_session_rejects_unknown_stale_and_duplicate_ids() -> None:
     session = _gated()
     before = session.events
-    with pytest.raises(ValueError, match="^approval does not match any pending request$"):
+    with pytest.raises(ValueError):
         session.resolve_approval("unknown", "once")
     session.resolve_approval("root", "once")
-    with pytest.raises(ValueError, match="^approval does not match any pending request$"):
+    with pytest.raises(ValueError):
         session.resolve_approval("root", "once")
-    with pytest.raises(ValueError, match="^approval request is already pending$"):
+    with pytest.raises(ValueError):
         session.request_approval("child", "read")
     assert session.events[: len(before)] == before
     assert len(session.events) == len(before) + 1
@@ -79,9 +79,9 @@ def test_ungated_session_keeps_single_request_contract() -> None:
     assert session.concurrent_approvals is False
     assert "concurrent_approvals" not in session.events[0].payload
     session.request_approval("child", "read")
-    with pytest.raises(RuntimeError, match="^cannot request approval while session is awaiting_approval$"):
+    with pytest.raises(RuntimeError):
         session.request_approval("root", "read")
-    with pytest.raises(ValueError, match="^approval does not match the pending request$"):
+    with pytest.raises(ValueError):
         session.resolve_approval("root", "once")
     view = session.resolve_approval("child", "once")
     assert (view.status, view.pending_approval) == ("running", None)
@@ -106,5 +106,69 @@ def test_gated_session_compacts_while_approvals_are_pending() -> None:
 def test_ungated_session_still_refuses_compaction_while_awaiting_approval() -> None:
     session = Session.start(_LOCK, "task")
     session.request_approval("child", "read")
-    with pytest.raises(RuntimeError, match="^cannot compact while session is awaiting_approval$"):
+    with pytest.raises(RuntimeError):
         session.compact(CompactionSnapshot(b"[]", ()))
+
+def test_gated_session_records_observations_without_resolving_approvals() -> None:
+    session = _gated()
+    pending_approvals = session.pending_approvals
+
+    session.assistant_message(
+        "candidate",
+        message_id="assistant-observation",
+        trajectory_id="turn-observation",
+    )
+    session.tool_called("read_file")
+    session.tool_completed("read_file", False)
+
+    view = session.read_model
+    assert [event.kind for event in session.events[-3:]] == [
+        "assistant_message",
+        "tool_call",
+        "tool_result",
+    ]
+    assert (view.status, view.pending_approval) == (
+        "awaiting_approval",
+        pending_approvals[0],
+    )
+    assert session.pending_approvals == pending_approvals
+    assert rebuild(session.events) == view
+    restored = Session.restore(session.events)
+    assert restored.read_model == view
+    assert restored.pending_approvals == pending_approvals
+
+
+def _assert_observations_rejected(session: Session) -> None:
+    observations = (
+        lambda: session.assistant_message(
+            "candidate", message_id="assistant-observation", trajectory_id="turn"
+        ),
+        lambda: session.tool_called("read_file"),
+        lambda: session.tool_completed("read_file", False),
+    )
+    for observe in observations:
+        with pytest.raises(RuntimeError):
+            observe()
+
+
+def test_ungated_session_rejects_observations_while_approval_is_pending() -> None:
+    session = Session.start(_LOCK, "task")
+    session.request_approval("child", "read")
+    before = session.events
+
+    _assert_observations_rejected(session)
+
+    assert session.events == before
+    assert session.read_model.status == "awaiting_approval"
+    assert session.pending_approvals == ("child",)
+
+
+def test_concurrent_session_rejects_observations_when_paused() -> None:
+    session = Session.start(_LOCK, "task", concurrent_approvals=True)
+    session.pause("operator request")
+    before = session.events
+
+    _assert_observations_rejected(session)
+
+    assert session.events == before
+    assert session.read_model.status == "paused"

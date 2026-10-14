@@ -253,6 +253,9 @@ class NullEventSink:
 
 
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
+_OBSERVATION_ACTIONS = frozenset(
+    {"observe assistant", "observe tool call", "observe tool result"}
+)
 _ADOPTION_EVENT_KIND = "session.adoption_committed"
 # Frozen at Session start by native stock profiles whose broker demultiplexes
 # simultaneous prompts; pending approvals are then keyed by request_id.
@@ -306,6 +309,17 @@ _ALLOWED = MappingProxyType(
     }
 )
 _CONCURRENT_APPROVAL_REQUEST_STATES = ("running", "awaiting_approval")
+
+
+def runtime_observations_admissible(
+    status: str, concurrent_approvals: bool
+) -> bool:
+    """Whether runtime observations may be appended in this Product status."""
+    return status == "running" or (
+        concurrent_approvals and status == "awaiting_approval"
+    )
+
+
 _STATUSES, _DECISIONS = (
     frozenset(
         {"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}
@@ -1208,10 +1222,19 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             raise ValueError("event stream is not contiguous for one session")
         if expected == 1:
             continue
-        allowed = _ALLOWED.get(event.kind, ())
-        if concurrent_approvals and event.kind in {"approval.requested", "context.compacted"}:
-            allowed = _CONCURRENT_APPROVAL_REQUEST_STATES
-        if status not in allowed:
+        if event.kind in _OBSERVATION_EVENT_KINDS:
+            admissible = runtime_observations_admissible(
+                status, concurrent_approvals
+            )
+        else:
+            allowed = _ALLOWED.get(event.kind, ())
+            if concurrent_approvals and event.kind in {
+                "approval.requested",
+                "context.compacted",
+            }:
+                allowed = _CONCURRENT_APPROVAL_REQUEST_STATES
+            admissible = status in allowed
+        if not admissible:
             raise ValueError(f"invalid {event.kind} transition from {status}")
         if event.kind == _ADOPTION_EVENT_KIND:
             adoption_id = event.payload["adoption_id"]
@@ -2806,6 +2829,13 @@ class Session:
     def _require(self, action: str) -> None:
         if self._appending:
             raise RuntimeError("cannot mutate session while an append is in progress")
+        if (
+            action in _OBSERVATION_ACTIONS
+            and runtime_observations_admissible(
+                self._view.status, self._concurrent_approvals
+            )
+        ):
+            return
         allowed = _SESSION_ACTIONS[action]
         if self._concurrent_approvals and action in {"request approval", "compact"}:
             allowed = _CONCURRENT_APPROVAL_REQUEST_STATES
