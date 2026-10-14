@@ -43,21 +43,15 @@ CONTEXTUAL_USER_PREFIXES = (
 )
 
 def _leading_system_instructions(
-    projected_messages: Sequence[Mapping[str, Any]],
+    projected_messages: List[Dict[str, Any]],
 ) -> Optional[str]:
-    """Use the same content conversion and joining as the Responses runtime."""
+    """Use the same text conversion and joining as the Responses runtime."""
     if not projected_messages:
         return None
 
     from ...provider.runtimes.openai.conversion import OpenAIConversionMixin
 
-    converter = OpenAIConversionMixin()
-    parts = []
-    for message in projected_messages:
-        text = converter._message_content_to_text(message.get("content"))
-        if text:
-            parts.append(text)
-    return "\n\n".join(parts) if parts else None
+    return OpenAIConversionMixin()._system_messages_to_instructions(projected_messages)
 
 
 def format_remote_compaction_summary(input_tokens: int) -> str:
@@ -548,8 +542,8 @@ class OpenAIResponsesCompactionPort:
             raise CompactionError(f"Request to {url} failed: {exc}") from exc
 
     def compact(self, context: CompactionContext) -> CompactionRecord:
-        head = leading_system_count(context.messages)
         projected_messages = context.projected()
+        head = leading_system_count(projected_messages)
         prev_replacement: Optional[Sequence[Mapping[str, Any]]] = None
         boundary = context.state._active_boundary(context.target)
         if context.native_retention is None and boundary and boundary.native and boundary.native.usable_for(context.target):
@@ -694,4 +688,5 @@ class OpenAIResponsesCompactionPort:
                 "replacement_history_length": len(replacement_history),
                 "v2_streaming": used_v2,
             },
+            reset_context=bool(boundary is not None and boundary.reset_context),
         )

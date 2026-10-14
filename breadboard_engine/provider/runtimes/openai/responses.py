@@ -180,13 +180,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             responses_stateful = False
 
         # Build instructions from system messages (if any)
-        instructions_parts: List[str] = []
-        for msg in system_messages:
-            content = msg.get("content")
-            text_val = self._message_content_to_text(content)
-            if text_val:
-                instructions_parts.append(text_val)
-        instructions = "\n\n".join(instructions_parts) if instructions_parts else None
+        instructions = self._system_messages_to_instructions(system_messages)
         developer_messages: List[Dict[str, Any]] = []
         if use_developer and system_messages:
             # Preserve system content as developer role inside input to mirror OpenCode.

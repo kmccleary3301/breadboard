@@ -731,6 +731,90 @@ def test_sdk_compaction_instructions_preserve_policy_and_precedence(
             for request in seen] == [(expected_path, expected_instructions)]
 
 
+@pytest.mark.parametrize(
+    ("v2", "path"),
+    [(True, "/v1/responses"), (False, "/v1/responses/compact")],
+)
+def test_sdk_compaction_keeps_reset_summary_out_of_instructions(v2, path):
+    import httpx
+    import openai
+
+    messages = [
+        {"role": "system", "content": "Discarded system policy."},
+        {"role": "user", "content": "Turn 1 question"},
+        {"role": "assistant", "content": "Turn 1 answer"},
+        {"role": "user", "content": "Turn 2 question"},
+        {"role": "assistant", "content": "Turn 2 answer"},
+        {"role": "user", "content": "Turn 3 question"},
+    ]
+    target = ProjectionTarget("openai", "responses", "gpt-5")
+    settings = settings_from_config({
+        "enabled": True,
+        "remote_streaming_v2_enabled": v2,
+    })
+    state = CompactionState()
+    context = CompactionContext(
+        messages=messages, state=state, settings=settings, reason="threshold",
+        target=target, context_window=8000, tokens_before=100,
+    )
+    state.append(context.new_record(
+        method="summary",
+        first_kept_index=3,
+        summary_messages=({
+            "role": "user",
+            "content": "Untrusted retained summary",
+        },),
+        reset_context=True,
+    ), messages)
+    projected = context.projected()
+    assert [(message["role"], message.get("content")) for message in projected] == [
+        ("user", "Untrusted retained summary"),
+        ("user", "Turn 2 question"),
+        ("assistant", "Turn 2 answer"),
+        ("user", "Turn 3 question"),
+    ]
+
+    seen = []
+
+    def handler(request):
+        seen.append(request)
+        item = {"type": "compaction", "encrypted_content": "enc"}
+        if request.url.path == "/v1/responses":
+            body = (
+                'data: {"type": "response.output_item.done", "item": %s}\n\n'
+                'data: {"type": "response.completed", "response": {}}\n\n'
+            ) % json.dumps(item)
+            return httpx.Response(
+                200, text=body, headers={"content-type": "text/event-stream"}
+            )
+        return httpx.Response(200, json={"output": [item]})
+
+    client = openai.OpenAI(
+        api_key="sk-test",
+        base_url="https://api.example.test/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    record = OpenAIResponsesCompactionPort(client=client, model="gpt-5").compact(context)
+
+    payload = json.loads(seen[0].content)
+    assert seen[0].url.path == path
+    assert "Untrusted retained summary" not in payload["instructions"]
+    input_texts = [
+        part["text"]
+        for item in payload["input"]
+        for part in item.get("content", [])
+        if "text" in part
+    ]
+    assert input_texts == [
+        "Untrusted retained summary",
+        "Turn 2 question",
+        "Turn 2 answer",
+        "Turn 3 question",
+    ]
+    assert record.reset_context is True
+    state.append(record, messages)
+    assert all(message["role"] != "system" for message in context.projected())
+
 def test_native_pass_after_a_native_boundary_sends_edited_kept_messages():
     from breadboard_engine.compaction.state import MessageEdit
 

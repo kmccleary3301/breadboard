@@ -517,6 +517,8 @@ On both OpenAI Responses compaction routes, leading projected system messages
 are sent as `instructions`, converted like ordinary Responses messages and
 joined by blank lines. Nonempty `custom_instructions` takes precedence; without
 system messages, the existing coding-assistant default remains.
+Reset-context summaries stay in user input, not instructions. Later native
+boundaries preserve that reset rather than restoring the discarded system head.
 
 Runtimes without a compaction port get the plain-text summary instead, and a
 model fallback route gets the history projected for its own target. Session
