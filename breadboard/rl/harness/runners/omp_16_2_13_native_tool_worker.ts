@@ -12,7 +12,6 @@ const RPC_SCHEMA = "bb.native-worker.rpc.v1";
 type RpcPayload = Record<string, unknown>;
 type RpcResult = Record<string, unknown>;
 type RpcFrame = { schema_version: string; request_id: number; operation: string; payload: RpcPayload };
-type ProviderUsagePayload = { usage: object | null };
 
 async function dispatch(operation: string, payload: RpcPayload): Promise<RpcResult> {
   switch (operation) {
@@ -29,7 +28,7 @@ async function dispatch(operation: string, payload: RpcPayload): Promise<RpcResu
     case "parse_streaming_json_batch":
       return parseStreamingJsonBatch(payload);
     case "parse_provider_usage":
-      return parseProviderUsage(payload as ProviderUsagePayload);
+      return parseProviderUsage(payload as Parameters<typeof parseProviderUsage>[0]);
     case "prepare_compaction":
       return prepareCompactionPhase(payload);
     case "finalize_compaction":
