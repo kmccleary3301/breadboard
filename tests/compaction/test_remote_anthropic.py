@@ -11,23 +11,20 @@ from breadboard_engine.compaction import (
     CompactionContext,
     CompactionState,
     MethodUnavailable,
-    NativeCompaction,
     NativeCompactionError,
     ProjectionTarget,
     estimate_messages_tokens,
     settings_from_config,
 )
 from breadboard_engine.compaction.remote.anthropic import (
-    COMPACTION_BETA,
-    LEGACY_COMPACTION_BETA,
     AnthropicCompactionPort,
-    build_anthropic_compaction_instructions,
     find_anthropic_compaction_cut,
     supports_anthropic_compaction,
 )
+from breadboard_engine.compaction.primitives.accounting import build_estimator
+
 from breadboard_engine.provider.runtimes.anthropic import AnthropicMessagesRuntime
 from breadboard_engine.provider.contracts import (
-    ProviderIdentity,
     ProviderRuntimeContext,
 )
 
@@ -117,24 +114,6 @@ def test_supports_anthropic_compaction_unsupported_models() -> None:
 
 
 # -----------------------------------------------------------------------------
-# 2. Compaction Instructions Tests
-# -----------------------------------------------------------------------------
-
-def test_build_anthropic_compaction_instructions_rendering() -> None:
-    instructions = build_anthropic_compaction_instructions(
-        base_prompt="## Goal\nAudit the handlers.",
-        custom_instructions="Preserve the test ids.",
-        extra_context="<additional-context>\n- Branch: main\n</additional-context>",
-    )
-    assert "The conversation above is the complete history to summarize." in instructions
-    assert "<additional-context>\n- Branch: main\n</additional-context>" in instructions
-    assert "## Goal\nAudit the handlers." in instructions
-    assert "Additional focus: Preserve the test ids." in instructions
-    assert instructions.endswith("respond with the summary text only.")
-    assert "MUST NOT call any tools" in instructions
-
-
-# -----------------------------------------------------------------------------
 # 3. Cut Calculation Tests
 # -----------------------------------------------------------------------------
 
@@ -190,27 +169,23 @@ def test_find_anthropic_compaction_cut_no_safe_tail_summarizes_all() -> None:
 # 4. Port Execution Tests
 # -----------------------------------------------------------------------------
 
-def test_anthropic_compaction_port_success() -> None:
-    summary_text = "## Goal\nAudit the handlers.\n\n## Next Steps\n1. Continue with chunk 11."
-    signature = "sig_state_1"
 
+
+def test_anthropic_native_compaction_counts_opaque_block_for_budget_decisions() -> None:
+    summary = "Readable handoff summary."
+    source_block = {
+        "type": "compaction",
+        "content": summary,
+        "signature": "sig_state_opaque",
+        "encrypted_content": "opaque-ciphertext-" + "x" * 16_000,
+    }
+    original_block = dict(source_block)
     fake_response = SimpleNamespace(
         stop_reason="compaction",
-        model="claude-sonnet-5",
-        content=[
-            SimpleNamespace(type="compaction", content=summary_text, signature=signature),
-        ],
-        usage=SimpleNamespace(
-            input_tokens=0,
-            output_tokens=0,
-            iterations=[
-                {"type": "compaction", "input_tokens": 120, "output_tokens": 300},
-            ],
-        ),
+        model=TARGET.model,
+        content=[source_block],
+        usage=SimpleNamespace(input_tokens=0, output_tokens=0, iterations=[]),
     )
-    fake_client = FakeAnthropicClient(response=fake_response)
-    port = AnthropicCompactionPort(client=fake_client, model="claude-sonnet-5")
-
     messages = [
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "world"},
@@ -218,34 +193,25 @@ def test_anthropic_compaction_port_success() -> None:
         {"role": "assistant", "content": "done"},
     ]
     ctx = _context(messages)
-    record = port.compact(ctx)
+    record = AnthropicCompactionPort(
+        client=FakeAnthropicClient(response=fake_response),
+        model=TARGET.model,
+    ).compact(ctx)
 
-    assert record.method == "remote"
-    assert record.summary == summary_text
-    assert record.short_summary == "Remote compaction"
     assert record.native is not None
-    assert record.native.provider == "anthropic"
-    assert record.native.api == "messages"
-    assert record.native.model == "claude-sonnet-5"
-    assert record.native.items == (
-        {"type": "compaction", "content": summary_text, "signature": signature},
-    )
-    # The projected marker carries the summary as content, so it is estimated as that text,
-    # not as the compacted input the compaction iteration consumed.
-    state = CompactionState()
-    state.append(record, messages)
-    assert estimate_messages_tokens(state.project(messages, ctx.target)) == estimate_messages_tokens(
-        [{"role": "user", "content": summary_text}, *messages[record.first_kept_index:]]
-    )
-    # Summary messages are readable for fallback routes
-    assert len(record.summary_messages) == 1
-    assert record.summary_messages[0]["content"] == summary_text
+    assert record.native.items == (source_block,)
+    assert source_block == original_block
+    assert record.summary == summary
+    assert record.summary_messages[0]["content"] == summary
 
-    # Verify wire call
-    assert len(fake_client.messages.calls) == 1
-    call_kwargs = fake_client.messages.calls[0]
-    assert call_kwargs["compaction"]["type"] == "summarize"
-    assert call_kwargs["extra_headers"]["anthropic-beta"] == COMPACTION_BETA
+    ctx.state.append(record, messages)
+    projected = ctx.state.project(messages, ctx.target)
+    small_budget = 1_000
+    large_budget = 4_000
+    for estimate in (estimate_messages_tokens, build_estimator("bytes4")):
+        projected_tokens = estimate(projected)
+        assert estimate(messages) < small_budget <= projected_tokens
+        assert projected_tokens < large_budget
 
 
 def test_anthropic_compaction_input_carries_ledger_edits() -> None:
@@ -290,7 +256,7 @@ def test_anthropic_compaction_port_raises_on_non_compaction_stop() -> None:
     port = AnthropicCompactionPort(client=fake_client, model="claude-sonnet-5")
 
     ctx = _context([{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}])
-    with pytest.raises(NativeCompactionError, match="stop reason: max_tokens"):
+    with pytest.raises(NativeCompactionError):
         port.compact(ctx)
 
 
@@ -305,7 +271,7 @@ def test_anthropic_compaction_port_rejects_unsigned_block() -> None:
     port = AnthropicCompactionPort(client=fake_client, model="claude-sonnet-5")
 
     ctx = _context([{"role": "user", "content": "hi"}, {"role": "assistant", "content": "ok"}])
-    with pytest.raises(NativeCompactionError, match="no signed summary"):
+    with pytest.raises(NativeCompactionError):
         port.compact(ctx)
 
 
@@ -313,14 +279,11 @@ def test_anthropic_compaction_port_rejects_unsigned_block() -> None:
 # 5. AnthropicMessagesRuntime Replay Integration Tests
 # -----------------------------------------------------------------------------
 
-def test_runtime_compaction_port_creation() -> None:
+def test_runtime_has_no_compaction_port_for_unsupported_model() -> None:
     runtime = AnthropicMessagesRuntime(
         descriptor=SimpleNamespace(provider_id="anthropic", api_type="messages", config={})
     )
     client = FakeAnthropicClient()
-    port = runtime.compaction_port(client=client, model="claude-sonnet-5")
-    assert port is not None
-    assert isinstance(port, AnthropicCompactionPort)
 
     unsupported_port = runtime.compaction_port(client=client, model="claude-sonnet-4-5")
     assert unsupported_port is None

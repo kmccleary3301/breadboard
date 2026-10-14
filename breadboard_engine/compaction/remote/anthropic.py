@@ -24,6 +24,8 @@ from ..methods import (
     MethodUnavailable,
     NativeCompactionError,
 )
+from ..primitives.byte_estimator import bytes4
+
 from ..primitives.protected_windows import visible_messages
 from ..state import (
     CompactionRecord,
@@ -362,6 +364,7 @@ class AnthropicCompactionPort:
             api=self.api,
             model=context.target.model,
             items=(compaction_block,),
+            token_estimate=bytes4([compaction_block]),
         )
 
         summary_messages = (

@@ -19,8 +19,9 @@ def replay_messages(blocks: list[dict]) -> list[dict]:
     results = [block for block in blocks if block.get("type") == "tool_result"]
     if len(replays) != 1 or not results or len(replays) + len(results) != len(blocks):
         raise ProviderContractError("native tool continuation requires one replay and correlated results")
-    payload = replays[0]["payload"]
-    if set(payload) != {"messages"} or not isinstance(payload["messages"], list) or not payload["messages"]:
+    payload = replays[0].get("payload")
+    if (not isinstance(payload, dict) or set(payload) != {"messages"}
+            or not isinstance(payload["messages"], list) or not payload["messages"]):
         raise ProviderContractError("native tool continuation requires nonempty messages")
     native_results = []
     for message in payload["messages"]:

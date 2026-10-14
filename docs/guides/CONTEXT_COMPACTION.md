@@ -526,6 +526,9 @@ to leave room for those instructions. Encrypted native reasoning and compaction
 payloads use the shared encoded-size estimate and are never truncated; if the
 input and instructions cannot fit together, compaction is rejected before posting.
 
+Anthropic boundaries include the shared encoded-item estimate in native replay
+accounting. Hermes checkpoint transcripts render validated Anthropic tool results
+before truncation, retaining text and using `[image]` instead of encoded image data.
 
 Runtimes without a compaction port get the plain-text summary instead, and a
 model fallback route gets the history projected for its own target. Session

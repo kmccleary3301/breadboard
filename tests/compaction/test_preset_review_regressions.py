@@ -285,6 +285,15 @@ def test_codex_threshold_is_window_fraction_not_preempted_by_output_reserve(max_
     assert controller.recipe.overflow_policy == "terminal"
 
 
+def _hermes_checkpoint_request(messages):
+    recipe = build_recipe(load_compaction_config({"enabled": True, "preset": "hermes_agent@2026.9.11"}))
+    summaries = Summaries("checkpoint")
+    context = CompactionContext(messages, CompactionState(), recipe.settings, "manual", TARGET, 200000, 1,
+                                summarizer=summaries)
+    selection = Selection(first_kept_index=len(messages) - 1, summarize=tuple(range(len(messages) - 1)))
+    recipe.pipeline.stages["summary"].step.reducer.reduce(context, selection)
+    return summaries.requests[0].messages[0]["content"]
+
 def test_hermes_checkpoint_summary_reads_typed_tool_results():
     from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
 
@@ -303,6 +312,153 @@ def test_hermes_checkpoint_summary_reads_typed_tool_results():
     recipe.pipeline.stages["summary"].step.reducer.reduce(context, Selection(first_kept_index=3, summarize=(0, 1, 2)))
     assert "[TOOL RESULT c1]: SCREEN_TEXT\\n[image]" in json.dumps(summaries.requests[0].messages)
 
+
+def test_hermes_checkpoint_summary_reads_anthropic_replay_result_blocks():
+    native_messages = [{"role": "user", "content": [
+        {
+            "type": "tool_result",
+            "tool_use_id": "c1",
+            "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+                {"type": "text", "text": "SCREEN_TEXT"},
+            ],
+        },
+        {"type": "tool_result", "tool_use_id": "c2", "content": "SECOND_RESULT"},
+    ]}]
+    result = AnthropicAdapter().create_tool_result_batch_message(native_messages)
+    assert replay_messages(result["content"]) == native_messages
+    assert result_call_ids(result) == ("c1", "c2")
+
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}},
+            {"id": "c2", "type": "function", "function": {"name": "read_screen", "arguments": "{}"}},
+        ]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+    request = _hermes_checkpoint_request(messages)
+    assert "[TOOL RESULT c1,c2]: [image]\nSCREEN_TEXT\nSECOND_RESULT" in request
+    assert "AA==" not in request
+
+
+def test_hermes_checkpoint_summary_preserves_json_shaped_plain_tool_text():
+    content = (
+        '[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"AA=="}},'
+        '{"type":"text","text":"SCREEN_TEXT"}]'
+    )
+    result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__mvi_text_output": content},
+    )
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+    request = _hermes_checkpoint_request(messages)
+    assert f"[TOOL RESULT c1]: {content}" in request
+    assert "[TOOL RESULT c1]: [image]" not in request
+
+@pytest.mark.parametrize(("batch", "outer_id", "expected_native"), [
+    (False, "other", False),
+    (False, "c1", True),
+    (True, "c1", False),
+])
+def test_hermes_checkpoint_summary_checks_outer_call_id_before_native_replay(batch, outer_id, expected_native):
+    first = {"type": "tool_result", "tool_use_id": "c1", "content": [
+        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+        {"type": "text", "text": "SCREEN_TEXT"},
+    ]}
+    native_messages = [{"role": "user", "content": [
+        first,
+        *([{"type": "tool_result", "tool_use_id": "c2", "content": "SECOND_RESULT"}] if batch else []),
+    ]}]
+    adapter = AnthropicAdapter()
+    result = (
+        adapter.create_tool_result_batch_message(native_messages)
+        if batch
+        else adapter.create_tool_result_message("c1", "view_image", {"__claude_tool_result_messages": native_messages})
+    )
+    native_call_ids = result_call_ids(result)
+    canonical_results = [block["content"] for block in result["content"] if block.get("type") == "tool_result"]
+    result["tool_call_id"] = outer_id
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": "{}"}}
+            for call_id in native_call_ids
+        ]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+    request = _hermes_checkpoint_request(messages)
+    assert f"[TOOL RESULT {outer_id}]" in request
+    if expected_native:
+        assert "[image]\nSCREEN_TEXT" in request
+        assert "AA==" not in request
+    else:
+        assert all(content in request for content in canonical_results)
+        assert "AA==" in request
+        assert "[image]\nSCREEN_TEXT" not in request
+
+
+@pytest.mark.parametrize("invalid_payload", ["wrong_result_id", "missing", "none", "list", "string"])
+def test_hermes_checkpoint_summary_falls_back_for_invalid_anthropic_replay(invalid_payload):
+    native_messages = [{"role": "user", "content": [{
+        "type": "tool_result",
+        "tool_use_id": "c1",
+        "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": "AA=="}},
+            {"type": "text", "text": "SCREEN_TEXT"},
+        ],
+    }]}]
+    result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__claude_tool_result_messages": native_messages},
+    )
+    replay = result["content"][1]
+    if invalid_payload == "wrong_result_id":
+        replay["payload"]["messages"][0]["content"][0]["tool_use_id"] = "other"
+    elif invalid_payload == "missing":
+        del replay["payload"]
+    elif invalid_payload == "none":
+        replay["payload"] = None
+    elif invalid_payload == "list":
+        replay["payload"] = []
+    else:
+        replay["payload"] = "not-an-object"
+    canonical_result = result["content"][0]["content"]
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+    request = _hermes_checkpoint_request(messages)
+    assert f"[TOOL RESULT c1]: {canonical_result}" in request
+    assert "AA==" in request
+    assert "[image]\nSCREEN_TEXT" not in request
+
+
+def test_hermes_checkpoint_summary_falls_back_for_empty_native_result_parts():
+    native_messages = [{"role": "user", "content": [{
+        "type": "tool_result", "tool_use_id": "c1", "content": [],
+    }]}]
+    result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__claude_tool_result_messages": native_messages},
+    )
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "c1", "type": "function", "function": {"name": "view_image", "arguments": "{}"}}]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+    request = _hermes_checkpoint_request(messages)
+    assert "[TOOL RESULT c1]: []" in request
 
 CARRIER_PLACEHOLDER = "[Old tool result content cleared]"
 CARRIER_ANTHROPIC = ProjectionTarget("anthropic", "messages", "claude-sonnet")
