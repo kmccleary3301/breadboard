@@ -42,17 +42,6 @@ CONTEXTUAL_USER_PREFIXES = (
     "<model_switch>",
 )
 
-def _leading_system_instructions(
-    projected_messages: List[Dict[str, Any]],
-) -> Optional[str]:
-    """Use the same text conversion and joining as the Responses runtime."""
-    if not projected_messages:
-        return None
-
-    from ...provider.runtimes.openai.conversion import OpenAIConversionMixin
-
-    return OpenAIConversionMixin()._system_messages_to_instructions(projected_messages)
-
 
 def format_remote_compaction_summary(input_tokens: int) -> str:
     """OMP formatRemoteCompactionSummary."""
@@ -572,11 +561,14 @@ class OpenAIResponsesCompactionPort:
                 f"Remote compaction input exceeds context window: {trimmed['estimated_tokens_after']} > {context.context_window}"
             )
         input_items = trimmed["input"]
-        instructions = (
-            context.custom_instructions
-            or _leading_system_instructions(projected_messages[:head])
-            or "You are a helpful coding assistant."
-        )
+        instructions = context.custom_instructions
+        if not instructions and head:
+            from ...provider.runtimes.openai.conversion import OpenAIConversionMixin
+
+            instructions = OpenAIConversionMixin()._system_messages_to_instructions(
+                projected_messages[:head]
+            )
+        instructions = instructions or "You are a helpful coding assistant."
 
         v1_url, v2_url = self._resolve_endpoints()
         used_v2 = False
