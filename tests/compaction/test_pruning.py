@@ -22,6 +22,7 @@ from breadboard_engine.compaction.state import CompactionState, MessageEdit, Pro
 from breadboard_engine.compaction.params import BuildEnv, Params
 from breadboard_engine.compaction.primitives.observation_edits import DuplicateToolResults
 from breadboard_engine.compaction.primitives.selectors import Selection
+from breadboard_engine.compaction.primitives.protected_windows import VisibleToolOutputs
 from breadboard_engine.compaction.tokens import estimate_message_tokens
 from breadboard_engine.compaction.transcript import check_tool_pairing
 from breadboard_engine.provider.adapters import AnthropicAdapter
@@ -663,3 +664,51 @@ def test_duplicate_tool_results_is_unavailable_without_an_eligible_duplicate():
 
     with pytest.raises(MethodUnavailable, match="No duplicate tool results"):
         _duplicate_reducer(min_chars=100).reduce(_context(messages), Selection(targets=(1, 2)))
+
+
+def test_duplicate_tool_results_prunes_outputs_selected_by_visible_tool_selector():
+    repeated_text = "same typed Responses result " * 60
+    unique_output = [
+        {"type": "input_text", "text": "unique structured result " * 60},
+        {"type": "input_image", "image_url": {"url": "data:image/png;base64,AA=="}},
+    ]
+    call_ids = ["c1", "c2", "c3"]
+    assistant = {
+        "role": "assistant",
+        "content": "",
+        "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": {}}}
+            for call_id in call_ids
+        ],
+    }
+    messages = [
+        {"role": "user", "content": "run"},
+        assistant,
+        responses_image_tool_result_message("c1", [{"type": "input_text", "text": repeated_text}]),
+        responses_image_tool_result_message("c2", [{"type": "input_text", "text": repeated_text}]),
+        responses_image_tool_result_message("c3", unique_output),
+    ]
+    context = _context(messages)
+    selection = VisibleToolOutputs(Params({}, "test.select", BuildEnv(None))).select(context)
+    assert selection.targets == (2, 3, 4)
+    original_messages = deepcopy(messages)
+
+    reduction = _duplicate_reducer().reduce(context, selection)
+    assert [edit.index for edit in reduction.edits] == [2]
+    context.state.append(
+        context.new_record(method="duplicate_tool_results", edits=reduction.edits),
+        messages,
+    )
+    visible = context.state.project(messages, TARGET)
+
+    assert messages == original_messages
+    assert check_tool_pairing(visible) is None
+    outputs = [
+        message["content"][0]["payload"]
+        for message in visible
+        if message.get("role") == "tool_result"
+    ]
+    assert [output["call_id"] for output in outputs] == call_ids
+    assert outputs[0]["output"] == [{"type": "input_text", "text": "[duplicate tool result]"}]
+    assert outputs[1]["output"] == [{"type": "input_text", "text": repeated_text}]
+    assert outputs[2]["output"] == unique_output

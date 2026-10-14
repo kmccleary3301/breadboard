@@ -2,7 +2,7 @@
 
 from ..methods import MethodUnavailable
 from ..state import leading_system_count
-from ..transcript import answers_tool_call, is_tool_result
+from ..transcript import answers_tool_call
 from .accounting import build_estimator
 
 
@@ -110,4 +110,4 @@ class VisibleToolOutputs:
         prefix = context.state.prefix_end(context.messages, context.target)
         head = leading_system_count(context.messages)
         return Selection(targets=tuple(i for i, m in enumerate(context.messages)
-                                       if (head <= i < prefix or i >= start) and is_tool_result(m)))
+                                       if (head <= i < prefix or i >= start) and answers_tool_call(m)))

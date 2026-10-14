@@ -54,17 +54,19 @@ The proof is a differential lane that compares raw request bytes against the pin
 
 ## 4) Change Classification
 
-- Classification: `additive`. New targets, presets, capability flags and optional contract members. Existing profiles, target revisions and documents keep their behavior and validity. The one default-path change, overflow no longer counting against route health, is a fix: no wire field or accepted document changes.
+- Classification: `additive`. New targets, presets, capability flags and optional contract members; engine compaction remains opt-in and baseline Pi bytes/pins are retained. Default-route corrections also cover overflow health, OpenCode/OMO typed-image and admitted-raw-call history, and destination projection on fallback. These are contract fixes, not a claim of universal default-path byte identity or only one default-path change.
 
 ## 5) Evidence and Validation Plan
 
+- Focused replay receipts (2026-10-14): native Anthropic image removal at `0031ee5b` passed 29 image tests and actual runtime/SDK serialization. Structured duplicate pruning at `94117779` passed 27 pruning tests, before/after ordered-content and native-text-equivalence probes, and actual SDK serialization/decode. Local mock transports made no live provider HTTP requests.
+- The following suite, wheel and CI rows are historical receipts, not qualification of a later head. Final-head verification belongs to the PR's current verification section; no full live-provider, RL, B1 or training qualification is claimed here.
 - After merging the RL run-budget ceilings, the focused suite (`tests/compaction tests/providers tests/compaction_lanes tests/rl/harness tests/test_e4_targets.py tests/test_runtime_resource_closure.py tests/test_script_index_guard.py`) had 4699 passed, 271 skipped and 29 failed on a fresh macOS worktree. None is caused by this change:
   - 10 fail identically at base `308b9027`: runner and WP7 source guards, v1 history close, and the V2 containment receipt.
   - 3 fail identically on `main` `0f590af4`: two Docker sandbox tests and the Hermes packet replay, which reads an untracked `docs_tmp` input.
   - 14 native Pi worker tests need the npm package installed. With it installed, those two modules pass (308 passed).
   - 1 OpenRouter test reads a local credential.
   - 1 OpenCode dead-end test is timing-dependent: stock oh-my-opencode 3.10.0 caches its storage-backend check (`isSqliteBackend`) and, if the check runs before `opencode.db` exists, truncates nothing. It passes or fails the same way without this change.
-- The long-session lanes match stock byte for byte, or differ only by recorded, guarded deviations (`breadboard_engine/compaction_lanes/README.md`).
+- Long-session lanes compare stock and BB request bytes and reject unadmitted differences (`breadboard_engine/compaction_lanes/README.md`). A passing report establishes only its pinned cases, not whole-agent or live-provider parity.
 - Installed-wheel proof in a fresh venv with `-I`, run outside the checkout:
   - the consumer regression passes;
   - all five native workers initialize, read and close with every process dead;
@@ -77,8 +79,8 @@ The proof is a differential lane that compares raw request bytes against the pin
 
 ## 6) Rollout Plan
 
-- Merge `feat/compaction-subsystem` into `main`. Compaction stays off without a `compaction` block, and profiles and target revisions are selected explicitly, so nothing changes for existing consumers until they opt in.
-- Step 5 and training stay stopped until separately authorized.
+- Kyle reviews and decides whether to merge `feat/compaction-subsystem`. Engine compaction stays off without a `compaction` block; the default-route protocol corrections in Section 4 are independently applicable.
+- Campaign jobs operate under standing Slurm authority, without per-job approval pauses. Resource authority does not award qualification, external acceptance or promotion; those gates still require their evidence.
 
 ## 7) Rollback Plan
 
