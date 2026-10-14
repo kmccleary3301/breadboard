@@ -302,26 +302,10 @@ def portable_provider_messages(
             and image_placeholder is None
             and isinstance(content, str)
             and message.get("role") in {"tool", "tool_result"}
+            and not native_anthropic_tool_results
+            and not any(raw_call_messages.get(call_id) is not None for call_id, _, _ in entries)
         ):
-            raw_entry = any(raw_call_messages.get(call_id) is not None for call_id, _, _ in entries)
-            if raw_entry or native_anthropic_tool_results:
-                for call_id, result, is_error in entries:
-                    _append_portable_tool_result(
-                        portable,
-                        raw_call_messages,
-                        call_id,
-                        result,
-                        is_error,
-                        image_placeholder=image_placeholder,
-                        session_state=session_state,
-                        pending_tool_images=pending_tool_images,
-                        pending_anthropic_results=(
-                            pending_anthropic_results
-                            if native_anthropic_tool_results else None
-                        ),
-                    )
-            else:
-                portable.append(copy.deepcopy(dict(message)))
+            portable.append(copy.deepcopy(dict(message)))
             continue
         if entries:
             for call_id, result, is_error in entries:
