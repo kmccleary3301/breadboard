@@ -344,6 +344,97 @@ def test_hermes_checkpoint_summary_reads_anthropic_replay_result_blocks():
     assert "AA==" not in request
 
 
+def test_hermes_checkpoint_summary_pairs_duplicate_native_results_positionally():
+    native_messages = [{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "dup", "content": [
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/png", "data": "Y2hlY2twb2ludCBpbWFnZQ==",
+            }},
+            {"type": "text", "text": "DUPLICATE_CHECKPOINT_FIRST"},
+        ]},
+        {"type": "tool_result", "tool_use_id": "dup", "content": [
+            {"type": "document", "source": {
+                "type": "base64", "media_type": "application/pdf", "data": "JVBERi0xLjQK",
+            }, "filename": "second.pdf"},
+            {"type": "text", "text": "DUPLICATE_CHECKPOINT_SECOND"},
+        ]},
+    ]}]
+    result = AnthropicAdapter().create_tool_result_batch_message(native_messages)
+    assert replay_messages(result["content"]) == native_messages
+    assert result_call_ids(result) == ("dup", "dup")
+    source_before = json.dumps(result, sort_keys=True)
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "dup", "type": "function", "function": {"name": "inspect", "arguments": "{}"}},
+            {"id": "dup", "type": "function", "function": {"name": "inspect", "arguments": "{}"}},
+        ]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+
+    request = _hermes_checkpoint_request(messages)
+    ordered = (
+        "[TOOL RESULT dup,dup]", "[image]", "DUPLICATE_CHECKPOINT_FIRST",
+        "[Attached application/pdf: second.pdf]", "DUPLICATE_CHECKPOINT_SECOND",
+    )
+    positions = [request.index(segment) for segment in ordered]
+    assert positions == sorted(positions)
+    assert "Y2hlY2twb2ludCBpbWFnZQ==" not in request
+    assert "JVBERi0xLjQK" not in request
+    assert json.dumps(result, sort_keys=True) == source_before
+
+
+def test_hermes_checkpoint_summary_preserves_ordered_native_observations():
+    native_messages = [
+        {"role": "user", "content": [
+            {"type": "text", "text": "CHECKPOINT_BEFORE_ONE"},
+            {"type": "tool_result", "tool_use_id": "c1", "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png", "data": "AA==",
+                }},
+                {"type": "text", "text": "SCREEN_TEXT"},
+            ]},
+            {"type": "document", "source": {
+                "type": "base64", "media_type": "application/pdf", "data": "CHECKPOINT_DOCUMENT_BYTES",
+            }, "filename": "brief.pdf"},
+            {"type": "text", "text": "CHECKPOINT_BETWEEN_ONE"},
+            {"type": "text", "text": "CHECKPOINT_EXTRA_TEXT", "annotation": "PRESERVED_TEXT_METADATA"},
+            {"type": "opaque_checkpoint", "payload": "OPAQUE_TYPED_CANARY"},
+        ]},
+        {"role": "user", "content": [
+            {"type": "text", "text": "CHECKPOINT_BEFORE_TWO"},
+            {"type": "tool_result", "tool_use_id": "c2", "content": "SECOND_RESULT"},
+            {"type": "text", "text": "CHECKPOINT_AFTER_TWO"},
+        ]},
+    ]
+    result = AnthropicAdapter().create_tool_result_batch_message(native_messages)
+    source_before = json.dumps(result, sort_keys=True)
+    messages = [
+        {"role": "user", "content": "look at the screen"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": call_id, "type": "function", "function": {"name": "inspect", "arguments": "{}"}}
+            for call_id in ("c1", "c2")
+        ]},
+        result,
+        {"role": "user", "content": "next"},
+    ]
+
+    request = _hermes_checkpoint_request(messages)
+    ordered = (
+        "CHECKPOINT_BEFORE_ONE", "[TOOL RESULT c1]", "[image]", "SCREEN_TEXT",
+        "[Attached application/pdf: brief.pdf]", "CHECKPOINT_BETWEEN_ONE",
+        "PRESERVED_TEXT_METADATA", "CHECKPOINT_EXTRA_TEXT", "OPAQUE_TYPED_CANARY",
+        "CHECKPOINT_BEFORE_TWO", "[TOOL RESULT c2]", "SECOND_RESULT", "CHECKPOINT_AFTER_TWO",
+    )
+    positions = [request.index(segment) for segment in ordered]
+    assert positions == sorted(positions)
+    assert "AA==" not in request
+    assert "CHECKPOINT_DOCUMENT_BYTES" not in request
+    assert json.dumps(result, sort_keys=True) == source_before
+
+
+
 def test_summary_serializer_reads_anthropic_image_results_before_truncation():
     native_messages = [{"role": "user", "content": [{
         "type": "tool_result",
@@ -362,8 +453,27 @@ def test_summary_serializer_reads_anthropic_image_results_before_truncation():
 
     transcript = serialize_conversation([result])
 
+    assert "[Tool Result]:" in transcript
     assert "[image]SCREEN_OBSERVATION_AFTER_IMAGE" in transcript
     assert "A" * 256 not in transcript
+    assert json.dumps(result, sort_keys=True) == source_before
+
+
+def test_summary_serializer_keeps_native_observation_when_result_is_empty():
+    native_messages = [{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "c1", "content": []},
+        {"type": "text", "text": "EMPTY_RESULT_SIDE_OBSERVATION"},
+    ]}]
+    result = AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__claude_tool_result_messages": native_messages},
+    )
+    source_before = json.dumps(result, sort_keys=True)
+
+    transcript = serialize_conversation([result])
+
+    assert "[User]: EMPTY_RESULT_SIDE_OBSERVATION" in transcript
+    assert "[Tool Result]: []" not in transcript
+    assert "provider_replay" not in transcript
     assert json.dumps(result, sort_keys=True) == source_before
 
 

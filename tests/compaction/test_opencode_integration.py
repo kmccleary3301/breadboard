@@ -129,38 +129,86 @@ def test_summary_request_projects_anthropic_native_tool_result_media(preset):
     assert "provider_replay" not in rendered_request
     assert state.provider_messages == original_history
 
-def test_summary_request_projects_anthropic_native_batch_result_groups():
+@pytest.mark.parametrize("provider_model", ["openai/gpt-4o-mini", "anthropic/claude-3-opus"])
+def test_summary_request_projects_anthropic_native_batch_observations_as_tool_free_transcript(provider_model):
     from breadboard_engine.provider.adapters import AnthropicAdapter
 
-    native_messages = [{"role": "user", "content": [
-        {"type": "tool_result", "tool_use_id": "c1", "content": [
-            {"type": "image", "source": {
-                "type": "base64", "media_type": "image/png", "data": "BATCH_IMAGE_ONE",
-            }},
-            {"type": "text", "text": "BATCH_OBSERVATION_ONE"},
+    native_messages = [
+        {"role": "user", "content": [
+            {"type": "text", "text": "BATCH_BEFORE_ONE"},
+            {"type": "tool_result", "tool_use_id": "c1", "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/png", "data": "aW1hZ2VfYmF0Y2hfMQ==",
+                }},
+                {"type": "text", "text": "BATCH_RESULT_ONE"},
+            ]},
+            {"type": "text", "text": "BATCH_BETWEEN_ONE"},
         ]},
-        {"type": "tool_result", "tool_use_id": "c2", "content": [
-            {"type": "image", "source": {
-                "type": "base64", "media_type": "image/jpeg", "data": "BATCH_IMAGE_TWO",
-            }},
+        {"role": "user", "content": [
+            {"type": "text", "text": "BATCH_BEFORE_TWO"},
+            {"type": "tool_result", "tool_use_id": "c2", "content": [
+                {"type": "image", "source": {
+                    "type": "base64", "media_type": "image/jpeg", "data": "aW1hZ2VfYmF0Y2hfMg==",
+                }},
+                {"type": "document", "source": {
+                    "type": "base64", "media_type": "application/pdf", "data": "JVBERi0xLjQK",
+                }, "filename": "result.pdf"},
+                {"type": "text", "text": "BATCH_RESULT_TWO"},
+            ]},
             {"type": "document", "source": {
-                "type": "base64", "media_type": "application/pdf", "data": "BATCH_DOCUMENT_TWO",
-            }},
-            {"type": "text", "text": "BATCH_OBSERVATION_TWO"},
+                "type": "base64", "media_type": "application/pdf", "data": "JVBERi0xLjUK",
+            }, "filename": "side.pdf"},
+            {"type": "text", "text": "BATCH_AFTER_TWO"},
         ]},
-    ]}]
+    ]
     result = AnthropicAdapter().create_tool_result_batch_message(native_messages)
 
     state = SessionState("ws", "image", {})
     state.add_message({"role": "user", "content": "Run tools"})
     state.add_message({"role": "assistant", "content": "Inspecting", "tool_calls": [
-        {"id": call_id, "type": "function", "function": {"name": "view_image", "arguments": "{}"}}
+        {"id": call_id, "type": "function", "function": {"name": "inspect", "arguments": "{}"}}
         for call_id in ("c1", "c2")
     ]})
     state.add_message(result)
     original_history = copy.deepcopy(state.provider_messages)
+    descriptor, _ = provider_router.get_runtime_descriptor(provider_model)
+    converter = provider_registry.create_runtime(descriptor)
+    markers = (
+        "BATCH_BEFORE_ONE", "BATCH_RESULT_ONE", "BATCH_BETWEEN_ONE",
+        "BATCH_BEFORE_TWO", "BATCH_RESULT_TWO", "BATCH_AFTER_TWO",
+    )
 
-    runtime = FakeRuntime()
+    class RequestDerivedRuntime(FakeRuntime):
+        def invoke(self, *, client, model, messages, tools, stream, context):
+            super().invoke(client=client, model=model, messages=messages, tools=tools,
+                           stream=stream, context=context)
+            if descriptor.provider_id == "anthropic":
+                _, converted = converter._convert_messages(messages, context=context)
+                assert all(block.get("type") not in {"tool_use", "tool_result"}
+                           for message in converted for block in message.get("content", []))
+            else:
+                converted = converter._convert_messages_to_chat(messages, context=context)
+                assert all(not message.get("tool_calls") for message in converted)
+            rendered = repr(converted)
+            assert all(marker in rendered for marker in markers)
+            assert all(f"[Tool Result {call_id}]" in rendered for call_id in ("c1", "c2"))
+            assert [rendered.index(marker) for marker in markers] == sorted(
+                rendered.index(marker) for marker in markers
+            )
+            assert not any(message.get("role") in {"tool", "tool_result"} for message in converted)
+            assert "provider_replay" not in rendered
+            assert all(encoded not in rendered for encoded in (
+                "aW1hZ2VfYmF0Y2hfMQ==", "aW1hZ2VfYmF0Y2hfMg==",
+                "JVBERi0xLjQK", "JVBERi0xLjUK",
+            ))
+            observed = [marker for marker in markers if marker in rendered]
+            return ProviderResult(
+                messages=[ProviderMessage(role="assistant", content="## Goal\n" + "|".join(observed))],
+                raw_response=None,
+                model=model,
+            )
+
+    runtime = RequestDerivedRuntime()
     outcome = CompactionController({"compaction": {
         "enabled": True, "preset": "opencode@1.2.17",
     }}).compact_now(state, target=_target(), runtime=runtime, client=object())
@@ -168,34 +216,61 @@ def test_summary_request_projects_anthropic_native_batch_result_groups():
     assert outcome.compacted, outcome.stages
     assert len(runtime.summary_requests) == 1
     request = runtime.summary_requests[0]
-    tool_message = next(message for message in request if message["role"] == "tool")
-    assert tool_message["content"] == [
-        {
-            "type": "tool_result",
-            "call_id": "c1",
-            "content": [
-                {"type": "text", "text": "[Attached image/png: file]"},
-                {"type": "text", "text": "BATCH_OBSERVATION_ONE"},
-            ],
-            "is_error": False,
-        },
-        {
-            "type": "tool_result",
-            "call_id": "c2",
-            "content": [
-                {"type": "text", "text": "[Attached image/jpeg: file]"},
-                {"type": "text", "text": "[Attached application/pdf: file]"},
-                {"type": "text", "text": "BATCH_OBSERVATION_TWO"},
-            ],
-            "is_error": False,
-        },
-    ]
     rendered_request = repr(request)
-    assert "BATCH_IMAGE_ONE" not in rendered_request
-    assert "BATCH_IMAGE_TWO" not in rendered_request
-    assert "BATCH_DOCUMENT_TWO" not in rendered_request
+    assert all(marker in rendered_request for marker in markers)
+    assert "[Tool Result c1]" in rendered_request and "[Tool Result c2]" in rendered_request
+    assert "[image]" in rendered_request
+    assert "[Attached application/pdf: result.pdf]" in rendered_request
+    assert "[Attached application/pdf: side.pdf]" in rendered_request
     assert "provider_replay" not in rendered_request
+    assert all(encoded not in rendered_request for encoded in (
+        "aW1hZ2VfYmF0Y2hfMQ==", "aW1hZ2VfYmF0Y2hfMg==",
+        "JVBERi0xLjQK", "JVBERi0xLjUK",
+    ))
+    assert all(message.get("role") not in {"tool", "tool_result"} for message in request)
+    assert all(not message.get("tool_calls") for message in request)
+    boundary = state.compaction_state.latest_readable_boundary()
+    assert boundary is not None
+    assert all(marker in (boundary.summary or "") for marker in markers)
+    projected = state.compaction_state.project(state.provider_messages, _target())
+    assert all(marker in repr(projected) for marker in markers)
     assert state.provider_messages == original_history
+
+
+def test_summary_request_keeps_native_result_only_batch_structured():
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+
+    native_messages = [{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "c1", "content": [{"type": "text", "text": "RESULT_ONE"}]},
+        {"type": "tool_result", "tool_use_id": "c2", "content": [{"type": "text", "text": "RESULT_TWO"}]},
+    ]}]
+    result = AnthropicAdapter().create_tool_result_batch_message(native_messages)
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "user", "content": "Run tools"})
+    state.add_message({"role": "assistant", "content": "Inspecting", "tool_calls": [
+        {"id": call_id, "type": "function", "function": {"name": "inspect", "arguments": "{}"}}
+        for call_id in ("c1", "c2")
+    ]})
+    state.add_message(result)
+    original_history = copy.deepcopy(state.provider_messages)
+    runtime = FakeRuntime()
+
+    outcome = CompactionController({"compaction": {
+        "enabled": True, "preset": "opencode@1.2.17",
+    }}).compact_now(state, target=_target(), runtime=runtime, client=object())
+
+    assert outcome.compacted, outcome.stages
+    request = runtime.summary_requests[0]
+    result_message = next(message for message in request if message.get("role") == "tool")
+    assert result_message["content"] == [
+        {"type": "tool_result", "call_id": "c1", "content": [{"type": "text", "text": "RESULT_ONE"}], "is_error": False},
+        {"type": "tool_result", "call_id": "c2", "content": [{"type": "text", "text": "RESULT_TWO"}], "is_error": False},
+    ]
+    assert any(message.get("tool_calls") for message in request)
+    assert "provider_replay" not in repr(request)
+    assert state.provider_messages == original_history
+
+
 
 
 def test_summary_request_keeps_unusable_anthropic_replays_as_canonical_text():
@@ -243,21 +318,13 @@ def test_summary_request_keeps_unusable_anthropic_replays_as_canonical_text():
     duplicate_result = adapter.create_tool_result_batch_message([{"role": "user", "content": [
         {"type": "tool_result", "tool_use_id": "dup", "content": [
             {"type": "image", "source": {
-                "type": "base64", "media_type": "image/png", "data": "DUPLICATE_CANARY_ONE",
+                "type": "base64", "media_type": "image/png", "data": f"DUPLICATE_CANARY_{ordinal}",
             }},
-            {"type": "text", "text": "DUPLICATE_OBSERVATION_ONE"},
-        ]},
-        {"type": "tool_result", "tool_use_id": "dup", "content": [
-            {"type": "image", "source": {
-                "type": "base64", "media_type": "image/png", "data": "DUPLICATE_CANARY_TWO",
-            }},
-            {"type": "text", "text": "DUPLICATE_OBSERVATION_TWO"},
-        ]},
+            {"type": "text", "text": f"DUPLICATE_OBSERVATION_{ordinal}"},
+        ]}
+        for ordinal in ("ONE", "TWO")
     ]}])
-    results = (
-        non_native_result, foreign_result, invalid_result, empty_result,
-        mismatched_result, duplicate_result,
-    )
+    results = (non_native_result, foreign_result, invalid_result, empty_result, mismatched_result, duplicate_result)
 
     state = SessionState("ws", "image", {})
     state.add_message({"role": "user", "content": "Run tools"})

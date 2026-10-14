@@ -283,7 +283,12 @@ def test_soft_compaction_summarizes_typed_tool_results():
             {"type": "input_image", "image_url": "data:image/png;base64,AA=="}]),
         {"role": "tool_result", "content": [{"type": "tool_result", "call_id": "c2", "content": "CANONICAL_RESULT", "is_error": False}]},
         AnthropicAdapter().create_tool_result_message("c3", "read", {"__claude_tool_result_messages": [
-            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c3", "content": "CLAUDE_RESULT"}]}]}),
+            {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "c3", "content": [
+                {"type": "document", "source": {
+                    "type": "base64", "media_type": "application/pdf", "data": "REPORT_PDF_CANARY",
+                }, "filename": "report.pdf"},
+            ]}]},
+        ]}),
         {"role": "user", "content": "turn 2: what did it show?" + " context " * 20},
         {"role": "assistant", "content": "a screen" + " context " * 20},
     ]
@@ -291,6 +296,7 @@ def test_soft_compaction_summarizes_typed_tool_results():
     ctx = _make_context(messages, summarizer=summarizer)
 
     omp_recipe(ctx.settings).pipeline.stages["soft"].step.run(ctx)
+    sent = "".join(m["content"] for request in summarizer.requests for m in request.messages)
 
-    sent = "".join(m["content"] for r in summarizer.requests for m in r.messages)
-    assert all(text in sent for text in ("TYPED_TOOL_OUTPUT", "CANONICAL_RESULT", "CLAUDE_RESULT")) and "base64" not in sent
+    assert all(text in sent for text in ("TYPED_TOOL_OUTPUT", "CANONICAL_RESULT", "[Attached application/pdf: report.pdf]"))
+    assert "REPORT_PDF_CANARY" not in sent and "base64" not in sent

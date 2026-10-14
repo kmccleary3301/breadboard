@@ -1,10 +1,26 @@
 """A single tool-free checkpoint request with explicit invalid-output guards."""
 
+from collections.abc import Mapping
 import re
 
 from ..methods import MethodUnavailable, SummaryRequest
-from ..transcript import anthropic_replay_result_groups, result_call_ids, result_parts
+from ..transcript import anthropic_replay_conversation, media_placeholder, result_call_ids, result_parts
 from .protected_windows import visible_messages
+
+
+
+def _checkpoint_part_text(part):
+    if isinstance(part, str):
+        return part
+    if not isinstance(part, Mapping):
+        return "[image]"
+    placeholder = media_placeholder(part)
+    if placeholder is not None:
+        return placeholder
+    kind = part.get("type")
+    if kind == "text" and isinstance(part.get("text"), str):
+        return part["text"]
+    return str(part.get("text") or "[image]")
 
 
 class SummaryFailure(RuntimeError):
@@ -37,37 +53,58 @@ class CheckpointSummary:
         previous = context.state.latest_readable_boundary()
         carrier = previous.details.get("summary_carrier_index") if previous else None
         turns = [messages[i] for i in selection.summarize]
-        has_user = bool(previous and previous.details.get("summary_has_user_turn")) or any(
-            i != carrier and messages[i].get("role") == "user" and str(messages[i].get("content") or "").strip()
-            for i in selection.summarize)
+        turn_replays = [(message, anthropic_replay_conversation(message)) for message in turns]
+        has_user = (
+            bool(previous and previous.details.get("summary_has_user_turn"))
+            or any(
+                i != carrier and messages[i].get("role") == "user"
+                and str(messages[i].get("content") or "").strip()
+                for i in selection.summarize
+            )
+            or any(
+                replay is not None and any(item.get("role") == "user" for item in replay)
+                for _, replay in turn_replays
+            )
+        )
         parts = []
-        for message in turns:
-            role = message.get("role", "unknown")
-            content = message.get("content") or ""
-            if isinstance(content, (list, tuple)):
-                blocks = content
-                if role in ("tool", "tool_result"):
-                    groups = anthropic_replay_result_groups(message)
-                    if groups is None:
-                        blocks = result_parts(list(content) if isinstance(content, tuple) else content)
-                    else:
-                        blocks = [part for _, native_parts in groups for part in native_parts]
-                content = "\n".join(p if isinstance(p, str) else str(p.get("text") or "[image]") for p in blocks)
-            content = re.sub(r"MEDIA:\S+", "[media attachment]", str(content))
-            if role == "assistant":
-                content = re.sub(r"<think>.*?</think>", "", content, flags=re.S)
-            if len(content) > self.content_max:
-                content = content[:self.content_head] + "\n...[truncated]...\n" + content[-self.content_tail:]
-            if role in ("tool", "tool_result"):
-                parts.append(f"[TOOL RESULT {message.get('tool_call_id') or ','.join(result_call_ids(message))}]: {content}")
+        for original_message, replay in turn_replays:
+            if replay is None:
+                expanded = (original_message,)
+            elif any(item.get("role") == "user" for item in replay):
+                expanded = replay
             else:
-                if role == "assistant" and message.get("tool_calls"):
-                    calls = []
-                    for call in message["tool_calls"]:
-                        function = call.get("function") or call
-                        calls.append(f"{function.get('name', '')}({str(function.get('arguments', ''))[:1500]})")
-                    content += "\n[Tool calls:\n" + "\n".join(calls) + "\n]"
-                parts.append(f"[{role.upper()}]: {content}")
+                flattened_message = dict(original_message)
+                flattened_message["content"] = [
+                    part for replay_message in replay for part in replay_message.get("content", [])
+                ]
+                expanded = (flattened_message,)
+            rendered = []
+            for message in expanded:
+                role = message.get("role", "unknown")
+                content = message.get("content") or ""
+                if isinstance(content, (list, tuple)):
+                    blocks = result_parts(list(content) if isinstance(content, tuple) else content) \
+                        if role in ("tool", "tool_result") else content
+                    content = "\n".join(_checkpoint_part_text(block) for block in blocks)
+                if role == "assistant":
+                    content = re.sub(r"<think>.*?</think>", "", str(content), flags=re.S)
+                if role in ("tool", "tool_result"):
+                    label = f"[TOOL RESULT {message.get('tool_call_id') or ','.join(result_call_ids(message))}]"
+                else:
+                    if role == "assistant" and message.get("tool_calls"):
+                        calls = []
+                        for call in message["tool_calls"]:
+                            function = call.get("function") or call
+                            calls.append(f"{function.get('name', '')}({str(function.get('arguments', ''))[:1500]})")
+                        content = str(content) + "\n[Tool calls:\n" + "\n".join(calls) + "\n]"
+                    label = f"[{role.upper()}]"
+                rendered.append(f"{label}: {content}")
+                if replay is None and len(content) > self.content_max:
+                    rendered[-1] = f"{label}: {content[:self.content_head]}\n...[truncated]...\n{content[-self.content_tail:]}"
+            conversation = "\n".join(rendered)
+            if replay is not None and len(conversation) > self.content_max:
+                conversation = conversation[:self.content_head] + "\n...[truncated]...\n" + conversation[-self.content_tail:]
+            parts.append(conversation)
         budget = max(2000, min(int(context.context_window * 0.05), 10000,
                                int(sum(len(p) for p in parts) / 4 * 0.2)))
         return self.reduce_text(context, "\n\n".join(parts), previous.summary if previous else "", budget, has_user)

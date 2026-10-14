@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
-from .transcript import anthropic_replay_result_groups, result_call_ids, result_text
+from .transcript import anthropic_replay_conversation, media_placeholder, result_call_ids, result_parts
 
 TOOL_RESULT_MAX_CHARS = 2000
 
@@ -33,6 +33,7 @@ class TranscriptStyle:
     tool_result: str = "[Tool Result]"
     skip_useless: bool = True
     tool_result_max_chars: int = TOOL_RESULT_MAX_CHARS
+    include_tool_result_ids: bool = False
 
 
 OMP_TRANSCRIPT = TranscriptStyle()
@@ -94,34 +95,68 @@ def _render_tool_calls(calls: Sequence[Mapping[str, Any]]) -> str:
     return "; ".join(rendered)
 
 
+
+def _transcript_part_text(part: Any) -> str:
+    if isinstance(part, str):
+        return part
+    if not isinstance(part, Mapping):
+        return ""
+    placeholder = media_placeholder(part)
+    if placeholder is not None:
+        return placeholder
+    kind = part.get("type")
+    if kind == "text" and isinstance(part.get("text"), str):
+        return part["text"]
+    return ""
+
+
 def serialize_conversation(
     messages: Sequence[Mapping[str, Any]],
     style: TranscriptStyle = OMP_TRANSCRIPT,
 ) -> str:
     """Serialize chat-format messages to transcript text."""
+    projected_messages: list[Mapping[str, Any]] = []
+    native_replay_call_ids: set[str] = set()
+    for message in messages:
+        replay = anthropic_replay_conversation(message)
+        if replay is None:
+            projected_messages.append(message)
+        elif any(item.get("role") == "user" for item in replay):
+            projected_messages.extend(replay)
+            native_replay_call_ids.update(
+                call_id
+                for replay_message in replay
+                for call_id in result_call_ids(replay_message)
+                if isinstance(call_id, str)
+            )
+        else:
+            flattened_message = dict(message)
+            flattened_message["content"] = [
+                part for replay_message in replay for part in replay_message.get("content", [])
+            ]
+            projected_messages.append(flattened_message)
+
     useless_call_ids: set[str] = set()
-    for msg in messages if style.skip_useless else ():
+    for msg in projected_messages if style.skip_useless else ():
         role = msg.get("role")
         if role in ("tool", "toolResult", "function"):
             is_error = bool(msg.get("is_error") or msg.get("isError"))
             if msg.get("useless") is True and not is_error:
+                for call_id in result_call_ids(msg):
+                    if isinstance(call_id, str):
+                        useless_call_ids.add(call_id)
                 call_id = msg.get("tool_call_id") or msg.get("toolCallId")
                 if isinstance(call_id, str):
                     useless_call_ids.add(call_id)
     parts: list[str] = []
-    for msg in messages:
+    for msg in projected_messages:
         role = msg.get("role")
         if role == "user":
             content = msg.get("content")
             if isinstance(content, str):
                 text = content
             elif isinstance(content, list):
-                text_parts = [
-                    p.get("text", "")
-                    for p in content
-                    if isinstance(p, Mapping) and p.get("type") == "text" and isinstance(p.get("text"), str)
-                ]
-                text = "".join(text_parts)
+                text = "".join(_transcript_part_text(part) for part in content)
             else:
                 text = ""
             if text:
@@ -132,7 +167,6 @@ def serialize_conversation(
             thinking_parts: list[str] = []
             valid_tool_calls: list[Mapping[str, Any]] = []
 
-            # Check reasoning fields
             if isinstance(msg.get("reasoning"), str) and msg["reasoning"]:
                 thinking_parts.append(msg["reasoning"])
             if isinstance(msg.get("reasoning_content"), str) and msg["reasoning_content"]:
@@ -185,22 +219,17 @@ def serialize_conversation(
             call_ids = result_call_ids(msg) or (msg.get("toolCallId"),)
             if all(call_id in useless_call_ids for call_id in call_ids):
                 continue
-            native_groups = anthropic_replay_result_groups(msg)
-            if native_groups is None:
-                text = result_text(msg.get("content"))
-            else:
-                text = "".join(
-                    part["text"]
-                    if isinstance(part, Mapping) and part.get("type") == "text"
-                    and isinstance(part.get("text"), str)
-                    else "[image]"
-                    if isinstance(part, Mapping) and part.get("type") == "image"
-                    else ""
-                    for _, native_parts in native_groups
-                    for part in native_parts
-                )
+            text = "".join(_transcript_part_text(part) for part in result_parts(msg.get("content")))
             if text:
-                parts.append(f"{style.tool_result}: {truncate_tool_result_for_summary(text, style.tool_result_max_chars)}")
+                label = style.tool_result
+
+                result_ids = [call_id for call_id in call_ids if isinstance(call_id, str)]
+                if result_ids and (
+                    style.include_tool_result_ids
+                    or any(call_id in native_replay_call_ids for call_id in result_ids)
+                ):
+                    label = f"{label[:-1]} {','.join(result_ids)}]" if label.endswith("]") else f"{label} {','.join(result_ids)}"
+                parts.append(f"{label}: {truncate_tool_result_for_summary(text, style.tool_result_max_chars)}")
 
     return "\n\n".join(parts)
 

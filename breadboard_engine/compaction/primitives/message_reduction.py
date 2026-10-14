@@ -2,52 +2,60 @@
 from __future__ import annotations
 
 import copy
-import re
 from typing import Any, Mapping
 
 from ..methods import CompactionContext, MethodUnavailable, SummaryRequest
 from ..params import Params
 from ..state import MessageEdit
-from ..transcript import anthropic_replay_result_groups, rewrite_result_content
+from ..transcript import anthropic_replay_conversation, media_placeholder, rewrite_result_content
+from ..serialize import TranscriptStyle, serialize_conversation
 from .chat_reducers import summary_request_options
 from .protected_windows import visible_messages
 from .reducers import Reduction, resolve_prompt
 from .selectors import Selection
 
 
-def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str, Any]:
-    """Normalize text and replace user image/PDF parts without retaining tool attachments."""
-    result = copy.deepcopy(dict(message))
-    content = result.get("content")
-    if strip_media and result.get("role") in {"tool", "tool_result"} and isinstance(content, list):
-        native_groups = anthropic_replay_result_groups(message)
-        if native_groups is not None:
-            canonical_results = [
-                (index, part) for index, part in enumerate(content)
-                if isinstance(part, Mapping) and part.get("type") == "tool_result"
-            ]
-            native_call_ids = [call_id for call_id, _ in native_groups]
-            canonical_call_ids = [part.get("call_id") for _, part in canonical_results]
-            if (
-                len(canonical_results) == len(native_groups)
-                and all(isinstance(call_id, str) for call_id in native_call_ids + canonical_call_ids)
-                and len(set(native_call_ids)) == len(native_call_ids)
-                and len(set(canonical_call_ids)) == len(canonical_call_ids)
-                and set(native_call_ids) == set(canonical_call_ids)
-            ):
-                projected_by_id = {
-                    call_id: model_message(
-                        {"role": "user", "content": native_parts},
-                        strip_media=True,
-                    )["content"]
-                    for call_id, native_parts in native_groups
-                }
-                for index, part in canonical_results:
-                    content[index] = {
-                        **part,
-                        "content": projected_by_id[part["call_id"]],
-                    }
+_UNDECODED_REPLAY = object()
 
+def model_message(
+    message: Mapping[str, Any],
+    *,
+    strip_media: bool,
+    replay_view: Any = _UNDECODED_REPLAY,
+) -> dict[str, Any]:
+    """Normalize one chat message, replacing user image/PDF parts when requested."""
+    result = copy.deepcopy(dict(message))
+    if replay_view is _UNDECODED_REPLAY:
+        replay_view = anthropic_replay_conversation(message)
+    if replay_view is not None:
+        if any(item.get("role") == "user" for item in replay_view):
+            transcript = serialize_conversation(
+                replay_view, TranscriptStyle(skip_useless=False, include_tool_result_ids=True),
+            )
+            return {"role": "user", "content": [{"type": "text", "text": transcript}]}
+        if strip_media:
+            call_ids = [
+                part.get("call_id")
+                for replay_message in replay_view
+                for part in replay_message.get("content", [])
+            ]
+            if all(isinstance(call_id, str) for call_id in call_ids) and len(set(call_ids)) == len(call_ids):
+                projected_content = []
+                for replay_message in replay_view:
+                    for part in replay_message.get("content", []):
+                        projected_part = dict(part)
+                        value = projected_part.get("content")
+                        if isinstance(value, (list, tuple)):
+                            projected_part["content"] = model_message(
+                                {"role": "user", "content": list(value)},
+                                strip_media=True,
+                                replay_view=None,
+                            )["content"]
+                        projected_part.pop("attachments", None)
+                        projected_content.append(projected_part)
+                result["content"] = projected_content
+
+    content = result.get("content")
     if isinstance(content, str):
         if result.get("role") not in {"tool", "tool_result"}:
             result["content"] = [{"type": "text", "text": content}]
@@ -59,24 +67,9 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
         if not isinstance(part, Mapping):
             continue
         kind = part.get("type")
-        mime = part.get("mediaType") or part.get("mime")
-        if kind in {"image", "document"} and not mime:
-            source = part.get("source")
-            if isinstance(source, Mapping):
-                source_mime = source.get("media_type")
-                mime = source_mime if isinstance(source_mime, str) and source_mime else (
-                    "application/pdf" if kind == "document" else None
-                )
-        if kind in {"image_url", "image", "input_image"} and not mime:
-            image = part.get("image_url") or {}
-            url = image.get("url", "") if isinstance(image, Mapping) else str(image)
-            match = re.match(r"data:([^;,]+)", url)
-            mime = match.group(1) if match else "image/png"
-        media = isinstance(mime, str) and (mime.startswith("image/") or mime == "application/pdf")
+        placeholder = media_placeholder(part, image_label=None)
         if strip_media and result.get("role") in {"tool", "tool_result"}:
             if kind == "provider_replay" and part.get("schema_version") == "openai.responses.tool_output.v1":
-                # Typed output carries its call id only in the payload; keep the call answered with
-                # the text the tool session reports for it (OpenCodeToolSession.result).
                 payload = part.get("payload") if isinstance(part.get("payload"), Mapping) else {}
                 output = payload.get("output") if isinstance(payload.get("output"), list) else []
                 text = "\n".join(item.get("text", "") for item in output
@@ -86,8 +79,8 @@ def model_message(message: Mapping[str, Any], *, strip_media: bool) -> dict[str,
                 continue
             if kind == "tool_result":
                 part = {key: value for key, value in part.items() if key != "attachments"}
-        if strip_media and result.get("role") == "user" and media:
-            parts.append({"type": "text", "text": f"[Attached {mime}: {part.get('filename') or 'file'}]"})
+        if strip_media and result.get("role") == "user" and placeholder is not None:
+            parts.append({"type": "text", "text": placeholder})
         else:
             parts.append(dict(part))
     result["content"] = parts
@@ -148,7 +141,24 @@ class MessageSummary:
         prior = context.state.latest_readable_boundary()
         history = list(prior.summary_messages) if prior is not None else []
         history.extend(messages[i] for i in selection.summarize)
-        request_messages = [model_message(message, strip_media=self.strip_media) for message in history]
+        projected_history = []
+        has_native_observations = False
+        for message in history:
+            replay_view = anthropic_replay_conversation(message)
+            if replay_view is not None and any(item.get("role") == "user" for item in replay_view):
+                has_native_observations = True
+                projected_history.extend(replay_view)
+            else:
+                projected_history.append(model_message(
+                    message, strip_media=self.strip_media, replay_view=replay_view,
+                ))
+        if has_native_observations:
+            transcript = serialize_conversation(
+                projected_history, TranscriptStyle(skip_useless=False, include_tool_result_ids=True),
+            )
+            request_messages = [{"role": "user", "content": [{"type": "text", "text": transcript}]}]
+        else:
+            request_messages = projected_history
         for message in request_messages:
             message.pop("summary", None)
         if self.marker is not None and not selection.replay:
@@ -191,7 +201,25 @@ class SummaryReplay:
             return result
         if selection.replay:
             visible = visible_messages(context)
-            result.extend(model_message(visible[i], strip_media=True) for i in selection.replay)
+            replay_history = []
+            has_native_observations = False
+            for index in selection.replay:
+                message = visible[index]
+                replay_view = anthropic_replay_conversation(message)
+                if replay_view is not None and any(item.get("role") == "user" for item in replay_view):
+                    replay_history.extend(replay_view)
+                    has_native_observations = True
+                else:
+                    replay_history.append(model_message(
+                        message, strip_media=True, replay_view=replay_view,
+                    ))
+            if has_native_observations:
+                transcript = serialize_conversation(
+                    replay_history, TranscriptStyle(skip_useless=False, include_tool_result_ids=True),
+                )
+                result.append({"role": "user", "content": [{"type": "text", "text": transcript}]})
+            else:
+                result.extend(replay_history)
         else:
             prefix = self.overflow_prefix if context.reason == "overflow" else ""
             result.append({"role": "user", "content": [{"type": "text", "text": prefix + self.continuation}]})

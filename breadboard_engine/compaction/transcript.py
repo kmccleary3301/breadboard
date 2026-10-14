@@ -9,6 +9,7 @@ or assistant messages so a tool result never loses its call.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -79,8 +80,57 @@ def result_text(content: Any) -> str:
                    if isinstance(part, Mapping) and part.get("type") == "text" and isinstance(part.get("text"), str))
 
 
-def anthropic_replay_result_groups(message: Message) -> Optional[List[Tuple[str, List[Any]]]]:
-    """Return validated native Anthropic results grouped by call ID, or ``None`` when unavailable."""
+def media_placeholder(part: Any, *, image_label: Optional[str] = "[image]") -> Optional[str]:
+    """Render canonical image and document parts without exposing their payloads."""
+    if not isinstance(part, Mapping):
+        return None
+    kind = part.get("type")
+    image_kinds = ("image", "image_url", "input_image")
+    if image_label is not None:
+        if kind in image_kinds:
+            return image_label
+        if kind != "document":
+            return None
+        source = part.get("source")
+        source = source if isinstance(source, Mapping) else {}
+        mime = part.get("mediaType") or part.get("mime") or source.get("media_type")
+        if not isinstance(mime, str) or not mime:
+            mime = "application/pdf"
+        return f"[Attached {mime}: {part.get('filename') or 'file'}]"
+
+    mime = part.get("mediaType") or part.get("mime")
+    if kind in {"image", "document"} and not mime:
+        source = part.get("source")
+        source = source if isinstance(source, Mapping) else {}
+        source_mime = source.get("media_type")
+        mime = source_mime if isinstance(source_mime, str) and source_mime else (
+            "application/pdf" if kind == "document" else None
+        )
+    if kind in image_kinds and not mime:
+        image = part.get("image_url") or {}
+        url = image.get("url", "") if isinstance(image, Mapping) else str(image)
+        match = re.match(r"data:([^;,]+)", url) if isinstance(url, str) else None
+        mime = match.group(1) if match else "image/png"
+    if isinstance(mime, str) and (mime.startswith("image/") or mime == "application/pdf"):
+        return f"[Attached {mime}: {part.get('filename') or 'file'}]"
+    return None
+
+
+def _anthropic_replay_part(part: Any) -> Dict[str, Any]:
+    if isinstance(part, dict):
+        kind = part.get("type")
+        if kind in {"image", "document"}:
+            return dict(part)
+        if kind == "text" and isinstance(part.get("text"), str):
+            if set(part) == {"type", "text"}:
+                return dict(part)
+    return {"type": "text", "text": canonical_json(part)}
+
+
+def anthropic_replay_conversation(message: Message) -> Optional[List[Dict[str, Any]]]:
+    """Return a validated tool-result replay as ordered user observations and results."""
+    if role_of(message) not in {"tool", "tool_result"}:
+        return None
     content = message.get("content")
     if not isinstance(content, (list, tuple)):
         return None
@@ -91,14 +141,18 @@ def anthropic_replay_result_groups(message: Message) -> Optional[List[Tuple[str,
 
     try:
         native_messages = replay_messages(content)
-    except ProviderContractError:
+    except (ProviderContractError, KeyError, AttributeError):
         return None
 
     native_results = [
-        result
+        block
         for native_message in native_messages
-        for result in native_message["content"]
-        if result["type"] == "tool_result"
+        for block in native_message["content"]
+        if block["type"] == "tool_result"
+    ]
+    canonical_results = [
+        block for block in content
+        if isinstance(block, Mapping) and block.get("type") == "tool_result"
     ]
     call_id = message.get("tool_call_id")
     if isinstance(call_id, str) and (
@@ -106,16 +160,58 @@ def anthropic_replay_result_groups(message: Message) -> Optional[List[Tuple[str,
     ):
         return None
 
-    groups = []
-    for result in native_results:
-        result_call_id = result.get("tool_use_id")
-        if not isinstance(result_call_id, str):
+    # The validator binds each canonical result to its native peer by ordinal; IDs may repeat.
+    if len(native_results) != len(canonical_results):
+        return None
+
+    result_contents: List[Any] = []
+    has_result_parts = False
+    for native_result, canonical_result in zip(native_results, canonical_results):
+        native_call_id = native_result.get("tool_use_id")
+        canonical_call_id = canonical_result.get("call_id")
+        if canonical_call_id != native_call_id:
             return None
-        result_content = result.get("content")
-        if not isinstance(result_content, (str, list)):
-            result_content = canonical_json(result_content)
-        groups.append((result_call_id, result_parts(result_content)))
-    return groups if any(parts for _, parts in groups) else None
+        result_content = native_result.get("content")
+        if isinstance(result_content, str):
+            normalized_content: Any = result_content
+            has_result_parts = True
+        elif isinstance(result_content, list):
+            normalized_content = [_anthropic_replay_part(part) for part in result_content]
+            has_result_parts |= bool(normalized_content)
+        else:
+            normalized_content = canonical_json(result_content)
+            has_result_parts = True
+        result_contents.append(normalized_content)
+
+    has_observations = any(
+        block["type"] != "tool_result"
+        for native_message in native_messages for block in native_message["content"]
+    )
+    # Empty result-only replays retain canonical fallback, but never suppress side observations.
+    if not has_result_parts and not has_observations:
+        return None
+
+    conversation: List[Dict[str, Any]] = []
+    result_index = 0
+    for native_message in native_messages:
+        observations: List[Dict[str, Any]] = []
+        for block in native_message["content"]:
+            if block["type"] != "tool_result":
+                observations.append(_anthropic_replay_part(block))
+                continue
+            if observations:
+                conversation.append({"role": "user", "content": observations})
+                observations = []
+            tool_message = dict(message)
+            tool_message["content"] = [
+                {**canonical_results[result_index], "content": result_contents[result_index]}
+            ]
+            result_index += 1
+            conversation.append(tool_message)
+        if observations:
+            conversation.append({"role": "user", "content": observations})
+    return conversation
+
 
 
 def rewrite_result_content(
