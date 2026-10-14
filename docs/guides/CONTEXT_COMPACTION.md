@@ -72,8 +72,9 @@ run outside the pipeline:
 - **Pruning** (`prune.enabled`) runs while each request view is built. It
   replaces superseded file reads and uneventful tool results with notices once
   savings pass `prune.minimumSavings`.
-- **Image dropping** (`drop_images_now`) replaces every image with
-  `[image removed]`.
+- **Image dropping** (`drop_images_now`) replaces images with `[image removed]`.
+  It also removes images inside Anthropic same-provider tool-result replays and
+  user observations, updating correlated results to match.
 - **Inline snapcompact** (`snapcompact.systemPrompt` / `toolResults`) renders
   the system prompt or large old tool results as images in the request view
   for vision models. The stored history is not changed. As in OMP, the system

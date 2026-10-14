@@ -9,12 +9,64 @@ from __future__ import annotations
 
 import copy
 from typing import Any, Dict, List, Mapping, Optional, Tuple
+from ..provider.anthropic_replay import is_tool_result_replay, replay_messages
+from ..provider.contract_wire import canonical_json
 
 from .methods import CompactionContext, MethodUnavailable
 from .state import CompactionRecord, MessageEdit, leading_system_count
 from .tokens import is_image_part
 
 IMAGE_PLACEHOLDER = "[image removed]"
+
+
+def _strip_native_image_blocks(
+    blocks: List[Any], placeholder: str,
+) -> Tuple[List[Any], int]:
+    kept = [block for block in blocks if not is_image_part(block)]
+    removed = len(blocks) - len(kept)
+    if removed and not kept:
+        kept.append({"type": "text", "text": placeholder})
+    return kept, removed
+
+
+def _strip_anthropic_replay_images(content: List[Any], placeholder: str) -> int:
+    if not any(
+        isinstance(block, dict) and is_tool_result_replay(block)
+        for block in content
+    ):
+        return 0
+
+    native_messages = replay_messages(content)
+    semantic_results = [
+        block
+        for block in content
+        if isinstance(block, dict) and block.get("type") == "tool_result"
+    ]
+    removed = 0
+    for message in native_messages:
+        message["content"], count = _strip_native_image_blocks(
+            message["content"], placeholder
+        )
+        removed += count
+
+    native_results = [
+        block
+        for message in native_messages
+        for block in message["content"]
+        if block["type"] == "tool_result"
+    ]
+    for native, semantic in zip(native_results, semantic_results):
+        native_content = native.get("content")
+        if not isinstance(native_content, list):
+            continue
+        native_content, count = _strip_native_image_blocks(
+            native_content, placeholder
+        )
+        if count:
+            native["content"] = native_content
+            semantic["content"] = canonical_json(native_content)
+            removed += count
+    return removed
 
 
 def strip_images_from_message(
@@ -43,6 +95,7 @@ def strip_images_from_message(
 
     content = new_msg.get("content")
     if isinstance(content, list):
+        removed += _strip_anthropic_replay_images(content, placeholder)
         kept: List[Any] = []
         for part in content:
             if is_image_part(part):

@@ -195,6 +195,81 @@ def test_strip_images_clears_top_level_images_list():
     assert "images" not in new_msg
 
 
+
+def test_strip_images_updates_anthropic_replay_and_runtime_consumes_it():
+    from copy import deepcopy
+    from types import SimpleNamespace
+
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.anthropic_replay import replay_messages
+    from breadboard_engine.provider.contracts import ProviderRuntimeContext
+    from breadboard_engine.provider.runtimes.anthropic import AnthropicMessagesRuntime
+
+    image = {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "AA=="},
+    }
+    native_messages = [
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "call_one", "is_error": False,
+             "content": [
+                 {"type": "text", "text": "before"},
+                 image,
+                 {"type": "text", "text": "after"},
+                 {"type": "vendor_block", "metadata": {"type": "image", "keep": True}},
+             ]},
+            {"type": "text", "text": "observation"},
+            image,
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "call_two", "is_error": True,
+             "content": [image]},
+            {"type": "tool_result", "tool_use_id": "call_three", "is_error": False,
+             "content": "plain string"},
+        ]},
+        {"role": "user", "content": [image]},
+    ]
+    original_native_messages = deepcopy(native_messages)
+    message = AnthropicAdapter().create_tool_result_batch_message(native_messages)
+    original_message = deepcopy(message)
+
+    stripped, removed = strip_images_from_message(message)
+
+    expected_native_messages = [
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "call_one", "is_error": False,
+             "content": [
+                 {"type": "text", "text": "before"},
+                 {"type": "text", "text": "after"},
+                 {"type": "vendor_block", "metadata": {"type": "image", "keep": True}},
+             ]},
+            {"type": "text", "text": "observation"},
+        ]},
+        {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "call_two", "is_error": True,
+             "content": [{"type": "text", "text": IMAGE_PLACEHOLDER}]},
+            {"type": "tool_result", "tool_use_id": "call_three", "is_error": False,
+             "content": "plain string"},
+        ]},
+        {"role": "user", "content": [{"type": "text", "text": IMAGE_PLACEHOLDER}]},
+    ]
+    assert removed == 4
+    assert native_messages == original_native_messages
+    assert message == original_message
+    assert replay_messages(stripped["content"]) == expected_native_messages
+
+    runtime = AnthropicMessagesRuntime(
+        descriptor=SimpleNamespace(provider_id="anthropic", api_type="messages", config={})
+    )
+    context = ProviderRuntimeContext(
+        session_state=None,
+        agent_config={"provider_tools": {"anthropic": {"native_tool_result_replay": True}}},
+    )
+    system, converted = runtime._convert_messages([stripped], context=context)
+    assert system is None
+    assert converted == expected_native_messages
+
+
 # -----------------------------------------------------------------------------
 # drop_images integration tests
 # -----------------------------------------------------------------------------
