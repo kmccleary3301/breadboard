@@ -6465,12 +6465,28 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             meta = resume_snapshot.get("provider_metadata")
             if isinstance(meta, dict):
                 session_state.provider_metadata.update(meta)
-            if (self.config.get("resume") or {}).get("restore_compaction_state") is True:
+            records = resume_snapshot.get("compaction_state", [])
+            restore_compaction_state = (
+                (self.config.get("resume") or {}).get("restore_compaction_state")
+                is True
+            )
+            if restore_compaction_state:
                 from .compaction.state import CompactionState
-                records = resume_snapshot.get("compaction_state", [])
                 if not isinstance(records, list):
                     raise ValueError("Resume compaction_state must be a record list")
                 session_state.compaction_state = CompactionState.from_list(records)
+            elif records:
+                with session_state.context_mutation():
+                    session_state.compaction_state.provider_usage_fresh = False
+            provider_usage_fresh = resume_snapshot.get("provider_usage_fresh")
+            snapshot_usage = meta.get("usage") if isinstance(meta, dict) else None
+            if (
+                isinstance(provider_usage_fresh, bool)
+                and snapshot_usage
+                and (restore_compaction_state or not records)
+            ):
+                with session_state.context_mutation():
+                    session_state.compaction_state.provider_usage_fresh = provider_usage_fresh
             resume_ctree_events = resume_snapshot.get("ctree_events")
             resume_retained_raw_fact_ids = resume_snapshot.get(
                 "retained_raw_fact_ids",

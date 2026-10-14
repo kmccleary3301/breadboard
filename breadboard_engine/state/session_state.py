@@ -216,7 +216,7 @@ class SessionState:
 
     def reset_compaction_state(self) -> None:
         with self._compaction_lock:
-            self._compaction_state = CompactionState()
+            self._compaction_state = CompactionState(provider_usage_fresh=False)
 
     def set_event_emitter(
         self,
@@ -1176,6 +1176,15 @@ class SessionState:
     def get_provider_metadata(self, key: str, default: Any = None) -> Any:
         return self.provider_metadata.get(key, default)
 
+    def commit_provider_usage(self, usage: Any) -> None:
+        """Commit usage published by the successful normal provider request."""
+        with self._compaction_lock:
+            self.set_provider_metadata("usage", usage)
+            records_at_send = getattr(self, "_compaction_records_at_last_send", None)
+            if records_at_send == len(self.compaction_state.records):
+                self.compaction_state.provider_usage_fresh = True
+
+
     def record_provider_exchange(self, exchange: Dict[str, Any]) -> None:
         """Atomically retain every provider exchange and project the latest one."""
 
@@ -1273,6 +1282,11 @@ class SessionState:
                 "model": model,
                 "messages": copy.deepcopy(self.messages),
                 "provider_messages": copy.deepcopy(self.provider_messages),
+                **(
+                    {"provider_usage_fresh": self.compaction_state.provider_usage_fresh}
+                    if self.get_provider_metadata("usage")
+                    else {}
+                ),
                 **(
                     {"compaction_state": self.compaction_state.to_list()}
                     if self.compaction_state.records

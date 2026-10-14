@@ -468,10 +468,9 @@ class CompactionController:
         compaction_state: Optional[CompactionState] = getattr(session_state, "compaction_state", None)
         # Count the view the provider receives, including a native boundary usable only for this target.
         view = compaction_state.project(messages, target) if compaction_state is not None else messages
-        # Provider usage describes the last request sent. If a record was
-        # appended since (no new message arrived), that request predates the
-        # compaction and its usage would retrigger it.
-        usage_fresh = compaction_state is None or len(messages) != compaction_state.messages_len_at_last_record
+        # Provider usage describes the last request sent. A committed compaction
+        # record makes that usage stale until a request sends the new projection.
+        usage_fresh = compaction_state is None or compaction_state.provider_usage_fresh
         metadata_input, metadata_output = self.resolve_model_limits(session_state)
         summary_last = False
         if checkpoint == "assistant_step_end" and any(
@@ -513,7 +512,6 @@ class CompactionController:
         turn_index: Optional[int] = None,
     ) -> None:
         """Record lifecycle event and persist Product snapshot."""
-        session_state.compaction_state.messages_len_at_last_record = len(session_state.provider_messages)
         if record.is_boundary and target is not None and target.api == "responses":
             # The boundary replaces server-side history; the next request starts a new chain.
             session_state.set_provider_metadata("conversation_id", None)
@@ -602,7 +600,7 @@ class CompactionController:
             max_input_tokens=max_input, max_output_tokens=max_output,
             overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
             last_usage=session_state.get_provider_metadata("usage") if callable(getattr(session_state, "get_provider_metadata", None)) else None,
-            usage_fresh=len(messages) != state.messages_len_at_last_record,
+            usage_fresh=state.provider_usage_fresh,
             native_retention=self.recipe.native_retention,
             prior_compactions=sum(record.is_boundary for record in state.records),
             sampling_phase=request_context.sampling_phase if request_context is not None else None,

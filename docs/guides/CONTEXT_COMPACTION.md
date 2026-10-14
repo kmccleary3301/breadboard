@@ -586,6 +586,11 @@ request stages share one context builder for route limits, summarization,
 instructions, usage freshness, prior boundaries and numeric overflow bounds.
 Provider error text stays redacted; only safe token counts reach recovery.
 
+After a compaction record, provider usage remains stale until a normal request
+that consumed that projection publishes usage. History appends do not refresh it.
+Full session snapshots preserve this state; record-only restores use estimates
+until new usage arrives.
+
 `native_settings.adapter: paths` maps each harness setting to recipe paths;
 `omp_settings` hands the block to OMP's parser, and recipe values read it
 with `{setting: <field>}`.

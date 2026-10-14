@@ -11,7 +11,13 @@ import pytest
 
 from breadboard_engine.compaction.controller import CompactionController
 from breadboard_engine.compaction.methods import CompactionContext
-from breadboard_engine.compaction.state import NATIVE_MARKER_KEY, NativeCompaction, ProjectionTarget
+from breadboard_engine.compaction.state import (
+    CompactionRecord,
+    CompactionState,
+    NATIVE_MARKER_KEY,
+    NativeCompaction,
+    ProjectionTarget,
+)
 from breadboard_engine.compaction.transcript import check_tool_pairing
 from breadboard_engine.provider.contract_messages import ProviderMessage, ProviderResult
 from breadboard_engine.provider.contract_runtime import ProviderRuntimeError
@@ -288,27 +294,128 @@ def test_overflow_budget_is_scoped_to_session_state() -> None:
     assert controller.recover_from_overflow(OVERFLOW, session2, **kwargs)
 
 
-def test_usage_freshness_is_scoped_to_session_state() -> None:
-    from breadboard_engine.compaction.state import CompactionRecord
-    controller = CompactionController({"compaction": {"enabled": True, "preset": "pi@0.73.1"}})
-    previous = SessionState("ws", "image", {})
-    previous.add_message({"role": "system", "content": "system"})
-    previous.add_message({"role": "user", "content": "old input"})
-    prior_record = CompactionRecord(
-        record_id="prior", sequence=0, method="summary", reason="threshold",
-        created_at="2026-10-12T00:00:00Z", tokens_before=5000,
-        history_length=len(previous.provider_messages), first_kept_index=1,
-        summary="prior summary", summary_messages=({"role": "user", "content": "prior summary"},),
+def _append_manual_boundary(state: SessionState) -> None:
+    record = CompactionRecord(
+        record_id=f"manual-{state.compaction_state.next_sequence}",
+        sequence=state.compaction_state.next_sequence,
+        method="summary",
+        reason="manual",
+        created_at="2026-10-14T00:00:00Z",
+        tokens_before=19000,
+        history_length=len(state.provider_messages),
+        first_kept_index=len(state.provider_messages),
+        summary="summary",
+        summary_messages=({"role": "user", "content": "summary"},),
     )
-    controller._after_record_appended(previous, prior_record)
+    state.compaction_state.append(record, state.provider_messages)
 
-    resumed = SessionState("ws", "image", {})
-    resumed.add_message({"role": "system", "content": "system"})
-    resumed.add_message({"role": "user", "content": "restored input"})
-    resumed.set_provider_metadata("usage", {"total_tokens": 4000})
+
+def _usage_controller() -> CompactionController:
+    return CompactionController({"compaction": {
+        "enabled": True, "preset": "hermes_agent@2026.9.11",
+    }})
+
+
+def _usage_session() -> SessionState:
+    state = SessionState("ws", "image", {})
+    state.add_message({"role": "system", "content": "system"})
+    state.add_message({"role": "user", "content": "old input"})
+    state.set_provider_metadata("usage", {"input_tokens": 19000})
+    return state
+
+
+def test_manual_boundary_keeps_usage_stale_after_new_user_append() -> None:
+    controller = _usage_controller()
+    state = _usage_session()
+    history = copy.deepcopy(state.provider_messages)
+    state.compaction_state.turn_passes[7] = 1
+
     assert controller.should_trigger_threshold(
-        resumed, context_window=20000,
-        last_usage=resumed.get_provider_metadata("usage"), checkpoint="every_request",
+        state, context_window=20000, last_usage=state.get_provider_metadata("usage"),
+        checkpoint="every_request",
+    )
+
+    _append_manual_boundary(state)
+    state.add_message({"role": "user", "content": "continue"})
+
+    assert state.provider_messages[:len(history)] == history
+    assert state.compaction_state.turn_passes == {7: 1}
+    assert not controller.should_trigger_threshold(
+        state, context_window=20000, last_usage=state.get_provider_metadata("usage"),
+        checkpoint="every_request",
+    )
+
+
+def test_stale_usage_survives_snapshot_restore_and_legacy_record_snapshots() -> None:
+    controller = _usage_controller()
+    state = _usage_session()
+    _append_manual_boundary(state)
+    state.add_message({"role": "user", "content": "continue"})
+    snapshot = state.create_snapshot("gpt-test")
+
+    assert snapshot["provider_usage_fresh"] is False
+    restored = SessionState("ws", "image", {})
+    restored.messages = copy.deepcopy(snapshot["messages"])
+    restored.provider_messages = copy.deepcopy(snapshot["provider_messages"])
+    restored.provider_metadata.update(copy.deepcopy(snapshot["provider_metadata"]))
+    restored.compaction_state = CompactionState.from_list(
+        snapshot["compaction_state"],
+        provider_usage_fresh=snapshot["provider_usage_fresh"],
+    )
+    assert not controller.should_trigger_threshold(
+        restored, context_window=20000, last_usage=restored.get_provider_metadata("usage"),
+        checkpoint="every_request",
+    )
+
+    legacy = SessionState("ws", "image", {})
+    legacy.provider_messages = copy.deepcopy(snapshot["provider_messages"])
+    legacy.set_provider_metadata("usage", copy.deepcopy(snapshot["provider_metadata"]["usage"]))
+    legacy.compaction_state = CompactionState.from_list(snapshot["compaction_state"])
+    assert not controller.should_trigger_threshold(
+        legacy, context_window=20000, last_usage=legacy.get_provider_metadata("usage"),
+        checkpoint="every_request",
+    )
+
+
+def test_normal_request_usage_refreshes_identical_total_but_old_inflight_usage_does_not() -> None:
+    controller = _usage_controller()
+    usage = {"input_tokens": 19000}
+    state = _usage_session()
+    _append_manual_boundary(state)
+    state.add_message({"role": "user", "content": "continue"})
+    assert not controller.should_trigger_threshold(
+        state, context_window=20000, last_usage=usage, checkpoint="every_request",
+    )
+
+    state.record_provider_request_surface(state.compaction_state.project(state.provider_messages))
+    state.commit_provider_usage(dict(usage))
+    assert state.get_provider_metadata("usage") == usage
+    assert controller.should_trigger_threshold(
+        state, context_window=20000, last_usage=state.get_provider_metadata("usage"),
+        checkpoint="every_request",
+    )
+
+    zero_usage = _usage_session()
+    _append_manual_boundary(zero_usage)
+    zero_usage.add_message({"role": "user", "content": "continue"})
+    zero_usage.record_provider_request_surface(
+        zero_usage.compaction_state.project(zero_usage.provider_messages)
+    )
+    zero_usage.commit_provider_usage({"input_tokens": 0, "output_tokens": 0})
+    assert zero_usage.create_snapshot("gpt-test")["provider_usage_fresh"] is True
+
+    in_flight = _usage_session()
+    _append_manual_boundary(in_flight)
+    in_flight.add_message({"role": "user", "content": "continue"})
+    in_flight.record_provider_request_surface(
+        in_flight.compaction_state.project(in_flight.provider_messages)
+    )
+    _append_manual_boundary(in_flight)
+    in_flight.commit_provider_usage(dict(usage))
+    assert not controller.should_trigger_threshold(
+        in_flight, context_window=20000,
+        last_usage=in_flight.get_provider_metadata("usage"),
+        checkpoint="every_request",
     )
 
 

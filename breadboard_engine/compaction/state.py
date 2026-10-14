@@ -200,16 +200,27 @@ class CompactionStateError(ValueError):
 class CompactionState:
     """Append-only compaction ledger for one session's model history.
 
-    ``turn_passes`` and ``messages_len_at_last_record`` are per-session
-    controller bookkeeping; they are never persisted.
+    ``turn_passes`` are per-session controller bookkeeping and are never persisted.
+    ``provider_usage_fresh`` tracks whether recorded provider usage belongs to
+    the current compaction projection and is persisted with session snapshots.
+
     """
 
-    def __init__(self, records: Sequence[CompactionRecord] = ()) -> None:
+    def __init__(
+        self,
+        records: Sequence[CompactionRecord] = (),
+        *,
+        provider_usage_fresh: Optional[bool] = None,
+    ) -> None:
         self._records: List[CompactionRecord] = []
         for record in records:
             self._records.append(record)
         self.turn_passes: Dict[int, int] = {}
-        self.messages_len_at_last_record: Optional[int] = None
+        self.provider_usage_fresh = (
+            not self._records
+            if provider_usage_fresh is None
+            else provider_usage_fresh
+        )
 
     @property
     def records(self) -> Tuple[CompactionRecord, ...]:
@@ -324,6 +335,7 @@ class CompactionState:
     def append(self, record: CompactionRecord, messages: Sequence[Mapping[str, Any]]) -> None:
         self.validate(record, messages)
         self._records.append(record)
+        self.provider_usage_fresh = False
 
     def _active_boundary(self, target: Optional[ProjectionTarget]) -> Optional[CompactionRecord]:
         for record in reversed(self._records):
@@ -373,12 +385,20 @@ class CompactionState:
         return [record.to_dict() for record in self._records]
 
     @classmethod
-    def from_list(cls, raw: Sequence[Mapping[str, Any]]) -> "CompactionState":
+    def from_list(
+        cls,
+        raw: Sequence[Mapping[str, Any]],
+        *,
+        provider_usage_fresh: Optional[bool] = None,
+    ) -> "CompactionState":
         records = [CompactionRecord.from_dict(item) for item in raw]
         for expected, record in enumerate(records):
             if record.sequence != expected:
                 raise CompactionStateError("compaction record sequence is not contiguous")
-        return cls(records)
+        state = cls(records)
+        if isinstance(provider_usage_fresh, bool):
+            state.provider_usage_fresh = provider_usage_fresh
+        return state
 
 
 def strip_native_markers(messages: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:

@@ -766,7 +766,7 @@ def run_main_loop(
             if session_state.get_provider_metadata("streaming_disabled"):
                 stream_responses = False
             if provider_result.usage:
-                session_state.set_provider_metadata("usage", provider_result.usage)
+                session_state.commit_provider_usage(provider_result.usage)
                 # Accumulate session-level usage so callers get token
                 # provenance in the final summary (Responses and Chat key names).
                 try:
