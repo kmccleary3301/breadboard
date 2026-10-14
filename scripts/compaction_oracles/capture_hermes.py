@@ -105,6 +105,24 @@ class MockResp:
         self.choices = [MockChoice(content, finish_reason)]
 
 
+def _case_envelope(case: str, evidence: List[str], notes: str) -> Dict[str, Any]:
+    return {
+        "schema": "bb.compaction_oracle_case.v1",
+        "preset": PRESET_ID,
+        "case": case,
+        "source": {
+            "repo": REPO_URL,
+            "commit": COMMIT_SHA,
+            "evidence": evidence,
+        },
+        "capture": {
+            "kind": "executed",
+            "script": "scripts/compaction_oracles/capture_hermes.py",
+            "notes": notes,
+        },
+    }
+
+
 def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     """Execute pinned Hermes context compressor methods to produce oracle cases."""
     sys.path.insert(0, str(source_dir))
@@ -124,27 +142,19 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     thresh_128 = cc_128.threshold_tokens
     fires_below, reason_below = cc_128.should_compress_info(thresh_128 - 1)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "threshold_boundary_below",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="threshold_boundary_below",
+            evidence=[
                 "agent/context_compressor.py:2253-2294",
                 "agent/context_compressor.py:2490-2500",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._compute_threshold_tokens at agent/context_compressor.py:2260-2294 "
                 "and ContextCompressor.should_compress_info at agent/context_compressor.py:2490-2500. "
                 "Context length 128K < 512K floors threshold to 75% (96000). At 95999 (< 96000), should_compress returns False."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": thresh_128 - 1, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": thresh_128 + 9},
@@ -165,26 +175,18 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     # -------------------------------------------------------------
     fires_equal, _ = cc_128.should_compress_info(thresh_128)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "threshold_boundary_equal",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="threshold_boundary_equal",
+            evidence=[
                 "agent/context_compressor.py:2253-2294",
                 "agent/context_compressor.py:2490-2500",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor.should_compress_info at agent/context_compressor.py:2490-2500. "
                 "Hermes checks tokens < threshold_tokens; at equality (tokens >= threshold_tokens), it fires."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": thresh_128, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": thresh_128 + 10},
@@ -207,27 +209,19 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     thresh_1m = cc_1m.threshold_tokens
     fires_1m, _ = cc_1m.should_compress_info(thresh_1m)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "threshold_large_context",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="threshold_large_context",
+            evidence=[
                 "agent/context_compressor.py:2253-2294",
                 "agent/context_compressor.py:2490-2500",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._effective_threshold_percent at agent/context_compressor.py:2253-2258 and "
                 "_compute_threshold_tokens at agent/context_compressor.py:2260-2294. "
                 "Context length 1,000,000 >= 512K retains 50% threshold without 75% small-context bump. Limit is 500,000."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": thresh_1m, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": thresh_1m + 10},
@@ -250,25 +244,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     thresh_res = cc_res.threshold_tokens
     fires_res, _ = cc_res.should_compress_info(thresh_res)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "threshold_output_reservation",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="threshold_output_reservation",
+            evidence=[
                 "agent/context_compressor.py:2280-2294",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._compute_threshold_tokens at agent/context_compressor.py:2280-2294 with max_tokens=16000. "
                 "Usable input budget is (128000 - 16000) = 112000. At 75% small-context threshold, limit is 84000."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": thresh_res, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": thresh_res + 10},
@@ -290,25 +276,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     cc_64 = ContextCompressor(model="hermes-3", config_context_length=64000, threshold_percent=0.50)
     thresh_64 = cc_64.threshold_tokens
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "threshold_small_context_capped",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="threshold_small_context_capped",
+            evidence=[
                 "agent/context_compressor.py:2284-2294",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._compute_threshold_tokens at agent/context_compressor.py:2284-2294. "
                 "64K window with 64K floor would equal 100% of window; clamped to 85% (54400) to ensure reachability."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": thresh_64, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": thresh_64 + 10},
@@ -341,27 +319,19 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     ]
     start_fresh, end_fresh = cc_fresh._compress_window(msgs_fresh)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "selection_protected_head_fresh",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="selection_protected_head_fresh",
+            evidence=[
                 "agent/context_compressor.py:3929-3937",
                 "agent/context_compressor.py:4279-4281",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._protect_head_size at agent/context_compressor.py:3929-3937 and "
                 "_compress_window at agent/context_compressor.py:4279-4281. "
                 "Fresh session: system (1) + protect_first_n (3) = 4 protected messages in prefix. prefix_end is 4."
             ),
-        },
+        ),
         "input": {
             "messages": msgs_fresh,
             "usage": None,
@@ -371,6 +341,7 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {"protect_first_n": 3},
             "summary_responses": [],
+            "stage": "summary",
         },
         "expect": {
             "selection": {
@@ -391,27 +362,19 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     cc_decayed.compression_count = 1
     start_decayed, end_decayed = cc_decayed._compress_window(msgs_fresh)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "selection_protected_head_decayed",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="selection_protected_head_decayed",
+            evidence=[
                 "agent/context_compressor.py:3917-3927",
                 "agent/context_compressor.py:3929-3937",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._effective_protect_first_n at agent/context_compressor.py:3917-3927 and "
                 "_protect_head_size at agent/context_compressor.py:3929-3937. "
                 "Decayed session: compression_count >= 1 causes protect_first_n to decay to 0; only system message remains in prefix_end (1)."
             ),
-        },
+        ),
         "input": {
             "messages": msgs_fresh,
             "usage": None,
@@ -421,6 +384,8 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {"protect_first_n": 3},
             "summary_responses": [],
+            "stage": "summary",
+            "prior_compactions": cc_decayed.compression_count,
         },
         "expect": {
             "selection": {
@@ -453,25 +418,13 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     ]
     paired_start, paired_end = cc_pair._compress_window(msgs_pair)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "selection_tail_tool_pairing",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="selection_tail_tool_pairing",
+            evidence=[
                 "agent/context_compressor.py:3938-3946",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
-                "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
-                "Calls ContextCompressor._align_boundary_backward at agent/context_compressor.py:3938-3946. "
-                "When cut boundary lands on assistant message following a tool group (idx 4), pulls it back to parent assistant call (idx 2)."
-            ),
-        },
+            notes="Executed _compress_window on the complete paired transcript, including both boundary alignments.",
+        ),
         "input": {
             "messages": msgs_pair,
             "usage": None,
@@ -479,8 +432,9 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "max_input_tokens": None,
             "max_output_tokens": 16000,
             "reason": "threshold",
-            "native_settings": {},
+            "native_settings": {"protect_first_n": cc_pair.protect_first_n},
             "summary_responses": [],
+            "stage": "summary",
         },
         "expect": {
             "selection": {
@@ -508,27 +462,14 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     ]
     pruned_msgs, pruned_count = cc_prune._prune_old_tool_results(msgs_dup, protect_tail_count=2, protect_tail_tokens=1000)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "pruning_duplicate_tool_results",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="pruning_duplicate_tool_results",
+            evidence=[
                 "agent/context_compressor.py:1286-1304",
                 "agent/context_compressor.py:2755-2787",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
-                "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
-                "Calls ContextCompressor._prune_old_tool_results at agent/context_compressor.py:2755-2787 "
-                "and _dedupe_tool_results at agent/context_compressor.py:1286-1304. "
-                "Duplicate tool result is replaced with backreference stub referencing the SHA-256 hash prefix."
-            ),
-        },
+            notes="Executed _prune_old_tool_results; duplicate detection uses MD5 and preserves the newest copy (agent/context_compressor.py:2641-2656).",
+        ),
         "input": {
             "messages": msgs_dup,
             "usage": None,
@@ -538,6 +479,7 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {},
             "summary_responses": [],
+            "stages": ["prune"],
         },
         "expect": {
             "edits": [
@@ -559,26 +501,18 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         has_user_turn=True,
     )
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "summary_request_fresh",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="summary_request_fresh",
+            evidence=[
                 "agent/context_compressor.py:3352-3407",
                 "agent/context_compressor.py:3426-3483",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._build_summary_prompt at agent/context_compressor.py:3352-3407. "
                 "Hermes summary request is issued as a user-only prompt to call_llm(task='compression') with no tools and no system message."
             ),
-        },
+        ),
         "input": {
             "messages": [
                 {"role": "user", "content": "Fix the bug"},
@@ -591,6 +525,14 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {},
             "summary_responses": ["Historical Task: Fix the bug\n## Completed Actions\n1. Found crash"],
+            "component": "summary_request",
+            "stage": "summary",
+            "summary_input": {
+                "conversation": turns_text,
+                "previous_summary": "",
+                "summary_budget": 2000,
+                "has_user_turn": True,
+            },
         },
         "expect": {
             "summary_requests": [
@@ -617,25 +559,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
         has_user_turn=True,
     )
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "summary_request_iterative",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="summary_request_iterative",
+            evidence=[
                 "agent/context_compressor.py:3373-3388",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._build_summary_prompt at agent/context_compressor.py:3373-3388 with _previous_summary populated. "
                 "Prompt includes PREVIOUS SUMMARY block and instructions to update existing state."
             ),
-        },
+        ),
         "input": {
             "messages": [
                 {"role": "user", "content": "Apply patch"},
@@ -648,6 +582,14 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {},
             "summary_responses": ["Updated summary: Patch applied"],
+            "component": "summary_request",
+            "stage": "summary",
+            "summary_input": {
+                "conversation": "User: Apply patch\nAssistant: Applied patch",
+                "previous_summary": cc_iter._previous_summary,
+                "summary_budget": 2000,
+                "has_user_turn": True,
+            },
         },
         "expect": {
             "summary_requests": [
@@ -669,25 +611,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     tail_msgs1 = [{"role": "user", "content": "U2"}, {"role": "assistant", "content": "A2"}]
     role1, merge1, force_user1, _ = cc_place1._summary_placement(head_msgs1, tail_msgs1, compress_start=2)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "placement_assistant_standalone",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="placement_assistant_standalone",
+            evidence=[
                 "agent/context_compressor.py:4513-4546",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._summary_placement at agent/context_compressor.py:4513-4546. "
                 "Last head role is 'user'; tail starts with 'user'. summary_role alternates to 'assistant' and places standalone between head and tail."
             ),
-        },
+        ),
         "input": {
             "messages": [*head_msgs1, {"role": "assistant", "content": "middle"}, *tail_msgs1],
             "usage": None,
@@ -696,7 +630,14 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "max_output_tokens": 16000,
             "reason": "threshold",
             "native_settings": {},
-            "summary_responses": ["Compact summary"],
+            "summary_responses": [],
+            "component": "placement",
+            "stage": "summary",
+            "placement_input": {
+                "selection": {"prefix_end": len(head_msgs1), "first_kept_index": 3},
+                "summary": "Compact summary",
+                "details": {"has_user_turn": True},
+            },
         },
         "expect": {
             "projected_view": [
@@ -722,27 +663,19 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     merged_tail_0 = dict(tail_msgs2[0])
     cc_place2._merge_summary_into_tail_row(merged_tail_0, "Compact summary", role2, force_user2)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "placement_user_merged",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="placement_user_merged",
+            evidence=[
                 "agent/context_compressor.py:4528-4546",
                 "agent/context_compressor.py:4548-4567",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor._summary_placement at agent/context_compressor.py:4528-4546 and "
                 "_merge_summary_into_tail_row at agent/context_compressor.py:4548-4567. "
                 "System-only head forces user summary. Tail starts with user, creating collision that merges summary into first tail user message."
             ),
-        },
+        ),
         "input": {
             "messages": [*head_msgs2, {"role": "user", "content": "old_u"}, {"role": "assistant", "content": "old_a"}, *tail_msgs2],
             "usage": None,
@@ -751,7 +684,14 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "max_output_tokens": 16000,
             "reason": "threshold",
             "native_settings": {},
-            "summary_responses": ["Compact summary"],
+            "summary_responses": [],
+            "component": "placement",
+            "stage": "summary",
+            "placement_input": {
+                "selection": {"prefix_end": len(head_msgs2), "first_kept_index": 3},
+                "summary": "Compact summary",
+                "details": {"has_user_turn": bool(cc_place2._summary_has_user_turn)},
+            },
         },
         "expect": {
             "projected_view": [
@@ -774,25 +714,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             empty_exc_msg = str(exc)
 
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "failure_guard_empty_content",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="failure_guard_empty_content",
+            evidence=[
                 "agent/context_compressor.py:3276-3277",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 f"Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 f"Calls ContextCompressor._call_summary_llm at agent/context_compressor.py:3220-3277. "
                 f"Scripted mock response returning whitespace raises verified upstream RuntimeError: '{empty_exc_msg}'."
             ),
-        },
+        ),
         "input": {
             "messages": [
                 {"role": "system", "content": "sys"},
@@ -806,8 +738,16 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "max_input_tokens": None,
             "max_output_tokens": 16000,
             "reason": "threshold",
-            "native_settings": {},
+            "native_settings": {"summary_model": cc_fail1.model},
             "summary_responses": ["   "],
+            "component": "summary_request",
+            "stage": "summary",
+            "summary_input": {
+                "conversation": "test prompt",
+                "previous_summary": "",
+                "summary_budget": 2000,
+                "has_user_turn": True,
+            },
         },
         "expect": {
             "failure": {
@@ -829,25 +769,17 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             length_exc_msg = str(exc)
 
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "failure_guard_length_truncated",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="failure_guard_length_truncated",
+            evidence=[
                 "agent/context_compressor.py:3288-3292",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 f"Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 f"Calls ContextCompressor._call_summary_llm at agent/context_compressor.py:3220-3292. "
                 f"Scripted mock response with finish_reason='length' raises verified upstream RuntimeError: '{length_exc_msg}'."
             ),
-        },
+        ),
         "input": {
             "messages": [
                 {"role": "system", "content": "sys"},
@@ -861,8 +793,16 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "max_input_tokens": None,
             "max_output_tokens": 16000,
             "reason": "threshold",
-            "native_settings": {},
+            "native_settings": {"summary_model": cc_fail1.model},
             "summary_responses": [{"content": "Incomplete...", "finish_reason": "length"}],
+            "component": "summary_request",
+            "stage": "summary",
+            "summary_input": {
+                "conversation": "test prompt",
+                "previous_summary": "",
+                "summary_budget": 2000,
+                "has_user_turn": True,
+            },
         },
         "expect": {
             "failure": {
@@ -880,26 +820,18 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
     with patch("time.monotonic", return_value=100.0):
         fires_cd, reason_cd = cc_cd.should_compress_info(cc_cd.threshold_tokens + 5000)
     cases.append({
-        "schema": "bb.compaction_oracle_case.v1",
-        "preset": PRESET_ID,
-        "case": "failure_guard_cooldown_blocked",
-        "source": {
-            "repo": REPO_URL,
-            "commit": COMMIT_SHA,
-            "evidence": [
+        **_case_envelope(
+            case="failure_guard_cooldown_blocked",
+            evidence=[
                 "agent/context_compressor.py:2490-2509",
                 "agent/context_compressor.py:2540-2548",
             ],
-        },
-        "capture": {
-            "kind": "executed",
-            "script": "scripts/compaction_oracles/capture_hermes.py",
-            "notes": (
+            notes=(
                 "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. "
                 "Calls ContextCompressor.should_compress_info at agent/context_compressor.py:2490-2509. "
                 "When failure cooldown is active, should_compress returns False even if tokens > threshold_tokens, blocking automatic retry thrashing."
             ),
-        },
+        ),
         "input": {
             "messages": [{"role": "user", "content": "ping"}],
             "usage": {"input_tokens": cc_cd.threshold_tokens + 5000, "output_tokens": 10, "cache_read_tokens": 0, "cache_write_tokens": 0, "total_tokens": cc_cd.threshold_tokens + 5010},
@@ -909,6 +841,7 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             "reason": "threshold",
             "native_settings": {},
             "summary_responses": [],
+            "trigger_blocked": cc_cd._summary_failure_cooldown_until > 100.0,
         },
         "expect": {
             "trigger": {
@@ -919,48 +852,6 @@ def capture_cases(source_dir: Path) -> List[Dict[str, Any]]:
             },
         },
     })
-
-    for case in cases:
-        inp = case["input"]
-        name = case["case"]
-        if "selection" in case["expect"]:
-            inp["stage"] = "summary"
-        if name == "selection_protected_head_decayed":
-            inp["prior_compactions"] = cc_decayed.compression_count
-        if name == "selection_tail_tool_pairing":
-            inp["native_settings"]["protect_first_n"] = cc_pair.protect_first_n
-            case["capture"]["notes"] = "Executed _compress_window on the complete paired transcript, including both boundary alignments."
-        if name == "pruning_duplicate_tool_results":
-            inp["stages"] = ["prune"]
-            case["capture"]["notes"] = "Executed _prune_old_tool_results; duplicate detection uses MD5 and preserves the newest copy (agent/context_compressor.py:2641-2656)."
-        if name.startswith("summary_request"):
-            inp["component"] = "summary_request"
-            inp["stage"] = "summary"
-            inp["summary_input"] = {
-                "conversation": turns_text if name.endswith("fresh") else "User: Apply patch\nAssistant: Applied patch",
-                "previous_summary": "" if name.endswith("fresh") else cc_iter._previous_summary,
-                "summary_budget": 2000,
-                "has_user_turn": True,
-            }
-        if name.startswith("placement"):
-            inp["component"] = "placement"
-            inp["stage"] = "summary"
-            inp["summary_responses"] = []
-            standalone = name.endswith("standalone")
-            inp["placement_input"] = {
-                "selection": {"prefix_end": len(head_msgs1) if standalone else len(head_msgs2),
-                              "first_kept_index": 3},
-                "summary": "Compact summary",
-                "details": {"has_user_turn": True if standalone else bool(cc_place2._summary_has_user_turn)},
-            }
-        if name in {"failure_guard_empty_content", "failure_guard_length_truncated"}:
-            inp["component"] = "summary_request"
-            inp["stage"] = "summary"
-            inp["native_settings"]["summary_model"] = cc_fail1.model
-            inp["summary_input"] = {"conversation": "test prompt", "previous_summary": "",
-                                    "summary_budget": 2000, "has_user_turn": True}
-        if name == "failure_guard_cooldown_blocked":
-            inp["trigger_blocked"] = cc_cd._summary_failure_cooldown_until > 100.0
 
     # Capture the actual wire rows, not the compressor's in-process metadata.
     # BreadBoard retains carrier provenance in record.details.
