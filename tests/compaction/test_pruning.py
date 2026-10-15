@@ -714,3 +714,35 @@ def test_duplicate_tool_results_prunes_outputs_selected_by_visible_tool_selector
     assert outputs[0]["output"] == [{"type": "input_text", "text": "[duplicate tool result]"}]
     assert outputs[1]["output"] == [{"type": "input_text", "text": repeated_text}]
     assert outputs[2]["output"] == unique_output
+
+
+def test_duplicate_tool_results_mask_only_the_repeated_result_under_a_shared_call_id():
+    unique_text = "unique native result " * 150
+    duplicate_text = "same native result " * 150
+    carrier = AnthropicAdapter().create_tool_result_batch_message([{
+        "role": "user",
+        "content": [
+            {"type": "tool_result", "tool_use_id": "dup", "content": unique_text},
+            {"type": "tool_result", "tool_use_id": "dup", "content": duplicate_text},
+        ],
+    }])
+    messages = [
+        {"role": "user", "content": "before"},
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "dup", "type": "function", "function": {"name": "bash", "arguments": {}}},
+        ]},
+        carrier,
+        {"role": "assistant", "content": "", "tool_calls": [
+            {"id": "newer", "type": "function", "function": {"name": "bash", "arguments": {}}},
+        ]},
+        {"role": "tool", "tool_call_id": "newer", "content": duplicate_text},
+    ]
+
+    reduction = _duplicate_reducer().reduce(_context(messages), Selection(targets=(2, 4)))
+
+    [edit] = reduction.edits
+    assert edit.index == 2
+    canonical = [block["content"] for block in edit.message["content"] if block.get("type") == "tool_result"]
+    assert canonical == [unique_text, "[duplicate tool result]"]
+    native = [block["content"] for block in replay_messages(edit.message["content"])[0]["content"]]
+    assert native == [unique_text, "[duplicate tool result]"]

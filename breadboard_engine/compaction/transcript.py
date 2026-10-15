@@ -253,15 +253,22 @@ def rewrite_result_content(
     message: Dict[str, Any],
     replacement: str,
     selected_call_ids: Optional[Iterable[str]] = None,
+    *,
+    selected_blocks: Optional[Iterable[int]] = None,
 ) -> bool:
-    """Rewrite selected canonical tool results while preserving replay envelopes."""
+    """Rewrite selected canonical tool results while preserving replay envelopes.
+
+    ``selected_blocks`` narrows the rewrite to those ``content`` positions, since call IDs may repeat.
+    """
     content = message.get("content")
     if role_of(message) not in {"tool", "tool_result"} or not isinstance(content, list):
         return False
     selected = None if selected_call_ids is None else set(selected_call_ids)
+    positions = None if selected_blocks is None else set(selected_blocks)
 
-    def is_selected(call_id: Any) -> bool:
-        return isinstance(call_id, str) and (selected is None or call_id in selected)
+    def is_selected(call_id: Any, position: int) -> bool:
+        return (isinstance(call_id, str) and (selected is None or call_id in selected)
+                and (positions is None or position in positions))
 
     def without_attachments(block: Mapping[str, Any]) -> Dict[str, Any]:
         return {key: value for key, value in block.items() if key != "attachments"}
@@ -272,31 +279,34 @@ def rewrite_result_content(
         except (ProviderContractError, KeyError, AttributeError):
             native_results = None
         if native_results is not None:
-            ordinals = [ordinal for ordinal, native in enumerate(native_results)
-                        if is_selected(native.get("tool_use_id"))]
-            if not ordinals:
+            result_positions = [position for position, block in enumerate(content) if block.get("type") == "tool_result"]
+            chosen = [(ordinal, position)
+                      for ordinal, (native, position) in enumerate(zip(native_results, result_positions))
+                      if is_selected(native.get("tool_use_id"), position)]
+            if not chosen:
                 return False
-            replayed = [without_attachments(block) if block.get("type") == "tool_result" and is_selected(block.get("call_id"))
-                        else block for block in content]
-            for ordinal in ordinals:
+            stripped = {position for _, position in chosen}
+            replayed = [without_attachments(block) if position in stripped else block
+                        for position, block in enumerate(content)]
+            for ordinal, _ in chosen:
                 replayed = replace_tool_result(replayed, ordinal, replacement)
             message["content"] = replayed
             return True
 
     rewritten: List[Any] = []
     changed = False
-    for block in content:
+    for position, block in enumerate(content):
         if not isinstance(block, Mapping):
             rewritten.append(block)
             continue
         kind = block.get("type")
-        if kind == "tool_result" and is_selected(block.get("call_id")):
+        if kind == "tool_result" and is_selected(block.get("call_id"), position):
             rewritten.append({**without_attachments(block), "content": replacement})
             changed = True
             continue
         payload = block.get("payload") if kind == "provider_replay" else None
         if (isinstance(payload, Mapping) and block.get("schema_version") == "openai.responses.tool_output.v1"
-                and is_selected(payload.get("call_id")) and "output" in payload):
+                and is_selected(payload.get("call_id"), position) and "output" in payload):
             output = [{"type": "input_text", "text": replacement}] if isinstance(payload["output"], list) else replacement
             rewritten.append({**block, "payload": {**payload, "output": output}})
             changed = True

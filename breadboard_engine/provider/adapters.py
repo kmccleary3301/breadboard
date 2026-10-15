@@ -408,6 +408,8 @@ class AnthropicAdapter(ProviderAdapter):
                 "text", "input_text", "output_text",
             } and isinstance(part.get("text"), str):
                 native.append({"type": "text", "text": part["text"]})
+            elif isinstance(part, Mapping) and part.get("type") == "document":
+                native.append(dict(part))
             elif isinstance(part, Mapping):
                 native.append({"type": "text", "text": canonical_json(dict(part))})
             else:

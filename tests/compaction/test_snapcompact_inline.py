@@ -732,3 +732,41 @@ def test_inline_compacts_multi_message_anthropic_batch_and_preserves_sibling_nat
     context = ProviderRuntimeContext(None, {"provider_tools": {"anthropic": {"native_tool_result_replay": True}}})
     _, wire = runtime._convert_messages(transformed, context=context)
     assert wire[-1] == native[1]
+
+
+def test_inline_imaged_native_result_keeps_its_document():
+    """An imaged Anthropic-native result keeps its document block for the next same-provider request."""
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.anthropic_replay import replay_messages
+
+    document = {"type": "document", "source": {"type": "base64", "media_type": "application/pdf", "data": "JVBERi0="}}
+    batch_msg = AnthropicAdapter().create_tool_result_batch_message([{
+        "role": "user",
+        "content": [{
+            "type": "tool_result",
+            "tool_use_id": "c1",
+            "content": [{"type": "text", "text": "System log diagnostic output line. " * 300}, document],
+        }],
+    }])
+    messages = [
+        {"role": "user", "content": "Process:"},
+        {"role": "assistant", "content": [{"type": "tool_call", "id": "c1", "name": "diag", "arguments": {}}]},
+        batch_msg,
+        {"role": "assistant", "content": [{"type": "tool_call", "id": "c2", "name": "fresh", "arguments": {}}]},
+        {"role": "tool", "tool_call_id": "c2", "content": "Done"},
+    ]
+
+    transformed = apply_inline_snapcompact(
+        messages,
+        _make_settings(tool_results="all", inline_min_tokens=100),
+        supports_images=True,
+        provider="google",
+        api="google-generative-ai",
+    )
+
+    [result] = replay_messages(transformed[2]["content"])[0]["content"]
+    assert "image" in [block["type"] for block in result["content"]]
+    assert result["content"][-2:] == [
+        {"type": "text", "text": "[Original source document 1; corresponds to its marker in the compacted text.]"},
+        document,
+    ]

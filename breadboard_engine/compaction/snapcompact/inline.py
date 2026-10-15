@@ -72,6 +72,13 @@ def _is_error_tool_result(msg: Mapping[str, Any]) -> bool:
     return False
 
 
+def _attachment_noun(part: Mapping[str, Any]) -> Optional[str]:
+    """Media an imaged result keeps verbatim after its frames."""
+    if is_image_part(part):
+        return "image"
+    return "document" if part.get("type") == "document" else None
+
+
 def _extract_text_and_images(content: Any) -> Tuple[str, List[Dict[str, Any]]]:
     if isinstance(content, str):
         return content, []
@@ -79,20 +86,21 @@ def _extract_text_and_images(content: Any) -> Tuple[str, List[Dict[str, Any]]]:
         return str(content or ""), []
 
     text_parts: List[str] = []
-    image_parts: List[Dict[str, Any]] = []
-    img_idx = 0
+    attachments: List[Dict[str, Any]] = []
+    counts = {"image": 0, "document": 0}
     for part in content:
         if isinstance(part, Mapping):
+            noun = _attachment_noun(part)
             if part.get("type") == "text":
                 text_parts.append(str(part.get("text") or ""))
-            elif is_image_part(part):
-                img_idx += 1
-                text_parts.append(f"[Source image {img_idx} was attached here in the original tool result.]")
-                image_parts.append(dict(part))
+            elif noun is not None:
+                counts[noun] += 1
+                text_parts.append(f"[Source {noun} {counts[noun]} was attached here in the original tool result.]")
+                attachments.append(dict(part))
         elif isinstance(part, str):
             text_parts.append(part)
 
-    return "\n".join(text_parts), image_parts
+    return "\n".join(text_parts), attachments
 
 
 def apply_inline_snapcompact(
@@ -207,12 +215,15 @@ def apply_inline_snapcompact(
             frame_blocks = _render_text_frames(text, shape)
             new_content: List[Dict[str, Any]] = [{"type": "text", "text": TOOL_RESULT_NOTE}]
             new_content.extend(frame_blocks)
-            for img_idx, img in enumerate(original_images, start=1):
+            counts = {"image": 0, "document": 0}
+            for attachment in original_images:
+                noun = _attachment_noun(attachment)
+                counts[noun] += 1
                 new_content.append({
                     "type": "text",
-                    "text": f"[Original source image {img_idx}; corresponds to its marker in the compacted text.]",
+                    "text": f"[Original source {noun} {counts[noun]}; corresponds to its marker in the compacted text.]",
                 })
-                new_content.append(img)
+                new_content.append(attachment)
 
             target_msg = out_messages[candidate["msg_idx"]]
             if candidate["is_replay"]:

@@ -7,14 +7,14 @@ from typing import Any, List, Mapping, Optional, Tuple
 from ..methods import MethodUnavailable
 from ..state import MessageEdit
 from ..transcript import answers_tool_call, result_parts, rewrite_result_content
-from ...provider.anthropic_replay import is_tool_result_replay, replay_messages
+from ...provider.anthropic_replay import is_tool_result_replay, native_tool_results
 from .protected_windows import visible_messages
 
 
 def _result_candidates(
     message: Mapping[str, Any],
-) -> List[Tuple[Any, Any, Mapping[str, Any], Optional[str]]]:
-    """Return result bodies, error flags, sidefacts, and optional rewrite call IDs."""
+) -> List[Tuple[Any, Any, Mapping[str, Any], Optional[int]]]:
+    """Return result bodies, error flags, sidefacts, and optional rewrite block positions."""
     content = message.get("content")
     if isinstance(content, str):
         return [(content, False, {}, None)]
@@ -23,23 +23,21 @@ def _result_candidates(
 
     candidates = []
     unaddressable_result = False
-    native_results_by_call_id = {}
+    # The validator binds each canonical result to its native peer by ordinal; IDs may repeat.
+    native_results = []
     if any(isinstance(block, dict) and is_tool_result_replay(block) for block in content):
-        native_results_by_call_id = {
-            result["tool_use_id"]: result
-            for native_message in replay_messages(content)
-            for result in native_message["content"]
-            if result.get("type") == "tool_result"
-        }
-    for block in content:
+        native_results = native_tool_results(content)
+    result_ordinal = -1
+    for position, block in enumerate(content):
         if not isinstance(block, Mapping):
             continue
         if block.get("type") == "tool_result":
+            result_ordinal += 1
             call_id = block.get("call_id")
             if not isinstance(call_id, str):
                 unaddressable_result = True
                 continue
-            native_result = native_results_by_call_id.get(call_id)
+            native_result = native_results[result_ordinal] if result_ordinal < len(native_results) else None
             result_content = block.get("content")
             is_error = block.get("is_error", False)
             sidefacts = {
@@ -53,7 +51,7 @@ def _result_candidates(
                     key: value for key, value in native_result.items()
                     if key not in {"type", "tool_use_id", "content", "is_error"}
                 })
-            candidates.append((result_content, is_error, sidefacts, call_id))
+            candidates.append((result_content, is_error, sidefacts, position))
             continue
 
         if block.get("type") != "provider_replay" or block.get("schema_version") != "openai.responses.tool_output.v1":
@@ -61,7 +59,7 @@ def _result_candidates(
         payload = block.get("payload")
         call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
         if isinstance(payload, Mapping) and isinstance(call_id, str) and "output" in payload:
-            candidates.append(([block], False, {}, call_id))
+            candidates.append(([block], False, {}, position))
 
     if candidates or unaddressable_result:
         return candidates
@@ -127,25 +125,25 @@ class DuplicateToolResults:
         hashes, edits = set(), []
         for index in reversed(selection.targets):
             message = messages[index]
-            call_ids = set()
+            positions = set()
             replace_entire_message = False
             candidates = _result_candidates(message)
-            for content, is_error, sidefacts, call_id in reversed(candidates):
+            for content, is_error, sidefacts, position in reversed(candidates):
                 digest, text_length = _result_digest(content, is_error, sidefacts)
                 if text_length < self.minimum:
                     continue
                 if digest in hashes:
-                    if call_id is None:
+                    if position is None:
                         replace_entire_message = True
                     else:
-                        call_ids.add(call_id)
+                        positions.add(position)
                 else:
                     hashes.add(digest)
-            if not call_ids and not replace_entire_message:
+            if not positions and not replace_entire_message:
                 continue
 
             updated = dict(message)
-            if call_ids and not rewrite_result_content(updated, self.placeholder, call_ids):
+            if positions and not rewrite_result_content(updated, self.placeholder, selected_blocks=positions):
                 continue
             if replace_entire_message:
                 updated["content"] = self.placeholder
