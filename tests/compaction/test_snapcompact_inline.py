@@ -401,3 +401,284 @@ def test_inline_already_over_budget_canonical_media_does_not_add_frames_or_drop(
     user_media = [b for b in user_content if b.get("type") == "media"]
     assert len(user_media) == 21
     assert user_media == incoming_21
+
+
+def test_inline_compacts_older_anthropic_batch_continuation_and_preserves_wire_contract():
+    """Older Anthropic continuation tool result is compacted; duplicate IDs, errors, side obs, and freshest stay intact."""
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.anthropic_replay import replay_messages
+    from breadboard_engine.provider.routing import provider_router
+    from breadboard_engine.provider.runtime import provider_registry
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
+
+    adapter = AnthropicAdapter()
+    # Duplicate call IDs: ordinal 0 is large output (compacted), ordinal 1 is error (skipped)
+    call_dup = "call_batch_dup"
+    large_text = "System log diagnostic output line. " * 300
+
+    native_batch = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "User side observation beside calls"},
+                {"type": "tool_result", "tool_use_id": call_dup, "content": large_text, "is_error": False, "custom_field": "val1"},
+                {"type": "tool_result", "tool_use_id": call_dup, "content": "Failed execution", "is_error": True, "custom_field": "val2"},
+            ],
+        }
+    ]
+
+    batch_msg = adapter.create_tool_result_batch_message(native_batch)
+    batch_msg["extra_metadata"] = "custom_value"
+    batch_msg["content"][0]["custom_block_meta"] = "bmeta1"
+    batch_msg["content"][2]["custom_replay_meta"] = "rmeta1"
+    # Outer-error control: message-level status='error' skips compaction even if large
+    outer_err_batch = adapter.create_tool_result_batch_message([
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "call_outer_err", "content": large_text, "is_error": False},
+            ],
+        }
+    ])
+    outer_err_batch["is_error"] = True
+
+    # Mismatch control: outer tool_call_id mismatched with replay tool_use_id
+    mismatch_batch = adapter.create_tool_result_batch_message([
+        {
+            "role": "user",
+            "content": [
+                {"type": "tool_result", "tool_use_id": "call_real", "content": large_text, "is_error": False},
+            ],
+        }
+    ])
+    mismatch_batch["tool_call_id"] = "call_mismatched"
+
+    freshest_call = "call_fresh_03"
+    freshest_msg = {"role": "tool", "tool_call_id": freshest_call, "content": "Freshest crisp output"}
+
+    messages = [
+        {"role": "user", "content": "Run diagnostics"},
+        {"role": "assistant", "content": [
+            {"type": "tool_call", "id": call_dup, "name": "diag", "arguments": {}},
+            {"type": "tool_call", "id": call_dup, "name": "diag", "arguments": {}},
+        ]},
+        batch_msg,
+        outer_err_batch,
+        mismatch_batch,
+        {"role": "assistant", "content": [{"type": "tool_call", "id": freshest_call, "name": "fresh", "arguments": {}}]},
+        freshest_msg,
+    ]
+
+    snapshot = copy.deepcopy(messages)
+    settings = _make_settings(tool_results="all", inline_min_tokens=100)
+
+    transformed = apply_inline_snapcompact(
+        messages,
+        settings,
+        supports_images=True,
+        provider="google",
+        api="google-generative-ai",
+    )
+
+    # 1. Source immutability
+    assert messages == snapshot
+
+    # 2. Freshest output stays crisp text
+    assert transformed[6]["content"] == "Freshest crisp output"
+
+    # 3. Outer-error control: message with is_error=True was skipped
+    assert transformed[3]["content"] == outer_err_batch["content"]
+
+    # 4. Mismatch control: mismatched tool_call_id was rejected from admission and untouched
+    assert transformed[4]["content"] == mismatch_batch["content"]
+
+    # 5. Batch message preserved role and wrapper/block metadata
+    transformed_batch = transformed[2]
+    assert transformed_batch.get("role") == "tool"
+    assert transformed_batch.get("extra_metadata") == "custom_value"
+    assert transformed_batch["content"][0].get("custom_block_meta") == "bmeta1"
+    assert transformed_batch["content"][2].get("custom_replay_meta") == "rmeta1"
+    # 6. Strict replay_messages validation succeeds
+    replayed = replay_messages(transformed_batch["content"])
+    assert len(replayed) == 1
+    replayed_user_parts = replayed[0]["content"]
+
+    # Side observation preserved verbatim
+    assert replayed_user_parts[0] == {"type": "text", "text": "User side observation beside calls"}
+
+    # Ordinal 0 (call_dup, large) was compacted into text note + native image blocks
+    call_1_part = replayed_user_parts[1]
+    assert call_1_part["type"] == "tool_result"
+    assert call_1_part["tool_use_id"] == call_dup
+    assert call_1_part.get("custom_field") == "val1"
+    assert isinstance(call_1_part["content"], list)
+    assert call_1_part["content"][0]["type"] == "text"
+    assert call_1_part["content"][0]["text"] == TOOL_RESULT_NOTE
+    native_images = [b for b in call_1_part["content"] if b.get("type") == "image"]
+    assert len(native_images) > 0
+    # Native image blocks have Anthropic base64 source, not image_url
+    source_dict = native_images[0]["source"]
+    assert source_dict["type"] == "base64"
+    assert source_dict["media_type"] == "image/png"
+    raw_png = base64.b64decode(source_dict["data"])
+    img = Image.open(io.BytesIO(raw_png))
+    assert img.format == "PNG"
+
+    # Ordinal 1 (call_dup, error) was skipped and remains uncompacted string
+    call_2_part = replayed_user_parts[2]
+    assert call_2_part["type"] == "tool_result"
+    assert call_2_part["tool_use_id"] == call_dup
+    assert call_2_part.get("custom_field") == "val2"
+    assert call_2_part["content"] == "Failed execution"
+    assert call_2_part["is_error"] is True
+
+    # 7. Downstream AnthropicMessagesRuntime conversion succeeds without error
+    desc, _ = provider_router.get_runtime_descriptor("anthropic/claude-3-opus")
+    runtime = provider_registry.create_runtime(desc)
+    ctx = ProviderRuntimeContext(
+        session_state=None,
+        agent_config={"provider_tools": {"anthropic": {"native_tool_result_replay": True}}},
+    )
+    _, converted = runtime._convert_messages(transformed, context=ctx)
+    tool_user_msg = converted[2]
+    assert tool_user_msg["role"] == "user"
+    assert len(tool_user_msg["content"]) == 3
+    assert tool_user_msg["content"][0]["text"] == "User side observation beside calls"
+    assert tool_user_msg["content"][1]["tool_use_id"] == call_dup
+    assert tool_user_msg["content"][2]["tool_use_id"] == call_dup
+
+
+@pytest.mark.parametrize(("incoming_images", "compacted"), [(47, True), (48, False)])
+def test_inline_counts_nested_anthropic_continuation_images_against_budget(incoming_images, compacted):
+    """Images nested in a native continuation consume the provider image budget exactly once."""
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.anthropic_replay import replay_messages
+
+    valid_png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg=="
+    image = {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": valid_png}}
+    batch_msg = AnthropicAdapter().create_tool_result_batch_message([
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "obs with image"},
+                image,
+                {
+                    "type": "tool_result",
+                    "tool_use_id": "c1",
+                    "content": [{"type": "text", "text": "System log diagnostic output line. " * 300}, image],
+                },
+            ],
+        }
+    ])
+    # Google allows 50 images; 2 are nested in the continuation and the large result needs 1 frame.
+    incoming = [{"type": "image_url", "image_url": {"url": f"data:image/png;base64,{valid_png}"}}] * incoming_images
+    messages = [
+        {"role": "user", "content": [{"type": "text", "text": "Process:"}, *incoming]},
+        {"role": "assistant", "content": [{"type": "tool_call", "id": "c1", "name": "diag", "arguments": {}}]},
+        batch_msg,
+        {"role": "assistant", "content": [{"type": "tool_call", "id": "c2", "name": "fresh", "arguments": {}}]},
+        {"role": "tool", "tool_call_id": "c2", "content": "Done"},
+    ]
+    snapshot = copy.deepcopy(messages)
+
+    transformed = apply_inline_snapcompact(
+        messages,
+        _make_settings(tool_results="all", inline_min_tokens=100),
+        supports_images=True,
+        provider="google",
+        api="google-generative-ai",
+    )
+
+    assert messages == snapshot
+    assert transformed[0] == messages[0]
+    assert transformed[4] == messages[4]
+    assert (transformed[2] != batch_msg) is compacted
+    replayed = replay_messages(transformed[2]["content"])
+    side_images = [b for b in replayed[0]["content"] if b.get("type") == "image"]
+    [result] = [b for b in replayed[0]["content"] if b.get("type") == "tool_result"]
+    result_images = [b for b in result["content"] if b.get("type") == "image"]
+    assert side_images == [image]
+    assert result_images.count(image) == 1
+    assert len(result_images) == (2 if compacted else 1)
+
+
+def test_inline_unsupported_canonical_only_preserved_without_imaging():
+    """Unsupported canonical tool_result messages without replay are preserved unchanged."""
+    canonical_msg = {
+        "role": "tool",
+        "content": [
+            {"type": "tool_result", "call_id": "c1", "content": "Large log " * 400, "is_error": False},
+        ],
+    }
+    freshest = {"role": "tool", "tool_call_id": "c2", "content": "Done"}
+    messages = [
+        {"role": "user", "content": "Go"},
+        canonical_msg,
+        freshest,
+    ]
+    settings = _make_settings(tool_results="all", inline_min_tokens=100)
+    transformed = apply_inline_snapcompact(messages, settings, supports_images=True)
+
+    # Canonical message without replay must not be imaged
+    assert transformed[1]["content"] == canonical_msg["content"]
+    assert transformed[2]["content"] == "Done"
+
+
+def test_inline_compacts_multi_message_anthropic_batch_and_preserves_sibling_native_message():
+    """Compacting an older tool result across multiple native messages preserves sibling messages and side observations exactly."""
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+    from breadboard_engine.provider.anthropic_replay import replay_messages
+    from breadboard_engine.provider.routing import provider_router
+    from breadboard_engine.provider.runtime import provider_registry
+    from breadboard_engine.provider.contract_runtime import ProviderRuntimeContext
+
+    native = [
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "First side observation."},
+                {"type": "tool_result", "tool_use_id": "call_multi_1", "content": "System log diagnostic output line. " * 300, "is_error": False},
+            ],
+        },
+        {
+            "role": "user",
+            "content": [
+                {"type": "text", "text": "Second side observation."},
+                {"type": "tool_result", "tool_use_id": "call_multi_2", "content": "Fresh crisp second result.", "is_error": False},
+            ],
+        },
+    ]
+    batch = AnthropicAdapter().create_tool_result_batch_message(copy.deepcopy(native))
+    messages = [
+        {"role": "user", "content": "Fetch two observations."},
+        {"role": "assistant", "content": [
+            {"type": "tool_call", "id": "call_multi_1", "name": "fetch", "arguments": {}},
+            {"type": "tool_call", "id": "call_multi_2", "name": "fetch", "arguments": {}},
+        ]},
+        batch,
+    ]
+    original = copy.deepcopy(messages)
+    settings = _make_settings(tool_results="all", inline_min_tokens=100)
+    transformed = apply_inline_snapcompact(
+        messages,
+        settings,
+        supports_images=True,
+        provider="google",
+        api="google-generative-ai",
+    )
+
+    assert messages == original
+    replayed = replay_messages(transformed[2]["content"])
+    assert len(replayed) == 2
+    assert replayed[0]["content"][0] == native[0]["content"][0]  # First side observation
+    assert replayed[1] == native[1]  # Second native message completely preserved
+
+    first_result = replayed[0]["content"][1]
+    assert isinstance(first_result["content"], list)
+    assert any(part.get("type") == "image" for part in first_result["content"])
+
+    descriptor, _ = provider_router.get_runtime_descriptor("anthropic/claude-3-opus")
+    runtime = provider_registry.create_runtime(descriptor)
+    context = ProviderRuntimeContext(None, {"provider_tools": {"anthropic": {"native_tool_result_replay": True}}})
+    _, wire = runtime._convert_messages(transformed, context=context)
+    assert wire[-1] == native[1]

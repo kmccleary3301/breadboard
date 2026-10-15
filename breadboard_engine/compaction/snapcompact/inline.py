@@ -16,7 +16,11 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 from ..settings import CompactionSettings
 from ..tokens import estimate_text_tokens, is_image_part
 from ..state import NATIVE_MARKER_KEY
-from ..transcript import content_text
+from ..transcript import anthropic_replay_conversation, content_text, result_parts
+
+from ...provider.adapters import AnthropicAdapter
+from ...provider.anthropic_replay import replay_messages
+from ...provider.contract_wire import canonical_json
 
 from .archive import count_frames, text_pages
 from .renderer import render_snapcompact_png
@@ -56,6 +60,16 @@ CONTEXT_SECTION_PATTERNS = [
 def _count_existing_images(messages: Sequence[Mapping[str, Any]]) -> int:
     count = 0
     for m in messages:
+        replay_conv = anthropic_replay_conversation(m)
+        if replay_conv is not None:
+            for item in replay_conv:
+                content = item.get("content")
+                parts = result_parts(content) if item.get("role") in ("tool", "toolResult") else (content if isinstance(content, list) else [])
+                for part in parts:
+                    if is_image_part(part):
+                        count += 1
+            continue
+
         content = m.get("content")
         if isinstance(content, list):
             for part in content:
@@ -131,21 +145,73 @@ def apply_inline_snapcompact(
 
     # Find tool results to swap
     if render_tool_results:
-        tool_indices = [
-            i
-            for i, m in enumerate(out_messages)
-            if m.get("role") in ("tool", "toolResult")
-        ]
-        # Skip the LAST tool result so freshest output stays crisp text
-        candidates_indices = tool_indices[:-1] if len(tool_indices) > 1 else []
+        tool_results: List[Dict[str, Any]] = []
+        for msg_idx, msg in enumerate(out_messages):
+            if msg.get("role") not in ("tool", "toolResult"):
+                continue
+            content = msg.get("content")
+            # Reuse anthropic_replay_conversation as validated admission
+            # (rejects invalid replays, malformed structure, and outer tool_call_id mismatch)
+            replay_conv = anthropic_replay_conversation(msg)
+            if replay_conv is not None:
+                replayed = replay_messages(content)
+                tool_ord = 0
+                for n_msg in replayed:
+                    for block in n_msg.get("content", []):
+                        if isinstance(block, dict) and block.get("type") == "tool_result":
+                            is_err = _is_error_tool_result(msg) or _is_error_tool_result(block)
+                            text, orig_imgs = _extract_text_and_images(block.get("content"))
+                            tool_results.append({
+                                "msg_idx": msg_idx,
+                                "is_replay": True,
+                                "ordinal_in_msg": tool_ord,
+                                "is_error": is_err,
+                                "is_unsupported": False,
+                                "text": text,
+                                "original_images": orig_imgs,
+                            })
+                            tool_ord += 1
+                continue
+            is_canonical = isinstance(content, list) and any(
+                isinstance(b, dict) and b.get("type") == "tool_result" for b in content
+            )
+            if is_canonical:
+                for b in content:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        tool_results.append({
+                            "msg_idx": msg_idx,
+                            "is_replay": False,
+                            "ordinal_in_msg": 0,
+                            "is_error": False,
+                            "is_unsupported": True,
+                            "text": "",
+                            "original_images": [],
+                        })
+                continue
 
-        for idx in candidates_indices:
+            # Standard tool message
+            is_err = _is_error_tool_result(msg)
+            text, orig_imgs = _extract_text_and_images(content)
+            tool_results.append({
+                "msg_idx": msg_idx,
+                "is_replay": False,
+                "ordinal_in_msg": 0,
+                "is_error": is_err,
+                "is_unsupported": False,
+                "text": text,
+                "original_images": orig_imgs,
+            })
+
+        # Skip the LAST tool result so freshest output stays crisp text
+        candidates = tool_results[:-1] if len(tool_results) > 1 else []
+
+        for candidate in candidates:
             if budget <= 0:
                 break
-            msg = out_messages[idx]
-            if _is_error_tool_result(msg):
+            if candidate["is_error"] or candidate["is_unsupported"]:
                 continue
-            text, original_images = _extract_text_and_images(msg.get("content"))
+            text = candidate["text"]
+            original_images = candidate["original_images"]
             text_tokens = estimate_text_tokens(text)
             if text_tokens < min_tokens:
                 continue
@@ -168,7 +234,39 @@ def apply_inline_snapcompact(
                 })
                 new_content.append(img)
 
-            out_messages[idx]["content"] = new_content
+            if candidate["is_replay"]:
+                adapter = AnthropicAdapter()
+                native_compacted = adapter.to_native_tool_result_content(new_content, None)
+                target_msg = out_messages[candidate["msg_idx"]]
+                target_content = target_msg.get("content", [])
+
+                # Update canonical tool_result block at matching ordinal
+                tool_ord = 0
+                for block in target_content:
+                    if isinstance(block, dict) and block.get("type") == "tool_result":
+                        if tool_ord == candidate["ordinal_in_msg"]:
+                            block["content"] = canonical_json(native_compacted)
+                            break
+                        tool_ord += 1
+
+                # Update native tool_result in provider_replay payload at matching ordinal
+                for block in target_content:
+                    if isinstance(block, dict) and block.get("type") == "provider_replay":
+                        native_ord = 0
+                        matched_native = False
+                        for n_msg in block.get("payload", {}).get("messages", []):
+                            for part in n_msg.get("content", []):
+                                if isinstance(part, dict) and part.get("type") == "tool_result":
+                                    if native_ord == candidate["ordinal_in_msg"]:
+                                        part["content"] = native_compacted
+                                        matched_native = True
+                                        break
+                                    native_ord += 1
+                            if matched_native:
+                                break
+            else:
+                out_messages[candidate["msg_idx"]]["content"] = new_content
+
             budget -= len(frame_blocks)
 
     # Handle system prompt. Mirrors OMP selectSystemPromptImageTarget and
