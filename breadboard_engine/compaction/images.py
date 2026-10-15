@@ -9,8 +9,12 @@ from __future__ import annotations
 
 import copy
 from typing import Any, Dict, List, Mapping, Optional, Tuple
-from ..provider.anthropic_replay import is_tool_result_replay, replay_messages
-from ..provider.contract_wire import canonical_json
+from ..provider.anthropic_replay import (
+    is_tool_result_replay,
+    native_tool_results,
+    replace_tool_result,
+    replay_messages,
+)
 
 from .methods import CompactionContext, MethodUnavailable
 from .state import CompactionRecord, MessageEdit, leading_system_count
@@ -29,33 +33,24 @@ def _strip_native_image_blocks(
     return kept, removed
 
 
-def _strip_anthropic_replay_images(content: List[Any], placeholder: str) -> int:
+def _strip_anthropic_replay_images(
+    content: List[Any], placeholder: str,
+) -> Tuple[List[Any], int]:
     if not any(
         isinstance(block, dict) and is_tool_result_replay(block)
         for block in content
     ):
-        return 0
+        return content, 0
 
-    native_messages = replay_messages(content)
-    semantic_results = [
-        block
-        for block in content
-        if isinstance(block, dict) and block.get("type") == "tool_result"
-    ]
     removed = 0
-    for message in native_messages:
+    # ``content`` is the caller's private copy, so observations are stripped in place.
+    for message in replay_messages(content):
         message["content"], count = _strip_native_image_blocks(
             message["content"], placeholder
         )
         removed += count
 
-    native_results = [
-        block
-        for message in native_messages
-        for block in message["content"]
-        if block["type"] == "tool_result"
-    ]
-    for native, semantic in zip(native_results, semantic_results):
+    for ordinal, native in enumerate(native_tool_results(content)):
         native_content = native.get("content")
         if not isinstance(native_content, list):
             continue
@@ -63,10 +58,9 @@ def _strip_anthropic_replay_images(content: List[Any], placeholder: str) -> int:
             native_content, placeholder
         )
         if count:
-            native["content"] = native_content
-            semantic["content"] = canonical_json(native_content)
+            content = replace_tool_result(content, ordinal, native_content)
             removed += count
-    return removed
+    return content, removed
 
 
 def strip_images_from_message(
@@ -95,7 +89,8 @@ def strip_images_from_message(
 
     content = new_msg.get("content")
     if isinstance(content, list):
-        removed += _strip_anthropic_replay_images(content, placeholder)
+        content, removed_from_replay = _strip_anthropic_replay_images(content, placeholder)
+        removed += removed_from_replay
         kept: List[Any] = []
         for part in content:
             if is_image_part(part):

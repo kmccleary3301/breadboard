@@ -403,6 +403,56 @@ def test_inline_already_over_budget_canonical_media_does_not_add_frames_or_drop(
     assert user_media == incoming_21
 
 
+def test_inline_imaged_tool_result_keeps_canonical_media_image():
+    """A canonical media image inside an imaged tool result follows the frames instead of being dropped."""
+    media = {
+        "type": "media",
+        "kind": "image",
+        "uri": "attachment://sha256:1111222233334444555566667777888899990000aaaabbbbccccddddeeeeffff",
+        "mime": "image/png",
+    }
+    messages = [
+        {"role": "user", "content": "Analyze graph."},
+        {"role": "tool", "tool_call_id": "c1", "content": [
+            {"type": "text", "text": "Analysis report with embedded graph. " * 200},
+            media,
+        ]},
+        {"role": "tool", "tool_call_id": "c2", "content": "Done."},
+    ]
+
+    transformed = apply_inline_snapcompact(
+        messages, _make_settings(tool_results="all", inline_min_tokens=50), supports_images=True,
+    )
+
+    content = transformed[1]["content"]
+    assert content[0]["text"] == TOOL_RESULT_NOTE
+    assert content[-1] == media
+
+
+def test_inline_counts_typed_tool_output_images_against_budget():
+    """Images inside a typed Responses tool-output envelope consume the provider image budget."""
+    from breadboard_engine.compaction.snapcompact.shapes import provider_image_budget
+    from breadboard_engine.provider.contract_messages import responses_image_tool_result_message
+
+    image = {
+        "type": "input_image",
+        "image_url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNiAAAABgADNjd8qAAAAABJRU5ErkJggg==",
+    }
+    messages = [
+        {"role": "user", "content": "Inspect."},
+        responses_image_tool_result_message("c0", [image] * provider_image_budget(None)),
+        {"role": "tool", "tool_call_id": "c1", "content": "Detailed log entry with lots of tokens. " * 300},
+        {"role": "tool", "tool_call_id": "c2", "content": "Done."},
+    ]
+
+    transformed = apply_inline_snapcompact(
+        messages, _make_settings(tool_results="all", inline_min_tokens=50), supports_images=True,
+    )
+
+    assert transformed == messages
+
+
+
 def test_inline_compacts_older_anthropic_batch_continuation_and_preserves_wire_contract():
     """Older Anthropic continuation tool result is compacted; duplicate IDs, errors, side obs, and freshest stay intact."""
     from breadboard_engine.provider.adapters import AnthropicAdapter

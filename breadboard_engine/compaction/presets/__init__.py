@@ -28,21 +28,22 @@ and sets that harness's own setting names:
 from __future__ import annotations
 
 import copy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import importlib.resources
-from typing import Any, Callable, Dict, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 import yaml
 
 from ..handoff import HandoffCompaction
 from ..methods import CompactionMethod
 from ..params import BuildEnv, Params, PresetError
-from ..pipeline import MODES, TARGET_REASONS, Pipeline, build_stage
+from ..pipeline import MODES, TARGET_REASONS, CompactionOutcome, Pipeline, build_stage
 from ..primitives.accounting import build_estimator
-from ..primitives.triggers import Pressure, TriggerInput, build_limit, build_trigger
+from ..primitives.triggers import PendingErrorTrigger, Pressure, TriggerInput, build_limit, build_trigger
 from ..primitives.native_retention import build_native_retention
 from ..remote import RemoteCompaction
 from ..settings import CompactionSettings, settings_from_config
+from ..state import CompactionState
 from ..shake import ShakeCompaction
 from ..snapcompact import SnapcompactCompaction
 
@@ -229,6 +230,65 @@ class Recipe:
         """The first firing trigger's decision; else the first trigger's; ``None`` without triggers."""
         decisions = [trigger.evaluate(data, history) for trigger in self.triggers]
         return next((d for d in decisions if d.fires), decisions[0] if decisions else None)
+
+    def watches(self, checkpoint: str) -> bool:
+        """Whether any trigger evaluates at ``checkpoint``."""
+        return any(trigger.phase == checkpoint for trigger in self.triggers)
+
+    def fires(self, data: TriggerInput, history: Sequence[Mapping[str, Any]],
+              ledger: Optional[CompactionState]) -> bool:
+        """Whether a trigger fires for ``history``.
+
+        At ``assistant_step_end`` a provider-error recovery learns from the
+        ledger whether the newest summary is still the last assistant reply.
+        """
+        if data.checkpoint == "assistant_step_end" and ledger is not None and self._recovery():
+            data = replace(data, last_assistant_is_summary=_summary_is_last(ledger, history))
+        pressure = self.pressure(data, history)
+        return pressure is not None and pressure.fires
+
+    def arm_recovery(self, error: BaseException) -> bool:
+        """Arm recovery from a provider error; whether a recovery is now pending."""
+        recovery = self._recovery()
+        for trigger in recovery:
+            trigger.arm(error)
+        return any(trigger.pending is not None for trigger in recovery)
+
+    def reset_recovery(self) -> None:
+        """Drop armed provider-error recovery and its spent attempts."""
+        for trigger in self._recovery():
+            trigger.clear()
+
+    def compact_at_checkpoint(
+        self, compact: Callable[[Optional[int], Optional[int]], CompactionOutcome],
+    ) -> CompactionOutcome:
+        """Run a fired checkpoint's ``compact(overflow_tokens, overflow_limit)``.
+
+        Spends one attempt of an armed recovery and passes its parsed bounds;
+        a recovered record disarms it.
+        """
+        pending = None
+        for trigger in self._recovery():
+            parsed = trigger.consume()
+            if parsed is not None:
+                pending = parsed
+        if pending is None:
+            return compact(None, None)
+        outcome = compact(pending.get("overflow_tokens"), pending.get("overflow_limit"))
+        if any(record.details.get("recovered") for record in outcome.records):
+            self.reset_recovery()
+        return outcome
+
+    def _recovery(self) -> Tuple[PendingErrorTrigger, ...]:
+        return tuple(trigger for trigger in self.triggers if isinstance(trigger, PendingErrorTrigger))
+
+
+def _summary_is_last(ledger: CompactionState, history: Sequence[Mapping[str, Any]]) -> bool:
+    """Whether no assistant reply follows the newest summary boundary."""
+    for record in reversed(ledger.records):
+        if record.is_boundary and record.details.get("summary"):
+            return not any(message.get("role") == "assistant" for message in history[record.history_length:])
+    return False
 
 
 def _set_path(doc: Dict[str, Any], path: str, value: Any, where: str) -> None:

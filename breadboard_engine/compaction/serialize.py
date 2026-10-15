@@ -14,7 +14,7 @@ import json
 import re
 from typing import Any, Mapping, Sequence
 
-from .transcript import anthropic_replay_conversation, media_placeholder, result_call_ids, result_parts
+from .transcript import media_placeholder, project_replay_messages, result_call_ids, result_parts
 
 TOOL_RESULT_MAX_CHARS = 2000
 
@@ -115,26 +115,7 @@ def serialize_conversation(
     style: TranscriptStyle = OMP_TRANSCRIPT,
 ) -> str:
     """Serialize chat-format messages to transcript text."""
-    projected_messages: list[Mapping[str, Any]] = []
-    native_replay_call_ids: set[str] = set()
-    for message in messages:
-        replay = anthropic_replay_conversation(message)
-        if replay is None:
-            projected_messages.append(message)
-        elif any(item.get("role") == "user" for item in replay):
-            projected_messages.extend(replay)
-            native_replay_call_ids.update(
-                call_id
-                for replay_message in replay
-                for call_id in result_call_ids(replay_message)
-                if isinstance(call_id, str)
-            )
-        else:
-            flattened_message = dict(message)
-            flattened_message["content"] = [
-                part for replay_message in replay for part in replay_message.get("content", [])
-            ]
-            projected_messages.append(flattened_message)
+    projected_messages, native_replay_call_ids = project_replay_messages(messages)
 
     useless_call_ids: set[str] = set()
     for msg in projected_messages if style.skip_useless else ():

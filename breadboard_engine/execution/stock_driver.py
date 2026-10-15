@@ -170,6 +170,34 @@ def resolve_stock_driver(owner: Any) -> Optional[StockDriver]:
     return None
 
 
+def finish_native_run(owner: Any, state: Any) -> Optional[Exception]:
+    """Finish the native OpenCode run and return its failure for the caller to raise after cleanup."""
+    if (owner.config.get("tools") or {}).get("native_semantics") not in {"opencode_1_2_17", "oh_my_opencode_3_10_0"}:
+        return None
+    session = getattr(state, "_opencode_tool_session", None)
+    if session is None:
+        return None
+    try:
+        session.finish_run()
+    except Exception as exc:
+        return exc
+    return None
+
+
+def record_native_session_snapshot(owner: Any, state: Any, result: dict) -> None:
+    """Attach the Codex agent thread snapshot that a resumed child reloads."""
+    if (
+        (owner.config.get("tools") or {}).get("native_semantics") == "codex_0_139"
+        and getattr(owner, "_codex_agent_id", None) is not None
+    ):
+        # Stock resumes the thread's Compacted rollout records, not its
+        # unprojected messages alone (rollout_reconstruction.rs:112-126).
+        result["_codex_session_snapshot"] = {
+            "messages": copy.deepcopy(state.provider_messages),
+            "compaction_state": state.compaction_state.to_list(),
+        }
+
+
 def summary_tool_schema(owner: Any, provider: str):
     """Expose the active provider catalog to compaction without object traversal."""
     from ..provider import provider_adapter_manager

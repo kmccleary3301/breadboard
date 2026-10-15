@@ -125,10 +125,7 @@ class CompactionController:
 
     def begin_run(self) -> None:
         """Drop recovery state an earlier run armed; the conductor outlives its sessions."""
-        for trigger in self.recipe.triggers:
-            clear = getattr(trigger, "clear", None)
-            if callable(clear):
-                clear()
+        self.recipe.reset_recovery()
 
     @staticmethod
     def _ledger(session_state: Any) -> CompactionState:
@@ -301,7 +298,7 @@ class CompactionController:
             session_state, request_context=request_context, conductor=conductor,
             runtime=runtime, client=client, model=model, turn_index=turn_index,
         )
-        if not any(getattr(trigger, "phase", None) == "assistant_step_end" for trigger in self.recipe.triggers):
+        if not self.recipe.watches("assistant_step_end"):
             return source_compacted
         window = self.resolve_context_window(conductor=conductor, session_state=session_state, model=model)
         target = projection_target_for(runtime, model)
@@ -313,27 +310,16 @@ class CompactionController:
             checkpoint="assistant_step_end", target=target,
         ):
             return source_compacted
-        pending = None
-        for trigger in self.recipe.triggers:
-            consume = getattr(trigger, "consume", None)
-            if callable(consume):
-                parsed = consume()
-                if parsed is not None:
-                    pending = parsed
-        outcome = self.compact(
-            session_state, request_context=request_context, reason="threshold",
-            target=target,
-            conductor=conductor, runtime=runtime, client=client,
-            context_window=window, turn_index=turn_index,
-            max_output_tokens=max_output,
-            overflow_tokens=pending.get("overflow_tokens") if pending is not None else None,
-            overflow_limit=pending.get("overflow_limit") if pending is not None else None,
+        outcome = self.recipe.compact_at_checkpoint(
+            lambda overflow_tokens, overflow_limit: self.compact(
+                session_state, request_context=request_context, reason="threshold",
+                target=target,
+                conductor=conductor, runtime=runtime, client=client,
+                context_window=window, turn_index=turn_index,
+                max_output_tokens=max_output,
+                overflow_tokens=overflow_tokens, overflow_limit=overflow_limit,
+            )
         )
-        if pending is not None and any(record.details.get("recovered") for record in outcome.records):
-            for trigger in self.recipe.triggers:
-                clear = getattr(trigger, "clear", None)
-                if callable(clear):
-                    clear()
         additional_compacted = self._serve_native_summary_requests(
             session_state, request_context=request_context, conductor=conductor,
             runtime=runtime, client=client, model=model, turn_index=turn_index,
@@ -532,26 +518,13 @@ class CompactionController:
         # record makes that usage stale until a request sends the new projection.
         usage_fresh = compaction_state is None or compaction_state.provider_usage_fresh
         metadata_input, metadata_output = self.resolve_model_limits(session_state)
-        summary_last = False
-        if checkpoint == "assistant_step_end" and any(
-            getattr(trigger, "kind", None) == "pending_error" for trigger in self.recipe.triggers
-        ) and compaction_state is not None:
-            for record in reversed(compaction_state.records):
-                if record.is_boundary and record.details.get("summary"):
-                    summary_last = not any(
-                        message.get("role") == "assistant"
-                        for message in messages[record.history_length:]
-                    )
-                    break
         data = TriggerInput(
             OccupancyInput(view, normalize_usage(last_usage), usage_fresh), context_window,
             max_input_tokens=max_input_tokens if max_input_tokens is not None else metadata_input,
             max_output_tokens=max_output_tokens if max_output_tokens is not None else metadata_output,
             checkpoint=checkpoint,
-            last_assistant_is_summary=summary_last,
         )
-        pressure = self.recipe.pressure(data, messages)
-        return pressure is not None and pressure.fires
+        return self.recipe.fires(data, messages, compaction_state)
 
     @staticmethod
     def _record_event(session_state: Any, event_type: str, payload: Dict[str, Any], turn_index: Optional[int]) -> None:
@@ -845,26 +818,21 @@ class CompactionController:
             if driver is not None and driver.recovery_outcome is not None else None
         )
         if source_outcome in {"handled", "error"}:
-            for trigger in self.recipe.triggers:
-                if getattr(trigger, "kind", None) == "pending_error":
-                    trigger.clear()
+            self.recipe.reset_recovery()
             # The failed user remains an error outcome. A native handled
             # successor is a distinct stock-origin turn, not a retry.
             return False
-        if self.active:
-            for trigger in self.recipe.triggers:
-                arm = getattr(trigger, "arm", None)
-                if callable(arm):
-                    arm(exc)
-        if not self.active or self.recipe.overflow_policy != "compact":
+        if not self.active:
+            return False
+        recovery_pending = self.recipe.arm_recovery(exc)
+        if self.recipe.overflow_policy != "compact":
             return False
         classifier = self.recipe.error_classifier or is_context_overflow
         if not classifier(exc):
             # A source-specific error parser can arm recovery independently
             # of native overflow. Run its existing assistant-end checkpoint
             # before the caller terminalizes this failed provider step.
-            if not any(getattr(trigger, "pending", None) is not None
-                       for trigger in self.recipe.triggers):
+            if not recovery_pending:
                 return False
             recovered = self.finish_assistant_step(
                 session_state, request_context=request_context, conductor=conductor,

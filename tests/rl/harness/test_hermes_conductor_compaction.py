@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import base64
 import hashlib
 import json
@@ -17,7 +16,6 @@ from breadboard.rl.harness.runners.base import (
     RunnerDependencyError,
     RunnerProtocolError,
     RunnerTerminationEvent,
-    RunnerTurn,
 )
 
 _TOOL_ORDER = (
@@ -637,3 +635,34 @@ async def test_checkpointed_compaction_summary_overflow_bound() -> None:
 
     assert "too many compaction summary exchanges in one step" in str(exc_info.value)
     assert exc_info.value.code == "native_response_invalid"
+
+
+@pytest.mark.asyncio
+async def test_checkpointed_conductor_rejects_unsupported_compaction_profile_before_worker_init() -> None:
+    """Requirement 3: Checkpointed conductor with compaction enabled and compaction_in_source=False
+    (even with implements_compaction_phases=True) raises RunnerProtocolError code
+    native_compaction_unsupported before worker initialization.
+    """
+    tools = CompactionFakeNativePort()
+    session = HarnessCompactionSession(tools.log)
+    _configure_compaction_session(session, tools, compaction=True)
+
+    base_profile = conductor_module.NATIVE_STREAM_PROFILES[HERMES_RESPONSE_CONSUMER_ID]
+    unsupported_profile = replace(
+        base_profile,
+        compaction_in_source=False,
+        implements_compaction_phases=True,
+    )
+
+    with pytest.raises(RunnerProtocolError) as exc_info:
+        await session._loop_native_stream(
+            conductor_module.ConductorRunRequest({"prompt": "test"}),
+            unsupported_profile,
+        )
+
+    assert exc_info.value.code == "native_compaction_unsupported"
+    assert "enables compaction but its worker does not run it in source" in str(exc_info.value)
+    # Assert rejection happened before worker initialization
+    assert tools.init_count == 0
+    assert "initialize" not in tools.operations
+    assert not tools.operations

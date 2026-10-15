@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Optional
 import pytest
 
 from breadboard_engine.compaction.methods import (
@@ -9,11 +9,9 @@ from breadboard_engine.compaction.methods import (
     MethodUnavailable,
 )
 from breadboard_engine.compaction.pruning import (
-    MIN_PRUNE_TOKENS,
     SUPERSEDED_NOTICE,
     USELESS_NOTICE,
     prune_superseded_tool_results,
-    prune_tool_outputs,
     prune_tool_results,
     read_tool_supersede_key,
 )
@@ -260,11 +258,11 @@ def test_prune_superseded_responses_tool_result_uses_replay_call_id():
 
 
 # -----------------------------------------------------------------------------
-# prune_tool_outputs and prune_tool_results integration tests
+# prune_tool_results integration tests
 # -----------------------------------------------------------------------------
 
 
-def test_prune_tool_outputs_age_and_savings_gate():
+def test_prune_tool_results_age_prunes_only_outside_protect_window():
     text = "large output line\n" * 500
     c1 = {"role": "assistant", "content": "", "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash"}}]}
     r1 = {"role": "tool", "tool_call_id": "c1", "name": "bash", "content": text}
@@ -273,41 +271,45 @@ def test_prune_tool_outputs_age_and_savings_gate():
     recent = {"role": "user", "content": "recent " * 5000}
     messages = [c1, r1, c2, r2, recent]
 
-    # With high protect_tokens, nothing pruned
-    res_noprune = prune_tool_outputs(messages, protect_tokens=1_000_000, minimum_savings=100)
-    assert res_noprune.pruned_count == 0
+    protected = _context(messages, prune={"enabled": True, "protect_tokens": 1_000_000, "minimum_savings": 100})
+    assert prune_tool_results(protected) is None
 
-    # With 0 protect_tokens and reasonable savings, both pruned
-    res = prune_tool_outputs(messages, protect_tokens=0, minimum_savings=100)
-    assert res.pruned_count == 2
-    assert "Output truncated" in r1["content"]
-    assert "Output truncated" in r2["content"]
+    record = prune_tool_results(
+        _context(messages, prune={"enabled": True, "protect_tokens": 0, "minimum_savings": 100})
+    )
+    assert record is not None
+    assert [edit.index for edit in record.edits] == [1, 3]
+    assert all("Output truncated" in edit.message["content"] for edit in record.edits)
+    assert record.details["age_pruned_count"] == 2
 
 
-@pytest.mark.parametrize("carrier", ["responses", "anthropic"])
-def test_prune_tool_outputs_rewrites_native_result_carriers(carrier):
-    assistant = {
-        "role": "assistant",
-        "content": "",
-        "tool_calls": [{"id": "c1", "type": "function", "function": {"name": "bash"}}],
-    }
-    result = _native_result_carrier(carrier, "large native result " * 500)
-    messages = [assistant, result, {"role": "user", "content": "recent"}]
+def test_prune_tool_results_selection_policy():
+    messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "run"},
+        *_read_pair("a.txt", FILE_CONTENT, T0, "c1"),
+        *_read_pair("build.log", BIG_TEXT, T0, "c2", tool="bash"),
+        *_useless_pair("search", "No matches found in codebase\n" * 10, T0, "c3"),
+        *_read_pair("react", BIG_TEXT, T0, "c4", tool="skill"),
+        *_read_pair("x", "ok", T0, "c5", tool="bash"),
+        *_read_pair("a.txt", FILE_CONTENT, T0, "c6"),
+        *_read_pair("build.log", BIG_TEXT, T0, "c7", tool="bash"),
+    ]
+    record = prune_tool_results(_context(
+        messages,
+        prune={"enabled": True, "supersede_reads": True, "prune_useless": True,
+               "minimum_savings": 50, "protect_tokens": 5000},
+    ))
 
-    outcome = prune_tool_outputs(messages, protect_tokens=0, minimum_savings=50)
-
-    assert outcome.pruned_count == 1
-    assert check_tool_pairing(messages) is None
-    if carrier == "responses":
-        [replay] = messages[1]["content"]
-        assert replay["payload"]["call_id"] == "c1"
-        assert "Output truncated" in replay["payload"]["output"][0]["text"]
-    else:
-        canonical, replay = messages[1]["content"]
-        native = replay["payload"]["messages"][0]["content"][0]
-        assert canonical["call_id"] == "c1"
-        assert native["tool_use_id"] == "c1"
-        assert native["content"] == canonical["content"]
+    assert record is not None
+    rewritten = {edit.index: edit.message["content"] for edit in record.edits}
+    assert sorted(rewritten) == [3, 5, 7]
+    assert rewritten[3] == SUPERSEDED_NOTICE
+    assert rewritten[5].startswith("[Output truncated")
+    assert rewritten[7] == USELESS_NOTICE
+    assert record.details["superseded_count"] == 1
+    assert record.details["useless_count"] == 1
+    assert record.details["age_pruned_count"] == 1
 
 
 def test_prune_tool_results_disabled_by_default_returns_none():

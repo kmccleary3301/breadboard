@@ -7,7 +7,7 @@ import re
 import unicodedata
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from ..transcript import result_call_ids, result_parts
+from ..transcript import project_replay_messages, result_call_ids, result_parts
 from .renderer import snapcompact_supported_chars
 
 NEWLINE_GLYPH = "\u2588"
@@ -281,6 +281,7 @@ def serialize_conversation(
     dim_tool_results: bool = True,
 ) -> str:
     """Format conversation into archive transcript text."""
+    messages, _ = project_replay_messages(messages)
     # Pre-map tool calls and tool results
     useless_call_ids: Set[str] = set()
     tool_results_by_id: Dict[str, Mapping[str, Any]] = {}

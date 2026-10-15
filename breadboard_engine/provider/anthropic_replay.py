@@ -47,6 +47,46 @@ def replay_messages(blocks: list[dict]) -> list[dict]:
     return payload["messages"]
 
 
+def native_tool_results(blocks: list[dict]) -> list[dict]:
+    """A validated continuation's native ``tool_result`` blocks, in global ordinal order."""
+    return [block for message in replay_messages(blocks) for block in message["content"]
+            if block["type"] == "tool_result"]
+
+
+def replace_tool_result(blocks: list[dict], ordinal: int, content: Any) -> list[dict]:
+    """Return a validated continuation with native result ``ordinal`` set to native ``content``.
+
+    The ordinal counts results across every native message (IDs may repeat); the canonical
+    peer at the same ordinal is resynchronized. ``blocks`` is never mutated.
+    """
+    if not 0 <= ordinal < len(native_tool_results(blocks)):
+        raise ProviderContractError("native tool continuation result ordinal out of range")
+    canonical = content if isinstance(content, str) else canonical_json(content)
+    replaced: list[dict] = []
+    canonical_ordinal = 0
+    for block in blocks:
+        if block["type"] == "tool_result":
+            if canonical_ordinal == ordinal:
+                block = {**block, "content": canonical}
+            canonical_ordinal += 1
+        else:
+            native_ordinal = 0
+            messages = []
+            for message in block["payload"]["messages"]:
+                message_content = []
+                for part in message["content"]:
+                    if part["type"] == "tool_result":
+                        if native_ordinal == ordinal:
+                            part = {**part, "content": content}
+                        native_ordinal += 1
+                    message_content.append(part)
+                messages.append({**message, "content": message_content})
+            block = {**block, "payload": {**block["payload"], "messages": messages}}
+        replaced.append(block)
+    replay_messages(replaced)
+    return replaced
+
+
 def portable_tool_continuation(blocks: list[dict]) -> list[dict[str, Any]] | None:
     """Expand a validated native continuation into results, then user observations."""
     if not any(is_tool_result_replay(block) for block in blocks):

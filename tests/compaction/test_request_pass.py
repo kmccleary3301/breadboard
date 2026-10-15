@@ -16,10 +16,10 @@ def turns(n):
     return [{"role": "user" if i % 2 == 0 else "assistant", "content": f"Turn {i}"} for i in range(n)]
 
 
-def session(messages, **metadata):
+def session(messages, workspace="ws", **metadata):
     from breadboard_engine.state.session_state import SessionState
 
-    state = SessionState("ws", "image", {})
+    state = SessionState(str(workspace), "image", {})
     for message in messages:
         state.add_message(message)
     for key, value in metadata.items():
@@ -67,7 +67,7 @@ def test_inline_request_transform_must_be_last(later):
         build_recipe(config, document)
 
 
-def test_real_inline_render_survives_a_request_stage_noop():
+def test_real_inline_render_survives_a_request_stage_noop(tmp_path):
     from breadboard_engine.compaction.controller import CompactionController
     from breadboard_engine.compaction.presets import load_preset_document
     from breadboard_engine.compaction.snapcompact.inline import SYSTEM_STUB, SYSTEM_FRAMES_NOTE
@@ -79,13 +79,13 @@ def test_real_inline_render_survives_a_request_stage_noop():
     document["pipeline"]["stages"][4]["when"] = {"reasons": ["threshold"]}
     controller.recipe = build_recipe(controller.config, document)
     messages = [{"role": "system", "content": "You are an autonomous engineering agent with extensive guidelines. " * 250}, {"role": "user", "content": "Please implement feature X."}]
-    state = session(messages)
+    state = session(messages, workspace=tmp_path)
     events = []
     state.record_lifecycle_event = lambda event, payload, **kwargs: events.append((event, payload))
     view = controller.build_request_view(state, target=ProjectionTarget("google", "google-generative-ai", "test"), supports_images=True)
     assert view[0]["content"] == SYSTEM_STUB
     assert view[1]["content"][0]["text"] == SYSTEM_FRAMES_NOTE
-    assert any(part.get("type") == "image_url" for part in view[1]["content"])
+    assert any(part.get("type") == "media" and part["uri"].startswith("attachment://sha256:") for part in view[1]["content"])
     assert state.provider_messages == messages and not state.compaction_state.records
     finished = [payload for event, payload in events if event == "compaction_finished"]
     assert len(finished) == 1 and finished[0]["reason"] == "request"

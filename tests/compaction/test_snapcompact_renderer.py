@@ -2,12 +2,10 @@
 
 import base64
 import io
-import pytest
 from PIL import Image
 
 from breadboard_engine.compaction.snapcompact.normalize import (
     NEWLINE_GLYPH,
-    compute_file_lists,
     dim_stopwords,
     normalize,
     scan_renderability,
@@ -18,11 +16,9 @@ from breadboard_engine.compaction.snapcompact.renderer import (
     snapcompact_supported_chars,
 )
 from breadboard_engine.compaction.snapcompact.shapes import (
-    SHAPE_VARIANTS,
     SHAPES,
     ShapeGeometry,
     geometry,
-    resolve_shape,
 )
 
 
@@ -144,3 +140,56 @@ def test_archive_pairs_each_call_with_its_canonical_result():
     ]
     text = serialize_conversation(messages, dim_tool_results=False)
     assert text == "¶call:" + "\n".join(f"read()\n<out>\n{out}\n</out>" for out in ("FIRST", "SECOND", "THIRD"))
+
+
+def _anthropic_replay_result(native_messages):
+    from breadboard_engine.provider.adapters import AnthropicAdapter
+
+    return AnthropicAdapter().create_tool_result_message(
+        "c1", "view_image", {"__claude_tool_result_messages": native_messages},
+    )
+
+
+def _archive_text(messages):
+    from breadboard_engine.compaction.snapcompact import compact_archive
+
+    _, _, archive = compact_archive(messages, shape=SHAPES["legacy"])
+    return archive.text or ""
+
+
+def test_archive_reads_anthropic_image_results_before_truncation():
+    import json
+
+    result = _anthropic_replay_result([{"role": "user", "content": [{
+        "type": "tool_result",
+        "tool_use_id": "c1",
+        "content": [
+            {"type": "image", "source": {
+                "type": "base64", "media_type": "image/png", "data": "A" * 12000,
+            }},
+            {"type": "text", "text": "SCREEN_OBSERVATION_AFTER_IMAGE"},
+        ],
+    }]}])
+    source_before = json.dumps(result, sort_keys=True)
+
+    text = _archive_text([result])
+
+    assert "SCREEN_OBSERVATION_AFTER_IMAGE" in text
+    assert "A" * 256 not in text
+    assert json.dumps(result, sort_keys=True) == source_before
+
+
+def test_archive_keeps_native_observation_when_result_is_empty():
+    import json
+
+    result = _anthropic_replay_result([{"role": "user", "content": [
+        {"type": "tool_result", "tool_use_id": "c1", "content": []},
+        {"type": "text", "text": "EMPTY_RESULT_SIDE_OBSERVATION"},
+    ]}])
+    source_before = json.dumps(result, sort_keys=True)
+
+    text = _archive_text([result])
+
+    assert "¶user:EMPTY_RESULT_SIDE_OBSERVATION" in text
+    assert "provider_replay" not in text
+    assert json.dumps(result, sort_keys=True) == source_before

@@ -2,7 +2,7 @@
 
 Ported from OMP ``packages/agent/src/compaction/pruning.ts``:
 - ``pruneSupersededToolResults``
-- ``pruneToolOutputs``
+- ``pruneToolOutputs`` (as ``prune_tool_results`` over the compaction ledger)
 - ``readToolSupersedeKey``
 - ``SUPERSEDED_NOTICE``
 - ``USELESS_NOTICE``
@@ -326,120 +326,72 @@ def prune_superseded_tool_results(
     return PruneResult(len(to_prune), tokens_saved)
 
 
+def _select_prune_candidates(
+    messages: Sequence[Dict[str, Any]],
+    settings: PruneSettings,
+    boundary_index: int,
+) -> Tuple[List[SupersedeCandidate], int]:
+    """Select tool results to prune with OMP ``pruneToolOutputs`` policy.
 
-def prune_tool_outputs(
-    entries: Sequence[Any],
-    count_tokens: Optional[Any] = None,
-    config: Optional[Any] = None,
-    **kwargs: Any,
-) -> PruneResult:
-    """Full age-based, supersede-aware and useless-aware pruning pass.
-
-    Ports OMP ``pruneToolOutputs``.
+    Superseded and useless results are always eligible; other results are age-pruned
+    once ``settings.protect_tokens`` of newer tool output is retained, unless protected
+    or smaller than ``MIN_PRUNE_TOKENS``. Results already pruned or before
+    ``boundary_index`` are kept. Returns candidates in index order and their total
+    savings, or ``([], 0)`` when savings fall short of ``settings.minimum_savings``.
     """
-    if count_tokens is not None and not callable(count_tokens):
-        config = count_tokens
-        count_fn = estimate_message_tokens
-    elif callable(count_tokens):
-        count_fn = count_tokens
-    else:
-        count_fn = estimate_message_tokens
+    tool_calls_by_id = collect_tool_calls_by_id(messages)
 
-    cfg_dict: Dict[str, Any] = {}
-    if isinstance(config, Mapping):
-        cfg_dict.update(config)
-    elif hasattr(config, "__dict__"):
-        cfg_dict.update(vars(config))
-    cfg_dict.update(kwargs)
+    superseded_ids: Set[int] = set()
+    if settings.supersede_reads:
+        superseded_ids = {
+            id(c.message)
+            for c in _collect_superseded_results(
+                messages, estimate_message_tokens, tool_calls_by_id, read_tool_supersede_key, DEFAULT_PROTECTED_TOOLS
+            )
+        }
 
-    protect_tokens = int(cfg_dict.get("protect_tokens", cfg_dict.get("protectTokens", 40000)))
-    minimum_savings = int(cfg_dict.get("minimum_savings", cfg_dict.get("minimumSavings", 20000)))
-    supersede_key = cfg_dict.get("supersede_key", cfg_dict.get("supersedeKey"))
-    prune_useless = bool(cfg_dict.get("prune_useless", cfg_dict.get("pruneUseless", True)))
-    keep_boundary_id = cfg_dict.get("keep_boundary_id", cfg_dict.get("keepBoundaryId"))
-    boundary_index = int(
-        cfg_dict.get("boundary_index", cfg_dict.get("boundaryIndex", _resolve_boundary_index(entries, keep_boundary_id)))
-    )
-    protected_tools = cfg_dict.get("protected_tools", cfg_dict.get("protectedTools", DEFAULT_PROTECTED_TOOLS))
-    cache_warm_suffix_tokens = cfg_dict.get("cache_warm_suffix_tokens", cfg_dict.get("cacheWarmSuffixTokens"))
-
-    raw_messages = [_unwrap_message(e)[0] for e in entries]
-    tool_calls_by_id = collect_tool_calls_by_id(raw_messages)
-
-    superseded_by_id: Dict[int, SupersedeCandidate] = {}
-    if supersede_key is not None:
-        for c in _collect_superseded_results(entries, count_fn, tool_calls_by_id, supersede_key, protected_tools):
-            superseded_by_id[id(c.message)] = c
-
-    useless_by_id: Dict[int, SupersedeCandidate] = {}
-    if prune_useless:
-        for c in _collect_useless_results(
-            entries,
-            count_fn,
-            tool_calls_by_id,
-            protected_tools,
-            set(superseded_by_id.keys()),
-        ):
-            useless_by_id[id(c.message)] = c
-
-    message_suffix = (
-        compute_message_suffix_tokens(entries, count_fn) if cache_warm_suffix_tokens is not None else None
-    )
+    useless_ids: Set[int] = set()
+    if settings.prune_useless:
+        useless_ids = {
+            id(c.message)
+            for c in _collect_useless_results(
+                messages, estimate_message_tokens, tool_calls_by_id, DEFAULT_PROTECTED_TOOLS, superseded_ids
+            )
+        }
 
     accumulated_tokens = 0
-    candidates: List[Tuple[Any, Dict[str, Any], int, str]] = []
-
-    for i in range(len(entries) - 1, -1, -1):
-        entry = entries[i]
-        msg, is_wrapped = _unwrap_message(entry)
+    candidates: List[SupersedeCandidate] = []
+    for i in range(len(messages) - 1, -1, -1):
+        msg = messages[i]
         if not answers_tool_call(msg):
             continue
 
-        target_dict = entry["message"] if is_wrapped else entry
-        tokens = count_fn(msg)
-        is_protected = is_protected_tool_result_message(msg, tool_calls_by_id, protected_tools)
-
-        if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
-            accumulated_tokens += tokens
-            continue
-
-        in_warm_prefix = (
-            message_suffix is not None
-            and cache_warm_suffix_tokens is not None
-            and message_suffix[i] > cache_warm_suffix_tokens
-        )
-        if in_warm_prefix or i < boundary_index:
-            accumulated_tokens += tokens
-            continue
-
-        superseded_cand = superseded_by_id.get(id(target_dict))
-        useless_cand = useless_by_id.get(id(target_dict))
-        too_small = tokens < MIN_PRUNE_TOKENS
-
-        if superseded_cand is None and useless_cand is None:
-            if accumulated_tokens < protect_tokens or is_protected or too_small:
-                accumulated_tokens += tokens
-                continue
-
-        notice = (
-            SUPERSEDED_NOTICE
-            if superseded_cand is not None
-            else (USELESS_NOTICE if useless_cand is not None else create_pruned_notice(tokens))
-        )
-        candidates.append((entry, target_dict, tokens, notice))
+        tokens = estimate_message_tokens(msg)
+        accumulated_before = accumulated_tokens
         accumulated_tokens += tokens
 
-    tokens_saved = sum(estimate_pruned_savings(tokens, notice) for _, _, tokens, notice in candidates)
-    if tokens_saved < minimum_savings or not candidates:
-        return PruneResult(0, 0)
+        if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None or i < boundary_index:
+            continue
 
-    now_val = "now"
-    for _, target_dict, _, notice in candidates:
-        _replace_result_content(target_dict, notice)
-        target_dict["pruned_at"] = now_val
-        target_dict["prunedAt"] = now_val
+        if id(msg) in superseded_ids:
+            notice = SUPERSEDED_NOTICE
+        elif id(msg) in useless_ids:
+            notice = USELESS_NOTICE
+        elif (
+            accumulated_before < settings.protect_tokens
+            or tokens < MIN_PRUNE_TOKENS
+            or is_protected_tool_result_message(msg, tool_calls_by_id, DEFAULT_PROTECTED_TOOLS)
+        ):
+            continue
+        else:
+            notice = create_pruned_notice(tokens)
+        candidates.append(SupersedeCandidate(entry=msg, message=msg, index=i, tokens=tokens, notice=notice))
 
-    return PruneResult(len(candidates), tokens_saved)
+    tokens_saved = sum(estimate_pruned_savings(c.tokens, c.notice) for c in candidates)
+    if not candidates or tokens_saved < settings.minimum_savings:
+        return [], 0
+    candidates.reverse()
+    return candidates, tokens_saved
 
 
 
@@ -453,101 +405,37 @@ def prune_tool_results(context: CompactionContext) -> Optional[CompactionRecord]
     if not settings.enabled:
         return None
 
-    kept_start = context.state.kept_start(context.messages, context.target)
-
     current_messages: List[Dict[str, Any]] = [copy.deepcopy(dict(m)) for m in context.messages]
     for record in context.state.records:
         for edit in record.edits:
             current_messages[edit.index] = copy.deepcopy(dict(edit.message))
 
-    supersede_key: Optional[SupersedeKeyFn] = read_tool_supersede_key if settings.supersede_reads else None
-
-    # Collect candidates using pruneToolOutputs semantics
-    raw_messages = current_messages
-    tool_calls_by_id = collect_tool_calls_by_id(raw_messages)
-
-    superseded_by_id: Dict[int, SupersedeCandidate] = {}
-    if supersede_key is not None:
-        for c in _collect_superseded_results(
-            raw_messages,
-            estimate_message_tokens,
-            tool_calls_by_id,
-            supersede_key,
-            DEFAULT_PROTECTED_TOOLS,
-        ):
-            superseded_by_id[id(c.message)] = c
-
-    useless_by_id: Dict[int, SupersedeCandidate] = {}
-    if settings.prune_useless:
-        for c in _collect_useless_results(
-            raw_messages,
-            estimate_message_tokens,
-            tool_calls_by_id,
-            DEFAULT_PROTECTED_TOOLS,
-            set(superseded_by_id.keys()),
-        ):
-            useless_by_id[id(c.message)] = c
-
-    accumulated_tokens = 0
-    candidates: List[Tuple[int, Dict[str, Any], int, str, bool, bool]] = []
-
-    for i in range(len(raw_messages) - 1, -1, -1):
-        msg = raw_messages[i]
-        if not answers_tool_call(msg):
-            continue
-
-        tokens = estimate_message_tokens(msg)
-        is_protected = is_protected_tool_result_message(msg, tool_calls_by_id, DEFAULT_PROTECTED_TOOLS)
-
-        if msg.get("pruned_at") is not None or msg.get("prunedAt") is not None:
-            accumulated_tokens += tokens
-            continue
-
-        if i < kept_start:
-            accumulated_tokens += tokens
-            continue
-
-        superseded_cand = superseded_by_id.get(id(msg))
-        useless_cand = useless_by_id.get(id(msg))
-        too_small = tokens < MIN_PRUNE_TOKENS
-
-        if superseded_cand is None and useless_cand is None:
-            if accumulated_tokens < settings.protect_tokens or is_protected or too_small:
-                accumulated_tokens += tokens
-                continue
-
-        notice = (
-            SUPERSEDED_NOTICE
-            if superseded_cand is not None
-            else (USELESS_NOTICE if useless_cand is not None else create_pruned_notice(tokens))
-        )
-        candidates.append((i, msg, tokens, notice, superseded_cand is not None, useless_cand is not None))
-        accumulated_tokens += tokens
-
-    tokens_saved = sum(estimate_pruned_savings(tokens, notice) for _, _, tokens, notice, _, _ in candidates)
-    if tokens_saved < settings.minimum_savings or not candidates:
+    candidates, tokens_saved = _select_prune_candidates(
+        current_messages, settings, context.state.kept_start(context.messages, context.target)
+    )
+    if not candidates:
         return None
 
     now = context.clock()
     edits: List[MessageEdit] = []
-    candidates.sort(key=lambda item: item[0])
-
-    for idx, orig_msg, _, notice, _, _ in candidates:
-        new_msg = copy.deepcopy(orig_msg)
-        _replace_result_content(new_msg, notice)
+    for candidate in candidates:
+        new_msg = copy.deepcopy(candidate.message)
+        _replace_result_content(new_msg, candidate.notice)
         new_msg["pruned_at"] = now
         new_msg["prunedAt"] = now
-        edits.append(MessageEdit(index=idx, message=new_msg))
+        edits.append(MessageEdit(index=candidate.index, message=new_msg))
 
+    superseded_count = sum(1 for c in candidates if c.notice == SUPERSEDED_NOTICE)
+    useless_count = sum(1 for c in candidates if c.notice == USELESS_NOTICE)
     record = context.new_record(
         method="prune",
         edits=tuple(edits),
         details={
             "pruned_count": len(edits),
             "tokens_saved": tokens_saved,
-            "superseded_count": sum(1 for _, _, _, _, is_sup, _ in candidates if is_sup),
-            "useless_count": sum(1 for _, _, _, _, _, is_use in candidates if is_use),
-            "age_pruned_count": sum(1 for _, _, _, _, is_sup, is_use in candidates if not is_sup and not is_use),
+            "superseded_count": superseded_count,
+            "useless_count": useless_count,
+            "age_pruned_count": len(candidates) - superseded_count - useless_count,
         },
     )
     context.state.validate(record, context.messages)

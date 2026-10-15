@@ -100,6 +100,7 @@ from .skills.registry import (
 from .skills.executor import execute_graph_skill
 from .conductor.patching import retry_diff_with_aider
 from .conductor.bootstrap import bootstrap_conductor, prepare_workspace
+from .execution.stock_driver import finish_native_run, record_native_session_snapshot
 from .conductor.facade_methods import OpenAIConductorFacadeMethods
 from .todo import TodoManager, TodoStore
 from .replay import ReplaySession
@@ -6746,16 +6747,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
             except Exception:
                 pass
         finally:
-            native_turn_error = None
-            if (self.config.get("tools") or {}).get("native_semantics") in {
-                "opencode_1_2_17", "oh_my_opencode_3_10_0",
-            }:
-                native_session = getattr(session_state, "_opencode_tool_session", None)
-                if native_session is not None:
-                    try:
-                        native_session.finish_run()
-                    except Exception as exc:
-                        native_turn_error = exc
+            native_turn_error = finish_native_run(self, session_state)
             profile_client = getattr(session_state, "_episode_provider_client", None)
             if profile_client is not None:
                 try:
@@ -6818,16 +6810,7 @@ class OpenAIConductor(OpenAIConductorFacadeMethods):
                 "completion_reason": completion_summary.get("reason", "no_result"),
                 "completed": bool(completion_summary.get("completed", False)),
             }
-        if (
-            (self.config.get("tools") or {}).get("native_semantics") == "codex_0_139"
-            and getattr(self, "_codex_agent_id", None) is not None
-        ):
-            # Stock resumes the thread's Compacted rollout records, not its
-            # unprojected messages alone (rollout_reconstruction.rs:112-126).
-            run_result["_codex_session_snapshot"] = {
-                "messages": copy.deepcopy(session_state.provider_messages),
-                "compaction_state": session_state.compaction_state.to_list(),
-            }
+        record_native_session_snapshot(self, session_state, run_result)
         try:
             run_dir = getattr(self.logger_v2, "run_dir", None)
             if run_dir and isinstance(run_result, dict):

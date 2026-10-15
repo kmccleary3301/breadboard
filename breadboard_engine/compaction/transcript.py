@@ -14,8 +14,9 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from ..provider.anthropic_replay import (
-    TOOL_RESULT_SCHEMA,
     is_tool_result_replay,
+    native_tool_results,
+    replace_tool_result,
     replay_messages,
 )
 from ..provider.contract_wire import ProviderContractError, canonical_json
@@ -216,6 +217,37 @@ def anthropic_replay_conversation(message: Message) -> Optional[List[Dict[str, A
     return conversation
 
 
+def project_replay_messages(
+    messages: Sequence[Mapping[str, Any]],
+) -> tuple[list[Mapping[str, Any]], set[str]]:
+    """Replace validated Anthropic replays with their semantic transcript messages.
+
+    Returns the projected messages and the call IDs whose results came from a
+    replay carrying native side observations. Plain, invalid, and foreign
+    results pass through unchanged.
+    """
+    projected_messages: list[Mapping[str, Any]] = []
+    native_replay_call_ids: set[str] = set()
+    for message in messages:
+        replay = anthropic_replay_conversation(message)
+        if replay is None:
+            projected_messages.append(message)
+        elif any(item.get("role") == "user" for item in replay):
+            projected_messages.extend(replay)
+            native_replay_call_ids.update(
+                call_id
+                for replay_message in replay
+                for call_id in result_call_ids(replay_message)
+                if isinstance(call_id, str)
+            )
+        else:
+            flattened_message = dict(message)
+            flattened_message["content"] = [
+                part for replay_message in replay for part in replay_message.get("content", [])
+            ]
+            projected_messages.append(flattened_message)
+    return projected_messages, native_replay_call_ids
+
 
 def rewrite_result_content(
     message: Dict[str, Any],
@@ -227,6 +259,30 @@ def rewrite_result_content(
     if role_of(message) not in {"tool", "tool_result"} or not isinstance(content, list):
         return False
     selected = None if selected_call_ids is None else set(selected_call_ids)
+
+    def is_selected(call_id: Any) -> bool:
+        return isinstance(call_id, str) and (selected is None or call_id in selected)
+
+    def without_attachments(block: Mapping[str, Any]) -> Dict[str, Any]:
+        return {key: value for key, value in block.items() if key != "attachments"}
+
+    if any(isinstance(block, dict) and is_tool_result_replay(block) for block in content):
+        try:
+            native_results = native_tool_results(content)
+        except (ProviderContractError, KeyError, AttributeError):
+            native_results = None
+        if native_results is not None:
+            ordinals = [ordinal for ordinal, native in enumerate(native_results)
+                        if is_selected(native.get("tool_use_id"))]
+            if not ordinals:
+                return False
+            replayed = [without_attachments(block) if block.get("type") == "tool_result" and is_selected(block.get("call_id"))
+                        else block for block in content]
+            for ordinal in ordinals:
+                replayed = replace_tool_result(replayed, ordinal, replacement)
+            message["content"] = replayed
+            return True
+
     rewritten: List[Any] = []
     changed = False
     for block in content:
@@ -234,50 +290,17 @@ def rewrite_result_content(
             rewritten.append(block)
             continue
         kind = block.get("type")
-        call_id = block.get("call_id")
-        if kind == "tool_result" and isinstance(call_id, str) and (selected is None or call_id in selected):
-            result_block = {key: value for key, value in block.items() if key != "attachments"}
-            result_block["content"] = replacement
-            rewritten.append(result_block)
+        if kind == "tool_result" and is_selected(block.get("call_id")):
+            rewritten.append({**without_attachments(block), "content": replacement})
             changed = True
             continue
-        if kind == "provider_replay":
-            payload = block.get("payload")
-            payload = payload if isinstance(payload, Mapping) else {}
-            call_id = payload.get("call_id")
-            if (block.get("schema_version") == "openai.responses.tool_output.v1"
-                    and isinstance(call_id, str) and (selected is None or call_id in selected)
-                    and "output" in payload):
-                output = [{"type": "input_text", "text": replacement}] if isinstance(payload["output"], list) else replacement
-                rewritten.append({**block, "payload": {**payload, "output": output}})
-                changed = True
-                continue
-            if (block.get("provider_id") == "anthropic"
-                    and block.get("schema_version") == TOOL_RESULT_SCHEMA
-                    and block.get("replay_scope") == "same_provider"):
-                native_messages = payload.get("messages")
-                if isinstance(native_messages, list):
-                    updated_messages = list(native_messages)
-                    replay_changed = False
-                    for message_index, native_message in enumerate(native_messages):
-                        native_content = native_message.get("content") if isinstance(native_message, Mapping) else None
-                        if not isinstance(native_content, list):
-                            continue
-                        updated_content = list(native_content)
-                        message_changed = False
-                        for part_index, native_result in enumerate(native_content):
-                            call_id = native_result.get("tool_use_id") if isinstance(native_result, Mapping) else None
-                            if (isinstance(native_result, Mapping) and native_result.get("type") == "tool_result"
-                                    and isinstance(call_id, str) and (selected is None or call_id in selected)):
-                                updated_content[part_index] = {**native_result, "content": replacement}
-                                message_changed = True
-                        if message_changed:
-                            updated_messages[message_index] = {**native_message, "content": updated_content}
-                            replay_changed = True
-                    if replay_changed:
-                        rewritten.append({**block, "payload": {**payload, "messages": updated_messages}})
-                        changed = True
-                        continue
+        payload = block.get("payload") if kind == "provider_replay" else None
+        if (isinstance(payload, Mapping) and block.get("schema_version") == "openai.responses.tool_output.v1"
+                and is_selected(payload.get("call_id")) and "output" in payload):
+            output = [{"type": "input_text", "text": replacement}] if isinstance(payload["output"], list) else replacement
+            rewritten.append({**block, "payload": {**payload, "output": output}})
+            changed = True
+            continue
         rewritten.append(block)
     if changed:
         message["content"] = rewritten
