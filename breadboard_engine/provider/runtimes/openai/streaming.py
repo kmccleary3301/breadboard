@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ...contracts import ProviderRuntime, ProviderRuntimeContext, ProviderRuntimeError
 from ....logging.provider_dump import provider_dump_logger
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from ...sdk_bindings import provider_sdk_bindings
 from .conversion import OpenAIConversionMixin
@@ -828,7 +829,10 @@ class OpenAIBaseRuntime(OpenAIConversionMixin, ProviderRuntime):
                         details["retry_schedule"] = retry_schedule
                     raise ProviderRuntimeError(redaction.safe_exception_message(exc), details=details) from None
 
-                raise ProviderRuntimeError(redaction.safe_exception_message(exc)) from None
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    details=provider_overflow_details(exc),
+                ) from None
             response_headers = self._normalize_headers(getattr(raw, "headers", {}) or {})
             safe_response_headers = redaction.scrub_headers(response_headers)
             content_type_header = response_headers.get("content-type")

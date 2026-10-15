@@ -38,6 +38,7 @@ from breadboard.rl.harness.runners.base import (
     RunnerTermination,
     RunnerTerminationEvent,
     RunnerToolBinding,
+    SourceEventCommitEvent,
     ToolActionTimeout,
     ToolCallEvent,
     ToolObservationEvent,
@@ -4357,14 +4358,20 @@ def _native_close_test_case(
     malformed_execute: bool = False,
     close_error: BaseException | None = None,
     block_invoke: bool = False,
+    agent_end_compaction: bool = False,
+    runtime_profile_override: Mapping[str, Any] | None = None,
+    action_timeout_ms: int = 100,
+    limit_updates_override: Mapping[str, int] | None = None,
 ) -> tuple[Any, _NativeCloseTestClient, _NativeCloseTestPort]:
     from breadboard.rl.harness import native_stream_profiles
-    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard.rl.harness.runners import omp_semantics, pi_semantics
     from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
 
     observation = _observation()
     semantics = _tool_semantics(observation)
-    runtime_profile = {"advertisement": {}}
+    runtime_profile = {"advertisement": {}, "compaction": agent_end_compaction}
+    if runtime_profile_override is not None:
+        runtime_profile.update(runtime_profile_override)
     semantics["metadata"] = {
         "e4_target": {
             "renderer_id": PI_RESPONSE_CONSUMER_ID,
@@ -4391,21 +4398,26 @@ def _native_close_test_case(
         target_version=3,
         phase_schema_version="bb.pi-native.test.v1",
         tool_order=("read-file",),
-        max_turns=1,
+        max_turns=2 if agent_end_compaction else 1,
         action_timeout_ms=100,
         episode_timeout_seconds=5,
         ack_policy="none",
         incomplete_stop_reasons=frozenset({"error"}),
         runtime_input_names=("cwd", "home", "current_date", "package_dir"),
         package_subpath="node_modules/@mariozechner/pi-coding-agent",
-        state_module=pi_semantics,
-        state_factory=lambda task, system_prompt, bootstrap: pi_semantics.PiSemanticsState(
-            task=task,
-            system_prompt=system_prompt,
-            request_cap=2,
-            model_id="model-a",
-            provider="openai",
+        state_module=omp_semantics if agent_end_compaction else pi_semantics,
+        state_factory=(
+            lambda task, system_prompt, bootstrap, run_limits: omp_semantics.OMPSemanticsState(
+                task=task, system_prompt=system_prompt, tool_schemas=(), request_cap=3,
+            )
+        ) if agent_end_compaction else (
+            lambda task, system_prompt, bootstrap, run_limits: pi_semantics.PiSemanticsState(
+                task=task, system_prompt=system_prompt, request_cap=2,
+                model_id="model-a", provider="openai",
+            )
         ),
+        implements_compaction_phases=agent_end_compaction,
+        compaction_checkpoints=frozenset({"agent_end"}) if agent_end_compaction else frozenset(),
     )
     registry = {PI_RESPONSE_CONSUMER_ID: profile}
     monkeypatch.setattr(conductor_module, "NATIVE_STREAM_PROFILES", registry)
@@ -4456,7 +4468,8 @@ def _native_close_test_case(
         observation=observation,
         semantics=semantics,
         tools=(_tool_grant("read-file"),),
-        limit_updates={"max_turns": 1, "action_timeout_ms": 100},
+        limit_updates={"max_turns": 2 if agent_end_compaction else 1, "action_timeout_ms": action_timeout_ms,
+                       **(limit_updates_override or {})},
         implementation_digest=CONDUCTOR_IMPLEMENTATION_DIGEST,
     )
     return plan, client, tools
@@ -4632,6 +4645,122 @@ async def test_native_stream_unverified_runtime_retirement_fails_before_effects(
     assert captured.value.code == "native_response_invalid"
     assert tools.operations.count("retire_runtime") == 1
     assert tools.effect_measurements == 0
+
+
+def _ceiling(
+    *, max_model_calls: int = 5, episode_wall_seconds: int = 60, mode: str = "ceiling",
+) -> dict[str, Any]:
+    # The fixture plan's resources grant a 60 s wall.
+    return {
+        "budget_admission": mode,
+        "bounded_controls": {"max_model_calls": max_model_calls, "episode_wall_seconds": episode_wall_seconds},
+    }
+
+
+async def test_native_stream_ceiling_target_runs_past_the_kit_request_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    from breadboard.rl.harness.native_stream_profiles import NativeRunLimits
+    from breadboard.rl.harness.runners import pi_semantics
+    from breadboard_engine.compilation.provider_response import PI_RESPONSE_CONSUMER_ID
+
+    plan, client, tools = _native_close_test_case(
+        monkeypatch, runtime_profile_override=_ceiling(), limit_updates_override={"max_turns": 5},
+    )
+    registry = conductor_module.NATIVE_STREAM_PROFILES
+    kit = registry[PI_RESPONSE_CONSUMER_ID]
+    received: list[NativeRunLimits | None] = []
+
+    def state_factory(task: str, system_prompt: str, bootstrap: Any, run_limits: NativeRunLimits | None) -> Any:
+        received.append(run_limits)
+        assert run_limits is not None
+        return pi_semantics.PiSemanticsState(
+            task=task, system_prompt=system_prompt, request_cap=run_limits.max_requests,
+            model_id="model-a", provider="openai",
+        )
+
+    registry[PI_RESPONSE_CONSUMER_ID] = replace(kit, state_factory=state_factory)
+    session, *_ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert kit.max_turns == 1
+    assert received == [NativeRunLimits(max_requests=5, episode_seconds=60)]
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert result.turn_count == 2 and len(client.requests) == 2
+
+
+@pytest.mark.parametrize(("ceiling", "limit_updates", "action_timeout_ms"), [
+    (_ceiling(max_model_calls=4), {"max_turns": 5}, 100),
+    (_ceiling(episode_wall_seconds=59), {"max_turns": 5}, 100),
+    (_ceiling(), {"max_turns": 5}, 200),
+    (_ceiling(mode="unbounded"), {"max_turns": 5}, 100),
+    ({"budget_admission": "ceiling"}, {"max_turns": 5}, 100),
+], ids=["requests_above_ceiling", "wall_above_ceiling", "tool_timeout_differs", "unknown_mode", "no_controls"])
+async def test_native_stream_ceiling_refuses_plans_outside_the_target_before_any_request(
+    monkeypatch: pytest.MonkeyPatch,
+    ceiling: dict[str, Any],
+    limit_updates: dict[str, int],
+    action_timeout_ms: int,
+) -> None:
+    plan, client, tools = _native_close_test_case(
+        monkeypatch, runtime_profile_override=ceiling, limit_updates_override=limit_updates,
+        action_timeout_ms=action_timeout_ms,
+    )
+    with pytest.raises(RunnerPlanError) as captured:
+        await _open(plan=plan, client=client, tools=tools)
+    assert captured.value.code == "compiled_ir_mismatch"
+    assert client.requests == [] and tools.operations == []
+
+
+async def test_native_stream_kit_target_requires_the_profile_request_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    plan, client, tools = _native_close_test_case(monkeypatch, limit_updates_override={"max_turns": 5})
+    session, *_ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        with pytest.raises(RunnerPlanError, match="native source runtime controls differ") as captured:
+            await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert captured.value.code == "compiled_ir_mismatch"
+    assert client.requests == []
+
+
+_ZERO_COST = {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}
+_FACTORY_BOOTSTRAPS = {
+    "pi@0.73.1": {"model_config": {"id": "model-a", "provider": "openai"}},
+    "pi-r3@0.57.1": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "current_date_time": "2026-09-26",
+    },
+    "oh-my-pi@18.1.17": {"current_date": "2026-09-26"},
+    "oh-my-pi-r3@16.2.13": {
+        "model_config": {"id": "model-a", "provider": "vllm-local", "api": "openai-completions", "cost": _ZERO_COST},
+        "runtime_inputs": {"cwd": "/w", "home": "/h", "current_date": "2026-09-26", "package_dir": "/p"},
+        "length_aborted_message": "aborted",
+        "current_date_time": "2026-09-26",
+    },
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_FACTORY_BOOTSTRAPS))
+def test_production_state_admits_the_ninth_request_only_under_a_ceiling(target_id: str) -> None:
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES, NativeRunLimits
+
+    (profile,) = (item for item in NATIVE_STREAM_PROFILES.values() if item.target_id == target_id)
+    bootstrap = _FACTORY_BOOTSTRAPS[target_id]
+    kit = profile.state_factory("task", "system", bootstrap, None)
+    ceiling = profile.state_factory("task", "system", bootstrap, NativeRunLimits(max_requests=12, episode_seconds=600))
+    for state in (kit, ceiling):
+        # Eight requests already committed: the kit cap is spent.
+        state.request_count = state.stream_fn_issued = profile.max_turns
+    assert profile.max_turns == 8
+    assert kit.begin_query() is not None and kit.exit_status == "RequestLimitExceeded"
+    assert ceiling.begin_query() is None and ceiling.exit_status is None
 
 
 class _OpenHandsTraceClient(RecordingPolicyClient):
@@ -5602,3 +5731,56 @@ async def test_conductor_tool_results_as_text_append_only_prefix_equality_across
         {"type": "function_call_output", "call_id": "call-2", "output": "output of tool 2"},
     ]
     await session.close()
+
+
+@pytest.mark.parametrize("continues", [False, True])
+async def test_agent_end_compaction_continuation_controls_next_turn(
+    monkeypatch: pytest.MonkeyPatch, continues: bool,
+) -> None:
+    from breadboard.rl.harness.runners.native_compaction import CompactedHistory
+
+    plan, client, tools = _native_close_test_case(monkeypatch, agent_end_compaction=True)
+    terminal = client.responses[-1]
+    client.responses = [copy.deepcopy(terminal), copy.deepcopy(terminal)]
+    calls: list[list[Mapping[str, Any]]] = []
+    continuation = {"role": "developer", "content": [{"type": "text", "text": "resume"}], "synthetic": True}
+
+    async def compact(messages: list[Any], **kwargs: Any) -> CompactedHistory | None:
+        assert kwargs["checkpoint"] == "agent_end"
+        calls.append(copy.deepcopy(messages))
+        if len(calls) > 1:
+            return None
+        return CompactedHistory(
+            messages=list(messages), event={"kind": "compaction", "checkpoint": "agent_end"},
+            continuation=[continuation] if continues else None,
+        )
+
+    monkeypatch.setattr(conductor_module, "compact_history", compact)
+    session, _, _, _, _, _ = await _open(plan=plan, client=client, tools=tools)
+    try:
+        result = await session.run(ConductorRunRequest({"prompt": "task"}))
+    finally:
+        await session.close()
+    assert result.termination is RunnerTermination.ASSISTANT_COMPLETE
+    assert len(client.requests) == (2 if continues else 1)
+    source_commits = [
+        event for event in result.events if isinstance(event, SourceEventCommitEvent)
+    ]
+    boundary = next(
+        event for event in source_commits
+        if any(item.get("kind") == "compaction" for item in event.events)
+    )
+    expected_boundary = [{"kind": "compaction", "checkpoint": "agent_end"}]
+    if continues:
+        expected_boundary.append(continuation)
+    assert [thaw_json(item) for item in boundary.events] == expected_boundary
+    emitted_continuations = [
+        thaw_json(item) for event in source_commits for item in event.events
+        if item.get("synthetic") is True
+    ]
+    assert emitted_continuations == ([continuation] if continues else [])
+    if continues:
+        assert calls[1][-2] == continuation
+        assert calls[1][-1]["role"] == "assistant"
+    else:
+        assert len(calls) == 1

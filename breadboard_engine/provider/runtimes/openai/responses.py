@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from string import Formatter
 from typing import Any, Dict, List, Optional, Tuple
 
 from ...contracts import (
@@ -16,13 +17,22 @@ from ...contracts import (
 )
 from ...input_media import resolve_input_media
 from ...model_role_options import openai_responses_role_options
+from ...sdk_bindings import provider_sdk_bindings
 from ....logging.provider_dump import provider_dump_logger
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .chat import OpenAIChatRuntime
+from .codex_responses_wire import (
+    codex_wire_scope, create_responses_client, project_codex_request, selected,
+)
+from .source_responses_wire import project_source_request, source_responses_wire_scope
 
 
 class OpenAIResponsesRuntime(OpenAIChatRuntime):
     """Runtime for OpenAI Responses API."""
+
+    def _create_sdk_client(self, **kwargs):
+        return create_responses_client(provider_sdk_bindings.openai, **kwargs)
 
     def _provider_config(self, context: ProviderRuntimeContext) -> Dict[str, Any]:
         provider_tools_cfg = context.agent_config.get("provider_tools") or {}
@@ -38,6 +48,105 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         ):
             return openai_specific
         return provider_tools_cfg
+
+    def _native_namespaces(self, context: ProviderRuntimeContext | None) -> bool:
+        return context is not None and self._provider_config(context).get("responses_namespaces") is True
+
+    def _native_function_name(self, item: Any, context: ProviderRuntimeContext) -> str:
+        if self._get_attr(item, "type") == "tool_search_call" and "tool_search_call" in self._special_call_types(context):
+            return "tool_search"
+        name = self._get_attr(item, "name")
+        namespace = self._get_attr(item, "namespace")
+        # codex-rs/core/src/tools/router.rs:98-110 constructs ToolName(namespace,name).
+        if self._native_namespaces(context) and namespace is not None:
+            return f"{namespace}.{name}"
+        return name
+
+    def _special_call_types(self, context: ProviderRuntimeContext | None) -> set[str]:
+        config = self._provider_config(context) if context is not None else {}
+        kinds = set()
+        if config.get("responses_custom_tools"):
+            kinds.add("custom_tool_call")
+        if config.get("responses_tool_search") is True:
+            kinds.add("tool_search_call")
+        return kinds
+
+    def _replayed_call_types(self, context: ProviderRuntimeContext | None) -> set[str]:
+        kinds = self._special_call_types(context)
+        if context is not None and self._provider_config(context).get("responses_preserve_tool_call_items") is True:
+            kinds.add("function_call")
+        return kinds
+
+    def _call_kind(self, name: str, context: ProviderRuntimeContext | None) -> str:
+        config = self._provider_config(context) if context is not None else {}
+        if name in config.get("responses_custom_tools", []):
+            return "custom_tool_call"
+        if name == "tool_search" and config.get("responses_tool_search") is True:
+            return "tool_search_call"
+        return "function_call"
+
+    def _call_arguments(self, item: Any) -> Any:
+        if self._get_attr(item, "type") == "custom_tool_call":
+            value = self._get_attr(item, "input")
+            return {"input": value} if isinstance(value, str) else None
+        return self._get_attr(item, "arguments")
+
+    def _allow_raw_arguments(self, context: ProviderRuntimeContext | None) -> bool:
+        return context is not None and (context.agent_config.get("tools") or {}).get("native_semantics") in {
+            "opencode_1_2_17", "oh_my_opencode_3_10_0",
+        }
+
+    def _special_call_item(self, item: Any) -> Dict[str, Any]:
+        # protocol/src/models.rs:793-841 skips id and each absent optional field.
+        kind = self._get_attr(item, "type")
+        if kind == "function_call":
+            result = {"type": kind, "call_id": self._get_attr(item, "call_id"),
+                      "name": self._get_attr(item, "name")}
+            namespace = self._get_attr(item, "namespace")
+            if namespace is not None:
+                result["namespace"] = namespace
+            result["arguments"] = self._get_attr(item, "arguments")
+            return result
+        fields = ("name", "input") if kind == "custom_tool_call" else ("execution", "arguments")
+        result = {"type": kind, "call_id": self._get_attr(item, "call_id")}
+        status = self._get_attr(item, "status")
+        if status is not None:
+            result["status"] = status
+        for field in fields:
+            result[field] = self._get_attr(item, field)
+        return result
+
+    def _special_call_replay(self, item: Any) -> Dict[str, Any]:
+        return {
+            "type": "provider_replay", "provider_id": self.descriptor.provider_id,
+            "schema_version": "openai.responses.tools.v1", "replay_scope": "same_provider",
+            "payload": self._special_call_item(item),
+        }
+
+    def _hosted_search_enabled(self, context: ProviderRuntimeContext | None) -> bool:
+        return context is not None and "web_search_call" in self._provider_config(context).get("responses_hosted_outputs", [])
+
+    def _hosted_search_item(self, item: Any) -> Dict[str, Any]:
+        # protocol/src/models.rs:869-878 omits id and absent optional fields.
+        output = {"type": "web_search_call"}
+        status = self._get_attr(item, "status")
+        if status is not None:
+            output["status"] = status
+        action = self._get_attr(item, "action")
+        if action is not None:
+            action_type = self._get_attr(action, "type")
+            action_fields = {"search": ("query", "queries"), "open_page": ("url",),
+                             "find_in_page": ("url", "pattern")}
+            # protocol/src/models.rs:1219-1220 uses serde(other).
+            if action_type not in action_fields:
+                action_type = "other"
+            fields = action_fields.get(action_type, ())
+            output["action"] = {"type": action_type}
+            for field in fields:
+                value = self._get_attr(action, field)
+                if value is not None:
+                    output["action"][field] = value
+        return output
 
     def _split_messages_for_responses(
         self,
@@ -66,15 +175,12 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         responses_stateful = True
         if "responses_stateful" in provider_cfg:
             responses_stateful = bool(provider_cfg.get("responses_stateful"))
+        if context.extra.get("compaction_summary") is True:
+            # A summary is a constructed side request; chaining it would add the server-side history again.
+            responses_stateful = False
 
         # Build instructions from system messages (if any)
-        instructions_parts: List[str] = []
-        for msg in system_messages:
-            content = msg.get("content")
-            text_val = self._message_content_to_text(content)
-            if text_val:
-                instructions_parts.append(text_val)
-        instructions = "\n\n".join(instructions_parts) if instructions_parts else None
+        instructions = self._system_messages_to_instructions(system_messages)
         developer_messages: List[Dict[str, Any]] = []
         if use_developer and system_messages:
             # Preserve system content as developer role inside input to mirror OpenCode.
@@ -127,16 +233,26 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         include_tool_calls: bool = False,
         context: ProviderRuntimeContext | None = None,
     ) -> List[Dict[str, Any]]:
+        provider_cfg = self._provider_config(context) if context is not None else {}
+        developer_string = provider_cfg.get("responses_developer_content") == "string"
+        group_results = provider_cfg.get("responses_group_tool_results") is True
+
         def serialize_output(value: Any) -> str:
             if isinstance(value, str):
                 return value
             return canonical_json(value)
 
-        def tool_outputs(message: Dict[str, Any]) -> List[Dict[str, str]]:
+        def tool_outputs(message: Dict[str, Any]) -> List[Dict[str, Any]]:
             role = message.get("role")
             if role not in {"tool", "tool_result"}:
                 return []
             content = message.get("content")
+            if (isinstance(content, list) and content
+                    and all(isinstance(block, dict) and block.get("type") == "provider_replay"
+                            and block.get("schema_version") == "openai.responses.tool_output.v1" for block in content)):
+                if context is None or self._provider_config(context).get("responses_tool_output_items") is not True:
+                    raise ProviderContractError("native tool output replay is not enabled")
+                return [dict(block["payload"]) for block in content]
             if isinstance(content, list):
                 outputs: List[Dict[str, str]] = []
                 for block in content:
@@ -213,7 +329,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     or raw.get("tool_call_id")
                 )
                 name = function_data.get("name")
-                if "arguments_json" in function_data:
+                raw_arguments = function_data.get("raw_arguments")
+                if raw_arguments is not None:
+                    arguments = None
+                elif "arguments_json" in function_data:
                     arguments = function_data.get("arguments_json")
                 elif "arguments" in function_data:
                     arguments = function_data.get("arguments")
@@ -221,7 +340,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     raise ProviderContractError(
                         "tool call requires arguments"
                     )
-                if arguments is None:
+                if arguments is None and raw_arguments is None:
                     raise ProviderContractError(
                         "tool call requires arguments"
                     )
@@ -229,12 +348,14 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     id=call_id,
                     name=name,
                     arguments=arguments,
+                    raw_arguments=raw_arguments,
                     type=(
                         "function"
                         if raw.get("type") == "tool_call"
                         else raw.get("type", "function")
                     ),
                     raw=raw,
+                    allow_raw_arguments=self._allow_raw_arguments(context),
                 )
                 call_data = call.as_dict()
                 call_id_value = call_data["call_id"]
@@ -249,11 +370,56 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 calls.append(call)
             return calls
 
+        pending_users = ()
+        if context is not None and context.extra.get("compaction_summary") is not True:
+            ledger = getattr(context.session_state, "compaction_state", None)
+            boundary = ledger.latest_readable_boundary() if ledger is not None else None
+            if (
+                boundary is not None
+                and boundary.details.get("queued_user_reminder")
+                # The boundary stays in the ledger, but its replay stops being
+                # pending as soon as a response or a new user is appended.
+                and len(context.session_state.provider_messages) == boundary.history_length
+            ):
+                pending_users = boundary.summary_messages[2:]
+
+        def pending_user_text(text: str) -> str:
+            # OpenCode prompt.ts:630-645 wraps queued replay text ephemerally.
+            # ECMAScript trim, including BOM but not Python's C0 separators.
+            if not text.strip("\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"):
+                return text
+            return "\n".join(("<system-reminder>", "The user sent the following message:", text, "",
+                              "Please address this message and continue with your tasks.", "</system-reminder>"))
+
+        call_batches = {}
+        if group_results:
+            for message in messages:
+                batch = message.get("_provider_tool_batch")
+                if batch is not None:
+                    for call in assistant_tool_calls(message):
+                        call_batches[call.id] = batch
         converted: List[Dict[str, Any]] = []
         effective_include_tool_calls = (
             include_tool_calls or self.descriptor.provider_id == "openrouter"
         )
         tool_output_call_ids: set[str] = set()
+        call_kinds = {}
+        native_calls = {}
+        replayed_call_ids = set()
+        for message in messages if self._replayed_call_types(context) else ():
+            if message.get("role") == "assistant":
+                for call in assistant_tool_calls(message):
+                    call_kinds[call.id] = self._call_kind(call.name, context)
+            blocks = message.get("content")
+            for block in blocks if isinstance(blocks, list) else ():
+                if (
+                    isinstance(block, dict) and block.get("type") == "provider_replay"
+                    and block.get("schema_version") == "openai.responses.tools.v1"
+                    and block.get("payload", {}).get("type") in self._replayed_call_types(context)
+                ):
+                    payload = block["payload"]
+                    native_calls[payload["call_id"]] = payload
+                    call_kinds[payload["call_id"]] = payload["type"]
         for message in messages:
             for output in tool_outputs(message):
                 tool_output_call_ids.add(output["call_id"])
@@ -269,24 +435,59 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 "tool_result",
             }:
                 raise ProviderContractError(f"unsupported Responses role: {role!r}")
+            if "bb_native_compaction" in message:
+                marker = message.get("bb_native_compaction")
+                if isinstance(marker, dict):
+                    provider = marker.get("provider")
+                    api = marker.get("api")
+                    if provider == "openai" and api == "responses":
+                        items = marker.get("items") or ()
+                        for item in items:
+                            if isinstance(item, dict):
+                                cloned = dict(item)
+                                cloned.pop("bb_native_compaction", None)
+                                converted.append(cloned)
+                        continue
             outputs = tool_outputs(message)
             if outputs:
-                converted.extend(outputs)
+                for output in outputs:
+                    kind = call_kinds.get(output["call_id"], self._call_kind(message.get("name", ""), context))
+                    if kind == "custom_tool_call":
+                        output["type"] = "custom_tool_call_output"
+                    elif kind == "tool_search_call":
+                        # context.rs:289-294; models.rs:692-698.
+                        result = json.loads(output["output"])
+                        # Hook denials are ordinary tool errors, not search outputs.
+                        hook_error = isinstance(result, dict) and "error" in result and "status" not in result
+                        if not hook_error:
+                            output = {"type": "tool_search_output", "call_id": output["call_id"],
+                                      "status": result["status"], "execution": result["execution"], "tools": result["tools"]}
+                    converted.append(output)
                 continue
 
             content = message.get("content")
+            pending_user = role == "user" and message in pending_users
             emitted_call = False
             if role == "assistant" and effective_include_tool_calls:
                 for call in assistant_tool_calls(message):
                     call_data = call.as_dict()
-                    converted.append(
-                        {
-                            "type": "function_call",
-                            "call_id": call_data["call_id"],
-                            "name": call_data["name"],
-                            "arguments": call_data["arguments_json"],
-                        }
-                    )
+                    kind = call_kinds.get(call.id, self._call_kind(call.name, context))
+                    if call.id in native_calls:
+                        converted.append(dict(native_calls[call.id]))
+                        replayed_call_ids.add(call.id)
+                    elif kind == "custom_tool_call":
+                        converted.append({"type": kind, "call_id": call.id, "name": call.name,
+                                          "input": call.parsed_arguments["input"]})
+                    elif kind == "tool_search_call":
+                        converted.append({"type": kind, "call_id": call.id, "execution": "client",
+                                          "arguments": call.parsed_arguments})
+                    else:
+                        converted.append({"type": "function_call", "call_id": call_data["call_id"],
+                                          "name": call_data["name"], "arguments": call.arguments})
+                    if self._native_namespaces(context) and "." in call_data["name"]:
+                        namespace, name = call_data["name"].split(".", 1)
+                        converted[-1]["name"] = name
+                        converted[-1]["namespace"] = namespace
                     emitted_call = True
 
             default_text_type = (
@@ -294,7 +495,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
             if isinstance(content, str):
                 content_blocks: List[Dict[str, Any]] = [
-                    {"type": default_text_type, "text": content}
+                    {"type": default_text_type, "text": pending_user_text(content) if pending_user else content}
                 ]
             elif isinstance(content, list):
                 content_blocks = []
@@ -312,17 +513,17 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                             raise ProviderContractError(
                                 "Responses text block requires text"
                             )
+                        if pending_user and not block.get("synthetic") and not block.get("ignored"):
+                            text = pending_user_text(text)
                         content_blocks.append(
                             {"type": default_text_type, "text": text}
                         )
                     elif block_type == "media":
                         media = resolve_input_media(block, context)
-                        content_blocks.append(
-                            {
-                                "type": "input_image",
-                                "image_url": media.data_url,
-                            }
-                        )
+                        image = {"type": "input_image", "image_url": media.data_url}
+                        if media.detail is not None:
+                            image["detail"] = media.detail
+                        content_blocks.append(image)
                     elif block_type in {
                         "input_image",
                         "refusal",
@@ -331,6 +532,23 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         "summary_text",
                     }:
                         content_blocks.append(dict(block))
+                    elif (
+                        block_type == "provider_replay"
+                        and block.get("schema_version") == "openai.responses.tools.v1"
+                        and block.get("payload", {}).get("type") in self._replayed_call_types(context)
+                    ):
+                        payload = block["payload"]
+                        if payload["call_id"] not in replayed_call_ids:
+                            converted.append(dict(payload))
+                            replayed_call_ids.add(payload["call_id"])
+                        emitted_call = True
+                    elif (
+                        block_type == "provider_replay"
+                        and self._hosted_search_enabled(context)
+                        and block.get("schema_version") == "openai.responses.hosted.v1"
+                    ):
+                        converted.append(dict(block["payload"]))
+                        emitted_call = True
                     elif block_type in {
                         "thinking",
                         "redacted_thinking",
@@ -371,15 +589,68 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         "OpenRouter Responses input requires text content"
                     )
                 converted.append({"role": role, "content": "".join(text_parts)})
+            elif developer_string and role in {"developer", "system"}:
+                if any(block.get("type") != "input_text" for block in content_blocks):
+                    raise ProviderContractError("String developer content requires text blocks")
+                converted.append({"role": role, "content": "".join(block["text"] for block in content_blocks)})
             else:
                 converted.append({"role": role, "content": content_blocks})
+            if (
+                context is not None
+                and self._provider_config(context).get("responses_message_phase", False)
+                and role == "assistant"
+                and message.get("phase") is not None
+            ):
+                converted[-1]["phase"] = message["phase"]
+        if group_results:
+            # Preserve real provider-step boundaries while ordering the calls
+            # before their outputs, as MessageV2's assistant tool parts do.
+            ordered = []
+            calls = []
+            outputs = []
+            active_batch = None
+            for item in converted:
+                batch = call_batches.get(item.get("call_id"))
+                if item.get("type") not in {"function_call", "function_call_output"} or batch is None:
+                    ordered.extend(calls)
+                    ordered.extend(outputs)
+                    calls, outputs, active_batch = [], [], None
+                    ordered.append(item)
+                    continue
+                if batch != active_batch:
+                    ordered.extend(calls)
+                    ordered.extend(outputs)
+                    calls, outputs, active_batch = [], [], batch
+                (calls if item["type"] == "function_call" else outputs).append(item)
+            converted = ordered + calls + outputs
         return converted
 
-    def _convert_tools_to_responses(self, tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+    def _convert_tools_to_responses(self, tools: Optional[List[Dict[str, Any]]], context: ProviderRuntimeContext | None = None) -> Optional[List[Dict[str, Any]]]:
         if not tools:
             return None
         converted: List[Dict[str, Any]] = []
+        deferred = self._provider_config(context).get("responses_deferred_tools", []) if context is not None else ()
+        providers = (context.agent_config.get("providers") or {}) if context is not None else {}
+        route_id = (context.extra.get("route_id") or providers.get("default_model")) if context is not None else None
+        selected = next((entry for entry in providers.get("models", ())
+                         if entry.get("id") == route_id), {})
         for tool in tools:
+            if tool.get("name") in deferred:
+                continue
+            # hosted_spec.rs:20-49 and view_image_spec.rs:20-30 depend on the
+            # selected ModelInfo, not the parent thread's capabilities.
+            if tool.get("type") == "web_search" and "web_search_tool_type" in selected:
+                tool = dict(tool)
+                if selected["web_search_tool_type"] == "text":
+                    tool.pop("search_content_types", None)
+                elif selected["web_search_tool_type"] == "text_and_image":
+                    tool["search_content_types"] = ["text", "image"]
+            if (tool.get("name") == "view_image" and tool.get("type") == "function"
+                    and selected.get("supports_image_detail_original") is False):
+                tool = dict(tool)
+                tool["parameters"] = dict(tool["parameters"])
+                tool["parameters"]["properties"] = dict(tool["parameters"]["properties"])
+                tool["parameters"]["properties"].pop("detail", None)
             if tool.get("type") == "function" and "function" in tool:
                 fn = tool.get("function", {}) or {}
                 strict_flag = fn.get("strict")
@@ -429,7 +700,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 else "provider"
             )
             raise ProviderRuntimeError(
-                redaction.safe_exception_message(exc), kind=kind
+                redaction.safe_exception_message(exc),
+                kind=kind,
+                details=provider_overflow_details(exc),
             ) from None
 
         session_state = getattr(context, "session_state", None)
@@ -444,6 +717,10 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         output_item_types: Dict[str, Tuple[str, int]] = {}
         completed_output_item_ids: set[str] = set()
         response_terminal: Optional[str] = None
+        allowed_item_types = {"message", "reasoning", "function_call"}
+        if self._hosted_search_enabled(context):
+            allowed_item_types.add("web_search_call")
+        allowed_item_types.update(self._special_call_types(context))
 
         def start_item(item_id: str) -> None:
             if not isinstance(item_id, str) or not item_id:
@@ -567,9 +844,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 item_type = self._get_attr(item, "type")
                 item_identifier = self._get_attr(item, "id")
                 call_id = self._get_attr(item, "call_id")
-                name = self._get_attr(item, "name")
+                name = self._native_function_name(item, context)
                 if (
-                    item_type != "function_call"
+                    item_type not in {"function_call", *self._special_call_types(context)}
                     or (
                         item_identifier is not None
                         and item_identifier != item_id
@@ -599,6 +876,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         "index": output_index,
                         "call_id": call_id,
                         "tool": name,
+                        "item_type": item_type,
                         "arguments": "",
                     }
                     tool_states[item_id] = state
@@ -636,11 +914,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             if item_id in ended_tool_item_ids:
                 return
             state = start_tool(item_id, item, output_index)
-            arguments = (
-                self._get_attr(item, "arguments") if item is not None else None
-            )
+            arguments = self._call_arguments(item) if item is not None else None
+            if item is None and state["item_type"] == "custom_tool_call":
+                arguments = {"input": state["arguments"]}
             if arguments is not None:
-                if not isinstance(arguments, str):
+                if state["item_type"] == "function_call" and not isinstance(arguments, str):
                     raise ProviderRuntimeError(
                         "Malformed Responses function-call arguments",
                         kind="protocol",
@@ -653,6 +931,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     id=state["call_id"],
                     name=state["tool"],
                     arguments=state["arguments"],
+                    allow_raw_arguments=self._allow_raw_arguments(context),
                 )
                 call.as_dict()
             except ProviderContractError:
@@ -671,13 +950,14 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     "index": state["index"],
                     "call_id": state["call_id"],
                     "tool": state["tool"],
-                    "arguments": call.arguments_json,
+                    **({"raw_arguments": call.raw_arguments} if call.raw_arguments is not None
+                       else {"arguments": call.arguments_json}),
                 },
                 turn_index=turn_index,
             )
 
         try:
-            with stream_ctx as stream:
+            with source_responses_wire_scope(context.native_request_field_order), codex_wire_scope(context), stream_ctx as stream:
                 for event in stream:
                     event_type = getattr(event, "type", None)
                     if event_type == "response.output_text.delta":
@@ -731,9 +1011,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         item_type = self._get_attr(item, "type")
                         item_id = self._get_attr(item, "id")
                         event_item_id = getattr(event, "item_id", None)
+                        if item_id is None and item_type in self._special_call_types(context):
+                            item_id = event_item_id or self._get_attr(item, "call_id")
                         output_index = getattr(event, "output_index", None)
                         if (
-                            item_type not in {"message", "reasoning", "function_call"}
+                            item_type not in allowed_item_types
                             or not isinstance(item_id, str)
                             or not item_id
                             or (
@@ -752,13 +1034,15 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                                 details={"code": "invalid_responses_event"},
                             )
                         output_item_types[item_id] = (item_type, output_index)
-                        if item_type == "function_call":
+                        if item_type in {"function_call", *self._special_call_types(context)}:
                             start_tool(item_id, item, output_index)
                         elif item_type == "message":
                             start_item(item_id)
-                        else:
+                        elif item_type == "reasoning":
                             start_reasoning(item_id)
-                    elif event_type == "response.function_call_arguments.delta":
+                    elif event_type == "response.function_call_arguments.delta" or (
+                        event_type == "response.custom_tool_call_input.delta" and "custom_tool_call" in allowed_item_types
+                    ):
                         item_id = getattr(event, "item_id", None)
                         delta = getattr(event, "delta", None)
                         output_index = getattr(event, "output_index", None)
@@ -792,9 +1076,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                             },
                             turn_index=turn_index,
                         )
-                    elif event_type == "response.function_call_arguments.done":
+                    elif event_type == "response.function_call_arguments.done" or (
+                        event_type == "response.custom_tool_call_input.done" and "custom_tool_call" in allowed_item_types
+                    ):
                         item_id = getattr(event, "item_id", None)
-                        arguments = getattr(event, "arguments", None)
+                        arguments = getattr(event, "input" if event_type == "response.custom_tool_call_input.done" else "arguments", None)
                         output_index = getattr(event, "output_index", None)
                         state = (
                             tool_states.get(item_id)
@@ -821,9 +1107,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         item_type = self._get_attr(item, "type")
                         item_id = self._get_attr(item, "id")
                         event_item_id = getattr(event, "item_id", None)
+                        if item_id is None and item_type in self._special_call_types(context):
+                            item_id = event_item_id or self._get_attr(item, "call_id")
                         output_index = getattr(event, "output_index", None)
                         if (
-                            item_type not in {"message", "reasoning", "function_call"}
+                            item_type not in allowed_item_types
                             or not isinstance(item_id, str)
                             or not item_id
                             or (
@@ -850,12 +1138,12 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                             item_id, (item_type, output_index)
                         )
                         completed_output_item_ids.add(item_id)
-                        if item_type == "function_call":
+                        if item_type in {"function_call", *self._special_call_types(context)}:
                             end_tool(item_id, item, output_index)
                         elif item_type == "message":
                             start_item(item_id)
                             end_item(item_id)
-                        else:
+                        elif item_type == "reasoning":
                             start_reasoning(item_id)
                             end_reasoning(item_id)
                     elif event_type in {
@@ -899,6 +1187,11 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         "response.content_part.done",
                         "response.reasoning_summary_part.added",
                         "response.reasoning_summary_part.done",
+                    }:
+                        continue
+                    elif self._hosted_search_enabled(context) and event_type in {
+                        "response.web_search_call.in_progress", "response.web_search_call.searching",
+                        "response.web_search_call.completed",
                     }:
                         continue
                     else:
@@ -958,6 +1251,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 redaction.safe_exception_message(exc),
                 kind=kind,
                 output_emitted=output_emitted,
+                details=provider_overflow_details(exc),
             ) from None
 
     def _normalize_output_message_content(self, content: Any) -> Any:
@@ -993,6 +1287,26 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             blocks.append({"type": "text", "text": value})
         return "".join(block["text"] for block in blocks)
 
+    @staticmethod
+    def _session_param(template: str, context: ProviderRuntimeContext) -> str:
+        values: Dict[str, Any] = {}
+        for _, name, _, _ in Formatter().parse(template):
+            if name is None or name in values:
+                continue
+            if name == "session_id":
+                value = context.session_id
+            elif name == "compaction_boundary_count":
+                value = sum(record.is_boundary for record in context.session_state.compaction_state.records)
+            else:
+                value = context.session_state.get_provider_metadata(name)
+            if value is None:
+                raise ProviderRuntimeError(
+                    "Declared request metadata is unavailable",
+                    kind="configuration", details={"code": "missing_request_metadata", "field": name},
+                )
+            values[name] = value
+        return template.format_map(values)
+
     def _request_payload(
         self,
         *,
@@ -1006,6 +1320,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         )
         provider_cfg = self._provider_config(context)
         responses_stateful = bool(provider_cfg.get("responses_stateful", True))
+        if context.extra.get("compaction_summary") is True:
+            responses_stateful = False
         has_state_reference = bool(
             context.session_state.get_provider_metadata("conversation_id")
             or context.session_state.get_provider_metadata("previous_response_id")
@@ -1026,9 +1342,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         if instructions:
             payload["instructions"] = instructions
 
-        responses_tools = self._convert_tools_to_responses(tools)
-        if responses_tools:
-            payload["tools"] = responses_tools
+        responses_tools = self._convert_tools_to_responses(tools, context)
+        if responses_tools or (context.extra.get("compaction_summary") is True and tools is not None):
+            payload["tools"] = responses_tools if responses_tools is not None else []
         if (
             self.descriptor.provider_id == "openrouter"
             and isinstance(model, str)
@@ -1082,11 +1398,49 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             )
             if previous_response_id:
                 payload["previous_response_id"] = previous_response_id
-
         extra_payload = context.extra.get("responses_extra") if context.extra else None
         if isinstance(extra_payload, dict):
             payload.update(extra_payload)
         payload.update(openai_responses_role_options(context))
+        request_params = provider_cfg.get("request_params")
+        if isinstance(request_params, dict):
+            payload.update(request_params)
+        session_params = provider_cfg.get("session_params")
+        if isinstance(session_params, dict):
+            for field, template in session_params.items():
+                payload[field] = self._session_param(template, context)
+        client_metadata = provider_cfg.get("client_metadata")
+        client_templates = provider_cfg.get("client_metadata_session")
+        if isinstance(client_metadata, dict) or isinstance(client_templates, dict):
+            metadata = dict(client_metadata or {})
+            for field, template in (client_templates or {}).items():
+                metadata[field] = self._session_param(template, context)
+            # The native API accepts this extension; the SDK exposes it through
+            # extra_body rather than a Responses.stream keyword.
+            extra_body = dict(payload.get("extra_body") or {})
+            extra_body["client_metadata"] = metadata
+            payload["extra_body"] = extra_body
+        if provider_cfg.get("responses_max_output_tokens_from_context") is True:
+            output_cap = context.extra.get("max_tokens")
+            if output_cap is None:
+                # Ordinary calls carry the exact model route rather than a
+                # summary budget. Only this explicit projection opts into it.
+                route_id = context.extra.get("route_id")
+                configured_models = (context.agent_config.get("providers") or {}).get("models") or ()
+                output_cap = next((entry.get("max_output_tokens") for entry in configured_models
+                                   if isinstance(entry, dict) and entry.get("id") == route_id), None)
+            if output_cap is not None:
+                payload["max_output_tokens"] = output_cap
+        if context.extra.get("compaction_summary") is True:
+            if context.extra.get("compaction_request_options_declared") is True and context.extra.get("max_tokens") is not None:
+                payload["max_output_tokens"] = context.extra["max_tokens"]
+            summary_params = context.extra.get("compaction_request_params")
+            if isinstance(summary_params, dict):
+                payload.update(summary_params)
+        if provider_cfg.get("responses_message_type") is True:
+            for item in payload["input"]:
+                if "role" in item:
+                    item["type"] = "message"
         return payload
 
     def project_request_body(
@@ -1110,7 +1464,9 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             payload.update(extra_body)
         if stream:
             payload["stream"] = True
-        return payload
+        if context.native_request_field_order is not None:
+            return project_source_request(payload, context.native_request_field_order)
+        return project_codex_request(payload) if selected(context) else payload
     def invoke(
         self,
         *,
@@ -1134,17 +1490,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
 
         if response is None:
             try:
-                response = self._call_with_raw_response(
-                    client.responses,
-                    error_context="responses.create",
-                    context=context,
-                    **payload,
-                )
+                with source_responses_wire_scope(context.native_request_field_order), codex_wire_scope(context):
+                    response = self._call_with_raw_response(
+                        client.responses,
+                        error_context="responses.create",
+                        context=context,
+                        **payload,
+                    )
             except ProviderRuntimeError:
                 raise
             except Exception as exc:  # pragma: no cover - exercised in integration
                 raise ProviderRuntimeError(
-                    redaction.safe_exception_message(exc)
+                    redaction.safe_exception_message(exc),
+                    details=provider_overflow_details(exc),
                 ) from None
 
         normalized_messages: List[ProviderMessage] = []
@@ -1198,14 +1556,19 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
         for idx, item in enumerate(response_output):
             item_type = self._get_attr(item, "type")
             item_id = self._get_attr(item, "id")
-            if item_type not in {"message", "function_call", "reasoning"}:
+            if item_type not in {"message", "function_call", "reasoning"} and not (
+                item_type in self._special_call_types(context)
+                or (item_type == "web_search_call" and self._hosted_search_enabled(context))
+            ):
                 raise ProviderRuntimeError(
                     "Unknown Responses output item",
                     kind="protocol",
                     output_emitted=bool(normalized_messages),
                     details={"code": "unknown_responses_output"},
                 )
-            if not isinstance(item_id, str) or not item_id:
+            if (not isinstance(item_id, str) or not item_id) and not (
+                item_id is None and item_type in self._special_call_types(context)
+            ):
                 raise ProviderRuntimeError(
                     "Malformed Responses output item",
                     kind="protocol",
@@ -1219,7 +1582,8 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                     output_emitted=bool(normalized_messages),
                     details={"code": "invalid_responses_output"},
                 )
-            seen_output_item_ids.add(item_id)
+            if item_id is not None:
+                seen_output_item_ids.add(item_id)
 
 
             if item_type == "message":
@@ -1237,6 +1601,15 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 finish_reason = (
                     self._get_attr(item, "finish_reason", None) or default_finish_reason
                 )
+                annotations = {"responses_type": item_type}
+                phase = self._get_attr(item, "phase")
+                if self._provider_config(context).get("responses_message_phase", False) and phase is not None:
+                    if phase not in ("commentary", "final_answer"):
+                        raise ProviderRuntimeError(
+                            "Responses output message has invalid phase",
+                            kind="protocol", details={"code": "invalid_responses_output"},
+                        )
+                    annotations["phase"] = phase
                 normalized_messages.append(
                     ProviderMessage(
                         role=role,
@@ -1244,14 +1617,14 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         finish_reason=finish_reason,
                         index=idx,
                         raw_message=item,
-                        annotations={"responses_type": item_type},
+                        annotations=annotations,
                         message_id=item_id,
                     )
                 )
-            elif item_type == "function_call":
+            elif item_type in {"function_call", *self._special_call_types(context)}:
                 call_id = self._get_attr(item, "call_id")
-                name = self._get_attr(item, "name")
-                arguments = self._get_attr(item, "arguments")
+                name = self._native_function_name(item, context)
+                arguments = self._call_arguments(item)
                 if arguments is None:
                     raise ProviderRuntimeError(
                         "Malformed Responses function-call arguments",
@@ -1266,6 +1639,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         arguments=arguments,
                         type="function",
                         raw=item,
+                        allow_raw_arguments=self._allow_raw_arguments(context),
                     )
                     tool_call.as_dict()
                 except ProviderContractError:
@@ -1278,7 +1652,7 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                 normalized_messages.append(
                     ProviderMessage(
                         role="assistant",
-                        content=None,
+                        content=[self._special_call_replay(item)] if item_type in self._replayed_call_types(context) else None,
                         tool_calls=[tool_call],
                         finish_reason=self._get_attr(item, "finish_reason", None)
                         or "toolUse",
@@ -1288,6 +1662,14 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
                         message_id=item_id,
                     )
                 )
+            elif item_type == "web_search_call" and self._hosted_search_enabled(context):
+                normalized_messages.append(ProviderMessage(
+                    role="assistant", content=[{
+                        "type": "provider_replay", "provider_id": self.descriptor.provider_id,
+                        "schema_version": "openai.responses.hosted.v1", "replay_scope": "same_provider",
+                        "payload": self._hosted_search_item(item),
+                    }], index=idx, raw_message=item, message_id=item_id,
+                ))
             elif item_type == "reasoning":
                 item_id = item_id
                 encrypted = self._get_attr(item, "encrypted_content")
@@ -1350,4 +1732,17 @@ class OpenAIResponsesRuntime(OpenAIChatRuntime):
             reasoning_blocks=reasoning_blocks or None,
             model=getattr(response, "model", None),
             metadata=metadata,
+        )
+    def compaction_port(
+        self,
+        *,
+        client: Any,
+        model: str,
+    ) -> Any:
+        from ....compaction.remote.openai import OpenAIResponsesCompactionPort
+
+        return OpenAIResponsesCompactionPort(
+            client=client,
+            model=model,
+            runtime=self,
         )

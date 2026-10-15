@@ -18,6 +18,7 @@ from breadboard.sandbox import DevSandboxV2, new_dev_sandbox_v2
 from breadboard.sandbox_factory import SandboxFactory, DeploymentMode
 from ..execution.dialect_manager import DialectManager
 from ..execution.agent_executor import AgentToolExecutor
+from ..execution.stock_driver import resolve_stock_driver, summary_tool_schema
 from ..messaging.message_formatter import MessageFormatter
 from ..monitoring.reward_metrics import RewardMetricsSQLiteWriter, TodoMetricsSQLiteWriter
 from ..run_logging import LoggerV2Manager
@@ -39,6 +40,7 @@ from ..permissions import PermissionBroker
 from ..permissions.policy_pack import PolicyPack
 from .loop_detection import LoopDetectionService
 from .context_window_guard import ContextWindowGuard
+from ..compaction.controller import CompactionController
 from .streaming_policy import StreamingPolicy
 from ..provider import ProviderInvoker
 from .prompt_planner import ToolPromptPlanner
@@ -253,6 +255,12 @@ def initialize_execution_components(conductor: Any) -> None:
     conductor.permission_broker = PermissionBroker(conductor.config.get("permissions"), policy_pack=policy)
     conductor.loop_detector = LoopDetectionService()
     conductor.context_guard = ContextWindowGuard()
+    conductor.stock_driver = resolve_stock_driver(conductor)
+    conductor.compaction_controller = CompactionController(
+        conductor.config,
+        stock_driver=conductor.stock_driver,
+        tool_schema_provider=lambda provider: summary_tool_schema(conductor, provider),
+    )
     conductor.message_formatter = MessageFormatter(conductor.workspace)
     conductor.agent_executor = AgentToolExecutor(conductor.config, conductor.workspace)
     conductor.agent_executor.set_enhanced_executor(conductor.enhanced_executor)

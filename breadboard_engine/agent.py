@@ -16,14 +16,27 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple, Callable
 from pathlib import Path
 from .utils.safe_delete import is_disposable_workspace_path, validate_workspace_path
+from .execution.stock_tools import native_concurrent_prompts
 
 
-def _admit_standalone_run() -> Dict[str, str]:
-    return {
-        "session_id": f"run-{uuid.uuid4().hex}",
+def _admit_standalone_run(config: Optional[Dict[str, Any]] = None, workspace: Optional[str] = None) -> Dict[str, Any]:
+    if ((config or {}).get("providers") or {}).get("session_uuid_version") == 7:
+        from .compilation.context_builders.codex import admit_environment, new_session_id
+        session_id = new_session_id()
+        native_environment = admit_environment(workspace or os.getcwd())
+    else:
+        session_id = f"run-{uuid.uuid4().hex}"
+        native_environment = None
+    context: Dict[str, Any] = {
+        "session_id": session_id,
         "input_id": f"input-{uuid.uuid4().hex}",
         "turn_id": f"turn-{uuid.uuid4().hex}",
     }
+    if native_concurrent_prompts(config or {}):
+        context["opencode_stock_headless"] = True
+    if native_environment is not None:
+        context["native_environment"] = native_environment
+    return context
 
 
 _ray = None
@@ -108,6 +121,8 @@ class AgenticCoder:
             pass
         self.agent = None
         self._local_mode = force_local_mode or os.environ.get("RAY_SCE_LOCAL_MODE", "0") == "1"
+        from .execution.stock_tools import admit_stock_execution_mode
+        admit_stock_execution_mode(self.config, local=self._local_mode)
         
     def _load_config(self) -> Dict[str, Any]:
         """Load and validate configuration (v2-aware)."""
@@ -468,9 +483,14 @@ class AgenticCoder:
         if not self.agent:
             self.initialize()
         if context is None:
-            context = _admit_standalone_run()
+            context = _admit_standalone_run(self.config, self.workspace_dir)
 
         model = self._select_model()
+        stock_driver = getattr(self.agent, "stock_driver", None)
+        if stock_driver is not None and stock_driver.source_model is not None:
+            source_model = stock_driver.source_model(self.agent, context)
+            if source_model is not None:
+                model = source_model
         loop_cfg = self.config.get('loop') or {}
         steps = int(
             max_iterations
@@ -573,7 +593,7 @@ class AgenticCoder:
                         model,
                         max_steps=5,
                         tool_prompt_mode=tool_prompt_mode,
-                        context=_admit_standalone_run(),
+                        context=_admit_standalone_run(self.config, self.workspace_dir),
                     )
                 else:
                     ref = self.agent.run_agentic_loop.remote(
@@ -582,7 +602,7 @@ class AgenticCoder:
                         model,
                         max_steps=5,
                         tool_prompt_mode=tool_prompt_mode,
-                        context=_admit_standalone_run(),
+                        context=_admit_standalone_run(self.config, self.workspace_dir),
                     )
                     ray_mod = _get_ray()
                     if ray_mod is None:
@@ -606,6 +626,15 @@ class AgenticCoder:
             for filename in filenames:
                 files.append(os.path.relpath(os.path.join(root, filename), self.workspace_dir))
         return files
+
+    def close(self) -> None:
+        """Release every stock sidecar registered with this agent."""
+        if self.agent is None:
+            return
+        if self._local_mode:
+            self.agent.close_stock_tools()
+        else:
+            _get_ray().get(self.agent.close_stock_tools.remote())
 
     def _select_model(self) -> str:
         lock = self.config.get("model_role_lock") if isinstance(self.config, dict) else None

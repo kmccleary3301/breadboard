@@ -192,6 +192,47 @@
             "type": "string",
             "minLength": 1
           }
+        },
+        "deviations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "surface",
+              "stock",
+              "breadboard",
+              "reason",
+              "authority"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "surface": {
+                "type": "string",
+                "minLength": 1
+              },
+              "stock": {
+                "type": "string",
+                "minLength": 1
+              },
+              "breadboard": {
+                "type": "string",
+                "minLength": 1
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1
+              },
+              "authority": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
         }
       }
     },

@@ -24,6 +24,7 @@ def _trace() -> dict:
             "cwd": "/workspace",
             "home": "/home/capture",
             "current_date": "2026-09-23",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": "/packages",
         },
         "requests": [{"body": {"messages": [{"role": "user", "content": "do"}], "tools": [{"function": {"name": "bash"}}]}}],
@@ -37,6 +38,13 @@ def _trace() -> dict:
     }
 
 
+def _supplier_capture(trace: dict) -> dict:
+    """The stock capture shape of a BB trace: runtime_inputs without BB's admitted instant."""
+    capture = deepcopy(trace)
+    del capture["runtime_inputs"]["message_timestamp_ms"]
+    return capture
+
+
 def test_projection_is_one_canonical_episode() -> None:
     episode = project_bb_trace(_trace())
     assert list(episode) == ["schema_version", "requests", "tool_calls", "results", "file_effects", "termination", "request_count"]
@@ -46,7 +54,7 @@ def test_projection_is_one_canonical_episode() -> None:
 
 def test_equal_supplier_and_bb_episodes_pass() -> None:
     trace = _trace()
-    report = compare({"capture": trace, "replay": deepcopy(trace)})
+    report = compare({"capture": _supplier_capture(trace), "replay": deepcopy(trace)})
     assert report["ok"] is True
     assert report["failed"] == 0
 
@@ -56,7 +64,7 @@ def test_negative_gate_rejects_completion_order_mutation_and_effect_mutation() -
     replay = deepcopy(supplier)
     replay["results"][0]["output"] = "different"
     replay["effects"]["marker.txt"] = None
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert report["failed"] >= 2
 
@@ -66,7 +74,7 @@ def test_capture_unavailable_stop_reason_is_not_self_exempt(tmp_path: Path) -> N
     supplier_trace = _trace()
     supplier_trace.pop("native_responses")
     supplier_trace["exit"] = {"kind": "Submitted", "native_stop_reason": None}
-    (supplier_dir / "trace.json").write_text(json.dumps(supplier_trace), encoding="utf-8")
+    (supplier_dir / "trace.json").write_text(json.dumps(_supplier_capture(supplier_trace)), encoding="utf-8")
     replay = _trace()
     replay["exit"] = {"kind": "Submitted", "native_stop_reason": "stop"}
     report = compare({"capture": supplier_dir, "replay": replay})
@@ -101,7 +109,7 @@ def test_comparator_rejects_empty_native_response_record() -> None:
     supplier.pop("native_responses")
     replay = _trace()
     replay["native_responses"] = [{}]
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert "malformed" in report["errors"][0]
 
@@ -110,7 +118,7 @@ def test_comparator_rejects_extra_native_response_record() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)
     replay["native_responses"] = [{"choices": [{"finish_reason": "stop"}]}] * 2
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert "exactly one native_responses" in report["errors"][0]
 
@@ -119,7 +127,7 @@ def test_comparator_rejects_missing_native_response_record() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)
     replay["native_responses"] = []
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert "exactly one native_responses" in report["errors"][0]
 
@@ -137,7 +145,7 @@ def test_comparator_rejects_reordered_native_response_records() -> None:
         {"choices": [{"finish_reason": "length"}]},
     ]
     replay["exit"] = {"kind": "Submitted", "native_stop_reason": "length"}
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert report["failed"] >= 1
 
@@ -150,7 +158,7 @@ def test_comparator_accepts_positional_native_response_pair() -> None:
         {"choices": [{"finish_reason": "stop"}]},
     ]
     replay = deepcopy(supplier)
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is True
 
 
@@ -158,16 +166,41 @@ def test_bb_runtime_inputs_match_supplier_declaration() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)
     replay["runtime_inputs"]["cwd"] = "/different"
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
-    assert "runtime_inputs" in report["errors"][0]
+    assert report["errors"] == ["BB runtime_inputs do not match supplier declared values"]
+
+
+def test_supplier_capture_carrying_message_timestamp_ms_is_rejected() -> None:
+    report = compare({"capture": _trace(), "replay": _trace()})
+    assert report["ok"] is False
+    assert report["errors"] == ["runtime_inputs must declare exactly non-empty current_date, cwd, home, package_dir"]
+
+
+def test_bb_trace_without_message_timestamp_ms_is_rejected() -> None:
+    replay = _trace()
+    del replay["runtime_inputs"]["message_timestamp_ms"]
+    report = compare({"capture": _supplier_capture(_trace()), "replay": replay})
+    assert report["ok"] is False
+    assert report["errors"] == [
+        "runtime_inputs must declare exactly non-empty current_date, cwd, home, message_timestamp_ms, package_dir"
+    ]
+
+
+@pytest.mark.parametrize("instant", ["179033760000", "17903376000000", "1790337600000.0", "179033760000x", "\u0661" * 13])
+def test_bb_message_timestamp_ms_must_be_13_digits(instant: str) -> None:
+    replay = _trace()
+    replay["runtime_inputs"]["message_timestamp_ms"] = instant
+    report = compare({"capture": _supplier_capture(_trace()), "replay": replay})
+    assert report["ok"] is False
+    assert report["errors"] == ["runtime_inputs.message_timestamp_ms must be a 13-digit epoch millisecond string"]
 
 
 def test_bb_cannot_self_declare_stop_reason_provenance() -> None:
     supplier = _trace()
     replay = deepcopy(supplier)
     replay["native_stop_reason_source"] = "capture_unavailable"
-    report = compare({"capture": supplier, "replay": replay})
+    report = compare({"capture": _supplier_capture(supplier), "replay": replay})
     assert report["ok"] is False
     assert "cannot declare" in report["errors"][0]
 
@@ -227,6 +260,7 @@ def test_supplier_and_bb_dedupe_cumulative_snapshots(tmp_path: Path) -> None:
             "cwd": "/workspace",
             "home": "/home/capture",
             "current_date": "2026-09-23",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": "/packages",
         },
         "native_responses": [{"choices": [{"finish_reason": "stop"}]}] * 3,
@@ -250,6 +284,7 @@ def test_comparator_rejects_nonidentical_cumulative_tool_call() -> None:
             "cwd": "/workspace",
             "home": "/home/capture",
             "current_date": "2026-09-23",
+            "message_timestamp_ms": "1790337600000",
             "package_dir": "/packages",
         },
         "requests": [
@@ -294,6 +329,7 @@ def _first_request_traces() -> dict[str, dict]:
     for side, body in zip(("capture", "replay"), _first_request_pair()):
         traces[side] = _trace()
         traces[side]["requests"] = [{"body": body}]
+    traces["capture"] = _supplier_capture(traces["capture"])
     return traces
 
 
@@ -353,7 +389,7 @@ _BB_1203_EFFECTS = {"malformed_recovered.txt": {"bytes": 14, "exists": True, "sh
 
 
 def _effect_traces(capture_effects: dict, replay_effects: dict) -> dict[str, dict]:
-    traces = {"capture": _trace(), "replay": _trace()}
+    traces = {"capture": _supplier_capture(_trace()), "replay": _trace()}
     traces["capture"]["effects"] = deepcopy(capture_effects)
     traces["replay"]["effects"] = deepcopy(replay_effects)
     return traces
@@ -504,7 +540,7 @@ def test_reminder_normalizes_with_declared_date_on_both_sides() -> None:
         }
     ]
     replay = deepcopy(capture)
-    report = compare({"capture": capture, "replay": replay})
+    report = compare({"capture": _supplier_capture(capture), "replay": replay})
     assert report["ok"] is True
     assert report["failed"] == 0
     assert report["normalizations"] == [
@@ -545,7 +581,7 @@ def test_reminder_with_different_date_than_runtime_input_does_not_normalize_and_
             ),
         }
     ]
-    report = compare({"capture": capture, "replay": replay})
+    report = compare({"capture": _supplier_capture(capture), "replay": replay})
     assert report["ok"] is False
     assert report["failed"] >= 1
     # Supplier normalized because date matched declared runtime_inputs, but BB replay did NOT normalize
@@ -576,7 +612,7 @@ def _wall_time_trace(wall_time: str) -> dict:
 
 
 def test_bash_wall_time_line_is_counted_host_timing() -> None:
-    report = compare({"capture": _wall_time_trace("0.09"), "replay": _wall_time_trace("0.02")})
+    report = compare({"capture": _supplier_capture(_wall_time_trace("0.09")), "replay": _wall_time_trace("0.02")})
     assert report["ok"] is True, [item for item in report["assertions"] if item["status"] == "failed"]
     counts = {(item["side"], item["rule"]): item["count"] for item in report["normalizations"]}
     assert counts[("supplier", "bash_wall_time")] == counts[("bb", "bash_wall_time")] == 2
@@ -592,7 +628,7 @@ def test_bash_wall_time_does_not_hide_other_result_bytes(mutate: Callable[[str],
     replay["results"][0]["output"] = mutate(replay["results"][0]["output"])
     message = replay["requests"][1]["body"]["messages"][1]
     message["content"] = mutate(message["content"])
-    report = compare({"capture": _wall_time_trace("0.09"), "replay": replay})
+    report = compare({"capture": _supplier_capture(_wall_time_trace("0.09")), "replay": replay})
     assert report["ok"] is False
 
 

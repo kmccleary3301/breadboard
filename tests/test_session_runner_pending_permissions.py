@@ -38,6 +38,140 @@ def _execute_task(runner: SessionRunner, text: str = "task"):
     )
 
 
+def _bind_stock_inputs(runner: SessionRunner, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        "breadboard_engine.execution.stock_tools.native_concurrent_prompts",
+        lambda _config: True,
+    )
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+
+    async def submit(*_args, **_kwargs):
+        raise AssertionError("stock input submit is not used by this test")
+
+    runner.bind_stock_inputs(submit)
+    assert runner._stock_input_controller is not None
+    return runner._stock_input_controller
+
+
+@pytest.mark.asyncio
+async def test_stock_origin_handoffs_release_payload_after_each_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _runner("stock-origin-handoff")
+    stock_inputs = _bind_stock_inputs(runner, monkeypatch)
+    expected_origins: dict[str, dict] = {}
+    observed_origins: list[dict] = []
+
+    def run_task(*_args, **kwargs):  # type: ignore[no-untyped-def]
+        context = kwargs["context"]
+        turn_id = context["turn_id"]
+        origin = expected_origins[turn_id]
+        assert context["opencode_stock_origin"] is origin
+        assert turn_id not in stock_inputs.origins
+        assert callable(context["opencode_stock_input_handler"])
+        assert context["opencode_stock_headless"] is False
+        observed_origins.append(origin)
+        return {"completion_summary": {"completed": True}}
+
+    runner._agent = type(
+        "Agent",
+        (),
+        {"_local_mode": True, "config": {}, "run_task": run_task},
+    )()
+
+    for index in range(40):
+        if index == 0:
+            turn = runner.session.turns_by_id["turn-test"]
+        else:
+            turn = TurnRecord(
+                input_id=f"stock-input-{index}",
+                turn_id=f"stock-turn-{index}",
+                client_message_id=f"stock-message-{index}",
+                content=f"stock task {index}",
+                attachments=(),
+                original_disposition="started",
+                state="active",
+            )
+            runner.session.turns_by_id[turn.turn_id] = turn
+        runner.session.active_turn_id = turn.turn_id
+        origin = {
+            "request_id": f"request-{index}",
+            "content": f"stock prompt {index}",
+            "prompt_history": [f"retained prompt {index} " * 256],
+        }
+        expected_origins[turn.turn_id] = origin
+        await runner.enqueue_input(
+            turn.content,
+            input_id=turn.input_id,
+            turn_id=turn.turn_id,
+            stock_origin=origin,
+        )
+        assert runner._input_queue.get_nowait()["turn_id"] == turn.turn_id
+        runner._input_queue.task_done()
+
+        _execute_task(runner, turn.content)
+
+    assert observed_origins == list(expected_origins.values())
+    assert stock_inputs.origins == {}
+
+
+@pytest.mark.asyncio
+async def test_stock_origin_is_released_when_setup_failure_terminalizes_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _runner("stock-origin-setup-failure")
+    runner.request.task = ""
+    stock_inputs = _bind_stock_inputs(runner, monkeypatch)
+    turn = runner.session.turns_by_id["turn-test"]
+    await runner.registry.create(runner.session)
+    await runner.enqueue_input(
+        turn.content,
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+        stock_origin={"request_id": "request-failure", "content": "stock prompt"},
+    )
+
+    async def fail_agent_initialization() -> None:
+        raise RuntimeError("agent setup failed")
+
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", fail_agent_initialization)
+    await runner._run()
+
+    assert turn.terminal_outcome == "failed"
+    assert stock_inputs.origins == {}
+
+
+@pytest.mark.asyncio
+async def test_stock_origin_is_released_when_queued_turn_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runner = _runner("stock-origin-queued-cancel")
+    stock_inputs = _bind_stock_inputs(runner, monkeypatch)
+    turn = TurnRecord(
+        input_id="stock-input-cancelled",
+        turn_id="stock-turn-cancelled",
+        client_message_id="stock-message-cancelled",
+        content="stock task",
+        attachments=(),
+        original_disposition="queued",
+        state="queued",
+    )
+    runner.session.turns_by_id[turn.turn_id] = turn
+    runner.session.queued_turn_ids.append(turn.turn_id)
+    await runner.registry.create(runner.session)
+    await runner.enqueue_input(
+        turn.content,
+        input_id=turn.input_id,
+        turn_id=turn.turn_id,
+        stock_origin={"request_id": "request-cancelled", "content": "stock prompt"},
+    )
+
+    await runner.finish_queued_turn_cancellation(turn, "user_requested")
+
+    assert turn.terminal_outcome == "cancelled"
+    assert turn.turn_id not in stock_inputs.origins
+
+
 def _product_runner(session_id: str) -> tuple[SessionRunner, ProductSession]: runner = _runner(session_id); session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task", session_id=session_id); runner.session.product_session = session; return runner, session
 @pytest.mark.parametrize(
     ("base_mode", "override_mode"),
@@ -1784,3 +1918,107 @@ async def test_mutating_loader_cannot_split_frozen_start_artifacts(monkeypatch, 
             durable_reconfigure=lambda _config: None,
         )
     await service.stop_session(response.session_id); await record.event_queue.put(None); await record.dispatcher_task
+
+
+class _LifecycleAgent:
+    def __init__(self, native_semantics=None, *, fail=False):
+        self._local_mode = True
+        self.config = {"tools": {"native_semantics": native_semantics}} if native_semantics else {}
+        self.tasks = []
+        self.close_calls = 0
+        self.returned = threading.Event()
+        self.fail = fail
+
+    def run_task(self, task, **kwargs):
+        assert self.close_calls == 0, "A follow-up reached an already closed agent"
+        self.tasks.append(task)
+        self.returned.set()
+        if self.fail:
+            raise RuntimeError("agent execution failed")
+        return {"completion_summary": {"completed": True}}
+
+    def close(self):
+        self.close_calls += 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native_semantics", [None, "claude_code_2_1_63", "opencode_1_2_17"])
+async def test_terminal_session_closes_agent_once_and_later_stop_does_not_repeat(monkeypatch, native_semantics):
+    runner = _runner("terminal-cleanup")
+    runner.session.metadata["cli_session_kind"] = "oneshot"
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(native_semantics)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    await runner._run()
+    assert runner.session.status == SessionStatus.COMPLETED
+    assert agent.tasks == ["task"]
+    assert agent.close_calls == 1
+    await runner.stop()
+    await runner.stop()
+    assert agent.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_failed_session_closes_default_agent_once(monkeypatch):
+    runner = _runner("failed-cleanup")
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(fail=True)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    await runner._run()
+    assert runner.session.status == SessionStatus.FAILED
+    assert agent.close_calls == 1
+    await runner.stop()
+    assert agent.close_calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("native_semantics", [None, "claude_code_2_1_63", "opencode_1_2_17"])
+async def test_completed_run_keeps_agent_for_followup_until_session_stop(monkeypatch, native_semantics):
+    runner = _runner("followup-cleanup")
+    await runner.registry.create(runner.session)
+    agent = _LifecycleAgent(native_semantics)
+    runner._agent = agent
+    monkeypatch.setattr(runner, "prepare_runtime_config", lambda: {})
+    monkeypatch.setattr(runner, "_ensure_agent_initialized", _initialized)
+    runner._start_authority.set()
+    runner._task = asyncio.create_task(runner._run())
+    try:
+        assert await asyncio.to_thread(agent.returned.wait, 2)
+        await asyncio.wait_for(runner._input_queue.join(), timeout=2)
+        assert not runner._task.done()
+        assert agent.close_calls == 0
+        followup = TurnRecord(
+            input_id="input-followup", turn_id="turn-followup", client_message_id="message-followup",
+            content="follow-up", attachments=(), original_disposition="started", state="active")
+        runner.session.turns_by_id[followup.turn_id] = followup
+        runner.session.active_turn_id = followup.turn_id
+        agent.returned.clear()
+        await runner.enqueue_input(followup.content, input_id=followup.input_id, turn_id=followup.turn_id)
+        assert await asyncio.to_thread(agent.returned.wait, 2)
+        await asyncio.wait_for(runner._input_queue.join(), timeout=2)
+        assert agent.tasks == ["task", "follow-up"]
+        assert agent.close_calls == 0
+        await runner.stop()
+        assert runner._task.done()
+        assert agent.close_calls == 1
+        await runner.stop()
+        assert agent.close_calls == 1
+    finally:
+        await runner.stop()
+
+
+def test_concurrent_permission_request_after_cancel_stays_pending_without_an_approval_event() -> None:
+    runner = _runner("concurrent-cancel")
+    session = ProductSession.start(EffectiveHarnessLock._from_record({"graph_hash": "sha256:" + "a" * 64}), "task",
+                                   session_id="concurrent-cancel", concurrent_approvals=True)
+    runner.session.product_session = session
+    controller = runner._control_controller
+    controller.update_pending_permissions("permission_request", {"request_id": "first", "items": []})
+    session.cancel()
+    controller.update_pending_permissions("permission_request", {"request_id": "second", "items": []})
+    assert session.read_model.status == "canceled"
+    assert [item["request_id"] for item in runner.session.metadata["pending_permissions"]] == ["first", "second"]

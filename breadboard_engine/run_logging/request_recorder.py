@@ -88,6 +88,7 @@ class StructuredRequestRecorder:
         endpoint: Optional[str] = None,
         attempt: int = 0,
         extra: Optional[Dict[str, Any]] = None,
+        label: Optional[str] = None,
     ) -> str:
         if not getattr(self.lm, "run_dir", None):
             return ""
@@ -118,5 +119,9 @@ class StructuredRequestRecorder:
         suffix = f"turn_{turn_index}"
         if attempt:
             suffix += f"_attempt_{attempt}"
+        if label:
+            # Side requests (e.g. compaction summaries) must not overwrite
+            # the turn's model request record.
+            suffix += f"_{label}"
         return self.lm.write_json(f"meta/requests/{suffix}.json", record)
 

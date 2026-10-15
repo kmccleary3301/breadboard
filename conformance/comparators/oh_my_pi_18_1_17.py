@@ -515,6 +515,13 @@ def _termination(trace: Mapping[str, Any], *, supplier_capture: bool = False) ->
     return {"kind": kind, "native_stop_reason": reason}
 
 
+# Supplier captures declare the rendered date directly. BB declares the admitted
+# instant and records the worker-observed stock date, formatLocalCalendarDate of
+# that instant (sdk.ts:3460-3463; utils/local-date.ts:2-7).
+_SUPPLIER_RUNTIME_INPUTS = frozenset({"cwd", "home", "current_date", "package_dir"})
+_BB_RUNTIME_INPUTS = _SUPPLIER_RUNTIME_INPUTS | {"message_timestamp_ms"}
+
+
 def _validate_runtime_inputs(
     trace: Mapping[str, Any],
     *,
@@ -525,13 +532,15 @@ def _validate_runtime_inputs(
             return None
         raise ValueError("BB trace must declare runtime_inputs")
     runtime_inputs = trace["runtime_inputs"]
-    required = {"cwd", "home", "current_date", "package_dir"}
+    required = _SUPPLIER_RUNTIME_INPUTS if supplier_capture else _BB_RUNTIME_INPUTS
     if (
         not isinstance(runtime_inputs, Mapping)
         or set(runtime_inputs) != required
         or any(type(runtime_inputs[name]) is not str or not runtime_inputs[name] for name in required)
     ):
-        raise ValueError("runtime_inputs must declare non-empty cwd, home, current_date, and package_dir")
+        raise ValueError(f"runtime_inputs must declare exactly non-empty {', '.join(sorted(required))}")
+    if not supplier_capture and not re.fullmatch(r"[0-9]{13}", runtime_inputs["message_timestamp_ms"]):
+        raise ValueError("runtime_inputs.message_timestamp_ms must be a 13-digit epoch millisecond string")
     return {name: runtime_inputs[name] for name in sorted(required)}
 
 
@@ -708,10 +717,9 @@ class OhMyPi18Comparator:
                 supplier_capture=True,
             )
             replay_runtime_inputs = _validate_runtime_inputs(replay_value)
-            if (
-                supplier_runtime_inputs is not None
-                and supplier_runtime_inputs != replay_runtime_inputs
-            ):
+            if supplier_runtime_inputs is not None and supplier_runtime_inputs != {
+                name: replay_runtime_inputs[name] for name in supplier_runtime_inputs
+            }:
                 raise ValueError("BB runtime_inputs do not match supplier declared values")
             expected_counts = _RuleCounts()
             observed_counts = _RuleCounts()

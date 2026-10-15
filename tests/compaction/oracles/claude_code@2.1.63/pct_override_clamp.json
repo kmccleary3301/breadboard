@@ -1,0 +1,56 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "pct_override_clamp",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2307 (PQ6 override clamp)",
+      "package/cli.js:2307 [bytes 5978544-5979169]",
+      "package/cli.js:2307 [bytes 5980003-5980056]"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Executed bundle PQ6 sliced from cli.js (bytes 5978544-5979169) in node vm. Verbatim text: \"let Y=process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;if(Y){let z=parseFloat(Y);if(!isNaN(z)&&z>0&&z<=100){let w=Math.floor(q*(z/100));return Math.min(w,K)}}return K\". With CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50: w=Math.floor(180000*0.5)=90000, Math.min(90000, 167000)=90000. At 90000 tokens, acResult.isAboveAutoCompactThreshold=true."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "hi"
+      }
+    ],
+    "usage": {
+      "input_tokens": 85000,
+      "output_tokens": 5000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 90000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {
+      "autoCompactEnabled": true,
+      "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "50"
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 90000,
+      "limit": 90000,
+      "severity": "soft"
+    }
+  }
+}

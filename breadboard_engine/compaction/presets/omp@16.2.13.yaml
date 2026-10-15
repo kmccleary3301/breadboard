@@ -1,0 +1,63 @@
+schema: bb.compaction_preset.v1
+id: omp@16.2.13
+source:
+  repo: https://github.com/can1357/oh-my-pi
+  version: 16.2.13
+  commit: 5356713eae60e67ee64d9b02e3b5e377d248ee7f   # tag v16.2.13
+  published_package_sha256: 293056afc7d0d59c9aa8726efdbefc8d3a05a3dfca4261b4af5431d79a6593ff   # @oh-my-pi/pi-coding-agent@16.2.13 npm tarball
+  evidence:
+    - packages/agent/src/compaction/compaction.ts:238,245,270   # effectiveReserveTokens, shouldCompact, resolveThresholdTokens
+    - packages/coding-agent/src/session/agent-session.ts
+claim: executed_oracle
+native_settings:
+  adapter: omp_settings
+estimator: bb_chars4
+triggers:
+  - kind: threshold
+    accounting: {kind: max_usage_estimate, estimator: bb_chars4}
+    limit: {kind: omp_settings, use: threshold}
+    compare: ">"
+    phase: omp_mid_turn_setting
+target:
+  threshold: {kind: omp_settings, use: threshold}
+  manual: {kind: omp_settings, use: threshold}
+  overflow: {kind: omp_settings, use: overflow_budget}
+overflow:
+  max_attempts_per_turn: {setting: max_passes_per_turn}
+  policy: {setting: overflow_policy}
+request_view: [omp_prune, omp_inline_snapcompact]
+pipeline:
+  mode: fallback
+  order: omp_method_order   # methodOrder / strategy pick and order these stages
+  stages:
+    - {id: remote, algorithm: omp_remote}
+    - {id: snapcompact, algorithm: omp_snapcompact}
+    - {id: handoff, algorithm: omp_handoff}
+    - {id: shake, algorithm: omp_shake}
+    - id: soft
+      select:
+        kind: recent_tokens
+        budget: {setting: keep_recent_tokens}
+        walk: message_crossing_ge
+        boundary: history_length
+        estimator: bb_chars4
+      reduce:
+        kind: summarize
+        transcript: omp
+        escape_boundary_tags: true
+        windowing: fold
+        prompts:
+          system: {file: summarization-system.md}
+          initial: {file: compaction-summary.md}
+          update: {file: compaction-update-summary.md}
+          turn_prefix: {file: compaction-turn-prefix.md}
+          short_summary: {file: compaction-short-summary.md}
+        max_tokens: {kind: reserve_fraction, reserve: 16384, fraction: 0.8}
+        turn_prefix_max_tokens: {kind: reserve_fraction, reserve: 16384, fraction: 0.5}
+        short_summary_max_tokens: {kind: omp_settings, use: short_summary}
+        file_ops: omp_files_block
+      place:
+        kind: template
+        engine: handlebars
+        messages:
+          - {role: user, content: {file: compaction-summary-context.md}}

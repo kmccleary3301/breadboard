@@ -1,0 +1,87 @@
+schema: bb.compaction_preset.v1
+id: openclaw@2026.9.4
+source:
+  repo: https://github.com/openclaw/openclaw
+  commit: 3a9d69db306cd7f081e06254cb89c4bcc14a7107
+claim: executed_oracle
+native_settings:
+  adapter: paths
+  keys:
+    keepRecentTokens:
+    - pipeline.stages.0.select.budget
+    mode:
+    - pipeline.stages.0.reduce.quality_mode
+    identifierPolicy:
+    - pipeline.stages.0.reduce.identifier_policy
+estimator: pi_chars4
+triggers:
+- kind: threshold
+  accounting:
+    kind: usage_plus_trailing
+    usage_total: provider_context
+    trailing: all
+    estimator: pi_chars4
+  limit:
+    kind: floored_capped_reserve
+  compare: '>'
+  phase: every_request
+target:
+  threshold:
+    kind: floored_capped_reserve
+  manual:
+    kind: floored_capped_reserve
+  overflow:
+    kind: floored_capped_reserve
+overflow:
+  policy: compact
+  max_attempts_per_turn: 3
+request_view: []
+pipeline:
+  mode: sequence
+  stages:
+  - id: summary
+    accept: any
+    select:
+      kind: recent_tokens
+      budget: 20000
+      walk: message_crossing_ge
+      estimator: pi_chars4
+      when_empty: summarize
+    reduce:
+      kind: summarize
+      transcript: pi
+      escape_boundary_tags: false
+      windowing: single
+      prompts:
+        system:
+          file: summarization-system.txt
+        initial:
+          file: summary.txt
+        update:
+          file: update-summary.txt
+        turn_prefix:
+          file: turn-prefix.txt
+      max_tokens:
+        kind: reserve_fraction
+        reserve: 20000
+        fraction: 0.8
+      turn_prefix_max_tokens:
+        kind: reserve_fraction
+        reserve: 20000
+        fraction: 0.5
+      file_ops: read_modified_tags
+      quality_mode: default
+      identifier_policy: strict
+      required_sections:
+      - '## Decisions'
+      - '## Open TODOs'
+      - '## Constraints/Rules'
+      - '## Pending user asks'
+      - '## Exact identifiers'
+    place:
+      kind: template
+      engine: literal
+      messages:
+      - role: user
+        content:
+          file: summary-context.txt

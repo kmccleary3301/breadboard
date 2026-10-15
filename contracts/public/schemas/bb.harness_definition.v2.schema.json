@@ -3,6 +3,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
   "properties": {
+    "compaction": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/compaction"},
     "completion": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/completion"},
     "concurrency": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/concurrency"},
     "dossier": {"$ref": "https://breadboard.dev/contracts/kernel/schemas/bb.agent_config_surface.v2.schema.json#/properties/dossier"},

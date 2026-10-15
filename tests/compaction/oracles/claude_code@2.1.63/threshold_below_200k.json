@@ -1,0 +1,55 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "threshold_below_200k",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2307 (h96, PQ6, ac)",
+      "package/cli.js:2307 [bytes 5978544-5979169]",
+      "package/cli.js:2307 [bytes 5980003-5980056]"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Executed bundle functions h96, PQ6, ac sliced from cli.js (bytes 5978544-5979169) and constants (bytes 5980003-5980056) in node vm. Verbatim bundle text: \"var S5Y=20000,av8=13000,h5Y=20000,I5Y=20000,sv8=3000;\", \"function h96(A){let q=Math.min(Lk8(A),S5Y);return fX(A,iH())-q}\", \"function PQ6(A){let q=h96(A),K=q-av8,Y=process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE;if(Y){let z=parseFloat(Y);if(!isNaN(z)&&z>0&&z<=100){let w=Math.floor(q*(z/100));return Math.min(w,K)}}return K}\", \"H=Vg()&&A>=K\". For W=200000 and maxOutput=32000: q=min(32000,20000)=20000, effectiveWindow=180000, threshold=180000-13000=167000. 166999 tokens < 167000, acResult.isAboveAutoCompactThreshold=false. Trigger does not fire."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "hi"
+      }
+    ],
+    "usage": {
+      "input_tokens": 160000,
+      "output_tokens": 6999,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 166999
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "threshold",
+    "native_settings": {
+      "autoCompactEnabled": true
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 166999,
+      "limit": 167000,
+      "severity": "soft"
+    }
+  }
+}

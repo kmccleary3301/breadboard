@@ -3621,29 +3621,32 @@ async def test_session_runner_lazy_init_initializes_agent_for_non_replay(
     runner.authorize_start()
     correlated_events: List[SessionEvent] = []
 
-    # Expect the runner to publish at least completion + run_finished.
+    # The runner stays interactive after RUN_FINISHED. Bound the whole
+    # observation by the original 20 x 2-second envelope, not each event.
     seen_finished = False
-    for _ in range(20):
-        evt = await asyncio.wait_for(record.event_queue.get(), timeout=2.0)
-        if evt is None:
-            break
-        if evt.type in {
-            EventType.TURN_START,
-            EventType.USER_MESSAGE,
-            EventType.ASSISTANT_MESSAGE,
-            EventType.COMPLETION,
-            EventType.RUN_FINISHED,
-        }:
-            correlated_events.append(evt)
-        if evt.type is EventType.RUN_FINISHED:
-            assert any(
-                envelope["type"] == EventType.TURN_COMPLETED.value
-                for envelope in record.terminal_event_envelopes
-            )
-            seen_finished = True
-            break
-
-    await runner.stop()
+    try:
+        async with asyncio.timeout(40.0):
+            for _ in range(20):
+                evt = await record.event_queue.get()
+                if evt is None:
+                    break
+                if evt.type in {
+                    EventType.TURN_START,
+                    EventType.USER_MESSAGE,
+                    EventType.ASSISTANT_MESSAGE,
+                    EventType.COMPLETION,
+                    EventType.RUN_FINISHED,
+                }:
+                    correlated_events.append(evt)
+                if evt.type is EventType.RUN_FINISHED:
+                    assert any(
+                        envelope["type"] == EventType.TURN_COMPLETED.value
+                        for envelope in record.terminal_event_envelopes
+                    )
+                    seen_finished = True
+                    break
+    finally:
+        await runner.stop()
     assert called["count"] == 1
     assert runner._agent is not None
     assert seen_finished
@@ -4294,17 +4297,22 @@ async def test_interactive_failure_terminalizes_remaining_admitted_turns(
     runner.schedule_start()
     runner.authorize_start()
 
-    await _wait_for_terminal_turn(queued)
+    try:
+        async with asyncio.timeout(40.0):
+            await _wait_for_terminal_turn(queued)
+            assert runner._task is not None
+            await runner._task
 
-    assert active.terminal_outcome == "failed"
-    assert queued.terminal_outcome == "failed"
-    assert active.terminal_resolution_committed is True
-    assert queued.terminal_resolution_committed is True
-    assert record.active_turn_id is None
-    assert list(record.queued_turn_ids) == []
-    assert product_session.read_model.status == "failed"
-    assert record.status is SessionStatus.FAILED
-    await runner.stop()
+        assert active.terminal_outcome == "failed"
+        assert queued.terminal_outcome == "failed"
+        assert active.terminal_resolution_committed is True
+        assert queued.terminal_resolution_committed is True
+        assert record.active_turn_id is None
+        assert list(record.queued_turn_ids) == []
+        assert product_session.read_model.status == "failed"
+        assert record.status is SessionStatus.FAILED
+    finally:
+        await runner.stop()
 
 
 @pytest.mark.asyncio

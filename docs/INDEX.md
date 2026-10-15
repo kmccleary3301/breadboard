@@ -79,6 +79,7 @@ Use `breadboard harness ...` for product harness configs and `breadboard lane ..
 | [guides/OPERATOR_SCRIPT_SURFACE.md](guides/OPERATOR_SCRIPT_SURFACE.md) | How to choose the right canonical script family and entrypoint for setup, ops, release, migration, and parity work |
 | [reference/SCRIPTS_INDEX.md](reference/SCRIPTS_INDEX.md) | Stable categorized script taxonomy and machine-readable inventory entrypoint |
 | [authoring/AGENT_CONFIG_AUTHORING.md](authoring/AGENT_CONFIG_AUTHORING.md) | `breadboard` walkthrough for a v2 agent config: package, validate, explain, publish, run, checkpoint, adopt, lane lock, and capture |
+| [guides/CONTEXT_COMPACTION.md](guides/CONTEXT_COMPACTION.md) | The `compaction` config block: triggers, cascade methods, request-view projection, overflow recovery, and the RL Pi target revision |
 | [DIRECTION_CHARTER.md](DIRECTION_CHARTER.md) | BreadBoard's durable product boundary, falsifiable thesis, contract tiers, layering, and change discipline |
 
 ### Contracts and surfaces

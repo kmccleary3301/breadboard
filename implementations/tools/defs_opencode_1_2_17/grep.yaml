@@ -1,0 +1,90 @@
+# Pinned stock OpenCode 1.2.17 registry; registry.ts:103-124,147-151.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: grep
+name: grep
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: '- Fast content search tool that works with any codebase size
+
+  - Searches file contents using regular expressions
+
+  - Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.)
+
+  - Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
+
+  - Returns file paths and line numbers with at least one match sorted by modification time
+
+  - Use this tool when you need to find files containing specific patterns
+
+  - If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep) directly.
+  Do NOT use `grep`.
+
+  - When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task
+  tool instead
+
+  '
+parameters:
+- name: pattern
+  required: true
+  schema: &id001
+    description: The regex pattern to search for in file contents
+    type: string
+  type: string
+  description: The regex pattern to search for in file contents
+- name: path
+  required: false
+  schema: &id002
+    description: The directory to search in. Defaults to the current working directory.
+    type: string
+  type: string
+  description: The directory to search in. Defaults to the current working directory.
+- name: include
+  required: false
+  schema: &id003
+    description: File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")
+    type: string
+  type: string
+  description: File pattern to include in the search (e.g. "*.js", "*.{ts,tsx}")
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: grep
+      description: '- Fast content search tool that works with any codebase size
+
+        - Searches file contents using regular expressions
+
+        - Supports full regex syntax (eg. "log.*Error", "function\s+\w+", etc.)
+
+        - Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
+
+        - Returns file paths and line numbers with at least one match sorted by modification time
+
+        - Use this tool when you need to find files containing specific patterns
+
+        - If you need to identify/count the number of matches within files, use the Bash tool with `rg` (ripgrep)
+        directly. Do NOT use `grep`.
+
+        - When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use
+        the Task tool instead
+
+        '
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          pattern: *id001
+          path: *id002
+          include: *id003
+        required:
+        - pattern
+        additionalProperties: false
+      strict: false

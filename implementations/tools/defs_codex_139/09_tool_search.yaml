@@ -1,0 +1,44 @@
+# codex-rs/core/src/tools/handlers/tool_search_spec.rs:7-61.
+id: tool_search
+name: tool_search
+description: Search deferred tools.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: query
+  type: string
+  required: true
+- name: limit
+  type: number
+  required: false
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: tool_search
+      execution: client
+      description: |-
+        # Tool discovery
+
+        Searches over deferred tool metadata with BM25 and exposes matching tools for the next model call.
+
+        You have access to tools from the following sources:
+        - Multi-agent tools: Spawn and manage sub-agents.
+        Some of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`.
+      parameters:
+        type: object
+        properties:
+          limit:
+            type: number
+            description: Maximum number of tools to return. Defaults to 8.
+          query:
+            type: string
+            description: Search query for deferred tools.
+        required:
+        - query
+        additionalProperties: false

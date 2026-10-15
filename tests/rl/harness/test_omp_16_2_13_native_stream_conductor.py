@@ -62,6 +62,7 @@ from tests.rl.harness.test_runner_conductor import (
 )
 from tests.rl.harness.test_runner_policy_runtime import _observation, _plan, _policy_capabilities
 from tests.rl.harness.v2_service_fixtures import signed_containment_receipt
+from tests.rl.harness.native_dependencies import resolve_omp
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 FIXTURES = REPO_ROOT / "tests" / "e4_parity" / "fixtures" / "omp_16_2_13_supplier_cases"
@@ -79,7 +80,7 @@ _ROOT_ENV = os.environ.get("OMP16213_CODING_AGENT_NODE_MODULES")
 if os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1" and not _ROOT_ENV:
     pytest.fail("BB_REQUIRE_PINNED_OMP16213_NODE=1 requires OMP16213_CODING_AGENT_NODE_MODULES")
 
-_NODE_MODULES = Path(_ROOT_ENV) if _ROOT_ENV else None
+_NODE_MODULES = resolve_omp("16.2.13")
 if (
     _NODE_MODULES is not None
     and os.environ.get("BB_REQUIRE_PINNED_OMP16213_NODE") == "1"
@@ -87,7 +88,7 @@ if (
 ):
     pytest.fail(f"OMP16213_CODING_AGENT_NODE_MODULES is not a directory: {_NODE_MODULES}")
 
-_BUN_BIN = shutil.which("bun")
+_BUN_BIN = os.environ.get("BB_BUN") or shutil.which("bun")
 worker_available = WORKER.is_file() and _NODE_MODULES is not None and _BUN_BIN is not None
 pytestmark = pytest.mark.skipif(_NODE_MODULES is None or not worker_available, reason="OMP 16.2.13 pinned node modules or worker unavailable")
 
@@ -607,3 +608,22 @@ def test_omp_16_2_13_declared_case_replays_through_conductor(tmp_path: Path, cas
     report = _compare(case, trace)
     assert report["passed"] is True, f"{case} failed: {report['findings']}"
     assert report["verdict"] in {"exact", "normalized", "named_divergence"}
+
+
+def test_omp_16_2_13_context_overflow_ends_episode_without_breadboard_compaction(tmp_path: Path) -> None:
+    # harness.yaml keeps BreadBoard compaction off for this target; the mirrored
+    # stock native setting (agent.compaction_enabled) must not route the
+    # overflow into compaction phases the pinned worker does not implement.
+    overflow = json.dumps({"error": {
+        "message": "This model's maximum context length is 200000 tokens.",
+        "type": "invalid_request_error",
+        "code": "context_length_exceeded",
+    }}).encode()
+    episode = asyncio.run(_run_episode(
+        tmp_path, [(400, "application/json", overflow)], task="List the files.",
+        seed=lambda ws: ws.mkdir(parents=True, exist_ok=True),
+    ))
+
+    assert episode.error is None
+    assert len(episode.requests) == 1
+    assert episode.trace["requests"][-1] == episode.requests[0]["body"]

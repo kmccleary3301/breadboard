@@ -242,7 +242,23 @@ function canonicalArgumentsIssue(
   argumentsJson: unknown,
   parsedArguments: unknown,
   instancePath: string,
+  rawArguments?: unknown,
 ): SemanticIssue | null {
+  if (rawArguments !== undefined) {
+    if (typeof rawArguments !== "string") {
+      return { instancePath: `${instancePath}/raw_arguments`, message: "must be lexical argument text" }
+    }
+    let length = 0
+    for (const _character of rawArguments) {
+      if (++length > 65536) {
+        return { instancePath: `${instancePath}/raw_arguments`, message: "must be bounded lexical argument text" }
+      }
+    }
+    if (argumentsJson !== undefined || parsedArguments !== undefined) {
+      return { instancePath, message: "raw arguments must exclude parsed JSON arguments" }
+    }
+    return null
+  }
   if (typeof argumentsJson !== "string") {
     return { instancePath: `${instancePath}/arguments_json`, message: "must be canonical JSON text" }
   }
@@ -349,7 +365,7 @@ function contentIssue(value: unknown, instancePath: string): SemanticIssue | nul
     if (!isObject(block)) continue
     const path = `${instancePath}/${index}`
     if (block.type === "tool_call") {
-      const issue = canonicalArgumentsIssue(block.arguments_json, block.arguments, path)
+      const issue = canonicalArgumentsIssue(block.arguments_json, block.arguments, path, block.raw_arguments)
       if (issue) return issue
     } else if (block.type === "provider_replay") {
       const issue = replayIssue(block, path)
@@ -442,7 +458,7 @@ function eventLifecycleIssue(exchange: JsonObject): SemanticIssue | null {
     }
     if (phase === "end") {
       if (kind === "tool_call_end") {
-        const issue = canonicalArgumentsIssue(event.arguments_json, event.arguments, `/events/${index}`)
+        const issue = canonicalArgumentsIssue(event.arguments_json, event.arguments, `/events/${index}`, event.raw_arguments)
         if (issue) return issue
       }
       open.delete(key)

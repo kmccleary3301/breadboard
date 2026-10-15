@@ -74,3 +74,63 @@ def pytest_collection_modifyitems(session, config, items):
         for item in items:
             if "/industry_coder_refs/" in str(item.fspath):
                 item.add_marker(skip_industry)
+
+
+@pytest.fixture
+def installed_wheel_python(tmp_path):
+    """Run consumers in an explicitly supplied, isolated wheel installation."""
+    import subprocess
+    import textwrap
+    from pathlib import Path
+
+    interpreter = os.environ.get("BREADBOARD_INSTALLED_WHEEL_PYTHON")
+    if not interpreter:
+        pytest.skip("Set BREADBOARD_INSTALLED_WHEEL_PYTHON to an isolated wheel venv Python")
+    interpreter = str(Path(interpreter).absolute())
+    outside = tmp_path / "outside-checkout"
+    outside.mkdir()
+    environment = os.environ.copy()
+    environment.pop("PYTHONPATH", None)
+    for helper in ("PATCH", "SEARCH", "IMAGE"):
+        environment.pop(f"BREADBOARD_CODEX_{helper}_BINARY", None)
+    environment["XDG_CACHE_HOME"] = str(tmp_path / "cache")
+    provenance = textwrap.dedent(f"""
+        import json
+        import sys
+        from pathlib import Path
+        from importlib import metadata
+        import breadboard
+        import breadboard_engine.e4_targets as target_loader
+        from breadboard_engine.execution import codex_native
+
+        checkout = Path({PROJ!r}).resolve()
+        prefix = Path(sys.prefix).resolve()
+        assert sys.prefix != sys.base_prefix, "Wheel proof requires a venv"
+        venv_config = (prefix / "pyvenv.cfg").read_text().lower()
+        assert "include-system-site-packages = false" in venv_config
+        assert not Path.cwd().resolve().is_relative_to(checkout)
+        distribution = metadata.distribution("breadboard-harness-cli")
+        direct_url = json.loads(distribution.read_text("direct_url.json") or "{{}}")
+        assert not direct_url.get("dir_info", {{}}).get("editable", False)
+        assert direct_url.get("archive_info") is not None, "Install the candidate wheel artifact directly"
+        assert direct_url.get("url", "").endswith(".whl"), direct_url
+        for module in (breadboard, target_loader, codex_native):
+            origin = Path(module.__file__).resolve()
+            assert origin.is_relative_to(prefix), (module.__name__, origin, prefix)
+            assert not origin.is_relative_to(checkout), (module.__name__, origin)
+        assert Path(distribution.locate_file("breadboard_engine/e4_targets.py")).resolve() == Path(target_loader.__file__).resolve()
+    """)
+
+    def run(script):
+        result = subprocess.run(
+            [interpreter, "-I", "-c", provenance + "\n" + textwrap.dedent(script)],
+            cwd=outside,
+            env=environment,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result.stdout
+
+    return run

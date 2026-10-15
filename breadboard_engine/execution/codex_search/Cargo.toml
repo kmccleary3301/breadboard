@@ -1,0 +1,15 @@
+[package]
+name = "breadboard-codex-search"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# Codex a7dff904 Cargo.lock:1407-1410,12111-12114,12175-12178.
+[dependencies]
+bm25 = "=2.3.2"
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.149"
+
+[[bin]]
+name = "breadboard-codex-search"
+path = "main.rs"

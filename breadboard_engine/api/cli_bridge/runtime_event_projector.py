@@ -7,7 +7,11 @@ import json
 
 from typing import Any, Callable, Dict, Optional, Tuple
 
-from breadboard.product.runtime.events import CompactionSnapshot, validate_raw_fact_ids
+from breadboard.product.runtime.events import (
+    CompactionSnapshot,
+    runtime_observations_admissible,
+    validate_raw_fact_ids,
+)
 from breadboard_engine.provider.contracts import strip_public_completion_sentinel_lines
 from breadboard_engine.state.session_state import (
     AUDIT_ONLY_RUNTIME_EVENT_TYPES,
@@ -485,9 +489,9 @@ class RuntimeEventProjector:
             return
         with self._product_session_lock:
             product_session = getattr(self.session, "product_session", None)
-            if (
-                product_session is None
-                or product_session.read_model.status != "running"
+            if product_session is None or not runtime_observations_admissible(
+                product_session.read_model.status,
+                product_session.concurrent_approvals,
             ):
                 return
             if family == "message.assistant":
@@ -607,7 +611,13 @@ class RuntimeEventProjector:
             product_session = getattr(self.session, "product_session", None)
             if (
                 product_session is None
-                or product_session.read_model.status != "running"
+                or (
+                    product_session.read_model.status != "running"
+                    and not (
+                        product_session.concurrent_approvals is True
+                        and product_session.read_model.status == "awaiting_approval"
+                    )
+                )
             ):
                 raise RuntimeProtocolError("runtime_protocol_error")
             event = product_session.compact(snapshot)

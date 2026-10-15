@@ -23,6 +23,8 @@ export const PACKS = {
       "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json",
+      "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json",
       "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json",
@@ -156,6 +158,8 @@ export const GENERATED_SCHEMAS_BY_PACK = {
     "https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.coordination_view.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.credentials.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.directive.v1.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.target_config.v2.schema.json"],
+    "https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.e4.target.v2.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_config_graph.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_model_role_lock.v1.schema.json"],
     "https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json": GENERATED_SCHEMAS["https://breadboard.dev/contracts/kernel/schemas/bb.effective_operation_policy.v1.schema.json"],
@@ -289,8 +293,10 @@ export type { E4SupportClaimV1 } from "./types/bb.e4.support_claim.v1.js"
 export type { E4SupportClaimV2 } from "./types/bb.e4.support_claim.v2.js"
 export type { E4SupportClaimV3 } from "./types/bb.e4.support_claim.v3.js"
 export type { E4SupportClaimV4 } from "./types/bb.e4.support_claim.v4.js"
+export type { E4TargetConfigV2 } from "./types/bb.e4.target_config.v2.js"
 export type { E4TargetCoverageV1 } from "./types/bb.e4.target_coverage.v1.js"
 export type { E4TargetCoverageV2 } from "./types/bb.e4.target_coverage.v2.js"
+export type { E4TargetV2 } from "./types/bb.e4.target.v2.js"
 export type { EffectiveConfigGraphV1 } from "./types/bb.effective_config_graph.v1.js"
 export type { EffectiveModelRoleLockV1 } from "./types/bb.effective_model_role_lock.v1.js"
 export type { EffectiveOperationPolicyV1 } from "./types/bb.effective_operation_policy.v1.js"

@@ -259,6 +259,25 @@ class ProviderRouter:
 
         return config, actual_model, supports_native
 
+    def get_declared_provider_config(
+        self, model_id: str, declared_models: set[str],
+    ) -> Tuple[ProviderConfig, str, bool]:
+        """Resolve an opt-in stock route without registering it process-wide."""
+        if model_id not in declared_models:
+            raise ValueError(f"Unroutable stock auxiliary model {model_id}")
+        provider, model = model_id.split("/", 1)
+        if provider != "opencode":
+            return self.get_provider_config(model_id)
+        entry = get_provider_catalog_entry(provider)
+        if entry is None:
+            raise ValueError(f"Unknown stock auxiliary provider {provider}")
+        return ProviderConfig(
+            provider_id=entry.provider_id, base_url=entry.base_url,
+            runtime_id=entry.runtime_id, auth_owner=entry.auth_owner,
+            credential_required=entry.credential_required,
+            default_headers={"authorization": "Bearer public"},
+        ), model, True
+
     def get_runtime_descriptor(self, model_id: str) -> Tuple[ProviderDescriptor, str]:
         """Return a provider runtime descriptor and resolved model ID."""
 

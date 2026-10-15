@@ -1,0 +1,49 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "threshold_small_context_capped",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:2284-2294"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed via import: ContextCompressor from agent/context_compressor.py:1678-4949. Calls ContextCompressor._compute_threshold_tokens at agent/context_compressor.py:2284-2294. 64K window with 64K floor would equal 100% of window; clamped to 85% (54400) to ensure reachability."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "ping"
+      }
+    ],
+    "usage": {
+      "input_tokens": 54400,
+      "output_tokens": 10,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 54410
+    },
+    "context_window": 64000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "threshold": 0.5,
+      "context_length": 64000
+    },
+    "summary_responses": []
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 54400,
+      "limit": 54400,
+      "severity": "soft"
+    }
+  }
+}

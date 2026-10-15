@@ -27,6 +27,7 @@ from typing import (
     Sequence,
 )
 from breadboard.artifacts.cas import FilesystemCAS
+from breadboard_engine.execution.stock_tools import native_concurrent_prompts
 from breadboard.modules import (
     AdmissionGrant,
     AuthorityDeclaration,
@@ -2742,6 +2743,8 @@ class SessionService:
             repository=module_repository,
         )
         runtime_config = runner.prepare_runtime_config()
+        if native_concurrent_prompts(runtime_config):
+            runner.bind_stock_inputs(self.send_input)
         if retained_request_overrides:
             metadata["runtime_overrides"] = retained_request_overrides
         if runner.request.workspace:
@@ -2913,6 +2916,7 @@ class SessionService:
                 module_input_sequence=0 if request.module_input is not None else None,
                 session_id=session_id,
                 sink=event_sink,
+                concurrent_approvals=native_concurrent_prompts(runtime_config),
             )
             initial_event_journal_size = (
                 (staged_event_dir / "session_events.jsonl")
@@ -3894,7 +3898,11 @@ class SessionService:
                     "invalid_event_record",
                     f"retained session {record.session_id!r} has no pending approval identity",
                 )
-            record.product_session.resolve_approval(pending_approval, "deny")
+            if record.product_session.concurrent_approvals:
+                for pending_id in record.product_session.pending_approvals:
+                    record.product_session.resolve_approval(pending_id, "deny")
+            else:
+                record.product_session.resolve_approval(pending_approval, "deny")
         for turn in record.turns_by_id.values():
             if turn.terminal_outcome is not None:
                 continue
@@ -3916,6 +3924,8 @@ class SessionService:
         record.queued_turn_ids.clear()
         record.turn_admission = record.turn_admission.__class__.IDLE
         record.runner = runner
+        if native_concurrent_prompts(runtime_config):
+            runner.bind_stock_inputs(self.send_input)
         runner.schedule_start()
         runner.authorize_start()
         record.loaded_from_retained_state = False
@@ -4555,6 +4565,7 @@ class SessionService:
         payload: SessionInputRequest,
         *,
         defer_execution: Callable[[Callable[[], Awaitable[None]]], None] | None = None,
+        _stock_origin: dict | None = None,
     ) -> SessionInputResponse:
         record = await self.ensure_session(session_id)
         runner: Optional[SessionRunner] = getattr(record, "runner", None)
@@ -4562,6 +4573,9 @@ class SessionService:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT, detail="session not active"
             )
+        stock_inputs = getattr(runner, "_stock_input_controller", None)
+        if _stock_origin is None and stock_inputs is not None:
+            await stock_inputs.drain()
         client_message_id = payload.client_message_id or uuid.uuid4().hex
         try:
             attachments = tuple(
@@ -4604,8 +4618,9 @@ class SessionService:
                         status_code=status.HTTP_409_CONFLICT,
                         detail="session admission is closed",
                     )
-                accepted_content = runner.prepare_input_content(
-                    payload.content, payload.module_input
+                accepted_content = (
+                    _stock_origin["content"] if _stock_origin is not None
+                    else runner.prepare_input_content(payload.content, payload.module_input)
                 )
                 module_sequence = (
                     record.next_module_input_sequence
@@ -4684,6 +4699,7 @@ class SessionService:
                         module_input=turn.module_input,
                         module_input_sequence=turn.module_input_sequence,
                         defer_execution=scheduled_operations.append,
+                        **({"stock_origin": _stock_origin} if _stock_origin is not None else {}),
                     )
                     logical_input_committed = True
                     if len(scheduled_operations) != 1:

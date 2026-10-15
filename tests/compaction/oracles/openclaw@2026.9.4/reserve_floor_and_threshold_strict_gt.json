@@ -1,0 +1,53 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "reserve_floor_and_threshold_strict_gt",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "src/agents/agent-settings.ts:9,49-61",
+      "src/agents/agent-compaction-constants.ts:2-14",
+      "packages/agent-core/src/harness/compaction/compaction.ts:340-349"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slices from source checkout:\n1. src/agents/agent-settings.ts:9 `export const DEFAULT_AGENT_COMPACTION_RESERVE_TOKENS_FLOOR = 20_000;`\n2. src/agents/agent-compaction-constants.ts:2-14 `const MAX_COMPACTION_RESERVE_RATIO = 0.25;` and `resolveEffectiveCompactionReserveTokens`\n3. packages/agent-core/src/harness/compaction/compaction.ts:348 `return contextTokens > contextWindow - settings.reserveTokens;`\nVerifies that Pi 0.73.1 default reserve (16,384) is raised to floor 20,000 on a 200k window, producing limit = 180,000.\nAt contextTokens = 180,000 (equal), shouldCompact evaluates to false (strict > does not fire). At 180,001, it evaluates to true."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "hello"
+      },
+      {
+        "role": "assistant",
+        "content": "world"
+      }
+    ],
+    "usage": {
+      "input_tokens": 179000,
+      "output_tokens": 1000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 180000
+    },
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "keepRecentTokens": 20000
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 180000,
+      "limit": 180000,
+      "severity": "soft"
+    }
+  }
+}

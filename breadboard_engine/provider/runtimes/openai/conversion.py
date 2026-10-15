@@ -142,11 +142,11 @@ class OpenAIConversionMixin:
                         )
                     elif block_type == "media":
                         media = resolve_input_media(block, context)
+                        image_url = {"url": media.data_url}
+                        if media.detail is not None:
+                            image_url["detail"] = media.detail
                         visible_blocks.append(
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": media.data_url},
-                            }
+                            {"type": "image_url", "image_url": image_url}
                         )
                     else:
                         raise ProviderContractError(
@@ -272,6 +272,17 @@ class OpenAIConversionMixin:
                 )
             parts.append(text_val)
         return "".join(parts)
+
+    def _system_messages_to_instructions(
+        self, messages: List[Dict[str, Any]]
+    ) -> Optional[str]:
+        instructions_parts: List[str] = []
+        for message in messages:
+            text = self._message_content_to_text(message.get("content"))
+            if text:
+                instructions_parts.append(text)
+        return "\n\n".join(instructions_parts) if instructions_parts else None
+
 
     def _extract_tool_calls(self, message: Any) -> List[ProviderToolCall]:
         results: List[ProviderToolCall] = []

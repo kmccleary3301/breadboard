@@ -1015,20 +1015,21 @@ class TestChildEnvironmentBoundary:
 
         workspace = tmp_path / "workspace"
         workspace.mkdir()
-        with pytest.raises(
-            linux_isolation.ProcessIsolationUnavailable,
-            match="virtual system mount",
-        ):
-            linux_isolation._parse_args(
-                [
-                    "--workspace",
-                    str(workspace),
-                    "--read-root",
-                    "/proc",
-                    "--",
-                    "true",
-                ]
-            )
+        for option in ("--read-root", "--read-data-root"):
+            with pytest.raises(
+                linux_isolation.ProcessIsolationUnavailable,
+                match="virtual system mount",
+            ):
+                linux_isolation._parse_args(
+                    [
+                        "--workspace",
+                        str(workspace),
+                        option,
+                        "/proc",
+                        "--",
+                        "true",
+                    ]
+                )
 
     def test_linux_helper_loads_without_package_context(self) -> None:
         import subprocess
@@ -1075,6 +1076,213 @@ class TestChildEnvironmentBoundary:
             match="ABI v3",
         ):
             linux_isolation._apply_linux_landlock(tmp_path, ())
+
+    def test_linux_stock_worktree_discovery_uses_read_only_data_roots(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        import shutil
+        import subprocess
+        import sys
+
+        if not sys.platform.startswith("linux"):
+            pytest.skip("requires the Linux process-isolation helper")
+        git = shutil.which("git")
+        if git is None:
+            pytest.skip("Git is required for stock worktree discovery")
+
+        from breadboard_engine.security import process_isolation, stock_worktree
+
+        repo = tmp_path / "stock"
+        workspace = repo / "workspace"
+        workspace.mkdir(parents=True)
+        home = tmp_path / "isolated-home"
+        home.mkdir(mode=0o700)
+        environment = {
+            "PATH": os.pathsep.join((str(Path(git).parent), os.defpath)),
+            "HOME": str(home),
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_CONFIG_GLOBAL": "/dev/null",
+            "LC_ALL": "C",
+        }
+        (repo / "tracked.txt").write_text("stock source\n", encoding="utf-8")
+        subprocess.run(
+            [git, "-C", str(repo), "init", "--quiet"],
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        subprocess.run(
+            [git, "-C", str(repo), "add", "tracked.txt"],
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        subprocess.run(
+            [
+                git,
+                "-C",
+                str(repo),
+                "-c",
+                "user.name=Isolation Test",
+                "-c",
+                "user.email=isolation@example.invalid",
+                "commit",
+                "--quiet",
+                "-m",
+                "initial",
+            ],
+            env=environment,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+        worktree, git_roots = stock_worktree.resolve_stock_worktree(
+            str(workspace),
+            environment,
+            isolated_home=str(home),
+            timeout=30,
+        )
+        assert worktree == repo.resolve()
+        git_directory = (repo / ".git").resolve()
+        assert git_directory in git_roots
+        sibling = repo / "sibling-write"
+        sibling.write_text("unconfined", encoding="utf-8")
+        sibling.unlink()
+
+        executable = repo / "outside-workspace-executable"
+        executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        executable.chmod(0o755)
+        subprocess.run(
+            [str(executable)],
+            check=True,
+            capture_output=True,
+            timeout=20,
+        )
+        child = """
+import errno, pathlib, subprocess, sys
+root, workspace, executable, git = map(pathlib.Path, sys.argv[1:])
+assert (root / "tracked.txt").read_text() == "stock source\\n"
+assert (root / ".git" / "HEAD").read_text().strip()
+(workspace / "workspace-write").write_text("writable")
+try:
+    (root / "sibling-write").write_text("forbidden")
+except PermissionError as exc:
+    assert exc.errno in (errno.EACCES, errno.EPERM)
+else:
+    raise AssertionError("data root allowed a write outside the workspace")
+try:
+    subprocess.run([str(executable)], check=True, capture_output=True)
+except PermissionError as exc:
+    assert exc.errno in (errno.EACCES, errno.EPERM)
+else:
+    raise AssertionError("data root allowed direct execution")
+result = subprocess.run(
+    [str(git), "-C", str(root), "rev-parse", "--show-toplevel"],
+    check=True,
+    capture_output=True,
+    text=True,
+)
+assert pathlib.Path(result.stdout.strip()).resolve() == root
+"""
+        command, child_environment = process_isolation.build_restricted_process_command(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                child,
+                str(repo),
+                str(workspace),
+                str(executable),
+                git,
+            ],
+            workspace=workspace,
+            shell=False,
+            environment=environment,
+            read_only_worktree_root=worktree,
+            read_only_git_metadata_roots=git_roots,
+        )
+        child_environment["HOME"] = str(home)
+        result = subprocess.run(
+            command,
+            cwd=workspace,
+            env=child_environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr
+        assert (workspace / "workspace-write").read_text() == "writable"
+        assert not (repo / "sibling-write").exists()
+        file_metadata = git_directory / "HEAD"
+        assert file_metadata.read_text(encoding="utf-8").strip()
+        assert list(file_metadata.parent.iterdir())
+        file_root_child = """
+import errno, pathlib, sys
+metadata = pathlib.Path(sys.argv[1])
+assert metadata.read_text().strip()
+try:
+    list(metadata.parent.iterdir())
+except PermissionError as exc:
+    assert exc.errno in (errno.EACCES, errno.EPERM)
+else:
+    raise AssertionError("file metadata root granted directory reads")
+"""
+        file_root_command, file_root_environment = (
+            process_isolation.build_restricted_process_command(
+                [
+                    sys.executable,
+                    "-I",
+                    "-c",
+                    file_root_child,
+                    str(file_metadata),
+                ],
+                workspace=workspace,
+                shell=False,
+                environment=environment,
+                read_only_git_metadata_roots=(file_metadata,),
+            )
+        )
+        file_root_environment["HOME"] = str(home)
+        file_root_result = subprocess.run(
+            file_root_command,
+            cwd=workspace,
+            env=file_root_environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        assert file_root_result.returncode == 0, file_root_result.stderr
+
+        helper = Path(process_isolation.__file__).resolve()
+        generic_overlap = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                str(helper),
+                "--workspace",
+                str(workspace),
+                "--read-root",
+                str(repo),
+                "--",
+                "/bin/true",
+            ],
+            cwd=workspace,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        assert generic_overlap.returncode == 126
 
     def test_linux_rejects_protected_path_beneath_read_root(
         self,

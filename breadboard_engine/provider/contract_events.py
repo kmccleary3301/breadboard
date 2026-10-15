@@ -19,11 +19,8 @@ from .contract_wire import (
     _require_text,
     _validate_canonical_argument_pair,
 )
-from .contract_messages import (
-    ProviderMessage,
-    _sanitize_replay,
-    normalize_request_messages,
-)
+from .contract_messages import ProviderMessage, _sanitize_replay
+from .contract_requests import normalize_request_messages
 
 
 @dataclass
@@ -37,6 +34,7 @@ class ProviderEvent:
     delta: Optional[str] = None
     arguments_json: Optional[str] = None
     arguments: Any = None
+    raw_arguments: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
     def validate(self) -> None:
@@ -58,6 +56,7 @@ class ProviderEvent:
             "delta": self.delta,
             "arguments_json": self.arguments_json,
             "arguments": self.arguments,
+            "raw_arguments": self.raw_arguments,
         }
         allowed = {
             "response_start": set(),
@@ -75,6 +74,7 @@ class ProviderEvent:
                 "call_id",
                 "arguments_json",
                 "arguments",
+                "raw_arguments",
             },
         }[self.kind]
         unexpected = {
@@ -102,17 +102,15 @@ class ProviderEvent:
         if self.kind.endswith("_delta"):
             _require_text(self.delta, "provider event delta", max_length=65536)
         if self.kind == "tool_call_end":
-            if (
-                not isinstance(self.arguments_json, str)
-                or len(self.arguments_json) > 65536
+            if self.raw_arguments is None and (
+                not isinstance(self.arguments_json, str) or len(self.arguments_json) > 65536
             ):
-                raise ProviderContractError(
-                    "tool_call_end requires bounded arguments_json"
-                )
+                raise ProviderContractError("tool_call_end requires bounded arguments_json")
             _validate_canonical_argument_pair(
                 self.arguments_json,
                 self.arguments,
                 field_name="tool_call_end",
+                raw_arguments=self.raw_arguments,
             )
 
     def as_dict(self) -> Dict[str, Any]:
@@ -126,6 +124,7 @@ class ProviderEvent:
             "delta",
             "arguments_json",
             "arguments",
+            "raw_arguments",
         ):
             value = getattr(self, key)
             if value is not None:

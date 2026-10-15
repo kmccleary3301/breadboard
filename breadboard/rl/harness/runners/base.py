@@ -459,6 +459,9 @@ class PolicyRuntimeInvokeRequest:
     request_payload: FrozenJsonObject
     turn: int
     attempt: int
+    compaction_summary: bool = False
+    # Source SDK serialization is invocation-local, not a public request shape.
+    native_request_body_json: str | None = None
 
     def __post_init__(self) -> None:
         _normalized_identifier(self.episode_id, field_name="episode_id")
@@ -469,6 +472,8 @@ class PolicyRuntimeInvokeRequest:
         _positive_turn(self.turn)
         if type(self.attempt) is not int or self.attempt < 1:
             raise ValueError("attempt must be a positive integer")
+        if type(self.compaction_summary) is not bool:
+            raise TypeError("compaction_summary must be a boolean")
         object.__setattr__(
             self,
             "request_payload",

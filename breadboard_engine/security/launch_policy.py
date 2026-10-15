@@ -28,6 +28,7 @@ from .path_policy import (
     prepare_workspace_temp_directory,
     under_virtual_read_mount,
 )
+from .stock_install import validate_stock_read_only_roots
 
 _TRUSTED_CREDENTIAL_ENV_KEYS = frozenset(
     {"CODEX_ACCESS_TOKEN", "CODEX_API_KEY"}
@@ -353,7 +354,12 @@ def _darwin_read_roots(
         roots[str(root)] = root
     return tuple(
         sorted(
-            (root for root in roots.values() if not _paths_overlap(root, workspace)),
+            (
+                root
+                for root in roots.values()
+                if not _paths_overlap(root, workspace)
+                and not _paths_overlap(root.resolve(strict=False), workspace)
+            ),
             key=str,
         )
     )
@@ -378,9 +384,17 @@ def _darwin_profile(
     writable_roots: Sequence[Path] = (),
     trusted_launchers: Sequence[Path] = (),
     allow_network: bool = False,
+    pty: bool = False,
 ) -> str:
     def selector(path: Path, operation: str) -> str:
         return f'({operation} "{_profile_string(path)}")'
+
+    # Canonical aliases need read access, not a broader executable-directory grant.
+    readable_roots = tuple(
+        dict.fromkeys(
+            (*read_roots, *(root.resolve(strict=False) for root in read_roots))
+        )
+    )
 
     read_rules = " ".join(
         (
@@ -388,17 +402,18 @@ def _darwin_profile(
             selector(workspace, "subpath"),
             *(
                 selector(path, "subpath" if path.is_dir() else "literal")
-                for path in read_roots
+                for path in readable_roots
             ),
             '(literal "/dev/null")',
             '(literal "/dev/zero")',
             '(literal "/dev/random")',
             '(literal "/dev/urandom")',
             '(literal "/dev/tty")',
+            *(('(literal "/dev/ptmx")', '(regex #"^/dev/ttys[^/]*$")') if pty else ()),
         )
     )
     metadata_roots: dict[str, Path] = {}
-    for readable in (workspace, *read_roots):
+    for readable in (workspace, *readable_roots):
         for ancestor in readable.parents:
             if ancestor == Path("/"):
                 continue
@@ -425,6 +440,7 @@ def _darwin_profile(
             ),
             '(literal "/dev/null")',
             '(literal "/dev/tty")',
+            *(('(literal "/dev/ptmx")', '(regex #"^/dev/ttys[^/]*$")') if pty else ()),
         )
     )
     protected_rules: list[str] = []
@@ -441,6 +457,10 @@ def _darwin_profile(
             if exec_rules
             else "(deny process-exec)",
             "(allow process-fork)",
+            *((
+                "(allow pseudo-tty)",
+                '(allow file-ioctl (literal "/dev/ptmx") (regex #"^/dev/ttys[^/]*$"))',
+            ) if pty else ()),
             "(allow signal (target self))",
             '(allow sysctl-read (sysctl-name-regex #"^hw\\."))',
             '(allow sysctl-read (sysctl-name "kern.hostname"))',
@@ -469,7 +489,11 @@ def build_restricted_process_command(
     protected_paths: Sequence[str | os.PathLike[str]] = (),
     working_directory: str | os.PathLike[str] | None = None,
     trusted_launchers: Sequence[str | os.PathLike[str]] = (),
+    read_only_roots: Sequence[Mapping[str, str]] = (),
+    read_only_worktree_root: str | os.PathLike[str] | None = None,
+    read_only_git_metadata_roots: Sequence[str | os.PathLike[str]] = (),
     allow_network: bool = False,
+    pty: bool = False,
     trusted_credential_values: Mapping[str, object] | None = None,
     provider_credential_read_roots: Sequence[str | os.PathLike[str]]
     | str
@@ -481,6 +505,8 @@ def build_restricted_process_command(
     | None = None,
 ) -> tuple[tuple[str, ...], dict[str, str]]:
     """Return isolated argv/environment, or fail before process creation."""
+    if type(pty) is not bool:
+        raise TypeError("pty launch capability must be a boolean")
     protected = tuple(
         dict.fromkeys(
             (
@@ -492,6 +518,27 @@ def build_restricted_process_command(
     )
     root = _validate_workspace(workspace, protected)
     _validate_hardlink_boundary(root, protected)
+    stock_read_roots = validate_stock_read_only_roots(
+        read_only_roots, workspace=root, protected_paths=protected,
+    )
+    worktree_read_roots: tuple[Path, ...] = ()
+    if read_only_worktree_root is not None:
+        worktree_root = _normalized_path(read_only_worktree_root)
+        if not worktree_root.is_dir() or worktree_root == Path("/"):
+            raise ProcessIsolationUnavailable("invalid read-only stock worktree root")
+        if any(_paths_overlap(worktree_root, path) for path in protected):
+            raise ProcessIsolationUnavailable("read-only stock worktree overlaps a protected credential root")
+        if worktree_root != root:
+            _validate_hardlink_boundary(worktree_root, protected)
+        worktree_read_roots = (worktree_root,)
+    for raw_git_root in read_only_git_metadata_roots:
+        git_root = _normalized_path(raw_git_root)
+        if not (git_root.is_dir() or git_root.is_file()) or git_root == Path("/"):
+            raise ProcessIsolationUnavailable("invalid read-only stock git metadata root")
+        if any(_paths_overlap(git_root, path) for path in protected):
+            raise ProcessIsolationUnavailable("read-only stock git metadata overlaps a protected credential root")
+        _validate_hardlink_boundary(git_root, protected)
+        worktree_read_roots = (*worktree_read_roots, git_root)
     provider_read_roots = _validate_provider_credential_read_roots(
         provider_credential_read_roots,
         workspace=root,
@@ -589,6 +636,8 @@ def build_restricted_process_command(
                 target,
             ),
             *authorized_provider_roots,
+            *stock_read_roots,
+            *worktree_read_roots,
         )
         if any(
             _paths_overlap(protected_path, read_root)
@@ -609,6 +658,7 @@ def build_restricted_process_command(
                     writable_roots=provider_write_roots,
                     trusted_launchers=trusted_launcher_paths,
                     allow_network=allow_network,
+                    pty=pty,
                 ),
                 "--",
                 *target,
@@ -624,11 +674,13 @@ def build_restricted_process_command(
                 target,
             ),
             *authorized_provider_roots,
+            *stock_read_roots,
         )
+        read_data_roots = worktree_read_roots
         if any(
             _paths_overlap(protected_path, read_root)
             for protected_path in effective_protected
-            for read_root in read_roots
+            for read_root in (*read_roots, *read_data_roots)
         ):
             raise ProcessIsolationUnavailable(
                 "protected credential location overlaps a Linux read root"
@@ -658,12 +710,16 @@ def build_restricted_process_command(
         ]
         for read_root in read_roots:
             wrapper.extend(("--read-root", str(read_root)))
+        for read_data_root in read_data_roots:
+            wrapper.extend(("--read-data-root", str(read_data_root)))
         for write_root in provider_write_roots:
             wrapper.extend(("--write-root", str(write_root)))
         for launcher in trusted_launcher_paths:
             wrapper.extend(("--trusted-launcher", str(launcher)))
         if allow_network:
             wrapper.append("--allow-network")
+        if pty:
+            wrapper.append("--pty")
         wrapper.extend(("--", *target))
         return tuple(wrapper), child_environment
     raise ProcessIsolationUnavailable(

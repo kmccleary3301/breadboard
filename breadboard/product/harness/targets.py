@@ -38,6 +38,10 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
         "breadboard.pi-coding-agent.v0.73.1",
         "2834e64d081edede815bd1fa81d8ad423b5d0bd1c2e6466ca3ba5060c12a5003",
     ),
+    "pi-r2@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "9bc396ac1dfcaf02b02fd55e942dc4c3753a0e730fb56388acd23a964b0111bb",
+    ),
     "pi-r3@0.57.1": (
         "breadboard.pi-coding-agent.v0.57.1",
         "95a2ca6d6451a94fefd3d52732ad7342281410994d0c8bf4f4ceda741bd56d57",
@@ -57,6 +61,56 @@ _NATIVE_WORKER_RECIPES = MappingProxyType({
     "openclaw@2026.9.4": (
         "breadboard.openclaw.native-chat.v1",
         "8cd597424ae5ab817574b7f6f57887fa1422c56e65383116e0d37190a42d3f6a",
+    ),
+    # Compaction-enabled revisions (native compaction; docs/guides/CONTEXT_COMPACTION.md).
+    "pi-r3@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "7d79dab4ed66fa0264fe38f8beb228dc030e4173df8998c6fcfcb86e7430aba8",
+    ),
+    "pi-r4@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "7cafc31c1217a2e9c48f041d68f660145d0b03309344a594358e8dbf40a73679",
+    ),
+    "oh-my-pi-r3@16.2.13": (
+        "breadboard.oh-my-pi.v16.2.13",
+        "7e4b685a8c58fe478ae991b6832c143de3adc46c86484e40bad1e1da152595f3",
+    ),
+    "oh-my-pi-r2@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "bda017e547cc434e9560b7a923bb1d23d48147722349e8ae1dd349f4558cb78e",
+    ),
+    "openclaw-r2@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "535d1914c5a9ba23410dc7a84ef42b90af0e90198131d0ba520a7c8ddd75514c",
+    ),
+    "hermes-agent-r2@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "33c6f2c61b6407cb6832193e68f455cdb2cf33f6ab10fd8a2e9c2c00e3dbe6c0",
+    ),
+    # RL execution-ceiling revisions (native-config budget_admission: ceiling).
+    "pi-r5@0.57.1": (
+        "breadboard.pi-coding-agent.v0.57.1",
+        "8cbd319478dae0b48b569fc50603c6e412626267b7f8d9e7cfd827a66e882bcf",
+    ),
+    "pi-r4@0.73.1": (
+        "breadboard.pi-coding-agent.v0.73.1",
+        "db32a3bb3241ac0b6226a4366f773bd5dbc6f05f3bf5b68c1e8b7f49ed695ee0",
+    ),
+    "oh-my-pi-r4@16.2.13": (
+        "breadboard.oh-my-pi.v16.2.13",
+        "81dd55e062cbfc44829138955d16605515841557f42cf9c332ef96b15fef9c57",
+    ),
+    "oh-my-pi-r3@18.1.17": (
+        "breadboard.oh-my-pi.v18.1.17",
+        "baf2b23f23188144a69ab6d0670b1403de1e7a5973c1d1a29e2165cad65c99ef",
+    ),
+    "openclaw-r3@2026.9.4": (
+        "breadboard.openclaw.native-chat.v1",
+        "76318346322b02370b3978c516290d934208b599833ea52d69729b4570b11eef",
+    ),
+    "hermes-agent-r3@2026.9.11": (
+        "breadboard.hermes-agent.v2026.9.11",
+        "4cd9bc0c310dbc4c7fc2062dc492641bf5127c31b4ef69d632c7d1fa6edd1eef",
     ),
 })
 
@@ -304,7 +358,38 @@ def _lower_worker_target(
         raise HarnessCompileError("Native worker targets require their pinned recipe and no caller template inputs")
     native = json.loads(package.read_asset_text("native-config.json"))
     surface = json.loads(package.read_asset_text("tool-surface.json"))
-    if package.target_id == "oh-my-pi@18.1.17":
+    policy = harness.get("policy", {})
+    policy_provider = policy.get("provider", {})
+    # An explicit ceiling revision admits per-run limits up to its verified
+    # harness controls; the Conductor reads them from the compiled profile.
+    # Without the marker the source profile's exact kit limits apply.
+    if "budget_admission" in native:
+        controls = policy.get("execution", {}).get("bounded_controls")
+        if (
+            native["budget_admission"] != "ceiling"
+            or "bounded_controls" in native
+            or not isinstance(controls, Mapping)
+            or any(
+                type(controls.get(name)) is not int or controls[name] <= 0
+                for name in ("max_model_calls", "episode_wall_seconds", "single_tool_wall_seconds")
+            )
+        ):
+            raise HarnessCompileError("E4 budget admission requires 'ceiling' and positive harness bounded_controls")
+        native["bounded_controls"] = copy_harness_json(controls, freeze=False)
+    from breadboard.rl.harness.native_stream_profiles import NATIVE_STREAM_PROFILES
+
+    stream_profile = NATIVE_STREAM_PROFILES.get(native.get("consumer_id"))
+    compaction_enabled = policy_provider.get("compaction") is True
+    # Seal an explicit false only where the admitted worker requires the gate;
+    # unrelated legacy targets retain their exact compiled identities.
+    if compaction_enabled or (
+        stream_profile is not None and "compaction" in stream_profile.sealed_initialize_fields
+    ):
+        native["compaction"] = compaction_enabled
+    if compaction_enabled:
+        if "agent" in native and isinstance(native["agent"], dict):
+            native["agent"]["compaction_enabled"] = True
+    if package.target_id in {"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17", "oh-my-pi-r3@18.1.17"}:
         required_native_fields = (
             "capability_denials", "request_cap", "model_max_tokens", "provider_attempts",
             "model_registry",

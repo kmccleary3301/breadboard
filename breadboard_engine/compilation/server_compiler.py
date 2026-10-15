@@ -2119,9 +2119,13 @@ def _compile_tools(
     registry_members: list[dict[str, Any]] = []
     for path_index, directory in enumerate(paths):
         declaring_path = origins.get(f"/tools/registry/paths/{path_index}", root_path)
-        for path, payload, dep in ledger.resolve_directory(
-            declaring_path, "tool_registry", directory
-        ):
+        from .tool_catalogs import catalog_directories
+        members = [
+            member
+            for catalog in catalog_directories(directory)
+            for member in ledger.resolve_directory(declaring_path, "tool_registry", catalog)
+        ]
+        for path, payload, dep in sorted(members, key=lambda member: member[0].rsplit("/", 1)[-1]):
             if not path.endswith((".yaml", ".yml")):
                 raise _error(CompileStage.REFERENCE_RESOLUTION, CompileErrorCode.TOOL_INVALID, logical_path=path, details={"reason": "registry_member_suffix"})
             registry_members.append(_dependency_obj(dep))

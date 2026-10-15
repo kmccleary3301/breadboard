@@ -1,0 +1,48 @@
+{
+  "id": "claude_code_2_1_63.EnterWorktree",
+  "name": "EnterWorktree",
+  "description": "Use this tool ONLY when the user explicitly asks to work in a worktree. This tool creates an isolated git worktree and switches the current session into it.\n\n## When to Use\n\n- The user explicitly says \"worktree\" (e.g., \"start a worktree\", \"work in a worktree\", \"create a worktree\", \"use a worktree\")\n\n## When NOT to Use\n\n- The user asks to create a branch, switch branches, or work on a different branch — use git commands instead\n- The user asks to fix a bug or work on a feature — use normal git workflow unless they specifically mention worktrees\n- Never use this tool unless the user explicitly mentions \"worktree\"\n\n## Requirements\n\n- Must be in a git repository, OR have WorktreeCreate/WorktreeRemove hooks configured in settings.json\n- Must not already be in a worktree\n\n## Behavior\n\n- In a git repository: creates a new git worktree inside `.claude/worktrees/` with a new branch based on HEAD\n- Outside a git repository: delegates to WorktreeCreate/WorktreeRemove hooks for VCS-agnostic isolation\n- Switches the session's working directory to the new worktree\n- On session exit, the user will be prompted to keep or remove the worktree\n\n## Parameters\n\n- `name` (optional): A name for the worktree. If not provided, a random name is generated.\n",
+  "type_id": "python",
+  "syntax_formats_supported": [
+    "native_function_calling"
+  ],
+  "preferred_formats": [
+    "native_function_calling"
+  ],
+  "parameters": [
+    {
+      "name": "name",
+      "required": false,
+      "type": "string",
+      "description": "Optional name for the worktree. A random name is generated if not provided.",
+      "schema": {
+        "description": "Optional name for the worktree. A random name is generated if not provided.",
+        "type": "string"
+      }
+    }
+  ],
+  "execution": {
+    "blocking": false,
+    "native_semantics": "claude_code_2_1_63"
+  },
+  "provider_routing": {
+    "anthropic": {
+      "native_primary": true,
+      "messages_tool_schema": {
+        "name": "EnterWorktree",
+        "description": "Use this tool ONLY when the user explicitly asks to work in a worktree. This tool creates an isolated git worktree and switches the current session into it.\n\n## When to Use\n\n- The user explicitly says \"worktree\" (e.g., \"start a worktree\", \"work in a worktree\", \"create a worktree\", \"use a worktree\")\n\n## When NOT to Use\n\n- The user asks to create a branch, switch branches, or work on a different branch — use git commands instead\n- The user asks to fix a bug or work on a feature — use normal git workflow unless they specifically mention worktrees\n- Never use this tool unless the user explicitly mentions \"worktree\"\n\n## Requirements\n\n- Must be in a git repository, OR have WorktreeCreate/WorktreeRemove hooks configured in settings.json\n- Must not already be in a worktree\n\n## Behavior\n\n- In a git repository: creates a new git worktree inside `.claude/worktrees/` with a new branch based on HEAD\n- Outside a git repository: delegates to WorktreeCreate/WorktreeRemove hooks for VCS-agnostic isolation\n- Switches the session's working directory to the new worktree\n- On session exit, the user will be prompted to keep or remove the worktree\n\n## Parameters\n\n- `name` (optional): A name for the worktree. If not provided, a random name is generated.\n",
+        "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "name": {
+              "description": "Optional name for the worktree. A random name is generated if not provided.",
+              "type": "string"
+            }
+          },
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

@@ -81,14 +81,27 @@ def test_target_resources_load_outside_editable_checkout_cwd(
 
     assert _resource_root() == TARGET_ROOT
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
+        "hermes-agent-r3@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
+        "oh-my-pi-r3@18.1.17",
+        "oh-my-pi-r4@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
+        "openclaw-r3@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
+        "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
+        "pi-r4@0.73.1",
+        "pi-r5@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -154,14 +167,27 @@ def test_openclaw_sealed_package_has_one_pinned_source_prompt_and_bootstrap() ->
 
 def test_pinned_targets_load_with_exact_release_source_and_runtime_assets() -> None:
     assert list_e4_target_ids() == (
+        "hermes-agent-r2@2026.9.11",
+        "hermes-agent-r3@2026.9.11",
         "hermes-agent@2026.9.11",
         "mini-swe-agent@2.4.6",
         "oh-my-pi-r2@16.2.13",
+        "oh-my-pi-r2@18.1.17",
+        "oh-my-pi-r3@16.2.13",
+        "oh-my-pi-r3@18.1.17",
+        "oh-my-pi-r4@16.2.13",
         "oh-my-pi@16.2.13",
         "oh-my-pi@18.1.17",
+        "openclaw-r2@2026.9.4",
+        "openclaw-r3@2026.9.4",
         "openclaw@2026.9.4",
         "openhands-sdk@1.47.0",
+        "pi-r2@0.73.1",
         "pi-r3@0.57.1",
+        "pi-r3@0.73.1",
+        "pi-r4@0.57.1",
+        "pi-r4@0.73.1",
+        "pi-r5@0.57.1",
         "pi@0.57.1",
         "pi@0.73.1",
     )
@@ -1055,3 +1081,93 @@ def test_omp_16_2_13_r2_compiled_tools_equal_wire_tools() -> None:
         assert set(compiled_params["properties"]) == set(wire_params["properties"])
         for prop_name, prop_spec in wire_params["properties"].items():
             assert thaw_json(compiled_params["properties"][prop_name]) == prop_spec
+
+
+_COMPACTION_REVISIONS = {
+    "pi-r3@0.73.1": "pi-r2@0.73.1",
+    "pi-r4@0.57.1": "pi-r3@0.57.1",
+    "oh-my-pi-r3@16.2.13": "oh-my-pi-r2@16.2.13",
+    "oh-my-pi-r2@18.1.17": "oh-my-pi@18.1.17",
+    "openclaw-r2@2026.9.4": "openclaw@2026.9.4",
+    "hermes-agent-r2@2026.9.11": "hermes-agent@2026.9.11",
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_COMPACTION_REVISIONS))
+def test_compaction_revision_preserves_lowered_tools_and_prompt(target_id: str) -> None:
+    predecessor_id = _COMPACTION_REVISIONS[target_id]
+    target, predecessor = load_e4_target(target_id), load_e4_target(predecessor_id)
+    lowered, base_lowered = lower_e4_target(target, {}), lower_e4_target(predecessor, {})
+    assert lowered.ordered_tool_names == base_lowered.ordered_tool_names
+    assert thaw_json(lowered.tools) == thaw_json(base_lowered.tools)
+    assert lowered.system_prompt == base_lowered.system_prompt
+    assert lowered.runtime_profile["compaction"] is True
+
+
+_CEILING_REVISIONS = {
+    "pi-r5@0.57.1": ("pi-r4@0.57.1", "pi/0.57.1-r5"),
+    "pi-r4@0.73.1": ("pi-r3@0.73.1", "pi/0.73.1-r4"),
+    "oh-my-pi-r4@16.2.13": ("oh-my-pi-r3@16.2.13", "oh_my_pi/16.2.13-r4"),
+    "oh-my-pi-r3@18.1.17": ("oh-my-pi-r2@18.1.17", "oh_my_pi/18.1.17-r3"),
+    "openclaw-r3@2026.9.4": ("openclaw-r2@2026.9.4", "openclaw/2026.9.4-r3"),
+    "hermes-agent-r3@2026.9.11": ("hermes-agent-r2@2026.9.11", "hermes_agent/2026.9.11-r3"),
+}
+
+
+@pytest.mark.parametrize("target_id", sorted(_CEILING_REVISIONS))
+def test_ceiling_revision_compiles_its_harness_controls_as_run_ceilings(target_id: str) -> None:
+    predecessor_id = _CEILING_REVISIONS[target_id][0]
+    target, predecessor = load_e4_target(target_id), load_e4_target(predecessor_id)
+    lowered, base_lowered = lower_e4_target(target, {}), lower_e4_target(predecessor, {})
+    assert lowered.renderer_id == base_lowered.renderer_id
+    assert lowered.ordered_tool_names == base_lowered.ordered_tool_names
+    assert thaw_json(lowered.tools) == thaw_json(base_lowered.tools)
+    assert lowered.system_prompt == base_lowered.system_prompt
+    assert lowered.runtime_profile["compaction"] is True
+    harness = yaml.safe_load(target.read_asset_bytes("harness.yaml"))
+    controls = harness["policy"]["execution"]["bounded_controls"]
+    base_controls = yaml.safe_load(predecessor.read_asset_bytes("harness.yaml"))["policy"]["execution"]["bounded_controls"]
+    assert (controls["max_model_calls"], controls["episode_wall_seconds"]) == (100_000, 10_200)
+    # Only the request cap and wall are raised; the native tool timeout is the source's.
+    assert {key: value for key, value in controls.items() if key not in {"max_model_calls", "episode_wall_seconds"}} == {
+        key: value for key, value in base_controls.items() if key not in {"max_model_calls", "episode_wall_seconds"}
+    }
+    assert lowered.runtime_profile["budget_admission"] == "ceiling"
+    assert thaw_json(lowered.runtime_profile["bounded_controls"]) == controls
+    # The predecessor keeps its exact kit limits: no ceiling reaches its profile.
+    assert "budget_admission" not in base_lowered.runtime_profile
+    assert "bounded_controls" not in base_lowered.runtime_profile
+
+
+@pytest.mark.parametrize(("native_update", "message"), [
+    ({"budget_admission": "unbounded"}, "budget admission requires 'ceiling'"),
+    ({"bounded_controls": {"max_model_calls": 10**9}}, "budget admission requires 'ceiling'"),
+])
+def test_ceiling_lowering_refuses_unknown_mode_and_asset_supplied_controls(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, native_update: dict[str, Any], message: str,
+) -> None:
+    import breadboard.product.harness.targets as targets_module
+
+    target_id, (_, directory) = "pi-r5@0.57.1", _CEILING_REVISIONS["pi-r5@0.57.1"]
+    copied_root = tmp_path / "e4_targets"
+    shutil.copytree(TARGET_ROOT, copied_root)
+    package_root = copied_root / directory
+    native = json.loads((package_root / "native-config.json").read_text())
+    native.update(native_update)
+    (package_root / "native-config.json").write_text(json.dumps(native, indent=2) + "\n")
+    descriptor = json.loads((package_root / "target.json").read_text())
+    for asset in descriptor["assets"]:
+        content = (package_root / asset["path"]).read_bytes()
+        asset["sha256"] = "sha256:" + hashlib.sha256(content).hexdigest()
+        asset["bytes"] = len(content)
+    descriptor_bytes = (json.dumps(descriptor, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode()
+    (package_root / "target.json").write_bytes(descriptor_bytes)
+    index = json.loads((copied_root / "index.json").read_text())
+    index["targets"][target_id]["sha256"] = hashlib.sha256(descriptor_bytes).hexdigest()
+    (copied_root / "index.json").write_text(json.dumps(index, indent=2) + "\n")
+    forged = _load_e4_target_from_root(copied_root, target_id)
+    monkeypatch.setattr(targets_module, "_NATIVE_WORKER_RECIPES", {
+        target_id: (_NATIVE_WORKER_RECIPES[target_id][0], forged.descriptor_sha256),
+    })
+    with pytest.raises(HarnessCompileError, match=message):
+        lower_e4_target(forged, {})

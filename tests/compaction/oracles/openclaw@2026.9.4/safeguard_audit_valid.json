@@ -1,0 +1,53 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "safeguard_audit_valid",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "src/agents/agent-hooks/compaction-safeguard-quality.ts:15-21,471-503"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slice src/agents/agent-hooks/compaction-safeguard-quality.ts:15-21,471-503 (`auditSummaryQuality`).\nVerbatim constant REQUIRED_SUMMARY_SECTIONS from line 15-21:\n  const REQUIRED_SUMMARY_SECTIONS = [\"## Decisions\", \"## Open TODOs\", \"## Constraints/Rules\", \"## Pending user asks\", \"## Exact identifiers\"] as const;\nAudit execution result: ok=true, reasons=[]."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Process pending transaction tx_987654321"
+      },
+      {
+        "role": "assistant",
+        "content": "Working on commit_3a9d69db306cd7f081e06254cb89c4bcc14a7107"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "identifierPolicy": "strict"
+    },
+    "summary_responses": [],
+    "component": "quality_audit",
+    "stage": "summary",
+    "audit_input": {
+      "summary": "## Decisions\n- Chose sqlite for persistent caching\n\n## Open TODOs\n- Add transaction rollback\n\n## Constraints/Rules\n- Memory limit 512MB\n\n## Pending user asks\n- Process pending transaction tx_987654321\n\n## Exact identifiers\n- tx_987654321\n- commit_3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+      "identifiers": [
+        "tx_987654321",
+        "commit_3a9d69db306cd7f081e06254cb89c4bcc14a7107"
+      ]
+    }
+  },
+  "expect": {
+    "details": {
+      "ok": true,
+      "reasons": []
+    }
+  }
+}

@@ -230,7 +230,9 @@ class PiSemanticsState:
             return self._cap_response()
         return None
 
-    async def prepare_response(self, response: NativeProviderResponse) -> PiResponseResult:
+    async def prepare_response(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> PiResponseResult:
         """Commit an admitted assistant response without executing its tools.
 
         Argument parsing runs in the pinned worker without blocking the event
@@ -264,11 +266,37 @@ class PiSemanticsState:
             "provider": self.provider,
             "model": self.model_id,
         }
+        if usage is not None:
+            assistant["usage"] = dict(usage)
         self.messages.append(assistant)
         self.native_stop_reason = stop_reason
         if not calls:
             self.exit_status = "Submitted" if stop_reason == "stop" else stop_reason
         return PiResponseResult(assistant, calls, (), stop_reason, not calls)
+
+    def commit_provider_failure(self, message: Mapping[str, Any]) -> None:
+        """Commit the SDK error that ends the stock agent loop (agent-loop.js:105-108)."""
+        if self.is_exited:
+            raise PiSemanticsError("episode already exited")
+        if self.stream_fn_issued <= self.request_count:
+            raise PiSemanticsError("response has no admitted provider query")
+        if (
+            not isinstance(message, Mapping)
+            or message.get("role") != "assistant"
+            or message.get("stopReason") != "error"
+            or type(message.get("errorMessage")) is not str
+        ):
+            raise PiSemanticsError("provider failure message is not a pinned assistant error")
+        self.request_count += 1
+        self.request_records.append(PiRequestRecord(self.stream_fn_issued, True, None))
+        self.messages.append(dict(message))
+        self.native_stop_reason = "error"
+        self.exit_status = "error"
+
+    def reopen_after_overflow(self) -> None:
+        """Resume the source's overflow retry after rebuilding session context."""
+        self.exit_status = None
+        self.native_stop_reason = None
 
     def _result_from_port(self, call: PiToolCall, raw: PiToolResult | Mapping[str, Any]) -> PiToolResult:
         if isinstance(raw, PiToolResult):

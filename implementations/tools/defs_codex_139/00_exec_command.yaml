@@ -1,0 +1,103 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: exec_command
+name: exec_command
+description: Runs a command in a PTY, returning output or a session ID for ongoing interaction.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: cmd
+  type: string
+  required: true
+  schema: &id001
+    type: string
+    description: Shell command to execute.
+- name: justification
+  type: string
+  required: false
+  schema: &id002
+    type: string
+    description: User-facing approval question for `require_escalated`; omit otherwise.
+- name: login
+  type: boolean
+  required: false
+  schema: &id003
+    type: boolean
+    description: True runs the shell with -l/-i semantics; false disables them. Defaults to true.
+- name: max_output_tokens
+  type: number
+  required: false
+  schema: &id004
+    type: number
+    description: Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.
+- name: prefix_rule
+  type: array
+  required: false
+  schema: &id005
+    type: array
+    description: 'Reusable approval prefix for `cmd`, only with `sandbox_permissions: "require_escalated"`; for
+      example ["git", "pull"].'
+    items:
+      type: string
+- name: sandbox_permissions
+  type: string
+  required: false
+  schema: &id006
+    type: string
+    description: Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed
+      execution.
+    enum:
+    - use_default
+    - require_escalated
+- name: shell
+  type: string
+  required: false
+  schema: &id007
+    type: string
+    description: Shell binary to launch. Defaults to the user's default shell.
+- name: tty
+  type: boolean
+  required: false
+  schema: &id008
+    type: boolean
+    description: True allocates a PTY for the command; false or omitted uses plain pipes.
+- name: workdir
+  type: string
+  required: false
+  schema: &id009
+    type: string
+    description: Working directory for the command. Defaults to the turn cwd.
+- name: yield_time_ms
+  type: number
+  required: false
+  schema: &id010
+    type: number
+    description: Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms.
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: exec_command
+      description: Runs a command in a PTY, returning output or a session ID for ongoing interaction.
+      strict: false
+      parameters:
+        type: object
+        properties:
+          cmd: *id001
+          justification: *id002
+          login: *id003
+          max_output_tokens: *id004
+          prefix_rule: *id005
+          sandbox_permissions: *id006
+          shell: *id007
+          tty: *id008
+          workdir: *id009
+          yield_time_ms: *id010
+        required:
+        - cmd
+        additionalProperties: false

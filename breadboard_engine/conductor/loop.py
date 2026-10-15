@@ -174,6 +174,10 @@ def run_main_loop(
     loop_cfg = ((getattr(self, "config", None) or {}).get("loop") or {})
     max_empty_response_retries = int(loop_cfg.get("empty_response_retries", 2) or 0)
     consecutive_empty_responses = 0
+    driver = getattr(self, "stock_driver", None)
+    if driver is not None and driver.begin_turn is not None:
+        driver.begin_turn(self, session_state)
+    pending_user_index = len(session_state.provider_messages) - 1
 
     def poll_control_stop() -> bool:
         """Non-blocking check for a stop/interrupt signal from the CLI bridge."""
@@ -211,6 +215,9 @@ def run_main_loop(
         extra_payload: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Finalize loop execution by recording summary, snapshot, and return payload."""
+
+        if driver is not None and driver.complete_turn is not None:
+            driver.complete_turn(self, session_state)
 
         steps_taken = (step_index + 1) if step_index >= 0 else 0
         summary: Dict[str, Any] = dict(session_state.completion_summary or {})
@@ -679,62 +686,87 @@ def run_main_loop(
                 self._inject_multi_agent_wakeups(session_state, markdown_logger)
             except Exception:
                 pass
-            # Build request and get response
-            try:
+            # Build request and get response. A context-overflow error may be
+            # recovered by compaction and retried, bounded by
+            # compaction.max_passes_per_turn; with compaction disabled the
+            # first error is raised exactly as before.
+            compaction_ctrl = getattr(self, "compaction_controller", None)
+            from ..compaction.controller import CompactionRequestContext
+            request_context = CompactionRequestContext(
+                sampling_phase="pre_turn" if step_index == 0 else "mid_turn",
+                pending_user_index=pending_user_index,
+            )
+            if compaction_ctrl is not None:
+                compaction_ctrl.begin_request()
+            while True:
                 try:
-                    session_state.record_lifecycle_event(
-                        "model_call_started",
-                        {"turn": turn_index, "model": str(model)},
-                        turn=turn_index,
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_started",
+                            {"turn": turn_index, "model": str(model)},
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    provider_result = self._get_model_response(
+                        runtime,
+                        client,
+                        model,
+                        tool_prompt_mode,
+                        effective_tool_defs,
+                        active_dialect_names,
+                        session_state,
+                        markdown_logger,
+                        stream_responses,
+                        local_tools_prompt,
+                        client_config,
+                        request_context=request_context,
                     )
-                except Exception:
-                    pass
-                provider_result = self._get_model_response(
-                    runtime,
-                    client,
-                    model,
-                    tool_prompt_mode,
-                    effective_tool_defs,
-                    active_dialect_names,
-                    session_state,
-                    markdown_logger,
-                    stream_responses,
-                    local_tools_prompt,
-                    client_config,
-                )
-                try:
-                    session_state.record_lifecycle_event(
-                        "model_call_finished",
-                        {"turn": turn_index},
-                        turn=turn_index,
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_finished",
+                            {"turn": turn_index},
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    break
+                except RuntimeError as exc:
+                    public_error = public_error_projection(
+                        exc,
+                        default_code="provider_runtime_error",
                     )
-                except Exception:
-                    pass
-            except RuntimeError as exc:
-                public_error = public_error_projection(
-                    exc,
-                    default_code="provider_runtime_error",
-                )
-                try:
-                    session_state.record_lifecycle_event(
-                        "model_call_finished",
-                        {
-                            "turn": turn_index,
-                            "error": public_error["error"],
-                            "error_type": public_error["error_type"],
-                        },
-                        turn=turn_index,
-                    )
-                except Exception:
-                    pass
-                if "Replay session exhausted" in str(exc):
-                    completed = True
-                    return finalize_run("loop_exit", "replay_complete")
-                raise
+                    try:
+                        session_state.record_lifecycle_event(
+                            "model_call_finished",
+                            {
+                                "turn": turn_index,
+                                "error": public_error["error"],
+                                "error_type": public_error["error_type"],
+                            },
+                            turn=turn_index,
+                        )
+                    except Exception:
+                        pass
+                    if "Replay session exhausted" in str(exc):
+                        completed = True
+                        return finalize_run("loop_exit", "replay_complete")
+                    if compaction_ctrl is not None and compaction_ctrl.recover_from_overflow(
+                        exc,
+                        session_state,
+                        turn_index=turn_index,
+                        conductor=self,
+                        runtime=runtime,
+                        client=client,
+                        model=model,
+                        request_context=request_context,
+                    ):
+                        continue
+                    raise
             if session_state.get_provider_metadata("streaming_disabled"):
                 stream_responses = False
             if provider_result.usage:
-                session_state.set_provider_metadata("usage", provider_result.usage)
+                session_state.commit_provider_usage(provider_result.usage)
                 # Accumulate session-level usage so callers get token
                 # provenance in the final summary (Responses and Chat key names).
                 try:
@@ -752,6 +784,9 @@ def run_main_loop(
                     session_state.set_provider_metadata("usage_totals", totals)
                 except Exception:
                     pass
+            if driver is not None and driver.complete_turn is not None:
+                driver.complete_turn(self, session_state)
+
 
             if provider_result.encrypted_reasoning:
                 for payload in provider_result.encrypted_reasoning:
@@ -995,13 +1030,34 @@ def run_main_loop(
                         completed = False
             except Exception:
                 pass
+            # A source may queue a summary during terminal turn-end maintenance.
+            # Consume that boundary and its continuation before finalizing.
+            reopened_completed_answer = False
+            if compaction_ctrl is not None:
+                if compaction_ctrl.finish_assistant_step(
+                    session_state, conductor=self, runtime=runtime, client=client,
+                    model=model, turn_index=turn_index,
+                    request_context=request_context,
+                ):
+                    reopened_completed_answer = completed
+                    completed = False
+                    session_state.completion_summary = None
+                elif completed:
+                    if compaction_ctrl.finish_user_turn(
+                        session_state, conductor=self, runtime=runtime, client=client,
+                        model=model, turn_index=turn_index,
+                        request_context=request_context,
+                    ):
+                        reopened_completed_answer = True
+                        completed = False
+                        session_state.completion_summary = None
             if completed:
                 break
 
             try:
                 if session_state.turn_had_tool_activity():
                     session_state.reset_tool_free_streak()
-                else:
+                elif not reopened_completed_answer:
                     # Delegate zero-tool watchdog to guardrail orchestrator
                     abort, extra_payload = self.guardrail_orchestrator.handle_zero_tool_turn(
                         session_state,

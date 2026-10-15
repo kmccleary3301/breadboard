@@ -96,6 +96,7 @@ class SessionAdoptionCommittedPayload(_SessionAdoptionCommittedOptional):
 
 class _SessionStartedCommonOptional(TypedDict, total=False):
     lineage: SessionEventLineage
+    concurrent_approvals: Literal[True]
 
 
 class _SessionStartedTextOptional(_SessionStartedCommonOptional, total=False):

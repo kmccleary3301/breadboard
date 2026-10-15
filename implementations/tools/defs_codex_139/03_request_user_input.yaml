@@ -1,0 +1,71 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: request_user_input
+name: request_user_input
+description: Request user input for one to three short questions and wait for the response. This tool is only available
+  in Plan mode.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters:
+- name: questions
+  type: array
+  required: true
+  schema: &id001
+    type: array
+    description: Questions to show the user. Prefer 1 and do not exceed 3
+    items:
+      type: object
+      properties:
+        header:
+          type: string
+          description: Short header label shown in the UI (12 or fewer chars).
+        id:
+          type: string
+          description: Stable identifier for mapping answers (snake_case).
+        options:
+          type: array
+          description: Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label
+            with "(Recommended)". Do not include an "Other" option in this list; the client will add a free-form
+            "Other" option automatically.
+          items:
+            type: object
+            properties:
+              description:
+                type: string
+                description: One short sentence explaining impact/tradeoff if selected.
+              label:
+                type: string
+                description: User-facing label (1-5 words).
+            required:
+            - label
+            - description
+            additionalProperties: false
+        question:
+          type: string
+          description: Single-sentence prompt shown to the user.
+      required:
+      - id
+      - header
+      - question
+      - options
+      additionalProperties: false
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: function
+      name: request_user_input
+      description: Request user input for one to three short questions and wait for the response. This tool is only
+        available in Plan mode.
+      strict: false
+      parameters:
+        type: object
+        properties:
+          questions: *id001
+        required:
+        - questions
+        additionalProperties: false

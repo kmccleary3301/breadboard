@@ -130,6 +130,7 @@ def test_rerun5_receiver_replay_preserves_full_bodies_results_and_effects() -> N
                     "cwd": "/workspace",
                     "home": "/home/capture",
                     "current_date": "2026-09-23",
+                    "message_timestamp_ms": "1790337600000",
                     "package_dir": "/packages",
                 },
                 "requests": [{"body": body} for body in request_bodies],

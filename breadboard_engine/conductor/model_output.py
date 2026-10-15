@@ -14,6 +14,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from ..compaction.controller import reproject_for_route
+from ..compaction.overflow import is_context_overflow
 from ..core.core import ToolDefinition
 from .context import ConductorContext
 from ..messaging.markdown_logger import MarkdownLogger
@@ -78,13 +80,55 @@ def _assistant_history_message(
     history: Dict[str, Any] = {"role": "assistant", "content": msg.content}
     if tool_calls is not None:
         history["tool_calls"] = tool_calls
+    reasoning = getattr(msg, "reasoning", None)
+    if reasoning is not None:
+        history["reasoning"] = reasoning
     annotations = getattr(msg, "annotations", None)
     if isinstance(annotations, dict):
-        for field_name in ("reasoning_content", "reasoning", "reasoning_details"):
+        for field_name in ("reasoning_content", "reasoning", "reasoning_details", "phase"):
             field_value = annotations.get(field_name)
             if field_value is not None:
                 history[field_name] = field_value
     return history
+
+def _native_tool_call_payloads(
+    call: Any,
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    function = getattr(call, "function", None)
+    fn_name = getattr(function, "name", None)
+    arg_str = getattr(function, "arguments", "{}")
+    payload = {
+        "id": getattr(call, "id", None),
+        "type": "function",
+        "function": {
+            "name": fn_name,
+            "arguments": arg_str
+            if isinstance(arg_str, str)
+            else json.dumps(arg_str or {}),
+        },
+    }
+    raw_tool_call = getattr(call, "raw", None)
+    if hasattr(raw_tool_call, "model_dump"):
+        try:
+            raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
+        except Exception:
+            raw_tool_call = None
+    if isinstance(raw_tool_call, dict):
+        for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
+            if raw_tool_call.get(field_name) is not None:
+                payload[field_name] = raw_tool_call[field_name]
+
+    raw_arguments = getattr(function, "raw_arguments", None)
+    if raw_arguments is None:
+        return payload, payload
+    return payload, {
+        "id": getattr(call, "id", None),
+        "type": "function",
+        "name": fn_name,
+        "raw_arguments": raw_arguments,
+    }
+
+
 
 
 def log_provider_message(conductor: ConductorContext, provider_message: ProviderMessage, session_state: SessionState, markdown_logger: MarkdownLogger, stream_responses: bool) -> None:
@@ -144,10 +188,30 @@ def process_model_output(
     model: str,
 ) -> bool:
     msg = legacy_message_view(provider_message)
+    hosted_outputs = ((conductor.config.get("provider_tools") or {}).get("openai") or {}).get("responses_hosted_outputs", [])
+    if (
+        "web_search_call" in hosted_outputs
+        and not getattr(msg, "tool_calls", None)
+        and isinstance(msg.content, list)
+        and msg.content
+        and all(
+            isinstance(block, dict)
+            and block.get("type") == "provider_replay"
+            and block.get("provider_id") == "openai"
+            and block.get("schema_version") == "openai.responses.hosted.v1"
+            and block.get("payload", {}).get("type") == "web_search_call"
+            for block in msg.content
+        )
+    ):
+        # Stock protocol/models.rs:869-878 keeps hosted items in conversation.
+        # They are provider replay, not text, local calls, or completion signals.
+        session_state.add_message(_assistant_history_message(provider_message))
+        return False
     turn_policy = TurnPolicy.from_config(conductor.config)
     summary = getattr(session_state, "tool_usage_summary", {})
     if (
         turn_policy.allows_zero_tool_completion()
+        and (conductor.config.get("completion") or {}).get("append_response_marker", True)
         and not getattr(msg, "tool_calls", None)
     ):
         total_calls = int(summary.get("total_calls") or 0)
@@ -182,7 +246,11 @@ def process_model_output(
         )
 
     if msg.content:
-        session_state.add_message({"role": "assistant", "content": msg.content})
+        history = {"role": "assistant", "content": msg.content}
+        phase = getattr(msg, "annotations", {}).get("phase")
+        if phase is not None:
+            history["phase"] = phase
+        session_state.add_message(history)
         session_state.add_transcript_entry({"assistant": msg.content})
 
         assistant_history = session_state.get_provider_metadata("assistant_text_history", [])
@@ -741,30 +809,11 @@ def handle_native_tool_calls(
     relay_strategy = turn_policy.relay_strategy()
 
     tool_calls_payload: List[Dict[str, Any]] = []
+    provider_tool_calls_payload: List[Dict[str, Any]] = []
     for tc in msg.tool_calls:
-        fn_name = getattr(getattr(tc, "function", None), "name", None)
-        arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-        payload = {
-            "id": getattr(tc, "id", None),
-            "type": "function",
-            "function": {
-                "name": fn_name,
-                "arguments": arg_str
-                if isinstance(arg_str, str)
-                else json.dumps(arg_str or {}),
-            },
-        }
-        raw_tool_call = getattr(tc, "raw", None)
-        if hasattr(raw_tool_call, "model_dump"):
-            try:
-                raw_tool_call = raw_tool_call.model_dump(exclude_none=True)
-            except Exception:
-                raw_tool_call = None
-        if isinstance(raw_tool_call, dict):
-            for field_name in ("thought_signature", "thoughtSignature", "extra_content"):
-                if raw_tool_call.get(field_name) is not None:
-                    payload[field_name] = raw_tool_call[field_name]
+        payload, provider_payload = _native_tool_call_payloads(tc)
         tool_calls_payload.append(payload)
+        provider_tool_calls_payload.append(provider_payload)
 
     try:
         if conductor.logger_v2.run_dir and tool_calls_payload:
@@ -793,8 +842,14 @@ def handle_native_tool_calls(
     )
     provider_assistant_tool_message = _assistant_history_message(
         msg,
-        tool_calls=tool_calls_payload,
+        tool_calls=provider_tool_calls_payload,
     )
+    native_tools = conductor.config.get("tools") or {}
+    if (native_tools.get("group_native_calls_by_turn") is True
+            and not ((conductor.config.get("provider_tools") or {}).get("anthropic") or {}).get("native_tool_result_replay")):
+        # Claude grouping is carried by native assistant/replay blocks, not a
+        # private Responses marker in canonical persisted/request messages.
+        provider_assistant_tool_message["_provider_tool_batch"] = session_state.get_provider_metadata("current_turn_index")
 
     parsed_calls: List[Any] = []
     for tc in msg.tool_calls:
@@ -802,14 +857,18 @@ def handle_native_tool_calls(
         if not fn:
             continue
         arg_str = getattr(getattr(tc, "function", None), "arguments", "{}")
-        try:
-            args = (
-                json.loads(arg_str)
-                if isinstance(arg_str, str)
-                else (arg_str or {})
-            )
-        except Exception:
-            args = {}
+        if getattr(getattr(conductor, "stock_driver", None), "lexical_arguments", False):
+            # Stock owns parsing/repair. Keep even malformed JSON lexical.
+            args = arg_str
+        else:
+            try:
+                args = (
+                    json.loads(arg_str)
+                    if isinstance(arg_str, str)
+                    else (arg_str or {})
+                )
+            except Exception:
+                args = {}
         canonical_fn = conductor.agent_executor.canonical_tool_name(fn)
         raw_meta = getattr(tc, "raw", None)
         expected_output = None
@@ -1001,6 +1060,27 @@ def handle_native_tool_calls(
         results: Any,
         **_: Any,
     ) -> None:
+        native_tools = conductor.config.get("tools") or {}
+        if native_tools.get("native_semantics") == "claude_code_2_1_63" and native_tools.get("group_native_calls_by_turn"):
+            # One canonical group owns the exact stock user-message boundaries.
+            # Do not duplicate the replay payload or flatten it through fallback.
+            if not results:
+                return
+            adapter = provider_adapter_manager.get_adapter("anthropic")
+            native_messages = results[0]["out"]["__claude_tool_result_messages"]
+            message = adapter.create_tool_result_batch_message(native_messages)
+            expected = [entry["call_id"] for entry in results]
+            observed = [block["call_id"] for block in message["content"] if block["type"] == "tool_result"]
+            if observed != expected:
+                raise ValueError("Stock tool batch relay call order mismatch")
+            for entry in results:
+                ui_message = conductor.message_formatter.create_tool_result_entry(
+                    entry["fn"], entry["out"], syntax_type="openai", call_id=entry["call_id"],
+                )
+                session_state.add_message(ui_message, to_provider=False)
+            with session_state.context_mutation():
+                session_state.provider_messages.append(message)
+            return
         tool_messages_to_relay: List[Dict[str, Any]] = []
         try:
             flow_strategy = turn_policy.relay_flow()
@@ -1236,7 +1316,9 @@ def retry_with_fallback(
         except Exception:
             pass
 
-    if last_error and not attempted:
+    # Oversized requests are not route-health failures; counting them would
+    # open the route circuit before compaction gets to retry.
+    if last_error and not attempted and not is_context_overflow(last_error):
         conductor.route_health.record_failure(
             model, _safe_failure_reason(last_error)
         )
@@ -1277,8 +1359,9 @@ def retry_with_fallback(
             retry_reason = _safe_failure_reason(retry_error)
             attempted.append((model, stream_responses, retry_reason))
             last_error = retry_error
-            conductor.route_health.record_failure(model, retry_reason)
-            conductor._update_health_metadata(session_state)
+            if not is_context_overflow(retry_error):
+                conductor.route_health.record_failure(model, retry_reason)
+                conductor._update_health_metadata(session_state)
 
     route_id = None
     if runtime_context and isinstance(runtime_context.extra, dict):
@@ -1357,21 +1440,70 @@ def retry_with_fallback(
             fallback_client_config = (
                 active_provider_router.create_client_config(fallback_model)
             )
+            fallback_extra = dict(runtime_context.extra or {})
+            fallback_extra.pop("portable_image_urls", None)
+            fallback_extra.update(
+                fallback_of=current_route,
+                route_id=fallback_model,
+            )
             fallback_runtime_context = ProviderRuntimeContext(
                 session_state=runtime_context.session_state,
                 agent_config=runtime_context.agent_config,
                 stream=False,
-                extra=dict(
-                    runtime_context.extra or {},
-                    fallback_of=current_route,
-                    route_id=fallback_model,
-                ),
+                extra=fallback_extra,
                 session_id=runtime_context.session_id,
                 input_id=runtime_context.input_id,
                 turn_id=runtime_context.turn_id,
                 exchange_recorder=recorder,
                 cancel_requested=runtime_context.cancel_requested,
             )
+            fallback_messages = reproject_for_route(
+                messages,
+                session_state,
+                source_runtime=runtime,
+                source_model=model,
+                runtime=fallback_runtime,
+                model=fallback_model_resolved,
+            )
+            if fallback_messages is not messages:
+                fallback_runtime_context.extra["portable_image_urls"] = True
+
+            source_descriptor = getattr(runtime, "descriptor", None)
+            if (
+                fallback_runtime_descriptor.provider_id == "anthropic"
+                and source_descriptor is not None
+                and (
+                    getattr(source_descriptor, "provider_id", None)
+                    != fallback_runtime_descriptor.provider_id
+                    or getattr(source_descriptor, "default_api_variant", None)
+                    != fallback_runtime_descriptor.default_api_variant
+                    or model != fallback_model_resolved
+                )
+                and any(
+                    isinstance(message, dict)
+                    and isinstance(message.get("content"), list)
+                    and any(
+                        isinstance(block, dict)
+                        and block.get("type") == "provider_replay"
+                        and block.get("provider_id") == "anthropic"
+                        and block.get("schema_version")
+                        == "anthropic.messages.tool_result.v1"
+                        for block in message["content"]
+                    )
+                    for message in fallback_messages
+                )
+            ):
+                fallback_agent_config = dict(runtime_context.agent_config or {})
+                fallback_provider_tools = dict(
+                    fallback_agent_config.get("provider_tools") or {}
+                )
+                fallback_anthropic_tools = dict(
+                    fallback_provider_tools.get("anthropic") or {}
+                )
+                fallback_anthropic_tools["native_tool_result_replay"] = True
+                fallback_provider_tools["anthropic"] = fallback_anthropic_tools
+                fallback_agent_config["provider_tools"] = fallback_provider_tools
+                fallback_runtime_context.agent_config = fallback_agent_config
             project_request_body = getattr(
                 fallback_runtime, "project_request_body", None
             )
@@ -1379,7 +1511,7 @@ def retry_with_fallback(
             if callable(project_request_body):
                 fallback_request_body = project_request_body(
                     model=fallback_model_resolved,
-                    messages=messages,
+                    messages=fallback_messages,
                     tools=tools_schema,
                     stream=False,
                     context=fallback_runtime_context,
@@ -1393,7 +1525,7 @@ def retry_with_fallback(
             else:
                 fallback_request_body = {
                     "model": fallback_model_resolved,
-                    "messages": messages,
+                    "messages": fallback_messages,
                     "tools": tools_schema,
                     "stream": False,
                 }
@@ -1476,7 +1608,7 @@ def retry_with_fallback(
                         fallback_runtime.invoke(
                             client=fallback_client,
                             model=fallback_model_resolved,
-                            messages=messages,
+                            messages=fallback_messages,
                             tools=tools_schema,
                             stream=False,
                             context=fallback_runtime_context,
@@ -1494,7 +1626,7 @@ def retry_with_fallback(
                         fallback_runtime.invoke(
                             client=fallback_client,
                             model=fallback_model_resolved,
-                            messages=messages,
+                            messages=fallback_messages,
                             tools=tools_schema,
                             stream=False,
                             context=fallback_runtime_context,
@@ -1539,10 +1671,11 @@ def retry_with_fallback(
             except Exception:
                 pass
             attempted.append((fallback_model, False, failure_reason))
-            conductor.route_health.record_failure(
-                fallback_model, failure_reason
-            )
-            conductor._update_health_metadata(session_state)
+            if not is_context_overflow(exc):
+                conductor.route_health.record_failure(
+                    fallback_model, failure_reason
+                )
+                conductor._update_health_metadata(session_state)
             fallback_recorder = getattr(
                 runtime_context, "exchange_recorder", None
             )

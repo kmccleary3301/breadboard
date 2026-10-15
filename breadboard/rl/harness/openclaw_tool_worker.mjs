@@ -1,18 +1,39 @@
 #!/usr/bin/env node
-/**
- * OpenClaw 2026.9.4 source-tool phase worker.
- *
- * The worker has no provider/model loop.  It loads only the pinned dist
- * modules, retains one prepared batch, and exposes the six admitted source
- * tools through bb.openclaw-native.v1 phases.
- */
+import { TOOL_ORDER, createToolSession, prepareToolCallArguments, createErrorToolResult } from "./openclaw_tool_session.mjs";
+import { createCompactionController } from "./openclaw_compaction.mjs";
+import { createProviderExchange } from "./openclaw_provider_exchange.mjs";
 import { pathToFileURL } from "node:url";
 import { join, resolve, basename } from "node:path";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
-import { accessSync, constants as fsConstants } from "node:fs";
-import { spawn, spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import crypto from "node:crypto";
 import { classifyAgentExecResult, errorEnvelope, exitCodeForEnvelope, formatErrorMessage } from "openclaw:pinned-agent-exec";
+
+/**
+ * OpenClaw 2026.9.4 source-tool and native-compaction phase worker.
+ *
+ * Loads pinned stock modules, exposes the six admitted source tools and runs
+ * exported AgentSession.runCompactionWork (resource-loader-Bu_pVD2t.mjs:9952-10073).
+ * The conductor supplies policy answers at the provider seam. The worker owns
+ * compaction semantics, the full replacement history and the stock session ledger.
+ * Headless admission skips onboarding template creation/injection. The bound
+ * model window reaches stock read/ls budgets and skill-catalog compaction.
+ * Runtime facts use the agent-exec scope with the declared replay identity.
+ * Caller-owned recovery continuation is projected at its transcript boundary,
+ * using verified stock prompt bytes and the stock timestamp formatter only.
+ * Replay traces retain stock's transport-clamped summary output cap; the sealed
+ * policy episode cap remains authoritative for actual BB summary exchanges.
+ */
+
+
+
+
+
+
+
+
+
+
 const pinnedAttemptPrompt = "openclaw:pinned-attempt-prompt";
 
 const PROTOCOL = "bb.openclaw-native.v1";
@@ -43,50 +64,171 @@ const MODULE_DIGESTS = Object.freeze({
   "helpers-C__iuzW9.mjs": "97f912914ff788bde4fb842a1ba4db16576c244ac633023a6d7ab1013a216a13",
   "session-transcript-repair-BqMz_6TX.mjs": "e4cf82d1d5e235e2d16549285c5c97f9b756f3b17cca95e4f3646b3c80eebac1",
   "model.inline-provider-BOrD-NlO.mjs": "8feef4dde90987e08cf6abdfdd0d42333b9e0f4f36a763b62aecd163eae746c2",
+  "compaction-DhVoBTx3.mjs": "e5cb4b696b6b27cd134073b930c144c156d1abcd0fbd3b3bdc817478806dbec2",
+  "agent-compaction-constants-DmXQuPyL.mjs": "1427b21bacd700537340721c16625455394d34bc457a6c6552af7d95945b6266",
+  "agent-settings-DcI_VuTd.mjs": "d5af3a814d7cbf8945e0a57353a544cb24100214b7d54939577c4d7ef1c75295",
+  "cjk-chars-CGxY6W63.mjs": "f9ecd1677fde596e23b21f883bfe5a1f28df4b5be33df1e9b3e7c5f5a5f25720",
+  "record-coerce-DItp3I4t.mjs": "e5acf8ca52794e3fce5b7db301d2425290a09dac816d3965c774f94b8b934dfe",
+  "utf16-slice-D_ngcYKd.mjs": "bc9d5d05e504a8c51ede86fbda75f5079388e50e42ac6ecd3885146f0193e944",
+  "result-BQGgYouL.mjs": "a1ca6ae792ef0cc288f1a6321dd57f7d45cc97ecff0da30a106121d3f4b75bbe",
+  "anthropic-DfKaEfcc.mjs": "357d69d78eefb812873a6f9ab1747229c1b5faf19210529ba4bcd439e99f39a9",
+  "src-DDmEryvj.mjs": "172de5b6befa26f6d7f3c91066c08e943e79313ab66fd348af7e3eb64d0aa087",
+  "tool-result-pairing-cBi7_uMO.mjs": "6cf899288d2966bb8fe5f7a12988865e616ad8ed9bbdbafbcf1c81ab1bcb4044",
+  "error-coercion-C1ZWqtQc.mjs": "00c3f84065dc9d2f55ac7e5ac2c72b7a20b2ff9473340c6a583661673d8f54e9",
+  "resource-loader-Bu_pVD2t.mjs": "62b6668ee808bdcedb6a7fc149aee940005c7fafb55427a0a0a313f38a0cc2d8",
+  "session-manager-DZHCo5g0.mjs": "de9ca3ee9781b71bb4994e3752e955db2c4a944cc1ab108fb07c9816bfb5ceec",
+  "compaction-planning-CkwWLY-c.mjs": "db1ff9d55fda41f0ac6fa93116f75a00ea6ae335a98a3388de7fce975a6f3843",
+  "agent-core-B_87jlHI.mjs": "f311dcf52bffaafa4d68436f7337321217c9a08ca5322a3d82176cc12ee2aba7",
+  "embedded-agent-CE9KzQvy.mjs": "d764d6270d9227498b5197eef25a598c15541c0269e6e9294a95d079ec88e4fa",
 });
-const MAX_LIVE_PROCESSES = 4;
-const TOOL_ORDER = Object.freeze(["edit", "exec", "ls", "process", "read", "write"]);
 
-let workspace = null;
-let scopeKey = "openclaw:e4";
-let tools = new Map();
-let sourceWorkspace = null;
-let sourceTransport = null;
-let modelConfig = null;
-let sourceSkills = null;
-let sourceSkillsPrompt = null;
-let sourceRuntimePrompt = null;
-let sourceProviderPrompt = null;
-let sourceAttemptPrompt = null;
-let normalizeSourceMessages = null;
-let projectSourceRuntimeFragments = null;
-let sourceRuntimeFactsContext = null;
-let buildSourceRuntimeContextMessage = null;
-let convertSourceTranscriptToLlm = null;
-let renderSourceFailureCopy = null;
-let sourceTimezone = null;
-let sourceConfig = null;
-let sourceSessionKey = null;
-let sourceInitialTimestamp = null;
-let sourceExecutionContext = null;
-let sourceAcknowledgeResult = null;
-let resolveAttemptTranscriptPolicy = null;
-let shouldAllowProviderOwnedThinkingReplay = null;
-let collectAllowedToolNames = null;
-let sanitizeToolUseResultPairing = null;
-let sanitizeToolCallIdsForCloudCodeAssist = null;
-let builtTools = [];
-let verifiedRegistryUrl = null;
-let prepared = null;
-let preparedContext = null;
-let closing = false;
-let advertisedTools = new Map();
-let capabilityDenials = new Map();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 let finalized = false;
-const pending = new Map();
+// Stock session counter initialization: resource-loader-Bu_pVD2t.mjs:8285.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 const sha256 = (bytes) => crypto.createHash("sha256").update(bytes).digest("hex");
 const text = (value) => typeof value === "string" ? value : String(value ?? "");
+
+const supplier = {
+  sourceWorkspace: null,
+  sourceTransport: null,
+  sourceSkills: null,
+  sourceSkillsPrompt: null,
+  sourceRuntimePrompt: null,
+  sourceProviderPrompt: null,
+  sourceAttemptPrompt: null,
+  normalizeSourceMessages: null,
+  projectSourceRuntimeFragments: null,
+  sourceRuntimeFactsContext: null,
+  buildSourceRuntimeContextMessage: null,
+  convertSourceTranscriptToLlm: null,
+  renderSourceFailureCopy: null,
+  sourceExecutionContext: null,
+  sourceAcknowledgeResult: null,
+  resolveAttemptTranscriptPolicy: null,
+  shouldAllowProviderOwnedThinkingReplay: null,
+  collectAllowedToolNames: null,
+  sanitizeToolUseResultPairing: null,
+  sanitizeToolCallIdsForCloudCodeAssist: null,
+  verifiedRegistryUrl: null,
+  sourceSession: null,
+  sourceCompaction: null,
+  applyAgentCompactionSettingsFromConfig: undefined,
+  coerceErrorMessage: null,
+  validateToolArguments: null,
+  parseOpenAICompletionsUsage: undefined,
+  createEmptyTransportUsage: undefined,
+  sourceResource: null,
+  sourceSessionManager: null,
+  sourceAgentCore: null,
+  sourceContinuationPrompt: null,
+  SAFETY_MARGIN: undefined,
+  estimateRenderedPromptTokens: undefined,
+  estimateJsonPayloadTokenPressure: undefined,
+  estimateMessageTokenPressure: undefined,
+  IMAGE_BLOCK_TOKENS: undefined,
+  MAX_COMPACTION_SUMMARY_CHARS: undefined,
+};
+const context = {
+  workspace: null,
+  scopeKey: "openclaw:e4",
+  modelConfig: null,
+  sourceTimezone: null,
+  sourceConfig: null,
+  sourceSessionKey: null,
+  sourceInitialTimestamp: null,
+  sourceSessionIdentity: null,
+};
+const toolSession = createToolSession({ supplier, context, protocol: PROTOCOL, prepareSourceToolCall });
+const providerExchange = createProviderExchange({ context, dist: DIST, protocol: PROTOCOL, toSourceHistory,
+ getCompactionSnapshot: () => compaction.snapshot,
+ createReplaySessionManager: (entries, timestamp) => compaction.createReplaySessionManager(entries, timestamp),
+});
+const compaction = createCompactionController({ supplier, context, protocol: PROTOCOL,
+ episodeSourceTools: toolSession.episodeSourceTools, toSourceHistory, verifyAndLoad, providerExchange,
+});
+async function closeSourceSession() {
+ if (toolSession.closing) throw new Error("worker close already requested");
+ await providerExchange.close();
+ return await toolSession.close();
+}
+
 async function verifyAndLoad() {
   const bytes = {};
   for (const [name, expected] of Object.entries(MODULE_DIGESTS)) {
@@ -95,50 +237,137 @@ async function verifyAndLoad() {
     const actual = sha256(payload);
     if (actual !== expected) throw new Error(`pinned OpenClaw dist digest mismatch for ${name}`);
     bytes[name] = pathToFileURL(path);
+    if (name === "embedded-agent-CE9KzQvy.mjs") {
+      // Private stock data, not a copied prompt: the module exports only the
+      // embedded runner and compactor. Digest verification seals this declaration.
+      // embedded-agent-CE9KzQvy.mjs:5898,6063-6068.
+      const declaration = "\nconst CONTINUATION_PROMPT = ";
+      const start = payload.indexOf(declaration);
+      const end = payload.indexOf(";\n", start);
+      if (start < 0 || end < 0) throw new Error("pinned continuation declaration is missing");
+      supplier.sourceContinuationPrompt = JSON.parse(payload.subarray(start + declaration.length, end).toString("utf8"));
+    }
   }
-  verifiedRegistryUrl = bytes["bash-process-registry-DHrULGkz.mjs"];
+  supplier.verifiedRegistryUrl = bytes["bash-process-registry-DHrULGkz.mjs"];
   const core = await import(bytes["core-coding-tools-DoP9tAh3.mjs"]);
   const sourceBootstrapFiles = await import(bytes["bootstrap-files-BAkC4xBB.mjs"]);
-  sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
-  sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
-  sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
-  sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
-  sourceSkills = (await import(bytes["workspace-skill-loader-BjTKGaFi.mjs"])).i;
-  sourceSkillsPrompt = (await import(bytes["workspace-skill-prompt-D3wdQJbf.mjs"])).n;
-  sourceRuntimePrompt = (await import(bytes["sandbox-info-BDS1M4pk.mjs"])).i;
-  sourceRuntimeFactsContext = (await import(bytes["system-prompt-report-DZJbcDI4.mjs"])).r;
-  buildSourceRuntimeContextMessage = (await import(bytes["runtime-context-prompt-DWIcn5Yx.mjs"])).r;
-  convertSourceTranscriptToLlm = (await import(bytes["session-DVbOtm8K.mjs"])).u;
-  renderSourceFailureCopy = (await import(bytes["assistant-request-failure-copy-CeEzc8UX.mjs"])).t;
-  ({ buildAttemptSystemPrompt: sourceAttemptPrompt, normalizeMessagesForLlmBoundary: normalizeSourceMessages, projectRuntimeContextFragments: projectSourceRuntimeFragments } = await import(pinnedAttemptPrompt));
-  sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
-  resolveAttemptTranscriptPolicy = (await import(bytes["history-image-prune-BCKEHO6_.mjs"])).s;
-  shouldAllowProviderOwnedThinkingReplay = (await import(bytes["helpers-C__iuzW9.mjs"])).S;
-  collectAllowedToolNames = (await import(bytes["builtin-openclaw-B-H-7lKk.mjs"])).s;
-  sanitizeToolUseResultPairing = (await import(bytes["session-transcript-repair-BqMz_6TX.mjs"])).i;
-  sanitizeToolCallIdsForCloudCodeAssist = (await import(bytes["tool-call-id-CnwowhSs.mjs"])).o;
+  supplier.sourceWorkspace = await import(bytes["workspace-YW5Pl2cf.mjs"]);
+  supplier.sourceExecutionContext = await import(bytes["tool-execution-context-C6v2UVPI.mjs"]);
+  supplier.sourceAcknowledgeResult = (await import(bytes["internal-hooks-DUPhyX-W.mjs"])).t;
+  supplier.sourceTransport = await import(bytes["openai-transport-stream-D950WgL3.mjs"]);
+  supplier.sourceSkills = (await import(bytes["workspace-skill-loader-BjTKGaFi.mjs"])).i;
+  supplier.sourceSkillsPrompt = (await import(bytes["workspace-skill-prompt-D3wdQJbf.mjs"])).n;
+  supplier.sourceRuntimePrompt = (await import(bytes["sandbox-info-BDS1M4pk.mjs"])).i;
+  supplier.sourceRuntimeFactsContext = (await import(bytes["system-prompt-report-DZJbcDI4.mjs"])).r;
+  supplier.buildSourceRuntimeContextMessage = (await import(bytes["runtime-context-prompt-DWIcn5Yx.mjs"])).r;
+  supplier.sourceSession = await import(bytes["session-DVbOtm8K.mjs"]);
+  supplier.convertSourceTranscriptToLlm = supplier.sourceSession.u;
+  supplier.renderSourceFailureCopy = (await import(bytes["assistant-request-failure-copy-CeEzc8UX.mjs"])).t;
+  ({ buildAttemptSystemPrompt: supplier.sourceAttemptPrompt, normalizeMessagesForLlmBoundary: supplier.normalizeSourceMessages, projectRuntimeContextFragments: supplier.projectSourceRuntimeFragments } = await import(pinnedAttemptPrompt));
+  supplier.sourceProviderPrompt = (await import(bytes["provider-runtime-Cf3GwX2b.mjs"])).z;
+  supplier.resolveAttemptTranscriptPolicy = (await import(bytes["history-image-prune-BCKEHO6_.mjs"])).s;
+  supplier.shouldAllowProviderOwnedThinkingReplay = (await import(bytes["helpers-C__iuzW9.mjs"])).S;
+  supplier.collectAllowedToolNames = (await import(bytes["builtin-openclaw-B-H-7lKk.mjs"])).s;
+  supplier.sanitizeToolUseResultPairing = (await import(bytes["session-transcript-repair-BqMz_6TX.mjs"])).i;
+  supplier.sanitizeToolCallIdsForCloudCodeAssist = (await import(bytes["tool-call-id-CnwowhSs.mjs"])).o;
+  supplier.sourceCompaction = await import(bytes["compaction-DhVoBTx3.mjs"]);
+  supplier.applyAgentCompactionSettingsFromConfig = (await import(bytes["agent-settings-DcI_VuTd.mjs"])).r;
+  supplier.coerceErrorMessage = (await import(bytes["error-coercion-C1ZWqtQc.mjs"])).t;
+  supplier.sourceResource = await import(bytes["resource-loader-Bu_pVD2t.mjs"]);
+  supplier.sourceSessionManager = (await import(bytes["session-manager-DZHCo5g0.mjs"])).t;
+  supplier.sourceAgentCore = await import(bytes["agent-core-B_87jlHI.mjs"]);
+  supplier.SAFETY_MARGIN = (await import(bytes["compaction-planning-CkwWLY-c.mjs"])).r;
+  supplier.estimateRenderedPromptTokens = supplier.sourceResource.At;
+  supplier.estimateJsonPayloadTokenPressure = supplier.sourceResource.Ot;
+  supplier.estimateMessageTokenPressure = supplier.sourceResource.kt;
+  supplier.IMAGE_BLOCK_TOKENS = supplier.sourceCompaction.n;
+  supplier.MAX_COMPACTION_SUMMARY_CHARS = supplier.sourceCompaction.r;
+  const sourceRequire = createRequire(bytes["core-coding-tools-DoP9tAh3.mjs"]);
+  ({ validateToolArguments: supplier.validateToolArguments } = await import(pathToFileURL(sourceRequire.resolve("@openclaw/ai/validation"))));
+  ({ parseOpenAICompletionsUsage: supplier.parseOpenAICompletionsUsage, createEmptyTransportUsage: supplier.createEmptyTransportUsage } = await import(pathToFileURL(sourceRequire.resolve("@openclaw/ai/transports"))));
   return {
     createCoreCodingTools: core.t,
     resolveBootstrapContextForRun: sourceBootstrapFiles.a,
-    buildOpenAICompletionsParams: sourceTransport.t,
+    buildOpenAICompletionsParams: supplier.sourceTransport.t,
     buildInlineProviderModels: (await import(bytes["model.inline-provider-BOrD-NlO.mjs"])).t,
+    completeInlineProviderModel: (await import(bytes["model.inline-provider-BOrD-NlO.mjs"])).n,
   };
 }
-function exactKeys(value, expected, label) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
+
+// Private stock glue, verbatim: agent-core-B_87jlHI.mjs:973-981.
+
+
+// Private stock glue, verbatim: agent-core-B_87jlHI.mjs:1365-1373.
+
+
+export async function prepareSourceToolCall(tool, toolCall) {
+  if (!supplier.validateToolArguments) await verifyAndLoad();
+  // Private admission tail, verbatim: agent-core-B_87jlHI.mjs:1067-1093.
+  let preparedToolCall;
+  try {
+    preparedToolCall = prepareToolCallArguments(tool, toolCall);
+  } catch (error) {
+    return {
+      kind: "immediate",
+      result: createErrorToolResult(supplier.coerceErrorMessage(error)),
+      isError: true
+    };
   }
-  const keys = Object.keys(value).sort();
-  const wanted = [...expected].sort();
-  if (keys.length !== wanted.length || keys.some((key, index) => key !== wanted[index])) {
-    throw new Error(`${label} keys are not the admitted set`);
+  let validatedArgs;
+  try {
+    validatedArgs = supplier.validateToolArguments(tool, preparedToolCall);
+  } catch (error) {
+    return {
+      kind: "immediate",
+      result: createErrorToolResult(supplier.coerceErrorMessage(error)),
+      isError: true,
+      errorKind: "argument-validation"
+    };
   }
+  return {
+    kind: "prepared",
+    toolCall,
+    tool,
+    args: validatedArgs
+  };
 }
+
+// Private stock budget glue, verbatim: resource-loader-Bu_pVD2t.mjs:192-199,8875-8900.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // OpenClaw resolves its model from a models.providers entry; the entry's
 // declared members (no compat) reach the pinned resolver, so the pinned
 // getCompat derives request compat from provider and baseUrl.
 const SOURCE_MODEL_MEMBERS = Object.freeze(["id", "name", "contextWindow", "maxTokens", "input"]);
-function resolveSourceModel(declared, buildInlineProviderModels) {
+function resolveSourceModel(declared, buildInlineProviderModels, completeInlineProviderModel) {
   if (!declared) return null;
   const provider = declared.provider;
   if (typeof provider !== "string" || !provider) throw new Error("model_config provider and id are required for pinned prompt");
@@ -149,143 +378,82 @@ function resolveSourceModel(declared, buildInlineProviderModels) {
   if (declared.api !== undefined) entry.api = declared.api;
   const resolved = buildInlineProviderModels({ [provider]: entry });
   if (resolved.length !== 1) throw new Error("model_config does not resolve to one source model");
-  return resolved[0];
+  // Stock completion, including pricing: prepared-model-runtime.configured-Cp6n-J8O.mjs:92-93;
+  // model.inline-provider-BOrD-NlO.mjs:107-125. Do not invent zero-cost defaults.
+  return completeInlineProviderModel(resolved[0], entry);
 }
 
-function validateAdvertisement(value) {
-  exactKeys(value, ["prompt_removals", "tool_description_replacements", "tools", "capability_denials"], "advertisement");
-  if (!Array.isArray(value.prompt_removals) || value.prompt_removals.some((item) => typeof item !== "string")) {
-    throw new Error("advertisement.prompt_removals is invalid");
-  }
-  exactKeys(value.tool_description_replacements, [], "advertisement.tool_description_replacements");
-  exactKeys(value.tools, ["exec"], "advertisement.tools");
-  exactKeys(value.tools.exec, ["description", "native_sha256"], "advertisement.tools.exec");
-  if (typeof value.tools.exec.description !== "string" || typeof value.tools.exec.native_sha256 !== "string") {
-    throw new Error("advertisement.tools.exec is invalid");
-  }
-  exactKeys(value.capability_denials, ["ask", "node"], "advertisement.capability_denials");
-  for (const capability of ["ask", "node"]) {
-    const denial = value.capability_denials[capability];
-    exactKeys(denial, ["schema_version", "capability", "message", "source_ref"], `advertisement.capability_denials.${capability}`);
-    for (const key of ["schema_version", "capability", "message", "source_ref"]) {
-      if (typeof denial[key] !== "string" || !denial[key]) throw new Error(`advertisement.capability_denials.${capability}.${key} is invalid`);
-    }
-  }
-  advertisedTools = new Map(Object.entries(value.tools));
-  capabilityDenials = new Map(
-    ["ask", "node"].map((capability) => [capability, value.capability_denials[capability]]),
-  );
-  return value;
-}
 
-function schemaFor(tool) {
-  const schema = tool?.parameters ?? tool?.inputSchema ?? tool?.schema ?? { type: "object" };
-  const overlay = advertisedTools.get(tool.name);
-  let description = text(tool.description);
-  if (overlay) {
-    if (`sha256:${sha256(Buffer.from(description, "utf8"))}` !== overlay.native_sha256) {
-      throw new Error(`advertisement native description hash mismatch for ${tool.name}`);
-    }
-    description = overlay.description;
-  }
-  return {
-    type: "function",
-    function: { name: tool.name, description, parameters: schema },
-  };
-}
 
-function makeTools(createCoreCodingTools) {
-  const built = createCoreCodingTools({
-    codingRoot: workspace,
-    containmentRoot: workspace,
-    includeBaseCodingTools: true,
-    includeShellTools: true,
-    readOnly: false,
-    // Pinned supplier default: embedded-agent.runtime-DnOK0ORi.mjs:649
-    // `permissionToolPolicy?.workspaceOnly ?? false` and agent-tools-DXxcrXNI.mjs:388
-    // `fsConfig.workspaceOnly === true`; the capture config sets neither, so the
-    // supplier's file tools echo the model's own path. Containment is the lease envelope.
-    workspaceOnly: false,
-    execDefaults: {
-      host: "gateway",
-      timeoutSec: 30,
-      security: "full",
-      ask: "off",
-      allowBackground: true,
-      scopeKey,
-      cwd: workspace,
-    },
-    processDefaults: { scopeKey },
-  });
-  builtTools = built;
-  const ordered = TOOL_ORDER.map((name) => built.find((tool) => tool.name === name));
-  if (ordered.some((tool) => !tool)) throw new Error("pinned source tool factory did not produce the admitted six-tool set");
-  tools = new Map(ordered.map((tool) => [tool.name, tool]));
-  return ordered;
-}
+
+
+
 function toSourceHistory(messages) {
   if (!Array.isArray(messages)) throw new Error("project_request messages must be an array");
   return messages.map((message) => {
     if (!message || typeof message !== "object") throw new Error("project_request message must be an object");
-    if (message.role !== "tool") return message;
-    const raw = Array.isArray(message.content)
-      ? message.content.map((part) => typeof part?.text === "string" ? part.text : text(part))
-      : [text(message.content)];
-    return {
-      role: "toolResult",
-      toolCallId: text(message.tool_call_id),
-      content: raw.map((value) => ({ type: "text", text: value })),
-      isError: Boolean(message.isError),
-    };
+    // Provider-owned raw usage is projected by the real stock parser, without
+    // guessing aliases (openai-transport-params-9aPuV5YY.mjs:133-157).
+    if (message.role !== "assistant" || Object.hasOwn(message, "usage")) return message;
+    // Preserve stock-sanitized retained usage (resource-loader:235-258).
+    // Missing provider usage stays stock-empty (assistant-output-tLt4H-iQ.mjs:3-12).
+    return { ...message, usage: message.providerUsage
+      ? supplier.parseOpenAICompletionsUsage(message.providerUsage, context.modelConfig)
+      : supplier.createEmptyTransportUsage() };
   });
 }
 
+
+
 function projectSourceRequest(messages, buildOpenAICompletionsParams) {
-  if (!modelConfig || typeof modelConfig !== "object") throw new Error("model_config is required");
+  if (!context.modelConfig || typeof context.modelConfig !== "object") throw new Error("model_config is required");
   const system = messages[0];
   const systemPrompt = (system && system.role === "system" && typeof system.content === "string")
     ? system.content
     : "";
   const history = toSourceHistory(system && system.role === "system" ? messages.slice(1) : messages);
   const initialUser = history.find((message) => message.role === "user");
-  if (initialUser && !Number.isFinite(initialUser.timestamp)) initialUser.timestamp = sourceInitialTimestamp;
-  const normalized = normalizeSourceMessages(history, { timezone: sourceTimezone, includeTimestamp: true });
-  const fragments = sourceRuntimeFactsContext({
-    cfg: sourceConfig, sessionKey: sourceSessionKey, agentId: "main",
+  if (initialUser && !Number.isFinite(initialUser.timestamp)) initialUser.timestamp = context.sourceInitialTimestamp;
+  compaction.admitSourceRecoveryEvents(history);
+  if (compaction.continuation) {
+    // Caller recovery's internal prompt is projected, never persisted:
+    // embedded-agent-CE9KzQvy.mjs:5961-5967,6063-6068.
+    history.splice(compaction.continuation.index, 0, compaction.continuation.message);
+  }
+  const normalized = supplier.normalizeSourceMessages(history, { timezone: context.sourceTimezone, includeTimestamp: true });
+  const fragments = supplier.sourceRuntimeFactsContext({
+    cfg: context.sourceConfig, sessionKey: context.sourceSessionKey, agentId: "main",
     capabilityToolNames: new Set(TOOL_ORDER),
   });
   const sourceHistory = [
-    ...normalized,
-    ...convertSourceTranscriptToLlm([
-      buildSourceRuntimeContextMessage(projectSourceRuntimeFragments(fragments), fragments),
+    ...supplier.convertSourceTranscriptToLlm(normalized),
+    ...supplier.convertSourceTranscriptToLlm([
+      supplier.buildSourceRuntimeContextMessage(supplier.projectSourceRuntimeFragments(fragments), fragments),
     ]),
   ];
-  const baseTools = builtTools && builtTools.length ? builtTools : Array.from(tools.values());
-  const sourceTools = baseTools.map((tool) => {
-    const overlay = advertisedTools.get(tool.name);
-    return overlay ? { ...tool, description: overlay.description } : tool;
-  });
+  const baseTools = toolSession.builtTools && toolSession.builtTools.length ? toolSession.builtTools : Array.from(toolSession.tools.values());
+  const sourceTools = toolSession.episodeSourceTools();
   // Supplier transcript policy resolution:
   // builtin-openclaw-B-H-7lKk.mjs:18430 transcriptPolicy = resolveAttemptTranscriptPolicy({...})
   // (history-image-prune-BCKEHO6_.mjs:268) -> resolveTranscriptPolicy (helpers-C__iuzW9.mjs:183)
-  const transcriptPolicy = resolveAttemptTranscriptPolicy({
+  const transcriptPolicy = supplier.resolveAttemptTranscriptPolicy({
     runtimePlan: undefined,
     runtimePlanModelContext: {
-      workspaceDir: workspace,
-      modelApi: modelConfig?.api,
-      model: modelConfig,
+      workspaceDir: context.workspace,
+      modelApi: context.modelConfig?.api,
+      model: context.modelConfig,
     },
-    provider: modelConfig?.provider,
-    modelId: modelConfig?.id,
-    config: sourceConfig,
+    provider: context.modelConfig?.provider,
+    modelId: context.modelConfig?.id,
+    config: context.sourceConfig,
     env: process.env,
   });
   // builtin-openclaw-B-H-7lKk.mjs:18442: isOpenAIResponsesApi from attempt.model.api
   const isOpenAIResponsesApi = Boolean(
-    modelConfig &&
-    (modelConfig.api === "openai-responses" ||
-     modelConfig.api === "azure-openai-responses" ||
-     modelConfig.api === "openai-chatgpt-responses")
+    context.modelConfig &&
+    (context.modelConfig.api === "openai-responses" ||
+     context.modelConfig.api === "azure-openai-responses" ||
+     context.modelConfig.api === "openai-chatgpt-responses")
   );
   // builtin-openclaw-B-H-7lKk.mjs:13915-13916: shouldApplyReplayToolCallIdSanitizer
   const shouldApplyReplayToolCallIdSanitizer = Boolean(
@@ -299,91 +467,98 @@ function projectSourceRequest(messages, buildOpenAICompletionsParams) {
   if (shouldApplyReplayToolCallIdSanitizer) {
     // builtin-openclaw-B-H-7lKk.mjs:13920
     const paired = transcriptPolicy.repairToolUseResultPairing
-      ? sanitizeToolUseResultPairing(sourceHistory)
+      ? supplier.sanitizeToolUseResultPairing(sourceHistory)
       : sourceHistory;
-    projectedHistory = sanitizeToolCallIdsForCloudCodeAssist(
+    projectedHistory = supplier.sanitizeToolCallIdsForCloudCodeAssist(
       paired,
       transcriptPolicy.toolCallIdMode,
       {
         preserveNativeAnthropicToolUseIds: transcriptPolicy.preserveNativeAnthropicToolUseIds,
         duplicateToolCallIdStyle: transcriptPolicy.duplicateToolCallIdStyle,
-        preserveReplaySafeThinkingToolCallIds: shouldAllowProviderOwnedThinkingReplay({
-          modelApi: modelConfig?.api,
-          provider: modelConfig?.provider,
+        preserveReplaySafeThinkingToolCallIds: supplier.shouldAllowProviderOwnedThinkingReplay({
+          modelApi: context.modelConfig?.api,
+          provider: context.modelConfig?.provider,
           policy: transcriptPolicy,
         }),
-        allowedToolNames: collectAllowedToolNames({ tools: baseTools }),
+        allowedToolNames: supplier.collectAllowedToolNames({ tools: baseTools }),
       }
     );
   }
   if (typeof buildOpenAICompletionsParams === "function" && systemPrompt) {
     const params = buildOpenAICompletionsParams(
-      modelConfig,
+      context.modelConfig,
       { systemPrompt, messages: projectedHistory, tools: sourceTools },
       undefined,
     );
     return {
       messages: params.messages || [],
       tools: params.tools || [],
+      request_body: params,
+      request_body_json: JSON.stringify(params),
       // Wire body members of the pinned supplier buildOpenAICompletionsParams.
-      request_members: Object.keys(params).sort(),
+      request_members: Object.keys(params).filter((member) => params[member] !== undefined),
     };
   }
   return {
     messages: projectedHistory,
-    tools: baseTools.map(schemaFor),
+    tools: baseTools.map(toolSession.schemaFor),
   };
 }
 
 async function bootstrapContext(resolveBootstrapContextForRun, config, sessionId, sessionKey) {
   const resolved = await resolveBootstrapContextForRun({
-    workspaceDir: workspace, config, agentId: "main", sessionId, sessionKey,
+    workspaceDir: context.workspace, config, agentId: "main", sessionId, sessionKey,
   });
-  return resolved.contextFiles;
+  // Non-primary headless runs do not inject onboarding instructions:
+  // builtin-openclaw-B-H-7lKk.mjs:1850-1861,1893.
+  return resolved.contextFiles.filter((file) => !/(^|[\\/])BOOTSTRAP\.md$/iu.test(file.path.trim()));
 }
 async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, packageDir, config, sessionKey) {
-  const modelId = modelConfig?.id;
-  const provider = modelConfig?.provider;
+  const modelId = context.modelConfig?.id;
+  const provider = context.modelConfig?.provider;
   const packageRoot = packageDir.endsWith("/dist") ? resolve(packageDir, "..") : packageDir;
   const sessionId = runtimeInputs.session_id;
   if (typeof runtimeInputs.message_timestamp_ms !== "string" || !/^\d{13}$/.test(runtimeInputs.message_timestamp_ms)) {
     throw new Error("declared message_timestamp_ms is required");
   }
-  sourceInitialTimestamp = Number(runtimeInputs.message_timestamp_ms);
-  if (!Number.isSafeInteger(sourceInitialTimestamp)) throw new Error("declared message_timestamp_ms is invalid");
-  sourceConfig = config;
-  sourceSessionKey = sessionKey;
-  const { runtimeInfo, userTimezone, userDate } = await sourceRuntimePrompt({
-    config, agentId: "main", workspaceDir: workspace, cwd: workspace,
+  context.sourceInitialTimestamp = Number(runtimeInputs.message_timestamp_ms);
+  if (!Number.isSafeInteger(context.sourceInitialTimestamp)) throw new Error("declared message_timestamp_ms is invalid");
+  context.sourceConfig = config;
+  context.sourceSessionKey = sessionKey;
+  const { runtimeInfo, userTimezone, userDate } = await supplier.sourceRuntimePrompt({
+    config, agentId: "main", workspaceDir: context.workspace, cwd: context.workspace,
     sessionKey, sessionId, model: `${provider}/${modelId}`,
   });
-  sourceTimezone = userTimezone;
-  const stamped = normalizeSourceMessages(
-    [{ role: "user", content: "x", timestamp: sourceInitialTimestamp }],
+  context.sourceTimezone = userTimezone;
+  const stamped = supplier.normalizeSourceMessages(
+    [{ role: "user", content: "x", timestamp: context.sourceInitialTimestamp }],
     { timezone: userTimezone, includeTimestamp: true },
   )[0].content;
   if (typeof stamped !== "string" || !stamped.endsWith("x") || stamped === "x") {
     throw new Error("pinned source did not stamp declared user timestamp");
   }
-  const entries = sourceSkills(workspace, {
+  const entries = supplier.sourceSkills(context.workspace, {
     agentId: "main", config, bundledSkillsDir: join(packageRoot, "skills"),
   });
-  const skillsPrompt = sourceSkillsPrompt({ workspaceDir: workspace, agentId: "main", config, entries });
+  const skillsPrompt = supplier.sourceSkillsPrompt({
+    workspaceDir: context.workspace, agentId: "main", config, entries,
+    contextTokenBudget: context.modelConfig.contextWindow,
+  });
   const embeddedSystemPrompt = {
-    config, agentId: "main", workspaceDir: workspace, runtimeCwd: workspace,
+    config, agentId: "main", workspaceDir: context.workspace, runtimeCwd: context.workspace,
     reasoningLevel: "off", skillsPrompt,
     docsPath: join(packageRoot, "docs"),
     promptMode: "full", promptSurface: "openclaw_main",
     runtimeInfo, userTimezone, userDate, contextFiles,
     tools: ordered, includeMemorySection: true,
   };
-  const prompt = sourceAttemptPrompt({
+  const prompt = supplier.sourceAttemptPrompt({
     isRawModelRun: false,
     embeddedSystemPrompt,
-    transformProviderSystemPrompt: sourceProviderPrompt,
+    transformProviderSystemPrompt: supplier.sourceProviderPrompt,
     providerTransform: {
-      provider, config, workspaceDir: workspace,
-      context: { config, workspaceDir: workspace, provider, modelId, promptMode: "full", agentId: "main" },
+      provider, config, workspaceDir: context.workspace,
+      context: { config, workspaceDir: context.workspace, provider, modelId, promptMode: "full", agentId: "main" },
     },
   }).systemPrompt;
   return {
@@ -402,7 +577,7 @@ async function materializeSourcePrompt(ordered, contextFiles, runtimeInputs, pac
 
 function safeBootstrapPath(name) {
   if (!name || basename(name) !== name || name.includes("\\") || name.includes("..")) throw new Error("invalid bootstrap asset name");
-  return resolve(workspace, name);
+  return resolve(context.workspace, name);
 }
 
 async function materializeBootstrapAssets(assets) {
@@ -416,251 +591,32 @@ async function materializeBootstrapAssets(assets) {
     try { existing = await readFile(path, "utf8"); } catch (error) { if (error?.code !== "ENOENT") throw error; }
     if (existing !== null && existing !== asset.content) throw new Error(`bootstrap asset collision for ${asset.name}`);
     if (existing === null) {
-      await mkdir(workspace, { recursive: true });
+      await mkdir(context.workspace, { recursive: true });
       await writeFile(path, asset.content, { encoding: "utf8", flag: "wx" });
     }
   }
 }
 
-function processSnapshot() {
-  const result = spawnSync("ps", ["-axo", "pid=,ppid=,pgid=,command="], {
-    encoding: "utf8",
-    maxBuffer: 4 * 1024 * 1024,
-  });
-  if (result.status !== 0) throw new Error(`OS process observer failed: ${text(result.stderr)}`);
-  return String(result.stdout || "").split("\n").flatMap((line) => {
-    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(.*)$/);
-    return match
-      ? [{ pid: Number(match[1]), ppid: Number(match[2]), pgid: Number(match[3]), argv: match[4] }]
-      : [];
-  });
-}
 
-function trackedProcessGroups(sessions) {
-  const leaders = new Set(
-    sessions
-      .map((session) => Number(session?.pid))
-      .filter((pid) => Number.isInteger(pid) && pid > 1),
-  );
-  const snapshot = processSnapshot();
-  const members = new Set(leaders);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const processInfo of snapshot) {
-      if (members.has(processInfo.ppid) && !members.has(processInfo.pid)) {
-        members.add(processInfo.pid);
-        changed = true;
-      }
-    }
-  }
-  const groups = new Map();
-  for (const processInfo of snapshot) {
-    if (members.has(processInfo.pid)) {
-      const group = groups.get(processInfo.pgid) || [];
-      group.push(processInfo.pid);
-      groups.set(processInfo.pgid, group);
-    }
-  }
-  return groups;
-}
 
-function groupIsAbsent(pgid) {
-  if (!Number.isInteger(pgid) || pgid <= 1) return false;
-  try {
-    process.kill(-pgid, 0);
-    return false;
-  } catch (error) {
-    return error?.code === "ESRCH";
-  }
-}
 
-class OpenClawMarkerObservationError extends Error {
-  constructor(message, options) {
-    super(message, options);
-    this.name = "OpenClawMarkerObservationError";
-  }
-}
 
-function markerExecutable() {
-  // Sealed launches are Linux-only; elsewhere execPath is the worker's image.
-  if (process.platform !== "linux") return process.execPath;
-  // A sealed launch runs a memfd, so execPath is "/memfd:... (deleted)".  The
-  // kernel's /proc/self/exe link still executes that same sealed image.
-  const image = "/proc/self/exe";
-  try {
-    accessSync(image, fsConstants.X_OK);
-  } catch (error) {
-    throw new OpenClawMarkerObservationError(
-      `OS process observer marker image is not executable: ${text(error?.message ?? error)}`,
-      { cause: error },
-    );
-  }
-  return image;
-}
 
-function spawnMarker(marker) {
-  const executable = markerExecutable();
-  return new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(executable, ["-e", "setInterval(() => {}, 1000)", marker], {
-      detached: true,
-      stdio: "ignore",
-    });
-    // Without a listener a spawn failure is an uncaught crash, not a receipt.
-    child.on("error", (error) => rejectPromise(new OpenClawMarkerObservationError(
-      `OS process observer marker spawn failed: ${text(error?.message ?? error)}`,
-      { cause: error },
-    )));
-    child.once("spawn", () => {
-      child.unref();
-      resolvePromise(child);
-    });
-  });
-}
 
-async function markerObservation() {
-  const marker = `bb-openclaw-marker-${process.pid}-${Date.now()}-${crypto.randomUUID()}`;
-  const child = await spawnMarker(marker);
-  await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
-  const before = processSnapshot().filter((item) => item.argv.includes(marker));
-  const leader = before.find((item) => item.pid === child.pid);
-  if (!leader || leader.pgid !== child.pid) {
-    throw new OpenClawMarkerObservationError("OS process observer marker group was not proven");
-  }
-  process.kill(-leader.pgid, "SIGTERM");
-  let after = [];
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 10));
-    after = processSnapshot().filter((item) => item.argv.includes(marker));
-    if (after.length === 0 && groupIsAbsent(leader.pgid)) break;
-  }
-  return { marker_before: before, marker_after: after };
-}
 
-async function cleanupScope() {
-  const processTool = tools.get("process");
-  const observed = [];
-  if (!processTool) throw new Error("pinned process tool is unavailable");
-  const marker = await markerObservation();
-  const list = async () => {
-    const result = await processTool.execute("worker-cleanup-list", { action: "list" });
-    return Array.isArray(result?.details?.sessions) ? result.details.sessions : [];
-  };
-  let sessions = await list();
-  const tracked = trackedProcessGroups(sessions);
-  for (const session of sessions) {
-    if (session?.sessionId) {
-      observed.push({ sessionId: String(session.sessionId), before: session.status, pid: session.pid ?? null });
-      if (session.status === "running" || session.status === "backgrounded") {
-        await processTool.execute("worker-cleanup-kill", { action: "kill", sessionId: session.sessionId });
-      }
-    }
-  }
-  // Source's registry owns PTY descendants.  OS observation proves that every
-  // tracked process group is absent; the registry's empty list alone is not a
-  // cleanup receipt.
-  if (!verifiedRegistryUrl) throw new Error("pinned process registry was not verified");
-  const registry = await import(verifiedRegistryUrl);
-  if (typeof registry.x === "function") await registry.x(scopeKey);
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    sessions = await list();
-    const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded");
-    const snapshot = processSnapshot();
-    const groups = [...tracked.entries()].map(([pgid, members]) => ({
-      pgid,
-      leader_exit_observed: members.every((pid) => !snapshot.some((item) => item.pid === pid)),
-      group_probe_absent: groupIsAbsent(pgid),
-      remaining: snapshot.filter((item) => item.pgid === pgid).map((item) => item.pid),
-    }));
-    if (
-      live.length === 0
-      && marker.marker_after.length === 0
-      && groups.every((group) => group.leader_exit_observed && group.group_probe_absent && group.remaining.length === 0)
-    ) {
-      return {
-        processes: observed.map((item) => ({ ...item, after: "dead" })),
-        process_groups: groups,
-        ...marker,
-        all_dead: true,
-      };
-    }
-    await new Promise((resolvePromise) => setTimeout(resolvePromise, 25));
-  }
-  for (const session of sessions) {
-    observed.push({
-      sessionId: String(session.sessionId ?? ""),
-      after: session.status ?? "unknown",
-      pid: session.pid ?? null,
-    });
-  }
-  return { processes: observed, process_groups: [...tracked.keys()].map((pgid) => ({ pgid })), ...marker, all_dead: false };
-}
 
-function deliveryId() { return `delivery_${crypto.randomUUID()}`; }
 
-async function liveProcessCount() {
-  const listed = await tools.get("process").execute("worker-live-limit", { action: "list" });
-  const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
-  return sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;
-}
 
-async function executePrepared() {
-  if (!prepared) throw new Error("execute_batch requires prepare_tools");
-  const calls = prepared;
-  const context = preparedContext;
-  const sequential = calls.some((call) => tools.get(call.name)?.executionMode === "sequential");
-  const listed = calls.some((call) => call.name === "exec" && !call.error)
-    ? await tools.get("process").execute("worker-live-limit", { action: "list" })
-    : null;
-  const sessions = Array.isArray(listed?.details?.sessions) ? listed.details.sessions : [];
-  const live = sessions.filter((session) => session?.status === "running" || session?.status === "backgrounded").length;
-  let reserved = 0;
-  let completionIndex = 0;
-  const run = async (call) => {
-    if (call.error) {
-      return {
-        id: call.id,
-        completion_index: completionIndex++,
-        content: [{ type: "text", text: call.error }],
-        details: call.capability_denial ? { capability_denial: call.capability_denial } : {},
-        isError: true,
-      };
-    }
-    const tool = tools.get(call.name);
-    if (!tool) {
-      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: `undeclared tool ${call.name}` }], details: {}, isError: true };
-    }
-    if (call.name === "exec" && (sequential ? await liveProcessCount() : live + reserved) >= MAX_LIVE_PROCESSES) {
-      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: `OpenClaw live process cap exceeded (${MAX_LIVE_PROCESSES})` }], details: { status: "rejected", maxLiveProcesses: MAX_LIVE_PROCESSES }, isError: true };
-    }
-    if (call.name === "exec") reserved += 1;
-    try {
-      const result = await sourceExecutionContext.n({ assistantMessage: context.assistantMessage }, () => tool.execute(call.id, call.arguments));
-      const details = result?.details && typeof result.details === "object" ? result.details : {};
-      const item = { id: call.id, completion_index: completionIndex++, content: result?.content ?? [], details, isError: Boolean(result?.isError) };
-      if (call.name === "process" && call.arguments?.action === "poll" && details.sessionId) {
-        const id = deliveryId();
-        pending.set(id, { sessionId: String(details.sessionId), result });
-        item.delivery_id = id;
-      }
-      return item;
-    } catch (error) {
-      return { id: call.id, completion_index: completionIndex++, content: [{ type: "text", text: text(error?.message || error) }], details: {}, isError: true };
-    } finally {
-      if (call.name === "exec" && sequential) reserved -= 1;
-    }
-  };
-  let results;
-  if (sequential) {
-    results = [];
-    for (const call of calls) results.push(await run(call));
-  } else {
-    results = await Promise.all(calls.map(run));
-  }
-  prepared = null;
-  preparedContext = null;
-  return { schema_version: PROTOCOL, kind: "tool_results", results };
-}
+
+
+
+
+
+
+
+
+
+
 
 function buildRunResultFromTerminalState(message) {
   const messages = Array.isArray(message.messages) ? message.messages : [];
@@ -690,7 +646,7 @@ function buildRunResultFromTerminalState(message) {
   const errorObj = message.error
     ? (typeof message.error === "object" ? message.error : { message: String(message.error), kind: "agent_error" })
     : undefined;
-  const modelCfg = message.model_config || modelConfig;
+  const modelCfg = message.model_config || context.modelConfig;
   return {
     payloads: Array.isArray(message.payloads) ? message.payloads : payloads,
     meta: {
@@ -703,7 +659,7 @@ function buildRunResultFromTerminalState(message) {
       agentMeta: {
         model: modelCfg?.id || modelCfg?.model || null,
         provider: modelCfg?.provider || null,
-        sessionId: message.session_id || scopeKey || "",
+        sessionId: message.session_id || context.scopeKey || "",
         usage: message.usage || undefined,
         costUsd: message.cost_usd,
         assistantTurns: message.assistant_turns,
@@ -720,9 +676,9 @@ async function handle(message) {
     const runtimeInputs = message.runtime_inputs && typeof message.runtime_inputs === "object" ? message.runtime_inputs : {};
     const workspacePath = typeof message.workspace === "string" && message.workspace ? message.workspace : runtimeInputs.cwd;
     if (typeof workspacePath !== "string" || !workspacePath) throw new Error("workspace is required");
-    const advertisement = validateAdvertisement(message.advertisement);
-    workspace = resolve(workspacePath);
-    scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : scopeKey;
+    const advertisement = toolSession.validateAdvertisement(message.advertisement);
+    context.workspace = resolve(workspacePath);
+    context.scopeKey = typeof message.scopeKey === "string" && message.scopeKey ? message.scopeKey : context.scopeKey;
     if (message.model_config && (typeof message.model_config !== "object" || Array.isArray(message.model_config))) {
       throw new Error("model_config must be an object");
     }
@@ -742,29 +698,40 @@ async function handle(message) {
     }
     await materializeBootstrapAssets(assets);
     const source = await verifyAndLoad();
-    modelConfig = resolveSourceModel(declaredModel, source.buildInlineProviderModels);
-    const ordered = makeTools(source.createCoreCodingTools);
-    const modelId = modelConfig?.id;
-    const provider = modelConfig?.provider;
+    compaction.reset();
+    context.modelConfig = resolveSourceModel(declaredModel, source.buildInlineProviderModels, source.completeInlineProviderModel);
+    const ordered = toolSession.makeTools(source.createCoreCodingTools);
+    const modelId = context.modelConfig?.id;
+    const provider = context.modelConfig?.provider;
     if (typeof modelId !== "string" || !modelId || typeof provider !== "string" || !provider) {
       throw new Error("model_config provider and id are required for pinned prompt");
     }
     const sessionId = runtimeInputs.session_id;
     if (typeof sessionId !== "string" || !sessionId) throw new Error("declared session_id is required");
-    const sessionKey = `agent:main:explicit:${sessionId}`;
+    context.sourceSessionIdentity = sessionId;
+    providerExchange.configure(message);
+    // agent-exec-BAuhpelg.mjs:388 uses this headless scope for runtime facts.
+    const sessionKey = `agent:main:agent-exec:${sessionId}`;
     const config = {
-      agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace } },
+      agents: { defaults: { model: { primary: `${provider}/${modelId}` }, workspace: context.workspace } },
       tools: { allow: TOOL_ORDER },
+      ...(providerExchange.exchanges.size ? {
+        models: { providers: { [provider]: {
+          baseUrl: context.modelConfig.baseUrl, api: context.modelConfig.api,
+          headers: providerExchange.headers, models: [context.modelConfig],
+        } } },
+      } : {}),
     };
-    await sourceWorkspace.d({ dir: workspace, ensureBootstrapFiles: true });
+    // agent exec skips template creation (agent-exec-BAuhpelg.mjs:106).
+    await supplier.sourceWorkspace.d({ dir: context.workspace, ensureBootstrapFiles: false });
     const bootstrapFiles = await bootstrapContext(source.resolveBootstrapContextForRun, config, sessionId, sessionKey);
     const { prompt: systemPrompt, runtimeFacts } = await materializeSourcePrompt(ordered, bootstrapFiles, runtimeInputs, packageDir, config, sessionKey);
     return {
       schema_version: PROTOCOL,
       kind: "initialized",
       system_prompt: systemPrompt,
-      tool_schemas: ordered.map(schemaFor),
-      bootstrap: { files: bootstrapFiles, runtime_facts: runtimeFacts, ...runtimeInputs },
+      tool_schemas: ordered.map(toolSession.schemaFor),
+      bootstrap: { files: bootstrapFiles, runtime_facts: runtimeFacts, ...runtimeInputs, model_config: context.modelConfig },
       tools: TOOL_ORDER,
     };
   }
@@ -795,80 +762,35 @@ async function handle(message) {
       runtime_error: runtimeError,
     };
   }
-  if (!workspace || tools.size !== TOOL_ORDER.length) throw new Error("worker is not initialized");
+  if (phase === "prepare_compaction") return await compaction.prepareCompaction(message);
+  if (phase === "finalize_compaction") return await compaction.finalizeCompaction(message);
+  if (phase === "drain_provider_exchanges") {
+    return await providerExchange.drainSourceProviderExchanges(message.response);
+  }
+  if (!context.workspace || toolSession.tools.size !== TOOL_ORDER.length) throw new Error("worker is not initialized");
   if (phase === "project_request") {
+    if (providerExchange.hasMirroredTranscript) {
+      await providerExchange.mirrorSourceHistory(message.messages);
+    }
     const projected = projectSourceRequest(
       Array.isArray(message.messages) ? message.messages : [],
-      sourceTransport?.t,
+      supplier.sourceTransport?.t,
     );
     return { schema_version: PROTOCOL, kind: "request", ...projected };
   }
-  if (phase === "prepare_tools") {
-    if (!Array.isArray(message.calls)) throw new Error("prepare_tools calls must be an array");
-    preparedContext = { assistantMessage: {} };
-    prepared = message.calls.map((call, index) => {
-      const id = String(call?.id ?? `call_${index}`);
-      if (!call || typeof call.name !== "string" || !call.name) return { id, name: "", arguments: {}, error: "tool call has no name" };
-      const tool = tools.get(call.name);
-      if (!tool) return { id, name: call.name, arguments: call.arguments ?? {}, error: `undeclared tool ${call.name}` };
-      if (!call.arguments || typeof call.arguments !== "object" || Array.isArray(call.arguments)) return { id, name: call.name, arguments: {}, error: "tool arguments must be an object" };
-      const deniedCapability = call.name === "exec"
-        ? ["ask", "node"].find((capability) => Object.prototype.hasOwnProperty.call(call.arguments, capability))
-        : undefined;
-      if (deniedCapability) {
-        const denial = capabilityDenials.get(deniedCapability);
-        return {
-          id,
-          name: call.name,
-          arguments: call.arguments,
-          error: denial.message,
-          capability_denial: denial,
-        };
-      }
-      if (call.name === "exec") {
-        const seconds = call.arguments.timeoutSeconds;
-        if (seconds !== undefined && (
-          typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0 || seconds > 30
-        )) {
-          return { id, name: call.name, arguments: call.arguments, error: "exec timeoutSeconds must be 0 or at most 30" };
-        }
-      }
-      try {
-        // This is the pinned source's prepareArguments hook.  Python never
-        // rewrites the decoder-finalized arguments.
-        const argumentsValue = typeof tool.prepareArguments === "function"
-          ? (tool.prepareArguments(call.arguments) ?? {})
-          : call.arguments;
-        if (!argumentsValue || typeof argumentsValue !== "object" || Array.isArray(argumentsValue)) throw new Error("prepared arguments must be an object");
-        return { id, name: call.name, arguments: argumentsValue };
-      } catch (error) {
-        return { id, name: call.name, arguments: call.arguments, error: text(error?.message || error) };
-      }
-    });
-    return {
-      schema_version: PROTOCOL,
-      kind: "prepared",
-      calls: prepared,
-    };
-  }
-  if (phase === "execute_batch") return await executePrepared();
-  if (phase === "ack") {
-    const id = String(message.delivery_id || "");
-    if (!id || !pending.has(id)) throw new Error(`unknown delivery_id ${id}`);
-    const record = pending.get(id);
-    sourceAcknowledgeResult(record.result);
-    for (const [key, delivery] of pending) {
-      if (delivery.sessionId === record.sessionId) pending.delete(key);
-    }
-    return { schema_version: PROTOCOL, kind: "acked", delivery_id: id, session_id: record.sessionId, history_digest: text(message.history_digest) };
-  }
+  if (phase === "prepare_tools") return await toolSession.prepareTools(message);
+  if (phase === "execute_batch") return await toolSession.executePrepared();
+  if (phase === "ack") return await toolSession.acknowledge(message);
   if (phase === "classify_result") {
+    if (providerExchange.hasMirroredTranscript && Array.isArray(message.messages)) {
+      await providerExchange.mirrorSourceHistory(message.messages);
+    }
     let runResult = message.result && typeof message.result === "object"
       ? message.result
       : buildRunResultFromTerminalState(message);
     if (runResult.meta?.error?.kind === "incomplete_turn") {
       const model = runResult.meta.agentMeta;
-      const warning = renderSourceFailureCopy({
+      const warning = supplier.renderSourceFailureCopy({
         provider: model?.provider, model: model?.model, reason: "unclassified",
       });
       runResult = {
@@ -890,13 +812,7 @@ async function handle(message) {
       exit_code: exitCode,
     };
   }
-  if (phase === "close") {
-    if (closing) throw new Error("worker close already requested");
-    const cleanup = await cleanupScope();
-    if (!cleanup.all_dead) throw new Error("native process scope did not reach independently observed death");
-    closing = true;
-    return { schema_version: PROTOCOL, kind: "closed", cleanup };
-  }
+  if (phase === "close") return await closeSourceSession();
   throw new Error(`unknown worker phase ${text(phase)}`);
 }
 
@@ -913,13 +829,11 @@ async function shutdown(code = 0) {
   if (shuttingDown) return;
   shuttingDown = true;
   try {
-    if (!closing && tools.size) await cleanupScope();
+    if (!toolSession.closing && toolSession.tools.size) await toolSession.cleanupScope();
   } finally {
     process.exit(code);
   }
 }
-process.once("SIGTERM", () => void shutdown(0));
-process.once("SIGINT", () => void shutdown(130));
 
 let input = Buffer.alloc(0);
 let chain = Promise.resolve();
@@ -941,12 +855,13 @@ async function dispatch(command) {
     const result = await handle(message);
     writeFrame({ schema_version: "bb.native-worker.rpc.v1", request_id: command.request_id, result });
   } catch (error) {
+    // Transport only: forward error type/message to the conductor, never success or defaults.
     const message = error instanceof Error ? error.message : text(error);
     writeFrame({
       schema_version: "bb.native-worker.rpc.v1",
       request_id: command.request_id,
       error: {
-        type: error instanceof OpenClawMarkerObservationError ? error.name : "OpenClawWorkerError",
+        type: error instanceof Error ? error.name : "OpenClawWorkerError",
         message,
       },
     });
@@ -968,6 +883,7 @@ function drainInput() {
     try {
       command = JSON.parse(frame);
     } catch (error) {
+      // Transport only: forward error type/message to the conductor, never success or defaults.
       writeFrame({
         schema_version: "bb.native-worker.rpc.v1",
         request_id: null,
@@ -979,14 +895,18 @@ function drainInput() {
   }
 }
 
-process.stdin.on("data", (chunk) => {
-  input = Buffer.concat([input, chunk]);
-  drainInput();
-});
-process.stdin.on("end", async () => {
-  await chain;
-  finishInput();
-});
-await inputDone;
-if (finalizationOnly) process.stdout.end();
-else await shutdown(0);
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  process.once("SIGTERM", () => void shutdown(0));
+  process.once("SIGINT", () => void shutdown(130));
+  process.stdin.on("data", (chunk) => {
+    input = Buffer.concat([input, chunk]);
+    drainInput();
+  });
+  process.stdin.on("end", async () => {
+    await chain;
+    finishInput();
+  });
+  await inputDone;
+  if (finalizationOnly) process.stdout.end();
+  else await shutdown(0);
+}

@@ -1,0 +1,46 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "openclaw@2026.9.4",
+  "case": "reserve_cap_small_context_window",
+  "source": {
+    "repo": "https://github.com/openclaw/openclaw",
+    "commit": "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    "evidence": [
+      "src/agents/agent-compaction-constants.ts:2,5-14",
+      "src/agents/agent-settings.ts:54-61"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_openclaw.ts",
+    "notes": "Executed slices from source checkout:\nsrc/agents/agent-compaction-constants.ts:2 `const MAX_COMPACTION_RESERVE_RATIO = 0.25;`\nsrc/agents/agent-compaction-constants.ts:10-13 `return Math.min(Math.max(0, Math.floor(params.reserveTokens)), Math.floor(contextTokenBudget * MAX_COMPACTION_RESERVE_RATIO));`\nFor a 64k window, floor 20,000 is capped to floor(64000 * 0.25) = 16,000. Limit = 64,000 - 16,000 = 48,000.\nAt contextTokens = 48,001, shouldCompact evaluates to true."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "solve task"
+      }
+    ],
+    "usage": {
+      "input_tokens": 47001,
+      "output_tokens": 1000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 48001
+    },
+    "context_window": 64000,
+    "max_input_tokens": null,
+    "max_output_tokens": 2048,
+    "reason": "threshold",
+    "native_settings": {}
+  },
+  "expect": {
+    "trigger": {
+      "fires": true,
+      "tokens": 48001,
+      "limit": 48000,
+      "severity": "soft"
+    }
+  }
+}

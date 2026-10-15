@@ -1,0 +1,21 @@
+# Codex rust-v0.139.0 a7dff904; exact captured Responses schema.
+id: web_search
+name: web_search
+description: Hosted web search.
+type_id: python
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+parameters: []
+execution:
+  blocking: true
+provider_routing:
+  openai:
+    native_primary: true
+    responses_tool_schema:
+      type: web_search
+      external_web_access: true
+      search_content_types:
+      - text
+      - image

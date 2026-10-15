@@ -533,3 +533,38 @@ review gates; it does not authorize runtime or recipient acceptance.
 **Authorization and defect:** `ACR-20260929-pi-text-tool-results` records the RL consumer defect measured on IBM Slurm (2026-09-29): Conductor runner built each tool result as a JSON string of the entire observation object (`{"content":[...],"details":{...},"isError":false}`), escaping non-ASCII and inflating token counts. In every BreadBoard Pi SWE train episode (BMoE 123168, episode r8uexmh8), each tool message carried this JSON wrapper. In MiMo general 123245, a Pi `read` of binary .xlsx produced 240,274 characters (vs 43,024 characters in stock Pi 0.57.1), exceeding context limits (138k–145k tokens) and causing 4/4 episodes to fail while stock Pi ran for 612 requests. The repair selects an opt-in compiled `provider_tools.tool_results_as_text` boolean; the existing closed v2 config surface rejected that selector before compilation. The demonstrated defect requires admitting exactly this property.
 
 **Scope:** Add the optional boolean `provider_tools.tool_results_as_text` to the existing `bb.agent_config_surface.v2` schema; absent or false retains existing JSON encoding. Pin its post-change SHA-256 `134055aa75c14c27318a7c021a126ff456336632122d25741a4976c53b52bf05` in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `ACR-20260929-pi-text-tool-results` and ref `AM35`. Update only its generated TypeScript declaration, registry, bundled Node validator and behavioral regression cases. No new schema ID, lane, package, default behavior, evidence cap, grader rule or other v2 property is authorized; the freeze baseline is unchanged.
+
+## Amendment 36 - 2026-10-09 - Native context compaction for E4 configs and targets
+
+**Authorization and defect:** `docs_tmp/RL_TEAM_HANDOFF_20261007/engine_requests/COMPACTION_E4_SCOPE_REQUEST.md` requires every E4 harness config to run its harness's own context compaction. Its decisions 2 and 3 also require each RL target to declare where its compaction summary request differs from stock. The closed v2 config surface rejected the `compaction:` block and the model token limits that the compaction triggers are computed from. The closed v2 target configuration had no place to declare a deviation.
+
+**Scope:**
+- `bb.agent_config_surface.v2` and `bb.harness_definition.v2` gain an optional top-level `compaction` (boolean or preset object). They also gain the optional positive integers `context_length`, `max_input_tokens` and `max_output_tokens` on each provider model entry.
+- `bb.e4.target_config.v2` gains an optional `policy.deviations` list. Each item is closed and has six required non-empty strings: `id`, `surface`, `stock`, `breadboard`, `reason` and `authority`.
+- Post-change hashes are pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `COMPACTION_E4_SCOPE_REQUEST` and ref `AM36`.
+- Absent fields keep existing behavior. Existing dated configs and target revisions are unchanged; compaction ships only in new dated configs and new `-rN` target revisions.
+- No new schema ID, lane, grader rule or evidence cap is authorized; the freeze baseline is unchanged.
+
+## Amendment 37 - 2026-10-10 - Request-keyed approvals for native concurrent prompts
+
+**Authorization and defect:** Stock OpenCode 1.2.17 and oh-my-opencode 3.10.0 sessions raise simultaneous permission and question prompts: a background child prompt and a root prompt can be pending at once. Under those dated profiles, the permission broker already demultiplexes the replies by request ID. The product Session authority held one pending approval, so it rejected the root reply while the child was pending ("approval does not match the pending request"). Reproduced by `tests/compaction/test_opencode_stock_interaction.py`.
+
+**Scope:**
+- `bb.payload.product_session.lifecycle.v1` `sessionStarted` (both branches) gains the optional `concurrent_approvals` with `const: true`. The service writes it only when the frozen session configuration declares the capability `tools.native_concurrent_prompts: true` (Amendment 38); the harness identity is never consulted. When it is set, replay keys pending approvals by `request_id`. A new request may arrive while other approvals are pending, but a duplicate pending ID is rejected. Requests resolve in any order, and an unknown or stale ID is rejected. `bb.session.v1` `pending_approval` reports the oldest pending ID.
+- The post-change hash is pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `E4_NATIVE_CONCURRENT_APPROVALS` and ref `AM37`. The hand-written SDK `SessionStartedPayload` types gain the same optional field.
+- If the field is absent, the single-approval behavior, events, read model and error strings are unchanged. No new schema ID, read-model field, lane, grader rule or evidence cap is authorized, and the freeze baseline is unchanged.
+
+## Amendment 38 - 2026-10-11 - Stock-executor capabilities and ports for dated E4 engine profiles
+
+**Authorization and defect:** Kyle McCleary's 2026-10-10 step-4 instruction ("fixing the four dated engine profiles") requires the dated Codex 0.139.0, Claude Code 2.1.63, OpenCode 1.2.17 and oh-my-opencode 3.10.0 profiles to send the same requests as stock and to run every advertised tool with stock semantics. The closed v2 config surface could not select a pinned stock executor, its prompt and request ports, or the stock behaviour those runtimes need: concurrent native prompts, local-only placement, pseudo-terminals, failed turns that leave the session open, and restoring the compaction ledger on resume. The step-4 lanes reproduce each gap in `scripts/compaction_lanes/`.
+
+**Scope:**
+- `bb.agent_config_surface.v2` gains optional members:
+  - `tools.native_semantics`, the pinned `tools.stock_*` executor inputs and `tools.group_native_calls_by_turn`;
+  - the strict capabilities `tools.native_concurrent_prompts`, `tools.native_local_only`, `tools.pty` and `session.failed_turn_continues`, each defaulting to false;
+  - `prompts.initial_context`, `prompts.summary_projection` and the `prompts.environment` include flags;
+  - `providers.openai` Responses flags, `providers.anthropic.request_layout`/`native_tool_result_replay`/`preserve_tool_names`, per-model image, web-search and truncation capabilities, and `providers.session_uuid_version`;
+  - `resume.snapshot_path` and `resume.restore_compaction_state`.
+- Behaviour switches read capabilities only. `native_semantics` selects the stock executor and its wire serialization, never other behaviour. Callable ports are restricted to `breadboard_engine.compilation.context_builders.*`.
+- The post-change hash is pinned in `scripts/check_phase20_freeze.py` with class `plan_mandated_evolution`, packet `COMPACTION_E4_SCOPE_REQUEST` and ref `AM35/AM36/AM38`. Only the generated TypeScript declaration, registry and Node validator change alongside it.
+- Absent members keep existing behaviour byte-identical. The `*_9-10-2026` profiles and existing target revisions are unchanged. No new schema ID, lane, grader rule or evidence cap is authorized, and the freeze baseline is unchanged.

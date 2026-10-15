@@ -1,0 +1,38 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "sampling_overflow_terminal",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/session/turn.rs:1033-1035,367-378"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/overflow_terminal.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. Mock provider returned context_length_exceeded response.failed event. Codex logged context window exceeded and exited with code 1 without attempting compaction, confirming terminal overflow per codex-rs/core/src/session/turn.rs:1173-1175."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Process huge input file."
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "overflow",
+    "native_settings": {}
+  },
+  "expect": {
+    "failure": {
+      "kind": "ContextWindowExceeded",
+      "message": "Context window exceeded during sampling; terminal overflow"
+    }
+  }
+}

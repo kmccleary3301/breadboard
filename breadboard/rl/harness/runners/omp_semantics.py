@@ -568,6 +568,7 @@ class OMPSemanticsState:
         case_id: str | None = None,
         capability_denials: Mapping[str, Mapping[str, Any]] | None = None,
         cwd: str | None = None,
+        current_date: str | None = None,
     ) -> None:
         if request_cap <= 0:
             raise ValueError("request_cap must be positive")
@@ -577,6 +578,8 @@ class OMPSemanticsState:
         self.request_cap = request_cap
         self.worker = worker
         self.cwd = cwd
+        # Worker-observed stock date (formatLocalCalendarDate of the admitted instant).
+        self.current_date = current_date
         self.case_id = case_id
         self.capability_denials = {
             str(key): dict(value)
@@ -598,6 +601,14 @@ class OMPSemanticsState:
     def is_exited(self) -> bool:
         return self.exit_status is not None
 
+    def resume_after_compaction(self, continuation_messages: Sequence[Mapping[str, Any]]) -> None:
+        if self._closed:
+            raise OMPPhaseError("resume after close")
+        self.exit_status = None
+        self.native_stop_reason = None
+        self._pending_finish_reason = None
+        self.messages.extend(dict(m) for m in continuation_messages)
+
     def begin_query(self) -> dict[str, Any] | None:
         if self._closed:
             raise OMPPhaseError("query after close")
@@ -610,7 +621,6 @@ class OMPSemanticsState:
             self.messages.append(refusal)
             return refusal
         return None
-
     def project_request(self) -> dict[str, Any]:
         messages = [{"role": "system", "content": self.system_prompt}, *self.messages]
         return {"kind": "request", "messages": messages, "tools": [dict(schema) for schema in self.tool_schemas]}
@@ -639,14 +649,16 @@ class OMPSemanticsState:
             return str(exc)
         return None
 
-    def prepare_response(self, response: NativeProviderResponse) -> OMPResponseResult:
+    def prepare_response(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> OMPResponseResult:
         if not isinstance(response, NativeProviderResponse):
             raise TypeError("response must be NativeProviderResponse")
         if self.stream_fn_issued <= self.request_count:
             raise OMPPhaseError("response has no admitted provider query")
         self.request_count += 1
         if response.stream_termination is not None:
-            return self._prepare_terminated_stream(response)
+            return self._prepare_terminated_stream(response, usage=usage)
         if response.raw_response is None:
             self.native_responses.append({"finish_reason": response.finish_reason})
         else:
@@ -688,6 +700,10 @@ class OMPSemanticsState:
             "content": blocks,
             "stopReason": finish_reason,
         }
+        if usage is not None:
+            # Conductor supplies stock parseChunkUsage output, not raw provider
+            # usage (openai-completions.ts:1858-1906).
+            assistant["usage"] = _thaw_native_wire(usage)
         self.messages.append(assistant)
         self._pending_finish_reason = finish_reason
         if not calls:
@@ -758,7 +774,9 @@ class OMPSemanticsState:
             synthetic_results=tuple(synthetic_results),
         )
 
-    def _prepare_terminated_stream(self, response: NativeProviderResponse) -> OMPResponseResult:
+    def _prepare_terminated_stream(
+        self, response: NativeProviderResponse, *, usage: Mapping[str, Any] | None = None,
+    ) -> OMPResponseResult:
         """Pinned error stop for a stream that ended without a finish_reason.
 
         openai-completions.ts:1227-1290 opens a block for non-empty text or any
@@ -797,6 +815,8 @@ class OMPSemanticsState:
             for call in calls
         )
         assistant: dict[str, Any] = {"role": "assistant", "content": blocks, "stopReason": "error"}
+        if usage is not None:
+            assistant["usage"] = _thaw_native_wire(usage)
         self.messages.append(assistant)
         self._pending_finish_reason = "error"
         self.recovery.accept_turn(assistant)
@@ -964,6 +984,11 @@ class OMPSemanticsState:
             "native_stop_reason": self.native_stop_reason,
         }
         request_bodies = [dict(body) for body in requests]
+        recorded_inputs = dict(runtime_inputs)
+        if self.current_date is not None:
+            if "current_date" in recorded_inputs:
+                raise ValueError("current_date is observed at initialize, not declared")
+            recorded_inputs["current_date"] = self.current_date
         return {
             "schema_version": "bb.e4.omp-replay-trace.v1",
             "profile": "omp",
@@ -971,7 +996,7 @@ class OMPSemanticsState:
             "case_id": self.case_id,
             "request_count": len(request_bodies),
             "requests": request_bodies,
-            "runtime_inputs": dict(runtime_inputs),
+            "runtime_inputs": recorded_inputs,
             "effects": dict(effects),
             "native_responses": [dict(response) for response in self.native_responses],
             "exit": termination,

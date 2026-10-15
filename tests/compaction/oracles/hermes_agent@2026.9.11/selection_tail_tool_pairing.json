@@ -1,0 +1,76 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "hermes_agent@2026.9.11",
+  "case": "selection_tail_tool_pairing",
+  "source": {
+    "repo": "https://github.com/NousResearch/hermes-agent.git",
+    "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+    "evidence": [
+      "agent/context_compressor.py:3938-3946"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_hermes.py",
+    "notes": "Executed _compress_window on the complete paired transcript, including both boundary alignments."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "system",
+        "content": "sys"
+      },
+      {
+        "role": "user",
+        "content": "U1"
+      },
+      {
+        "role": "assistant",
+        "content": "calling",
+        "tool_calls": [
+          {
+            "id": "c1",
+            "type": "function",
+            "function": {
+              "name": "test",
+              "arguments": "{}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "c1",
+        "content": "res1"
+      },
+      {
+        "role": "assistant",
+        "content": "A1"
+      },
+      {
+        "role": "user",
+        "content": "U2"
+      },
+      {
+        "role": "assistant",
+        "content": "A2"
+      }
+    ],
+    "usage": null,
+    "context_window": 128000,
+    "max_input_tokens": null,
+    "max_output_tokens": 16000,
+    "reason": "threshold",
+    "native_settings": {
+      "protect_first_n": 1
+    },
+    "summary_responses": [],
+    "stage": "summary"
+  },
+  "expect": {
+    "selection": {
+      "prefix_end": 2,
+      "first_kept_index": 4
+    }
+  }
+}

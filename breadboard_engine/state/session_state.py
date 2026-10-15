@@ -17,6 +17,7 @@ from dataclasses import asdict
 from ..runtime.reasoning_trace_store import ReasoningTraceStore
 from breadboard.product.runtime.events import CompactionSnapshot
 from ..ctrees.store import CTreeStore
+from ..execution.stock_tools import native_concurrent_prompts
 from ..monitoring.reward_metrics import RewardMetricsRecorder, RewardMetricsRecord
 from ..provider.ir import (
     IRConversation,
@@ -26,6 +27,7 @@ from ..provider.ir import (
 )
 from ..orchestration.coordination import build_coordination_inspection_snapshot
 from ..todo.projection import project_store_snapshot_to_tui_envelope
+from ..compaction.state import NATIVE_MARKER_KEY, CompactionState
 
 def _utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
@@ -198,6 +200,23 @@ class SessionState:
         self._provider_messages_before_last_send: Optional[
             List[Dict[str, Any]]
         ] = None
+        self._compaction_state = CompactionState()
+
+    @property
+    def compaction_state(self) -> CompactionState:
+        with self._compaction_lock:
+            return self._compaction_state
+
+    @compaction_state.setter
+    def compaction_state(self, state: CompactionState) -> None:
+        with self._compaction_lock:
+            if not isinstance(state, CompactionState):
+                raise TypeError("compaction_state must be a CompactionState")
+            self._compaction_state = state
+
+    def reset_compaction_state(self) -> None:
+        with self._compaction_lock:
+            self._compaction_state = CompactionState(provider_usage_fresh=False)
 
     def set_event_emitter(
         self,
@@ -349,6 +368,11 @@ class SessionState:
         event_name = str(event_type or "")
         if event_name in CANONICAL_KERNEL_EVENT_TYPES:
             meta = dict(CANONICAL_KERNEL_EVENT_TYPES[event_name])
+            if event_name == "user_message" and (
+                native_concurrent_prompts(self.config)
+                and self.provider_metadata.get("opencode_stock_turn_origin") is not None
+            ):
+                meta["actor"] = "engine"
             meta["classification"] = "canonical"
             return meta
         if event_name in PROJECTION_ONLY_RUNTIME_EVENT_TYPES:
@@ -558,9 +582,17 @@ class SessionState:
             self._provider_messages_before_last_send = copy.deepcopy(
                 self.provider_messages
             )
+            self._compaction_records_at_last_send = len(self.compaction_state.records)
 
     def final_provider_context(self) -> List[Dict[str, Any]]:
         with self._compaction_lock:
+            if len(self.compaction_state.records) > getattr(self, "_compaction_records_at_last_send", 0) or any(
+                NATIVE_MARKER_KEY in message for message in self._last_sent_provider_messages or ()
+            ):
+                # A response-end edit is newer than the last transmitted view, or that
+                # view carries a native payload only its own route can replay.
+                # Persist the portable ledger projection instead.
+                return copy.deepcopy(self.compaction_state.project(self.provider_messages, None))
             if (
                 self._last_sent_provider_messages is None
                 or self._provider_messages_before_last_send is None
@@ -745,6 +777,11 @@ class SessionState:
         if role == "user":
             emitted_message = dict(message)
             emitted_message["content"] = _sanitize_user_visible_content(message.get("content"))
+            stock_origin = self.provider_metadata.get("opencode_stock_turn_origin")
+            if native_concurrent_prompts(self.config) and stock_origin is not None:
+                # Provenance belongs to the transcript/event copy, never the
+                # closed semantic message used by ProviderRequest.
+                emitted_message["source"] = copy.deepcopy(stock_origin)
 
         payload = {"message": emitted_message}
 
@@ -770,7 +807,10 @@ class SessionState:
                         if isinstance(call, dict):
                             self._emit_event("tool_call", {"call": call}, turn=turn_hint)
         elif role == "user":
-            if _is_internal_user_message(message.get("content")):
+            if _is_internal_user_message(message.get("content")) and not (
+                native_concurrent_prompts(self.config)
+                and self.provider_metadata.get("opencode_stock_turn_origin") is not None
+            ):
                 return
             emit_now = (not to_provider) or (not self._turn_user_emitted)
             if emit_now:
@@ -1136,6 +1176,15 @@ class SessionState:
     def get_provider_metadata(self, key: str, default: Any = None) -> Any:
         return self.provider_metadata.get(key, default)
 
+    def commit_provider_usage(self, usage: Any) -> None:
+        """Commit usage published by the successful normal provider request."""
+        with self._compaction_lock:
+            self.set_provider_metadata("usage", usage)
+            records_at_send = getattr(self, "_compaction_records_at_last_send", None)
+            if records_at_send == len(self.compaction_state.records):
+                self.compaction_state.provider_usage_fresh = True
+
+
     def record_provider_exchange(self, exchange: Dict[str, Any]) -> None:
         """Atomically retain every provider exchange and project the latest one."""
 
@@ -1233,6 +1282,16 @@ class SessionState:
                 "model": model,
                 "messages": copy.deepcopy(self.messages),
                 "provider_messages": copy.deepcopy(self.provider_messages),
+                **(
+                    {"provider_usage_fresh": self.compaction_state.provider_usage_fresh}
+                    if self.get_provider_metadata("usage")
+                    else {}
+                ),
+                **(
+                    {"compaction_state": self.compaction_state.to_list()}
+                    if self.compaction_state.records
+                    else {}
+                ),
                 "transcript": copy.deepcopy(self.transcript),
                 "diff": copy.deepcopy(diff or {"ok": False, "data": {"diff": ""}}),
                 "debug_info": copy.deepcopy(self.get_debug_info()),

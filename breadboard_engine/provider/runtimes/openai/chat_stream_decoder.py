@@ -19,6 +19,7 @@ from ...native_response import (
     NativeStreamTermination,
     NativeToolCall,
 )
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from ...sdk_bindings import provider_sdk_bindings
 
@@ -207,6 +208,7 @@ class OpenAIChatStreamDecoder:
                 redaction.safe_exception_message(exc),
                 kind=kind,
                 output_emitted=state.output_emitted,
+                details=provider_overflow_details(exc),
             ) from None
     def native_stream(
         self,
@@ -321,6 +323,7 @@ class OpenAIChatStreamDecoder:
                 redaction.safe_exception_message(exc),
                 kind=kind,
                 output_emitted=state.output_emitted,
+                details=provider_overflow_details(exc),
             ) from None
 
     def native_response(
@@ -674,7 +677,11 @@ class OpenAIChatStreamDecoder:
             )
             # Native consumers receive the SDK HTTP status and body so a
             # source profile can project its own pinned failure message.
-            details = _native_http_status_details(exc) if native else None
+            details = (
+                _native_http_status_details(exc)
+                if native
+                else provider_overflow_details(exc)
+            )
             raise ProviderRuntimeError(
                 redaction.safe_exception_message(exc), kind=kind, details=details
             ) from None

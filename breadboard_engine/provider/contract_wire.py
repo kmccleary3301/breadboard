@@ -104,6 +104,7 @@ _EVENT_INPUT_FIELDS = {
             "arguments",
             "parsed_arguments",
             "arguments_parsed",
+            "raw_arguments",
         }
     ),
 }
@@ -258,7 +259,14 @@ def _validate_canonical_argument_pair(
     arguments: Any,
     *,
     field_name: str,
+    raw_arguments: Optional[str] = None,
 ) -> None:
+    if raw_arguments is not None:
+        if not isinstance(raw_arguments, str) or len(raw_arguments) > 65536:
+            raise ProviderContractError(f"{field_name} requires bounded raw_arguments")
+        if arguments_json is not None or arguments is not None:
+            raise ProviderContractError(f"{field_name} raw_arguments cannot include parsed JSON arguments")
+        return
     parsed = parse_canonical_json(arguments_json)
     _validate_interoperable_json_numbers(
         parsed, field_name=f"{field_name}.arguments_json"
@@ -303,6 +311,7 @@ def _validate_content_wire(value: Any, *, field_name: str) -> None:
                 block.get("arguments_json"),
                 block.get("arguments"),
                 field_name=block_path,
+                raw_arguments=block.get("raw_arguments"),
             )
         elif block.get("type") == "provider_replay":
             _validate_provider_replay_wire(block, field_name=block_path)
@@ -330,6 +339,7 @@ def _validate_exchange_wire_semantics(value: Mapping[str, Any]) -> None:
                     event.get("arguments_json"),
                     event.get("arguments"),
                     field_name=f"events[{index}]",
+                    raw_arguments=event.get("raw_arguments"),
                 )
     terminal = value.get("terminal")
     if not isinstance(terminal, Mapping):

@@ -35,9 +35,11 @@ from ....compilation.provider_response import (
 )
 from ...model_role_options import openai_chat_role_options
 from ...sdk_bindings import provider_sdk_bindings
+from ....compaction.overflow import provider_overflow_details
 from ....security import redaction
 from .streaming import OpenAIBaseRuntime
 from .chat_stream_decoder import OpenAIChatStreamDecoder
+from .native_chat_wire import admitted_native_request, create_chat_client, native_chat_wire_scope
 
 
 class _ConnectionSockets:
@@ -104,6 +106,9 @@ class _ProfileClient:
 class OpenAIChatRuntime(OpenAIBaseRuntime):
     """Runtime for OpenAI Chat Completions API."""
 
+    def _create_sdk_client(self, **kwargs) -> Any:
+        return create_chat_client(provider_sdk_bindings.openai, **kwargs)
+
     def create_client(
         self,
         api_key: str,
@@ -125,7 +130,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                 kwargs["timeout"] = float(timeout_env)
             except ValueError:
                 pass
-        return provider_sdk_bindings.openai(**kwargs)
+        return self._create_sdk_client(**kwargs)
 
     def create_client_from_profile(
         self,
@@ -176,7 +181,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     "max_retries": 0,
                     "timeout": effective_timeout,
                 }
-                transport = provider_sdk_bindings.openai(**kwargs)
+                transport = self._create_sdk_client(**kwargs)
             except Exception as exc:
                 if http_client is not None:
                     http_client.close()
@@ -397,6 +402,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             if omit_stream
             else profile_request
         )
+        sent_request, native_wire_body = admitted_native_request(context, profile, sent_request)
         request_digest = hashlib.sha256(
             canonical_json(sent_request).encode("utf-8")
         ).hexdigest()
@@ -418,7 +424,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
         if chat_template_kwargs is not None:
             extra_body_fields["chat_template_kwargs"] = chat_template_kwargs
         extra_body = extra_body_fields or None
-        with redaction.secret_value_scope(
+        with native_chat_wire_scope(native_wire_body), redaction.secret_value_scope(
             profile.scoped_credential,
             *profile.caller_headers.values(),
             allow_short=True,
@@ -487,6 +493,7 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     raise ProviderRuntimeError(
                         redaction.safe_exception_message(exc),
                         kind=kind,
+                        details=provider_overflow_details(exc),
                     ) from None
                 response = OpenAIChatStreamDecoder(self).native_response(
                     raw_response,
@@ -582,6 +589,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
             # and Pi 0.57.1's buildParams emits none under custody compat
             # supportsStore=false (openai-completions.js:307-309).
             request["store"] = False
+        if "tool_choice" in context.extra:
+            if context.extra["tool_choice"] is None:
+                request.pop("tool_choice", None)
+            else:
+                request["tool_choice"] = context.extra["tool_choice"]
         return request
 
     def _unbound_request_options(
@@ -754,7 +766,11 @@ class OpenAIChatRuntime(OpenAIBaseRuntime):
                     if isinstance(exc, (AttributeError, TypeError))
                     else "provider"
                 )
-                raise ProviderRuntimeError(redaction.safe_exception_message(exc), kind=kind) from None
+                raise ProviderRuntimeError(
+                    redaction.safe_exception_message(exc),
+                    kind=kind,
+                    details=provider_overflow_details(exc),
+                ) from None
 
         if self._non_null_unknown_fields(
             response,

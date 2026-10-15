@@ -1,0 +1,98 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: session_list
+name: session_list
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: 'List all OpenCode sessions with optional filtering.
+
+
+  Returns a list of available session IDs with metadata including message count, date range, and agents used.
+
+
+  Arguments:
+
+  - limit (optional): Maximum number of sessions to return
+
+  - from_date (optional): Filter sessions from this date (ISO 8601 format)
+
+  - to_date (optional): Filter sessions until this date (ISO 8601 format)
+
+
+  Example output:
+
+  | Session ID | Messages | First | Last | Agents |
+
+  |------------|----------|-------|------|--------|
+
+  | ses_abc123 | 45 | 2025-12-20 | 2025-12-24 | build, oracle |
+
+  | ses_def456 | 12 | 2025-12-19 | 2025-12-19 | build |'
+parameters:
+- name: limit
+  required: false
+  schema: &id001
+    type: number
+  type: number
+- name: from_date
+  required: false
+  schema: &id002
+    type: string
+  type: string
+- name: to_date
+  required: false
+  schema: &id003
+    type: string
+  type: string
+- name: project_path
+  required: false
+  schema: &id004
+    type: string
+  type: string
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: session_list
+      description: 'List all OpenCode sessions with optional filtering.
+
+
+        Returns a list of available session IDs with metadata including message count, date range, and agents used.
+
+
+        Arguments:
+
+        - limit (optional): Maximum number of sessions to return
+
+        - from_date (optional): Filter sessions from this date (ISO 8601 format)
+
+        - to_date (optional): Filter sessions until this date (ISO 8601 format)
+
+
+        Example output:
+
+        | Session ID | Messages | First | Last | Agents |
+
+        |------------|----------|-------|------|--------|
+
+        | ses_abc123 | 45 | 2025-12-20 | 2025-12-24 | build, oracle |
+
+        | ses_def456 | 12 | 2025-12-19 | 2025-12-19 | build |'
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          limit: *id001
+          from_date: *id002
+          to_date: *id003
+          project_path: *id004
+        additionalProperties: false
+      strict: false

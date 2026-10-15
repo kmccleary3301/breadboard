@@ -29,11 +29,27 @@ OMP_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v18.1.17"
 OMP_16_2_13_RESPONSE_CONSUMER_ID: Final = "breadboard.oh-my-pi.v16.2.13"
 OPENHANDS_RESPONSE_CONSUMER_ID: Final = "breadboard.openhands-sdk.v1.47.0"
 HERMES_RESPONSE_CONSUMER_ID: Final = "breadboard.hermes-agent.v2026.9.11"
-NATIVE_CHAT_RESPONSE_TARGETS: Final = MappingProxyType({
-    OPENHANDS_RESPONSE_CONSUMER_ID: "openhands-sdk@1.47.0",
-    HERMES_RESPONSE_CONSUMER_ID: "hermes-agent@2026.9.11",
+NATIVE_CHAT_RESPONSE_CONSUMERS: Final = frozenset({
+    OPENHANDS_RESPONSE_CONSUMER_ID,
+    HERMES_RESPONSE_CONSUMER_ID,
 })
 OPENCLAW_RESPONSE_CONSUMER_ID: Final = "breadboard.openclaw.native-chat.v1"
+NATIVE_TARGET_IDS: Final[MappingProxyType[str, frozenset[str]]] = MappingProxyType({
+    MINI_RESPONSE_CONSUMER_ID: frozenset({"mini-swe-agent@2.4.6"}),
+    PI_RESPONSE_CONSUMER_ID: frozenset({"pi@0.73.1", "pi-r2@0.73.1", "pi-r3@0.73.1", "pi-r4@0.73.1"}),
+    PI_0_57_1_RESPONSE_CONSUMER_ID: frozenset({"pi-r3@0.57.1", "pi-r4@0.57.1", "pi-r5@0.57.1"}),
+    OMP_RESPONSE_CONSUMER_ID: frozenset({"oh-my-pi@18.1.17", "oh-my-pi-r2@18.1.17", "oh-my-pi-r3@18.1.17"}),
+    OMP_16_2_13_RESPONSE_CONSUMER_ID: frozenset({
+        "oh-my-pi-r2@16.2.13", "oh-my-pi-r3@16.2.13", "oh-my-pi-r4@16.2.13",
+    }),
+    OPENHANDS_RESPONSE_CONSUMER_ID: frozenset({"openhands-sdk@1.47.0"}),
+    HERMES_RESPONSE_CONSUMER_ID: frozenset({
+        "hermes-agent@2026.9.11", "hermes-agent-r2@2026.9.11", "hermes-agent-r3@2026.9.11",
+    }),
+    OPENCLAW_RESPONSE_CONSUMER_ID: frozenset({
+        "openclaw@2026.9.4", "openclaw-r2@2026.9.4", "openclaw-r3@2026.9.4",
+    }),
+})
 NATIVE_RESPONSE_BINDING_SCHEMA_VERSION: Final = "bb.provider_native_response_binding.v1"
 MAX_NATIVE_RESPONSE_BYTES: Final = 16 * 1024 * 1024
 MAX_NATIVE_STREAM_FRAGMENTS: Final = 65_536
@@ -389,7 +405,7 @@ def admit_native_response_binding(
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != "pi@0.73.1"
+            or target.get("target_id") not in NATIVE_TARGET_IDS[PI_RESPONSE_CONSUMER_ID]
             or target.get("renderer_id") != PI_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or effective_mode != "streaming"
@@ -410,7 +426,7 @@ def admit_native_response_binding(
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != "pi-r3@0.57.1"
+            or target.get("target_id") not in NATIVE_TARGET_IDS[PI_0_57_1_RESPONSE_CONSUMER_ID]
             or target.get("renderer_id") != PI_0_57_1_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or effective_mode != "streaming"
@@ -425,7 +441,7 @@ def admit_native_response_binding(
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != "oh-my-pi@18.1.17"
+            or target.get("target_id") not in NATIVE_TARGET_IDS[OMP_RESPONSE_CONSUMER_ID]
             or target.get("renderer_id") != OMP_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or target.get("rendered_prompt_digest") is not None
@@ -446,7 +462,7 @@ def admit_native_response_binding(
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != "oh-my-pi-r2@16.2.13"
+            or target.get("target_id") not in NATIVE_TARGET_IDS[OMP_16_2_13_RESPONSE_CONSUMER_ID]
             or target.get("renderer_id") != OMP_16_2_13_RESPONSE_CONSUMER_ID
             or not isinstance(target.get("runtime_profile"), Mapping)
             or not isinstance(target["runtime_profile"].get("request_policy"), Mapping)
@@ -475,12 +491,12 @@ def admit_native_response_binding(
             raise NativeResponseBindingError(
                 "Oh My Pi 16.2.13 native response requires its compiled source profile"
             )
-    elif policy.consumer_id in NATIVE_CHAT_RESPONSE_TARGETS:
+    elif policy.consumer_id in NATIVE_CHAT_RESPONSE_CONSUMERS:
         # Sampling identity and source SDK wire-field presence remain distinct.
         if (
             not isinstance(target, Mapping)
             or target.get("version") != 3
-            or target.get("target_id") != NATIVE_CHAT_RESPONSE_TARGETS[policy.consumer_id]
+            or target.get("target_id") not in NATIVE_TARGET_IDS[policy.consumer_id]
             or target.get("renderer_id") != policy.consumer_id
             or not isinstance(target.get("runtime_profile"), Mapping)
             or target.get("rendered_prompt_digest") is not None
@@ -530,7 +546,8 @@ __all__ = [
     "OMP_16_2_13_RESPONSE_CONSUMER_ID",
     "OPENHANDS_RESPONSE_CONSUMER_ID",
     "HERMES_RESPONSE_CONSUMER_ID",
-    "NATIVE_CHAT_RESPONSE_TARGETS",
+    "NATIVE_CHAT_RESPONSE_CONSUMERS",
+    "NATIVE_TARGET_IDS",
     "OPENCLAW_RESPONSE_CONSUMER_ID",
     "NATIVE_RESPONSE_POLICY_SCHEMA_VERSION",
     "NativeResponseBindingError",

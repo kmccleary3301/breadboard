@@ -1,0 +1,14 @@
+{
+  "schema_version": "bb.hermes-fixture-provenance.v1",
+  "license": "LICENSE.txt",
+  "scope": "original synthetic fixture files only",
+  "source": "accepted issue14 Hermes profile materialization",
+  "supplier_source": false,
+  "breadboard_source": false,
+  "files": [
+    "fixtures/MEMORY.md",
+    "fixtures/USER.md",
+    "fixtures/fixture-code-style/SKILL.md",
+    "fixtures/fixture-code-style/references/assertions.md"
+  ]
+}

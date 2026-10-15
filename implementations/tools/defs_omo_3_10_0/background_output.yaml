@@ -1,0 +1,87 @@
+# Pinned stock OpenCode 1.2.17 registry; plugin 5137df72.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: background_output
+name: background_output
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: Get output from background task. Use full_session=true to fetch session messages with filters. System
+  notifies on completion, so block=true rarely needed. - Timeout values are in milliseconds (ms), NOT seconds.
+parameters:
+- name: task_id
+  required: true
+  schema: &id001
+    type: string
+  type: string
+- name: block
+  required: false
+  schema: &id002
+    type: boolean
+  type: boolean
+- name: timeout
+  required: false
+  schema: &id003
+    type: number
+  type: number
+- name: full_session
+  required: false
+  schema: &id004
+    type: boolean
+  type: boolean
+- name: include_thinking
+  required: false
+  schema: &id005
+    type: boolean
+  type: boolean
+- name: message_limit
+  required: false
+  schema: &id006
+    type: number
+  type: number
+- name: since_message_id
+  required: false
+  schema: &id007
+    type: string
+  type: string
+- name: include_tool_results
+  required: false
+  schema: &id008
+    type: boolean
+  type: boolean
+- name: thinking_max_chars
+  required: false
+  schema: &id009
+    type: number
+  type: number
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: background_output
+      description: Get output from background task. Use full_session=true to fetch session messages with filters.
+        System notifies on completion, so block=true rarely needed. - Timeout values are in milliseconds (ms), NOT
+        seconds.
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          task_id: *id001
+          block: *id002
+          timeout: *id003
+          full_session: *id004
+          include_thinking: *id005
+          message_limit: *id006
+          since_message_id: *id007
+          include_tool_results: *id008
+          thinking_max_chars: *id009
+        required:
+        - task_id
+        additionalProperties: false
+      strict: false

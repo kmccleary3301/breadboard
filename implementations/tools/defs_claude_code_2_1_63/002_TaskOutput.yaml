@@ -1,0 +1,89 @@
+{
+  "id": "claude_code_2_1_63.TaskOutput",
+  "name": "TaskOutput",
+  "description": "- Retrieves output from a running or completed task (background shell, agent, or remote session)\n- Takes a task_id parameter identifying the task\n- Returns the task output along with status information\n- Use block=true (default) to wait for task completion\n- Use block=false for non-blocking check of current status\n- Task IDs can be found using the /tasks command\n- Works with all task types: background shells, async agents, and remote sessions",
+  "type_id": "python",
+  "syntax_formats_supported": [
+    "native_function_calling"
+  ],
+  "preferred_formats": [
+    "native_function_calling"
+  ],
+  "parameters": [
+    {
+      "name": "task_id",
+      "required": true,
+      "type": "string",
+      "description": "The task ID to get output from",
+      "schema": {
+        "description": "The task ID to get output from",
+        "type": "string"
+      }
+    },
+    {
+      "name": "block",
+      "required": true,
+      "type": "boolean",
+      "description": "Whether to wait for completion",
+      "schema": {
+        "description": "Whether to wait for completion",
+        "default": true,
+        "type": "boolean"
+      }
+    },
+    {
+      "name": "timeout",
+      "required": true,
+      "type": "number",
+      "description": "Max wait time in ms",
+      "schema": {
+        "description": "Max wait time in ms",
+        "default": 30000,
+        "type": "number",
+        "minimum": 0,
+        "maximum": 600000
+      }
+    }
+  ],
+  "execution": {
+    "blocking": false,
+    "native_semantics": "claude_code_2_1_63"
+  },
+  "provider_routing": {
+    "anthropic": {
+      "native_primary": true,
+      "messages_tool_schema": {
+        "name": "TaskOutput",
+        "description": "- Retrieves output from a running or completed task (background shell, agent, or remote session)\n- Takes a task_id parameter identifying the task\n- Returns the task output along with status information\n- Use block=true (default) to wait for task completion\n- Use block=false for non-blocking check of current status\n- Task IDs can be found using the /tasks command\n- Works with all task types: background shells, async agents, and remote sessions",
+        "input_schema": {
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "task_id": {
+              "description": "The task ID to get output from",
+              "type": "string"
+            },
+            "block": {
+              "description": "Whether to wait for completion",
+              "default": true,
+              "type": "boolean"
+            },
+            "timeout": {
+              "description": "Max wait time in ms",
+              "default": 30000,
+              "type": "number",
+              "minimum": 0,
+              "maximum": 600000
+            }
+          },
+          "required": [
+            "task_id",
+            "block",
+            "timeout"
+          ],
+          "additionalProperties": false
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,198 @@
+"""Whole-history replacement, retained user text, and latest-call protection."""
+from __future__ import annotations
+
+from typing import Any, Mapping
+
+from ..methods import CompactionContext, MethodUnavailable
+from ..params import Params
+from .accounting import normalize_usage, _usage_total, rounded_text_tokens
+from .byte_estimator import text_tokens
+from .selectors import Selection
+from .triggers import build_limit
+from .native_retention import truncate_middle
+from .context_markers import contextual_user, marker_pairs, sampling_phases
+from .protected_windows import visible_messages
+
+from ..transcript import result_call_ids, result_text
+
+
+
+
+class WholeHistory:
+    kind = "whole_history"
+
+    def __init__(self, params: Params) -> None:
+        self.exclude_latest_user_on = params.list("exclude_latest_user_on", [])
+        self.replay_min_users = params.int("replay_min_users", 1, minimum=1)
+        self.replay_prefix_only = params.bool("replay_prefix_only", False)
+        self.exclude_compaction_users = params.bool("exclude_compaction_users", False)
+        params.done()
+
+    def select(self, context: CompactionContext) -> Selection:
+        start = context.state.kept_start(context.messages)
+        end = len(context.messages)
+        replay = ()
+        if context.reason in self.exclude_latest_user_on:
+            users = [
+                i for i in range(start, end) if context.messages[i].get("role") == "user"
+                and not (self.exclude_compaction_users and context.messages[i].get("compaction"))
+            ]
+            if len(users) >= self.replay_min_users:
+                replay = (users[-1],)
+                if self.replay_prefix_only:
+                    end = users[-1]
+        return Selection(first_kept_index=len(context.messages), summarize=tuple(i for i in range(start, end) if i not in replay), replay=replay)
+
+
+class UserMessagesBudget:
+    kind = "user_messages_budget"
+
+    def __init__(self, params: Params) -> None:
+        self.budget = params.int("budget", minimum=0)
+        from .reducers import resolve_prompt
+        self.exclude_prefix = resolve_prompt(params.value("exclude_prefix", ""), params, "exclude_prefix")
+        self.features = params.list("features", [])
+        self.native_feature = params.str("native_feature", None)
+        self.exclude_context_user_markers = marker_pairs(params, "exclude_context_user_markers")
+        self.exclude_pending_user_on = sampling_phases(params, "exclude_pending_user_on")
+        params.done()
+
+    def select(self, context: CompactionContext) -> Selection:
+        native = self.native_feature is not None and self.native_feature in self.features
+        remaining = self.budget
+        retained = []
+        replay = []
+        start = context.state.kept_start(context.messages)
+        if native:
+            return Selection(
+                first_kept_index=len(context.messages),
+                replay=tuple(i for i in range(start, len(context.messages)) if context.messages[i].get("role") == "user"),
+                details={"native": True},
+            )
+        end = len(context.messages)
+        if context.sampling_phase in self.exclude_pending_user_on:
+            if context.pending_user_index is None:
+                raise ValueError("Compaction sampling phase requires the pending user boundary")
+            end = context.pending_user_index
+        boundary = context.state.latest_boundary()
+        previous = boundary.native.items if boundary is not None and boundary.native is not None else (
+            boundary.summary_messages if boundary is not None else ()
+        )
+        candidates = [(None, m) for m in previous] + list(enumerate(visible_messages(context)[start:end], start))
+        for index, message in reversed(candidates):
+            if message.get("role") != "user":
+                continue
+            if contextual_user(message, self.exclude_context_user_markers):
+                continue
+            content = message.get("content")
+            text = content if isinstance(content, str) else "".join(
+                p["text"] for p in content or () if p.get("type") in {"text", "input_text"}
+            )
+            if self.exclude_prefix and text.startswith(self.exclude_prefix + "\n"):
+                continue
+            if remaining == 0:
+                break
+            cost = text_tokens(text)
+            item = {"role": "user", "content": text}
+            truncated = cost > remaining
+            if truncated:
+                item["content"] = truncate_middle(text, remaining)
+            retained.append(item)
+            if index is not None:
+                replay.append(index)
+            remaining = max(0, remaining - cost)
+            if truncated:
+                break
+        retained.reverse()
+        replay.reverse()
+        return Selection(first_kept_index=end, summarize=tuple(range(start, end)),
+                         replay=tuple(replay), details={"retained_messages": tuple(retained)})
+
+def _result_texts_by_call_id(message: Mapping[str, Any]) -> dict[str, str]:
+    call_ids = result_call_ids(message)
+    if not call_ids:
+        return {}
+    content = message.get("content")
+    call_id = message.get("tool_call_id")
+    if isinstance(call_id, str):
+        return {call_id: result_text(content)}
+
+    texts = {}
+    if isinstance(content, list):
+        for part in content:
+            if not isinstance(part, Mapping):
+                continue
+            if part.get("type") == "tool_result":
+                call_id = part.get("call_id")
+                if isinstance(call_id, str):
+                    texts[call_id] = result_text(part.get("content"))
+            elif part.get("type") == "provider_replay":
+                payload = part.get("payload")
+                call_id = payload.get("call_id") if isinstance(payload, Mapping) else None
+                if isinstance(call_id, str):
+                    texts[call_id] = result_text([part])
+    if not texts and len(call_ids) == 1:
+        texts[call_ids[0]] = result_text(content)
+    return texts
+
+
+class LatestToolOutputs:
+    kind = "latest_tool_outputs"
+
+    def __init__(self, params: Params) -> None:
+        self.keep_latest_calls = params.int("keep_latest_calls", minimum=0)
+        self.residual_target = params.int("residual_target", minimum=0)
+        self.min_savings = params.int("min_savings", minimum=0)
+        self.warning_delta = params.int("warning_delta", minimum=0)
+        self.eligible_tools = params.list("eligible_tools")
+        self.disabled = params.bool("disabled", False)
+        self.limit = build_limit(params.child(params.mapping("limit"), "limit"))
+        self.auto_compact_enabled = params.bool("auto_compact_enabled", True)
+        self.disabled_auto_limit = build_limit(params.child(params.mapping("disabled_auto_limit"), "disabled_auto_limit"))
+        params.done()
+
+    def select(self, context: CompactionContext) -> Selection:
+        if self.disabled:
+            raise MethodUnavailable("Tool-output masking disabled")
+        start = context.state.kept_start(context.messages, context.target)
+        calls = []
+        results = {}
+        edits = {e.index: e.message for r in context.state.records for e in r.edits}
+        for index in range(start, len(context.messages)):
+            message = edits.get(index, context.messages[index])
+            for call in message.get("tool_calls") or ():
+                function = call.get("function", call)
+                if function.get("name") in self.eligible_tools:
+                    calls.append(call["id"])
+            result_texts = _result_texts_by_call_id(message)
+            for call_id in result_call_ids(message):
+                text = result_texts.get(call_id, "")
+                if call_id and not text.startswith(("<persisted-output>", "[Old tool result content cleared]")):
+                    results[call_id] = (index, rounded_text_tokens(text))
+        eligible = [c for c in calls if c in results]
+        total = sum(results[c][1] for c in eligible)
+        protected = set(eligible[-self.keep_latest_calls:]) if self.keep_latest_calls else set()
+        selected = []
+        selected_call_ids_by_index = {}
+        saved = 0
+        for call_id in eligible:
+            if call_id not in protected and total - saved > self.residual_target:
+                index, cost = results[call_id]
+                selected.append(index)
+                selected_call_ids_by_index.setdefault(index, []).append(call_id)
+                saved += cost
+        usage = normalize_usage(context.last_usage)
+        limit = self.limit if self.auto_compact_enabled else self.disabled_auto_limit
+        warning = limit.tokens(context.context_window, context.max_output_tokens) - self.warning_delta
+        if not context.usage_fresh or usage is None or _usage_total(usage, "components") < warning or saved < self.min_savings:
+            selected = []
+            selected_call_ids_by_index.clear()
+        if not selected:
+            raise MethodUnavailable("No eligible tool outputs meet warning and savings gates")
+        mask_call_ids_by_index = {}
+        for index, selected_call_ids in selected_call_ids_by_index.items():
+            message = edits.get(index, context.messages[index])
+            if set(selected_call_ids) != set(result_call_ids(message)):
+                mask_call_ids_by_index[str(index)] = tuple(selected_call_ids)
+        details = {"mask_call_ids_by_index": mask_call_ids_by_index} if mask_call_ids_by_index else {}
+        return Selection(targets=tuple(dict.fromkeys(selected)), details=details)

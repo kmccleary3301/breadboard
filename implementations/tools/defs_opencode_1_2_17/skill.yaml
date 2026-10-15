@@ -1,0 +1,40 @@
+# Pinned stock OpenCode 1.2.17 registry; registry.ts:103-124,147-151.
+# Captured stock schema. Runtime stock catalog supplies workspace/skill-dependent text.
+id: skill
+name: skill
+type_id: python
+manipulations: []
+syntax_formats_supported:
+- native_function_calling
+preferred_formats:
+- native_function_calling
+execution:
+  blocking: false
+description: Load a specialized skill that provides domain-specific instructions and workflows. No skills are currently
+  available.
+parameters:
+- name: name
+  required: true
+  schema: &id001
+    description: The name of the skill from available_skills
+    type: string
+  type: string
+  description: The name of the skill from available_skills
+provider_routing:
+  openai:
+    native_primary: true
+    strict: false
+    responses_tool_schema:
+      type: function
+      name: skill
+      description: Load a specialized skill that provides domain-specific instructions and workflows. No skills
+        are currently available.
+      parameters:
+        $schema: https://json-schema.org/draft/2020-12/schema
+        type: object
+        properties:
+          name: *id001
+        required:
+        - name
+        additionalProperties: false
+      strict: false

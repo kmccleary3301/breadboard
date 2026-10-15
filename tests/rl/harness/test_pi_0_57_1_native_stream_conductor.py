@@ -568,8 +568,9 @@ def _upstream_date_time(case: str) -> str:
 
 # --- per-case replay verdicts -------------------------------------------------
 
-BASE_DIVERGENCES = ["sdk_transport_headers", "json_member_order"]
-# D4/D7 named divergences; everything else in each case compares exactly.
+# Native bodies keep the pinned SDK's member order, so only transport headers
+# differ in every case; each case's other named divergences are exact.
+BASE_DIVERGENCES = ["sdk_transport_headers"]
 EXPECTED_DIVERGENCES = {
     "declared__p0_text_stop": BASE_DIVERGENCES,
     "declared__p1_all_tools_sequence": BASE_DIVERGENCES + ["tool_download_attempt", "workspace_regular_files_only"],

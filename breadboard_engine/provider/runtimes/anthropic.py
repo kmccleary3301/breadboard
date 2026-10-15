@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 import re
 import time
 from types import SimpleNamespace
@@ -24,6 +25,7 @@ from ...logging.provider_dump import provider_dump_logger
 from ...security import redaction
 from ..registry import provider_registry
 from ..sdk_bindings import provider_sdk_bindings
+from .claude_messages_wire import claude_wire_scope, create_claude_client
 
 
 class AnthropicMessagesRuntime(ProviderRuntime):
@@ -44,7 +46,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             kwargs["base_url"] = base_url
         if default_headers:
             kwargs["default_headers"] = default_headers
-        return provider_sdk_bindings.anthropic(**kwargs)
+        return create_claude_client(provider_sdk_bindings.anthropic, **kwargs)
 
     def _message_content_to_text(self, content: Any) -> Optional[str]:
         if content is None:
@@ -73,6 +75,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
     ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
         system_parts: List[str] = []
         converted: List[Dict[str, Any]] = []
+        layout_enabled = bool(context and ((context.agent_config.get("provider_tools") or {}).get("anthropic") or {}).get("request_layout"))
+        user_indices: List[int] = []
 
         def text_blocks(content: Any) -> List[Dict[str, Any]]:
             if isinstance(content, str):
@@ -99,29 +103,48 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     blocks.append({"type": "text", "text": text})
                 elif block_type == "media":
                     media = resolve_input_media(block, context)
-                    blocks.append(
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": media.mime,
-                                "data": media.base64_data,
-                            },
-                        }
+                    from ..adapters import AnthropicAdapter
+
+                    source = AnthropicAdapter().to_native_image_source(
+                        media,
+                        context=context,
                     )
+                    blocks.append({"type": "image", "source": source})
+                elif block_type == "thinking" and "text" in block:
+                    if not isinstance(block["text"], str):
+                        raise ProviderContractError("canonical thinking requires text")
+                    blocks.append({"type": "thinking", "thinking": block["text"]})
                 elif block_type in {
                     "image",
                     "document",
                     "thinking",
                     "redacted_thinking",
+                    "compaction",
                 }:
                     blocks.append(dict(block))
-                elif block_type in {"tool_call", "tool_result"}:
+                elif block_type == "tool_call":
                     blocks.append(dict(block))
                 elif block_type == "provider_replay":
-                    raise ProviderContractError(
-                        "Anthropic provider replay requires native replay conversion"
-                    )
+                    if (
+                        block.get("provider_id") != "anthropic"
+                        or block.get("schema_version") != "anthropic.messages.v1"
+                        or block.get("replay_scope") != "same_provider"
+                    ):
+                        raise ProviderContractError("incompatible Anthropic reasoning replay")
+                    payload = block.get("payload")
+                    if not isinstance(payload, dict) or not blocks:
+                        raise ProviderContractError("Anthropic reasoning replay requires its preceding block")
+                    previous = blocks[-1]
+                    if set(payload) == {"signature"}:
+                        signature = payload["signature"]
+                        if previous.get("type") != "thinking" or "signature" in previous or not isinstance(signature, str) or not signature:
+                            raise ProviderContractError("thinking signature requires an unsigned preceding thinking block")
+                        previous["signature"] = signature
+                    elif set(payload) == {"redacted_data"}:
+                        if previous != {"type": "redacted_thinking", "data": payload["redacted_data"]}:
+                            raise ProviderContractError("redacted replay disagrees with its preceding block")
+                    else:
+                        raise ProviderContractError("unsupported Anthropic reasoning replay payload")
                 else:
                     raise ProviderContractError(
                         f"unsupported Anthropic content block: {block_type!r}"
@@ -167,6 +190,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return call
 
         for message in messages:
+            native_info = message.get("bb_native_compaction")
+            if (
+                isinstance(native_info, dict)
+                and native_info.get("provider") == "anthropic"
+                and native_info.get("api") == "messages"
+            ):
+                items = native_info.get("items") or []
+                converted.append({
+                    "role": "assistant",
+                    "content": [dict(it) for it in items],
+                })
+                continue
             role = message.get("role")
             content = message.get("content")
             if role in {"system", "developer"}:
@@ -179,10 +214,25 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 continue
 
             if role in {"tool", "tool_result"}:
+                if isinstance(content, list) and any(
+                    isinstance(block, dict) and block.get("type") == "provider_replay"
+                    and block.get("schema_version") == "anthropic.messages.tool_result.v1"
+                    for block in content
+                ):
+                    configuration = ((context.agent_config.get("provider_tools") or {}).get("anthropic") or {}) if context else {}
+                    if not configuration.get("native_tool_result_replay"):
+                        raise ProviderContractError("native tool continuation is not enabled")
+                    from ..anthropic_replay import replay_messages
+
+                    converted.extend(replay_messages(content))
+                    continue
                 result_blocks: List[Dict[str, Any]] = []
                 if isinstance(content, list):
-                    for block in text_blocks(content):
-                        if block.get("type") != "tool_result":
+                    for block in content:
+                        if (
+                            not isinstance(block, dict)
+                            or block.get("type") != "tool_result"
+                        ):
                             raise ProviderContractError(
                                 "tool-result messages require tool_result blocks"
                             )
@@ -255,8 +305,20 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 raise ProviderContractError(
                     f"unsupported Anthropic role: {role!r}"
                 )
+            if role == "user" and isinstance(content, list) and any(
+                isinstance(block, dict)
+                and block.get("type") in {"tool_call", "tool_result"}
+                for block in content
+            ):
+                raise ProviderContractError(
+                    "user content cannot contain tool calls or tool results"
+                )
             blocks = text_blocks(content)
             if role == "assistant":
+                reasoning = message.get("reasoning")
+                if reasoning is not None:
+                    canonical_reasoning = ProviderMessage(role="assistant", content=None, reasoning=reasoning).as_dict()["content"]
+                    blocks = text_blocks(canonical_reasoning) + blocks
                 raw_calls = message.get("tool_calls")
                 if raw_calls is not None:
                     if not isinstance(raw_calls, list):
@@ -296,16 +358,34 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         }
                     )
                 blocks = converted_blocks
-            elif any(
-                block.get("type") in {"tool_call", "tool_result"}
-                for block in blocks
-            ):
-                raise ProviderContractError(
-                    "user content cannot contain tool call/result blocks"
-                )
             if blocks:
+                if layout_enabled and role == "user":
+                    user_indices.append(len(converted))
                 converted.append({"role": role, "content": blocks})
 
+        # Fold replayed compaction blocks into immediately following assistant turns per OMP
+        for i in range(len(converted) - 2, -1, -1):
+            curr = converted[i]
+            nxt = converted[i + 1]
+            if (
+                curr.get("role") == "assistant"
+                and nxt.get("role") == "assistant"
+                and isinstance(curr.get("content"), list)
+                and len(curr["content"]) == 1
+                and isinstance(curr["content"][0], dict)
+                and curr["content"][0].get("type") == "compaction"
+                and isinstance(nxt.get("content"), list)
+            ):
+                converted[i : i + 2] = [
+                    {
+                        **nxt,
+                        "content": [curr["content"][0], *nxt["content"]],
+                    }
+                ]
+                user_indices = [index - 1 if index > i else index for index in user_indices]
+
+        if layout_enabled:
+            context.extra["request_layout_user_indices"] = user_indices
         return (
             "\n\n".join(system_parts) if system_parts else None,
             converted,
@@ -319,7 +399,9 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return dict(usage_obj)
         model_dump = getattr(usage_obj, "model_dump", None)
         if callable(model_dump):
-            value = model_dump()
+            # SDK default-null fields are not provider usage observations.
+            # Preserve explicit nulls so the strict contract still rejects them.
+            value = model_dump(exclude_unset=True)
             if isinstance(value, dict):
                 return value
         raise ProviderContractError("Anthropic usage must be an object")
@@ -474,6 +556,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             finish_reason=stop_reason,
             index=0,
             raw_message=response,
+            reasoning=reasoning_blocks or None,
             annotations={
                 "anthropic_stop_reason": getattr(response, "stop_reason", None)
             },
@@ -736,6 +819,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         except Exception:
             allow_todos = True
 
+        preserved = ((agent_cfg.get("provider_tools") or {}).get("anthropic") or {}).get("preserve_tool_names", [])
         filtered: List[Dict[str, Any]] = []
         dropped: List[str] = []
         for tool in tools:
@@ -748,7 +832,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 continue
 
             lowered = name.lower()
-            if not allow_todos and lowered.startswith("todo"):
+            if not allow_todos and lowered.startswith("todo") and name not in preserved:
                 dropped.append(name)
                 continue
 
@@ -775,6 +859,31 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             return [block]
         return system_prompt
 
+    @staticmethod
+    def _sdk_request_options(method: Any, request: Dict[str, Any]) -> Dict[str, Any]:
+        """Preserve wire sampling fields across the supported SDK range.
+
+        SDK 1.12.1 messages.py:972-999 omits legacy sampling kwargs, but
+        :142-146 and :1049-1053 document and forward extra_body. Older SDKs
+        accept these fields directly. Inspect the selected stream/create
+        callable rather than catching TypeError and retrying a request.
+        """
+        sampling = tuple(key for key in ("temperature", "top_p", "top_k") if key in request)
+        if not sampling:
+            return request
+        parameters = inspect.signature(method).parameters
+        if any(parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()):
+            return request
+        unsupported = tuple(key for key in sampling if key not in parameters)
+        if not unsupported:
+            return request
+        options = dict(request)
+        extra_body = dict(options.get("extra_body") or {})
+        for key in unsupported:
+            extra_body[key] = options.pop(key)
+        options["extra_body"] = extra_body
+        return options
+
     def _call_streaming(
         self,
         client: Any,
@@ -783,7 +892,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
     ) -> Tuple[
         Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]
     ]:
-        stream_ctx = client.messages.stream(**request)
+        method = client.messages.stream
+        stream_ctx = method(**self._sdk_request_options(method, request))
         usage_override: Optional[Dict[str, Any]] = None
         response_obj: Any = None
         block_types: Dict[int, str] = {}
@@ -832,6 +942,7 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             details={"code": "invalid_anthropic_event"},
                         )
                     message_id = message_id_value
+                    usage_override = self._extract_usage(message)
                     context.record_provider_event("response_start", {})
                 elif event_type == "content_block_start":
                     if message_id is None or message_stopped:
@@ -1051,9 +1162,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                         streamed_stop_reason = stop_reason
                     event_usage = self._get_attr(event, "usage")
                     if event_usage is not None:
-                        usage_override = self._extract_usage(
-                            SimpleNamespace(usage=event_usage)
-                        )
+                        delta_usage = self._extract_usage(SimpleNamespace(usage=event_usage))
+                        usage_override = {**(usage_override or {}), **(delta_usage or {})}
                 elif event_type == "message_stop":
                     if (
                         message_id is None
@@ -1068,6 +1178,26 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     message_stopped = True
                 elif event_type == "ping":
                     continue
+                elif (
+                    event_type in {"text", "input_json", "thinking", "signature", "citation"}
+                    and type(event).__module__ == "anthropic.lib.streaming._types"
+                ):
+                    # messages.stream yields SDK snapshot events after the raw
+                    # deltas already consumed above (_types.py:22-105). They
+                    # are not additional provider output or protocol events.
+                    continue
+                elif event_type == "error":
+                    err_obj = self._get_attr(event, "error")
+                    from ...compaction.overflow import overflow_http_details
+                    details: Dict[str, Any] = {"code": "anthropic_stream_error"}
+                    ovf = overflow_http_details(400, err_obj)
+                    if ovf:
+                        details.update(ovf)
+                    raise ProviderRuntimeError(
+                        "Anthropic stream reported an error",
+                        kind="provider",
+                        details=details,
+                    )
                 else:
                     raise ProviderRuntimeError(
                         "Unknown Anthropic stream event",
@@ -1112,7 +1242,8 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         client: Any,
         request: Dict[str, Any],
     ) -> Tuple[Any, Optional[Dict[str, Any]], Dict[str, str], Optional[int], Optional[str]]:
-        raw_response = client.messages.with_raw_response.create(**request)
+        method = client.messages.with_raw_response.create
+        raw_response = method(**self._sdk_request_options(method, request))
         parsed = raw_response.parse()
         http_response = getattr(raw_response, "http_response", None)
         headers = self._normalize_headers(getattr(http_response, "headers", {}) or {})
@@ -1139,7 +1270,13 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         anthropic_cfg = (context.agent_config.get("provider_tools") or {}).get(
             "anthropic", {}
         )
-        max_tokens = anthropic_cfg.get("max_output_tokens", 1024)
+        summary_params = (context.extra or {}).get("compaction_request_params")
+        if summary_params is not None:
+            anthropic_cfg = {
+                key: value for key, value in anthropic_cfg.items()
+                if key not in {"temperature", "top_p", "top_k", "thinking", "tool_choice"}
+            }
+        max_tokens = (context.extra or {}).get("max_tokens", anthropic_cfg.get("max_output_tokens", 1024))
         temperature = anthropic_cfg.get("temperature")
         prompt_cache_cfg = (
             (anthropic_cfg.get("prompt_cache") or {})
@@ -1154,6 +1291,39 @@ class AnthropicMessagesRuntime(ProviderRuntime):
         beta_header = prompt_cache_cfg.get("beta_header")
         if beta_header:
             extra_headers.setdefault("anthropic-beta", beta_header)
+
+        # Check if converted_messages carries signed compaction or legacy compaction
+        has_signed_compaction = False
+        has_legacy_compaction = False
+        for m in converted_messages:
+            c = m.get("content")
+            if isinstance(c, list):
+                for b in c:
+                    if isinstance(b, dict) and b.get("type") == "compaction":
+                        if b.get("signature"):
+                            has_signed_compaction = True
+                        elif b.get("encrypted_content"):
+                            has_legacy_compaction = True
+
+        from ...compaction.remote.anthropic import (
+            COMPACTION_BETA,
+            LEGACY_COMPACTION_BETA,
+        )
+
+        def add_beta(header_val: str, new_beta: str) -> str:
+            betas = [b.strip() for b in header_val.split(",") if b.strip()]
+            if new_beta not in betas:
+                betas.append(new_beta)
+            return ",".join(betas)
+
+        if has_signed_compaction:
+            extra_headers["anthropic-beta"] = add_beta(
+                extra_headers.get("anthropic-beta", ""), COMPACTION_BETA
+            )
+        elif has_legacy_compaction:
+            extra_headers["anthropic-beta"] = add_beta(
+                extra_headers.get("anthropic-beta", ""), LEGACY_COMPACTION_BETA
+            )
 
         delay_seconds = 0.0
         try:
@@ -1188,13 +1358,23 @@ class AnthropicMessagesRuntime(ProviderRuntime):
 
         if temperature is not None:
             request["temperature"] = float(temperature)
-        request.update(
-            anthropic_role_options(
-                context,
-                default_max_output_tokens=request["max_tokens"],
-                base_sampling="temperature" in request or "top_p" in request,
+        if anthropic_cfg.get("thinking") is not None:
+            request["thinking"] = anthropic_cfg["thinking"]
+        if summary_params is None:
+            request.update(
+                anthropic_role_options(
+                    context,
+                    default_max_output_tokens=request["max_tokens"],
+                    base_sampling="temperature" in request or "top_p" in request,
+                )
             )
-        )
+        else:
+            request.update(summary_params)
+        layout = anthropic_cfg.get("request_layout")
+        if layout is not None:
+            from ...compilation.context_builders import load_context_callback
+
+            request = load_context_callback(layout, "build_request")(request, context)
 
         response_metadata: Dict[str, Any] = {"stream": bool(stream)}
         if resolved_tool_choice:
@@ -1251,14 +1431,15 @@ class AnthropicMessagesRuntime(ProviderRuntime):
             self._maybe_delay_for_rate_limits(context, anthropic_cfg)
             _respect_delay()
             try:
-                if stream:
-                    response, usage_override, headers, status_code, body_text = (
-                        self._call_streaming(client, request, context)
-                    )
-                else:
-                    response, usage_override, headers, status_code, body_text = (
-                        self._call_non_streaming(client, request)
-                    )
+                with claude_wire_scope(context):
+                    if stream:
+                        response, usage_override, headers, status_code, body_text = (
+                            self._call_streaming(client, request, context)
+                        )
+                    else:
+                        response, usage_override, headers, status_code, body_text = (
+                            self._call_non_streaming(client, request)
+                        )
 
                 metadata = {**response_metadata, "attempts": attempt + 1}
                 self._capture_rate_limit_headers(context, headers)
@@ -1274,6 +1455,12 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     context=context,
                     metadata=metadata,
                 )
+                if layout is not None and layout.get("response_callable") is not None:
+                    from ...compilation.context_builders import load_context_callback
+                    callback = load_context_callback(
+                        {**layout, "callable": layout["response_callable"]}, layout["response_callable"]
+                    )
+                    callback(response, context)
                 return self._normalize_response(response, usage_override=usage_override)
             except ProviderRuntimeError:
                 raise
@@ -1296,16 +1483,18 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                 is_overloaded = (
                     False if is_rate_limit else self._is_overloaded_error(exc)
                 )
-                headers: Dict[str, str] = {}
-                status_code = None
-                body_text = None
-                if is_rate_limit or is_overloaded:
-                    response_obj = getattr(exc, "response", None)
+                response_obj = getattr(exc, "response", None)
+                if response_obj is not None:
                     headers = self._normalize_headers(
                         getattr(response_obj, "headers", {}) or {}
                     )
+                    status_code = getattr(response_obj, "status_code", getattr(exc, "status_code", None))
+                    body_text = self._safe_http_text(response_obj) or getattr(exc, "body", None)
+                else:
+                    headers = self._normalize_headers(getattr(exc, "headers", {}) or {})
                     status_code = getattr(exc, "status_code", None)
-                    body_text = self._safe_http_text(response_obj) or str(exc)
+                    body_text = getattr(exc, "body", None)
+                if is_rate_limit or is_overloaded:
                     if is_rate_limit:
                         self._capture_rate_limit_headers(context, headers)
                     metadata = {
@@ -1339,6 +1528,12 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                             retry_after = headers.get("retry-after")
                             if retry_after is not None:
                                 details["retry_after"] = retry_after
+                        from ...compaction.overflow import provider_overflow_details, overflow_http_details
+                        ovf = provider_overflow_details(exc)
+                        if not ovf and (status_code is not None or body_text is not None):
+                            ovf = overflow_http_details(status_code, body_text)
+                        if ovf:
+                            details = {**(details or {}), **ovf}
                         raise ProviderRuntimeError(
                             redaction.safe_exception_message(exc),
                             details=details,
@@ -1408,19 +1603,47 @@ class AnthropicMessagesRuntime(ProviderRuntime):
                     model=model,
                     request_id=request_id,
                     status_code=status_code,
-                    headers=None,
-                    content_type=None,
-                    body_text=None,
+                    headers=headers or None,
+                    content_type=(headers or {}).get("content-type"),
+                    body_text=body_text if isinstance(body_text, str) else None,
                     body_base64=None,
                     context=context,
                     metadata=metadata,
                 )
+                from ...compaction.overflow import provider_overflow_details, overflow_http_details
+                details: Dict[str, Any] | None = None
+                ovf = provider_overflow_details(exc)
+                if not ovf and (status_code is not None or body_text is not None):
+                    ovf = overflow_http_details(status_code, body_text)
+                if ovf:
+                    details = {**(details or {}), **ovf}
                 raise ProviderRuntimeError(
                     redaction.safe_exception_message(exc),
+                    details=details,
                     output_emitted=bool(
                         exchange_recorder and exchange_recorder.output_emitted
                     ),
                 ) from None
+
+    def compaction_port(
+        self,
+        *,
+        client: Any,
+        model: str,
+    ) -> Optional[Any]:
+        """Return an AnthropicCompactionPort if model is supported, else None."""
+        from ...compaction.remote.anthropic import (
+            AnthropicCompactionPort,
+            supports_anthropic_compaction,
+        )
+
+        if not supports_anthropic_compaction(model):
+            return None
+        return AnthropicCompactionPort(
+            client=client,
+            model=model,
+            runtime=self,
+        )
 
 
 provider_registry.register_runtime("anthropic_messages", AnthropicMessagesRuntime)

@@ -995,6 +995,35 @@ class SessionControlController:
                     if isinstance(pending, list)
                     else {}
                 )
+                stock_question = (
+                    isinstance(pending_request, dict)
+                    and (pending_request.get("metadata") or {}).get("stock_kind") == "opencode_question"
+                )
+                stock_claude = (
+                    isinstance(pending_request, dict)
+                    and (pending_request.get("metadata") or {}).get("stock_kind") == "claude_permission"
+                )
+                updated_input = payload.get("updated_input") if stock_claude else None
+                if updated_input is not None and not isinstance(updated_input, dict):
+                    raise ValueError("Stock Claude updated_input must be an object")
+                if stock_claude and payload.get("answers") is not None:
+                    claude_answers = payload["answers"]
+                    if not isinstance(claude_answers, dict) or not all(
+                        isinstance(key, str) and isinstance(value, str)
+                        for key, value in claude_answers.items()
+                    ):
+                        raise ValueError("Stock Claude answers must be a string-to-string object")
+                    original_input = (pending_request["metadata"].get("stock_request") or {}).get("input", {})
+                    updated_input = {**original_input, **(updated_input or {}), "answers": claude_answers}
+                    response = "once"
+                answers = payload.get("answers") if stock_question else None
+                if answers is not None:
+                    if not isinstance(answers, list) or not all(
+                        isinstance(answer, list) and all(isinstance(value, str) for value in answer)
+                        for answer in answers
+                    ):
+                        raise ValueError("Stock question answers must be an array of string arrays")
+                    response = "once"
                 requested_ids = runner.permission_authority.request_item_ids(
                     pending_request
                 )
@@ -1049,6 +1078,10 @@ class SessionControlController:
                         "permission_id": normalized_request_id,
                         "response": resolution,
                     }
+                if stock_question and answers is not None:
+                    item["answers"] = answers
+                if stock_claude and updated_input is not None:
+                    item["updated_input"] = updated_input
                 with runner._product_session_lock:
                     runner.transition_product_session(
                         "resolve_approval", normalized_request_id, resolution
@@ -1180,6 +1213,14 @@ class SessionControlController:
         with runner._product_session_lock:
             pending = runner.session.metadata.get("pending_permissions")
             pending = pending if isinstance(pending, list) else []
+            concurrent = (
+                getattr(
+                    getattr(runner.session, "product_session", None),
+                    "concurrent_approvals",
+                    False,
+                )
+                is True
+            )
             entry: Dict[str, Any] = {
                 "source": str(source or "session"),
                 "request_id": request_id,
@@ -1212,10 +1253,10 @@ class SessionControlController:
                 project_before_activation = match is not None
                 if match is None:
                     normalized.append(entry)
-                    activate = entry if not pending else None
+                    activate = entry if not pending or concurrent else None
                 else:
                     normalized[match] = entry
-                    activate = entry if match == 0 else None
+                    activate = entry if match == 0 or concurrent else None
             elif kind == "permission_response":
                 if not consume_fifo:
                     suppressed = runner._consumed_permission_responses.get(entry_key, 0)
@@ -1241,7 +1282,7 @@ class SessionControlController:
                     None,
                 )
                 normalized = list(pending)
-                if match is not None and not consume_fifo and match:
+                if match is not None and not consume_fifo and match and not concurrent:
                     normalized[match] = {
                         **normalized[match],
                         "deferred_response": dict(info),
@@ -1315,7 +1356,11 @@ class SessionControlController:
                             )
                         normalized.pop(0)
                         ready.append(deferred)
-                    activate = normalized[0] if match == 0 and normalized else None
+                    activate = (
+                        normalized[0]
+                        if match == 0 and normalized and not concurrent
+                        else None
+                    )
             else:
                 return None
             product_session = getattr(runner.session, "product_session", None)
@@ -1327,7 +1372,13 @@ class SessionControlController:
             if (
                 product_session
                 and activate
-                and product_session.read_model.status == "running"
+                and (
+                    product_session.read_model.status in {"running", "awaiting_approval"}
+                    and str(activate.get("request_id") or activate.get("id") or "")
+                    not in product_session.pending_approvals
+                    if concurrent
+                    else product_session.read_model.status == "running"
+                )
             ):
                 request = (
                     activate.get("request")
@@ -1383,6 +1434,19 @@ class SessionControlController:
                 (index for index, entry in enumerate(pending) if _usable(entry)), None
             )
             is_head = first_valid is not None and match == first_valid
+            if (
+                getattr(
+                    getattr(runner.session, "product_session", None),
+                    "concurrent_approvals",
+                    False,
+                )
+                is True
+            ):
+                if request_id in runner.session.product_session.pending_approvals:
+                    runner.transition_product_session(
+                        "resolve_approval", request_id, "reject"
+                    )
+                is_head = False
             product_session = getattr(runner.session, "product_session", None)
             if (
                 is_head

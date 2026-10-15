@@ -172,10 +172,8 @@ def load_yaml_tools(
         except Exception:
             continue
 
-    for fname in sorted(os.listdir(defs_dir)):
-        if not fname.endswith(".yaml") and not fname.endswith(".yml"):
-            continue
-        path = os.path.join(defs_dir, fname)
+    from .tool_catalogs import tool_definition_files
+    for path in tool_definition_files(defs_dir):
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f) or {}
 

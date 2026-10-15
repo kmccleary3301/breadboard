@@ -1,4 +1,28 @@
 #!/usr/bin/env node
+import { mkdir } from "node:fs/promises";
+import { resolve } from "node:path";
+import { TOOL_IDS, buildSystemPrompt, fail, loadProjectContextFiles, modelForProject, requiredString } from "./pi_0_73_1_runtime.mjs";
+import { TOOL_DEFINITION_FACTORIES, close, executeBatch, executeCall, originalDescriptionHashes, prepareTools, toolSchemas, toolState } from "./pi_0_73_1_tools.mjs";
+import { parseProviderUsage, replayState } from "./pi_0_73_1_replay.mjs";
+import { parseStreamingJsonBatch, projectProviderFailure, projectRequest } from "./pi_0_73_1_provider.mjs";
+import { finalizeCompactionPhase, prepareCompactionPhase } from "./pi_0_73_1_compaction.mjs";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 /**
  * Pinned Pi 0.73.1 native tool worker.
  *
@@ -7,216 +31,12 @@
  * length-prefixed protocol.  In either mode tool preparation and execution
  * run in the pinned Node process, and batch calls share Pi's mutation queue.
  */
-import { createHash } from "node:crypto";
-import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { resolve } from "node:path";
-import { pathToFileURL } from "node:url";
 
 const MAX_REQUEST_BYTES = 1024 * 1024;
 const MAX_FRAME_BYTES = 16 * 1024 * 1024;
 const SCHEMA_VERSION = "bb.native-worker.rpc.v1";
-const TOOL_IDS = new Set(["read", "bash", "edit", "write"]);
 
-function packageImport(nodeModules, packageName, entry) {
-  if (!nodeModules) return import(packageName);
-  return import(pathToFileURL(resolve(nodeModules, packageName, entry)).href);
-}
-
-const nodeModules = process.env.PI_CODING_AGENT_NODE_MODULES;
-const codingAgent = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/index.js");
-const piAi = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/index.js");
-const openaiCompletions = await packageImport(nodeModules, "@mariozechner/pi-ai", "dist/providers/openai-completions.js");
-const promptModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/system-prompt.js");
-const resourceModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/core/resource-loader.js");
-const shellModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/shell.js");
-const childProcessModule = await packageImport(nodeModules, "@mariozechner/pi-coding-agent", "dist/utils/child-process.js");
-const {
-  createBashTool,
-  createBashToolDefinition,
-  createEditTool,
-  createEditToolDefinition,
-  createReadTool,
-  createReadToolDefinition,
-  createWriteTool,
-  createWriteToolDefinition,
-} = codingAgent;
-const { validateToolArguments, parseStreamingJson } = piAi;
-const { convertMessages } = openaiCompletions;
-const { buildSystemPrompt } = promptModule;
-const { loadProjectContextFiles } = resourceModule;
-const { getShellConfig, getShellEnv } = shellModule;
-const { waitForChildProcess } = childProcessModule;
-const trackedProcessGroups = new Set();
-
-function processGroupAlive(entry) {
-  if (entry.pgid === null) return false;
-  try {
-    process.kill(-entry.pgid, 0);
-    return true;
-  } catch (error) {
-    return error?.code === "EPERM";
-  }
-}
-
-function signalProcessGroup(entry) {
-  if (entry.pgid === null) return false;
-  try {
-    process.kill(-entry.pgid, "SIGKILL");
-    entry.signalSent = true;
-    return true;
-  } catch (error) {
-    if (error?.code === "ESRCH") return false;
-    return false;
-  }
-}
-
-function markLeaderExit(entry) {
-  if (entry.leaderExited) return;
-  entry.leaderExited = true;
-  entry.groupAliveAtExit = processGroupAlive(entry);
-  if (entry.groupAliveAtExit) entry.reportable = true;
-}
-
-function trackBashProcess(child) {
-  if (!child.pid) return null;
-  const entry = {
-    child,
-    pid: child.pid,
-    pgid: process.platform === "win32" ? null : child.pid,
-    done: null,
-    leaderExited: false,
-    groupAliveAtExit: false,
-    reportable: false,
-    signalSent: false,
-  };
-  trackedProcessGroups.add(entry);
-  child.once("exit", () => markLeaderExit(entry));
-  return entry;
-}
-
-function maybeForgetProcess(entry) {
-  if (entry.leaderExited && !entry.groupAliveAtExit) trackedProcessGroups.delete(entry);
-}
-
-function requestProcessGroupTermination(entry) {
-  if (entry.leaderExited) {
-    if (entry.groupAliveAtExit && !entry.signalSent && processGroupAlive(entry)) {
-      signalProcessGroup(entry);
-    }
-    return;
-  }
-  entry.reportable = true;
-  signalProcessGroup(entry);
-}
-
-function createTrackedBashTool(cwd) {
-  const operations = {
-    exec(command, execCwd, { onData, signal, timeout, env }) {
-      return new Promise((resolve, reject) => {
-        if (!existsSync(execCwd)) {
-          reject(new Error(`Working directory does not exist: ${execCwd}\nCannot execute bash commands.`));
-          return;
-        }
-        const { shell, args } = getShellConfig();
-        const child = spawn(shell, [...args, command], {
-          cwd: execCwd,
-          detached: process.platform !== "win32",
-          env: env ?? getShellEnv(),
-          stdio: ["ignore", "pipe", "pipe"],
-        });
-        const entry = trackBashProcess(child);
-        let timedOut = false;
-        let timeoutHandle;
-        const onAbort = () => {
-          if (entry) requestProcessGroupTermination(entry);
-        };
-        const cleanup = () => {
-          clearTimeout(timeoutHandle);
-          if (signal) signal.removeEventListener("abort", onAbort);
-          if (entry) maybeForgetProcess(entry);
-        };
-        if (entry && timeout !== undefined && timeout > 0) {
-          timeoutHandle = setTimeout(() => {
-            timedOut = true;
-            requestProcessGroupTermination(entry);
-          }, timeout * 1000);
-        }
-        child.stdout?.on("data", onData);
-        child.stderr?.on("data", onData);
-        if (signal) {
-          if (signal.aborted) onAbort();
-          else signal.addEventListener("abort", onAbort, { once: true });
-        }
-        const done = waitForChildProcess(child)
-          .then((code) => {
-            cleanup();
-            if (signal?.aborted) {
-              reject(new Error("aborted"));
-              return;
-            }
-            if (timedOut) {
-              reject(new Error(`timeout:${timeout}`));
-              return;
-            }
-            resolve({ exitCode: code });
-          })
-          .catch((error) => {
-            cleanup();
-            reject(error);
-          });
-        if (entry) entry.done = done;
-      });
-    },
-  };
-  return createBashTool(cwd, { operations });
-}
-
-async function waitForProcessGroupDead(entry) {
-  if (!entry.leaderExited) return false;
-  for (let attempt = 0; attempt < 50; attempt += 1) {
-    if (!processGroupAlive(entry)) return true;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  return !processGroupAlive(entry);
-}
-
-async function closeTrackedProcessGroups() {
-  const entries = [...trackedProcessGroups];
-  for (const entry of entries) requestProcessGroupTermination(entry);
-  await Promise.allSettled(entries.map((entry) => entry.done));
-  const processes = [];
-  for (const entry of entries) {
-    if (!entry.reportable) {
-      trackedProcessGroups.delete(entry);
-      continue;
-    }
-    const dead = await waitForProcessGroupDead(entry);
-    processes.push({ pid: entry.pid, pgid: entry.pgid, dead });
-    if (dead) trackedProcessGroups.delete(entry);
-  }
-  return { processes, all_dead: processes.every(({ dead }) => dead) };
-}
-
-const TOOL_FACTORIES = Object.freeze({
-  bash: (cwd) => createTrackedBashTool(cwd),
-  edit: (cwd) => createEditTool(cwd),
-  read: (cwd) => createReadTool(cwd, { autoResizeImages: true }),
-  write: (cwd) => createWriteTool(cwd),
-});
-const TOOL_DEFINITION_FACTORIES = Object.freeze({
-  bash: (cwd) => createBashToolDefinition(cwd),
-  edit: (cwd) => createEditToolDefinition(cwd),
-  read: (cwd) => createReadToolDefinition(cwd, { autoResizeImages: true }),
-  write: (cwd) => createWriteToolDefinition(cwd),
-});
 let initializedState = null;
-let retainedPreparedBatch = null;
-let nextBatchId = 1;
-function fail(message) {
-  throw new Error(message);
-}
 
 async function readRequest() {
   const chunks = [];
@@ -235,92 +55,6 @@ async function readRequest() {
   }
 }
 
-function validateCall(call, defaultCwd) {
-  if (call === null || typeof call !== "object" || Array.isArray(call)) fail("call must be an object");
-  const toolId = call.tool_id ?? call.toolId ?? call.name;
-  if (typeof toolId !== "string" || !TOOL_IDS.has(toolId)) fail(`unknown tool_id: ${String(toolId)}`);
-  const argumentsValue = call.arguments;
-  const cwd = typeof call.cwd === "string" && call.cwd ? call.cwd : defaultCwd;
-  const callIdValue = call.call_id ?? call.callId ?? call.id;
-  const callId = typeof callIdValue === "string" && callIdValue ? callIdValue : "bb-native-call";
-  return { toolId, argumentsValue, cwd, callId };
-}
-
-function prepareCall(call, defaultCwd) {
-  const request = validateCall(call, defaultCwd);
-  const tool = TOOL_FACTORIES[request.toolId](request.cwd);
-  const prepared = typeof tool.prepareArguments === "function"
-    ? tool.prepareArguments(request.argumentsValue)
-    : request.argumentsValue;
-  const argumentsValue = validateToolArguments(tool, {
-    id: request.callId,
-    name: request.toolId,
-    arguments: prepared,
-  });
-  return { request, tool, argumentsValue };
-}
-
-
-async function executePrepared(prepared, signal) {
-  try {
-    const result = await prepared.tool.execute(prepared.request.callId, prepared.argumentsValue, signal);
-    const details = result?.details && typeof result.details === "object" ? {...result.details} : {};
-    delete details.effects;
-    return {
-      content: Array.isArray(result?.content) ? result.content : [],
-      details,
-      isError: false,
-      terminate: false,
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      content: [{ type: "text", text: message }],
-      details: {},
-      isError: true,
-      terminate: false,
-    };
-  }
-}
-
-async function executeCall(call, defaultCwd, signal) {
-  try {
-    return await executePrepared(prepareCall(call, defaultCwd), signal);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return {
-      content: [{ type: "text", text: message }],
-      details: {},
-      isError: true,
-      terminate: false,
-    };
-  }
-}
-
-function requiredString(payload, key) {
-  const value = payload?.[key];
-  if (typeof value !== "string" || !value) fail(`initialize requires ${key}`);
-  return value;
-}
-
-function toolSchemas(workspace, advertisement) {
-  return [...TOOL_IDS].map((name) => {
-    const tool = TOOL_FACTORIES[name](workspace);
-    const replacement = advertisement?.tools?.[name]?.description;
-    const description = typeof replacement === "string" ? replacement : tool.description;
-    return {
-      type: "function",
-      function: { name: tool.name, description, parameters: tool.parameters },
-    };
-  });
-}
-
-function originalDescriptionHashes(workspace) {
-  return Object.fromEntries([...TOOL_IDS].map((name) => {
-    const description = TOOL_FACTORIES[name](workspace).description ?? "";
-    return [name, createHash("sha256").update(description, "utf8").digest("hex")];
-  }));
-}
 async function initialize(payload) {
   const workspace = requiredString(payload, "workspace");
   const scratch = requiredString(payload, "scratch");
@@ -476,7 +210,7 @@ async function initialize(payload) {
       advertisement,
     },
   };
-  retainedPreparedBatch = null;
+  toolState.retainedPreparedBatch = null;
   return {
     schema_version: "bb.pi-native.v1",
     kind: "initialized",
@@ -486,40 +220,6 @@ async function initialize(payload) {
   };
 }
 
-function modelForProject(config) {
-  const source = config && typeof config === "object" ? config : {};
-  return {
-    id: String(source.id ?? source.model ?? "pi-0.73.1"),
-    name: String(source.name ?? source.id ?? source.model ?? "pi-0.73.1"),
-    api: "openai-completions",
-    provider: String(source.provider ?? "openai"),
-    baseUrl: String(source.base_url ?? source.baseUrl ?? ""),
-    reasoning: false,
-    input: Array.isArray(source.input) ? source.input : ["text"],
-    cost: source.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: Number(source.context_window ?? source.contextWindow ?? 128000),
-    maxTokens: Number(source.max_tokens ?? source.maxTokens ?? 4096),
-    compat: source.compat && typeof source.compat === "object" ? source.compat : {},
-  };
-}
-
-function projectRequest(payload) {
-  if (!initializedState) fail("project_request requires initialize");
-  if (!Array.isArray(payload?.messages)) fail("project_request requires messages");
-  const model = modelForProject(initializedState.modelConfig);
-  const acceptsImage = model.input.includes("image");
-  const messages = payload.messages.map((message) => {
-    if (acceptsImage || !Array.isArray(message?.content)) return message;
-    return {
-      ...message,
-      content: message.content.filter((part) => part?.type !== "image"),
-    };
-  });
-  const context = { systemPrompt: initializedState.systemPrompt, messages };
-  const outboundMessages = convertMessages(model, context, model.compat);
-  const tools = initializedState.schemas;
-  return { schema_version: "bb.pi-native.v1", kind: "request", messages: outboundMessages, tools };
-}
 async function executeOperation(operation, payload, signal) {
   const defaultCwd = initializedState?.workspace
     ?? (typeof payload?.cwd === "string" && payload.cwd ? payload.cwd : process.cwd());
@@ -534,111 +234,18 @@ async function executeOperation(operation, payload, signal) {
       bootstrap: initializedState.bootstrap,
     };
   }
-  if (operation === "project_request") return projectRequest(payload);
-  if (operation === "parse_streaming_json_batch") {
-    if (!Array.isArray(payload?.inputs)) fail("parse_streaming_json_batch requires inputs");
-    const results = payload.inputs.map((input) => {
-      if (input !== null && typeof input !== "string") fail("streaming JSON input must be a string or null");
-      // Pinned parseStreamingJson owns every fallback, including {} for empty input.
-      return parseStreamingJson(input ?? undefined);
-    });
-    return { schema_version: "bb.pi-native.v1", kind: "parsed_streaming_json_batch", results };
+  if (operation === "project_request") return projectRequest(initializedState, payload);
+  if (operation === "parse_provider_usage") {
+    const usage = await parseProviderUsage(payload.usage, replayState.replayClock, modelForProject(initializedState.modelConfig));
+    return { schema_version: "bb.pi-native.v1", kind: "assistant_usage", usage };
   }
-  if (operation === "prepare_tools") {
-    if (!Array.isArray(payload?.calls)) fail("prepare_tools requires calls");
-    const preparedInternal = [];
-    const calls = [];
-    const historyCalls = [];
-    const errors = [];
-    for (const call of payload.calls) {
-      try {
-        const value = prepareCall(call, defaultCwd);
-        const item = {
-          id: value.request.callId,
-          name: value.request.toolId,
-          arguments: value.argumentsValue,
-        };
-        preparedInternal.push({ ...item });
-        calls.push({ ...item });
-        // Pi keeps the sampled call in assistant history; only execution uses
-        // the validator's converted argument clone.
-        historyCalls.push({
-          id: value.request.callId,
-          name: value.request.toolId,
-          arguments: value.request.argumentsValue,
-        });
-      } catch (error) {
-        const message = String(error?.message ?? error);
-        const item = {
-          id: String(call?.call_id ?? call?.callId ?? call?.id ?? ""),
-          name: String(call?.tool_id ?? call?.toolId ?? call?.name ?? ""),
-          arguments: call?.arguments !== undefined ? call.arguments : {},
-          error: message,
-        };
-        errors.push(message);
-        preparedInternal.push({ ...item });
-        calls.push(item);
-        historyCalls.push({ id: item.id, name: item.name, arguments: item.arguments });
-      }
-    }
-    const batchId = `pi-prepared-${nextBatchId++}`;
-    retainedPreparedBatch = { batchId, prepared: preparedInternal };
-    return {
-      schema_version: "bb.pi-native.v1",
-      kind: "prepared",
-      calls,
-      ...(errors.length ? { errors } : {}),
-      history_calls: historyCalls,
-    };
-  }
-  if (operation === "close") {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
-      fail("close payload must be empty");
-    }
-    retainedPreparedBatch = null;
-    const cleanup = await closeTrackedProcessGroups();
-    return { schema_version: "bb.pi-native.v1", kind: "closed", cleanup };
-  }
-  if (operation === "execute_batch") {
-    if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.keys(payload).length !== 0) {
-      fail("execute_batch payload must be empty");
-    }
-    if (!retainedPreparedBatch) fail("execute_batch requires the retained prepared batch");
-    let completionIndex = 0;
-    const completedPreparationErrors = [];
-    for (const [sourceIndex, call] of retainedPreparedBatch.prepared.entries()) {
-      if (call.error) {
-        completedPreparationErrors.push({
-          sourceIndex,
-          result: {
-            id: call.id,
-            completion_index: completionIndex++,
-            content: [{ type: "text", text: call.error }],
-            details: {},
-            isError: true,
-            terminate: false,
-          },
-        });
-      }
-    }
-    const validCalls = retainedPreparedBatch.prepared
-      .map((call, sourceIndex) => ({ call, sourceIndex }))
-      .filter(({ call }) => !call.error);
-    const completedValid = await Promise.all(validCalls.map(async ({ call, sourceIndex }) => {
-      const request = validateCall(call, defaultCwd);
-      const tool = TOOL_FACTORIES[request.toolId](request.cwd);
-      const result = await executePrepared({ request, tool, argumentsValue: call.arguments }, signal);
-      return {
-        sourceIndex,
-        result: { id: call.id, completion_index: completionIndex++, ...result },
-      };
-    }));
-    const results = [...completedPreparationErrors, ...completedValid]
-      .sort((left, right) => left.sourceIndex - right.sourceIndex)
-      .map((entry) => entry.result);
-    retainedPreparedBatch = null;
-    return { schema_version: "bb.pi-native.v1", kind: "tool_results", results };
-  }
+  if (operation === "prepare_compaction") return prepareCompactionPhase(initializedState, payload);
+  if (operation === "finalize_compaction") return finalizeCompactionPhase(initializedState, payload);
+  if (operation === "project_provider_failure") return projectProviderFailure(initializedState, payload);
+  if (operation === "parse_streaming_json_batch") return parseStreamingJsonBatch(payload);
+  if (operation === "prepare_tools") return prepareTools(payload, defaultCwd);
+  if (operation === "close") return close(payload);
+  if (operation === "execute_batch") return executeBatch(payload, defaultCwd, signal);
   const calls = operation === "batch" ? payload?.calls : null;
   if (Array.isArray(calls)) {
     const results = await Promise.all(calls.map((call) => executeCall(call, defaultCwd, signal)));
@@ -719,3 +326,8 @@ async function mainFramed() {
   console.error(`pi-tools-0.73.1 protocol failure: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
+
+
+
+
+

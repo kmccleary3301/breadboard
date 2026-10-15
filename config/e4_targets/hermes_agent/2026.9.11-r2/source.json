@@ -1,0 +1,183 @@
+{
+  "repository": "https://github.com/NousResearch/hermes-agent.git",
+  "commit": "939e45c91d751fadd94dcd1b873ac3cb44846213",
+  "release": "2026.9.11",
+  "package_name": "hermes-agent",
+  "package_version": "0.21.2",
+  "archive_root": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213",
+  "archive_sha256": "7d76eb57bbf3b8cc0814cc8f0d0e0b81ce072ae820edd7d7097175f827789410",
+  "archive_bytes": 78746923,
+  "source_registry_asset": "prompts/source-registry.json",
+  "source_registry_files": [
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/system_prompt.py",
+      "sha256": "20a6b326816fc6924ed0b5f4407281b38b9254f7b43465acff10fae09be3114f"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/agent_init.py",
+      "sha256": "67f9aef648bafc50a01c7974daf5d618f2fa53d1255c96b9973e4b185ea4cbb4"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/conversation_loop.py",
+      "sha256": "2086d4d084a7cba728a5862f2f27d172860908af967e2b83a43d22fe757548c2"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_empty_response.py",
+      "sha256": "7e8f1775974d2f22729f9823636742940729717eb54a5c45c962274ef1776033"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_finalizer.py",
+      "sha256": "3e9658908b7421d3ee2da6516f2ac511541f7e134fcacaace8c807c996747fb1"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_tool_validation.py",
+      "sha256": "7bbc0cf31e38e0621ca0a85b6a3e0e9ad227aae7fb83d4a2bac8b486e64b692d"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_tool_round.py",
+      "sha256": "3e6cf5c94125dd75e2fb95cda6fe218a456187d9385a2a8005aa2f3276442d57"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/tool_dispatch_helpers.py",
+      "sha256": "773765ad340b7d707c2159b81076461db1aa3e3dab24bc60e0ccdac0d7b7ad9b"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/tool_executor.py",
+      "sha256": "1610a0893588cbc067aaf84b3d019a683cd83ba0fdb92d69baf4f7b9e6d121b9"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/transports/chat_completions.py",
+      "sha256": "8606a5d18ea7c0b8c9c3f442799f83df49f76f5bb70b534acb30ce5cb393c47c"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/run_agent.py",
+      "sha256": "11cc45fad98fd6e345f1895c54a8ff2277b46f89ea10a5c95a47a221d117b3d6"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/toolsets.py",
+      "sha256": "53a78cec6a9d10b58870a11b4c5efc16f20757c1a50cacd65a878fe7d4ab3601"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/file_tools.py",
+      "sha256": "17796def099601f2f786c5dcc49c743005a3a277f6c09c6e662afd2e1b2712e5"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/file_operations.py",
+      "sha256": "6d73656f815759fd37e864481710e7dc749ad21d1c6c75689460073f0c664554"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/terminal_tool.py",
+      "sha256": "5ca8d06f9cc42f8f8672d76bca5efcc4c523a24244a345529a76e2b3c5c4cbb7"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/terminal_tool_result.py",
+      "sha256": "bb40fcb200c81c6425f0b7b8f1dae5a97aa8b8f94599581ac1eea0e4321b5243"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/environments/local.py",
+      "sha256": "96e51d2e528bb413486931a7bbe59d09ba5ac5749f0838b9b1f63038f0ea9c32"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/skills_tool.py",
+      "sha256": "0f205b8c2d9266d272d8c6cae3d189b86a5aebce98f03b61605d266b65f9497c"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/registry.py",
+      "sha256": "ca02644ea36dfa08ab7e12893d283a3b12549a5ffd33ea72c29c632a94e7b201"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/patch_parser.py",
+      "sha256": "1d54eb40111b1512d09952143fd71322bc7bf8124c364e2404d76c046a08253b"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_recovery.py",
+      "sha256": "29af79d8791850def27d0953c9913e8ea255605c8394ba52da561291eabf600d"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_iteration_prep.py",
+      "sha256": "75b6495c51ce75e9e2d073212e0eef7899af31d8b5bcaebcbf756e851344294f"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_response_check.py",
+      "sha256": "2c96011bcfa0f2d2c79042ea7fe60ee2844dc20bec08c41cfceff8a35fe10cd7"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_response_intake.py",
+      "sha256": "d7db0a4a5151047a01da17f8b7b7385f70839a8633645a01118685f0466838ee"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_request_assembly.py",
+      "sha256": "c95105f23228dee2d274165fc0fd2ba4b3954bfe9ab457f14d0f64c7281ac281"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_stop_gates.py",
+      "sha256": "5142b5cee457a1688ddc08b28c70f3a8900ee694e90505ae048adb080520044c"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/turn_truncation.py",
+      "sha256": "ad9ea02865d130422adbb7a01e5a0cae0e66508533fb6a3a0ac30e0ce40790dc"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/memory_manager.py",
+      "sha256": "f9dd2a85dc4121687cea5c46e1956fab92565125cf853a57e9e581ecb548f2dd"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/agent/memory_provider.py",
+      "sha256": "506dffc93dbfa2b4bc925e504f694b730a9920d65c0babbfebda53946be16333"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/memory_tool_store.py",
+      "sha256": "5d25c0604de0c4bf4b4f07402b0582b20c33377330a0c7354e059a7e7cf52293"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/memory_tool.py",
+      "sha256": "ed9c5db6b3144b88425f7039280239b29a047143aa8ffdfd3b7f47bf7e707143"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/terminal_tool_backends.py",
+      "sha256": "b8d5d0aaa90b10f9dcfd029d76715b5b9ca7b7bd5375f4e7ac1c3282316c0011"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/terminal_tool_lifecycle.py",
+      "sha256": "262b401fda5fcce40176ec9c660fa91fefb5c9a5eef670053e920138e0a4d4a5"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/file_tools_read_tracking.py",
+      "sha256": "bf9ab81e2be04938a49d4bc4d44863ef740699d0b01f4db13ef5a54bc3be150d"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/file_tools_write_guards.py",
+      "sha256": "f7de54190493079a5c181f0f2182b15cd496092c267cd0b9437f5bbfd9dd9638"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/file_tools_paths.py",
+      "sha256": "97633812d81c02536bcc28be47c68e2489a6d7b544441505e7b1718e16416939"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/skills_tool_dedup.py",
+      "sha256": "8c94b54378807b373e3e8c8b685522a1d2cf5e9aa77e8acbc1ffa29d67da0a10"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/skill_usage.py",
+      "sha256": "82702d4736a8fc81ceb4dd5e6ce9706aa242102c84277c474c661e659a6f1aed"
+    },
+    {
+      "path": "hermes-agent-939e45c91d751fadd94dcd1b873ac3cb44846213/tools/skills_tool_plugin.py",
+      "sha256": "59a4de0cffcf4991027d24fbebc68e35978badc3c0dc929a07cf954e4dc2335a"
+    }
+  ],
+  "capture_receipt": "HERMES_NATIVE_ASSEMBLY_RESULT_06.json",
+  "capture_receipt_sha256": "59f8f47441b70487d1f1db12543b4b5ef8880c0f34c4d2097643c74054436706",
+  "capture_model": "controlled native producer preflight",
+  "capture_workspace": "/opt/hermes-build/native-preflight/workspace",
+  "capture_scope": "native source/tool-schema and first-request system-message capture; prompt is provenance only, not independent supplier equality or generic deterministic live prompt",
+  "claim": "Controlled native SDK/tool preflight only; no live model, grading, supplier-reference equality or public composition qualification.",
+  "native_bundle": {
+    "path": "/shared/bbctl1-6fad46cda941/hermes-native-bundle-939e45c9-06.tar.gz",
+    "bytes": 510627856,
+    "sha256": "af2428148956040133cbd1ed085d5fe61537f7077b1ebbbf0785ac955dbec684"
+  },
+  "source_license_asset": "SOURCE-LICENSE.txt",
+  "source_license_sha256": "821556e6336796450ab852d375117b48a4887e71d255794fd6318d99982a5ab6",
+  "source_license_scope": "pinned Hermes source files embedded in prompts/source-registry.json; fixture LICENSE.txt remains separate and fixture-only"
+}

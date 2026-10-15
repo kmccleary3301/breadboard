@@ -1,0 +1,82 @@
+schema: bb.compaction_preset.v1
+id: codex@0.139.0
+source:
+  repo: https://github.com/openai/codex
+  commit: a7dff904308535e965aee87680c1fc5ef1d19eec
+  evidence:
+    - codex-rs/protocol/src/openai_models.rs:426-441
+    - codex-rs/core/src/context_manager/history.rs:255-314,467-538
+    - codex-rs/core/src/session/turn.rs:246-273,1033-1035
+    - codex-rs/core/src/compact.rs:435-453,512-575
+    - codex-rs/core/src/compact_remote_v2.rs:421-552
+claim: source_golden
+native_settings:
+  adapter: paths
+  keys:
+    model_auto_compact_token_limit: [triggers.0.limit.config_limit, target.threshold.config_limit]
+    model_auto_compact_token_limit_scope: [triggers.0.scope]
+    compact_prompt: [pipeline.stages.0.reduce.prompt]
+    phase: [triggers.0.sampling_phase]
+    needs_follow_up: [triggers.0.needs_follow_up]
+    features: [pipeline.stages.0.select.features]
+estimator: bytes4
+native_retention: {kind: message_text_budget, budget: 64000, roles: [user], exclude_contextual: true}
+triggers:
+  - kind: threshold
+    accounting: {kind: usage_plus_trailing, estimator: bytes4, usage_total: total_or_components, trailing: all}
+    limit: {kind: window_fraction, percent: 90, config_limit: null}
+    compare: ">="
+    phase: every_request
+    scope: total
+    sampling_phase: pre_turn
+    requires_follow_up: true
+    needs_follow_up: true
+target:
+  threshold: {kind: window_fraction, percent: 90, config_limit: null}
+  manual: {kind: window_fraction, percent: 90}
+  overflow: {kind: window_fraction, percent: 90}
+overflow: {policy: terminal, max_attempts_per_turn: 0}
+request_view: []
+pipeline:
+  mode: until_boundary
+  stages:
+    - id: summary
+      accept: any
+      select:
+        kind: user_messages_budget
+        budget: 20000
+        features: []
+        native_feature: RemoteCompactionV2
+        exclude_prefix: {file: summary_prefix.md}
+        exclude_pending_user_on: [pre_turn]
+        # context-fragments/src/fragment.rs:114-127; initial context is not a task.
+        exclude_context_user_markers: &contextual_markers
+          - {start: "<environment_context>", end: "</environment_context>"}
+          - {start: "# AGENTS.md instructions for ", end: "</INSTRUCTIONS>"}
+      reduce:
+        kind: chat_summary
+        system_from_history: true
+        exclude_pending_user_on: [pre_turn]
+        prompt: {file: prompt.md}
+        max_tokens: null
+        empty_fallback: (no summary available)
+        # Local summary prompt: compact.rs:435-453,512-575 at source.commit.
+        # Executed wire evidence: tests/compaction/oracles/codex@0.139.0/
+        # recordings/pre_turn_and_second_compaction.jsonl, requests 1 and 3.
+        request:
+          stream: true
+          tools: []
+          params:
+            parallel_tool_calls: false
+            tool_choice: auto
+      place:
+        kind: bridge
+        prefix: {file: summary_prefix.md}
+        separator: "\n"
+        replay: before
+        # compact.rs:297-307,465-506: DoNotInject+startup reinstall vs BeforeLastUserMessage.
+        restore_context_roles: [developer]
+        restore_context_user_markers: *contextual_markers
+        restore_context_placements:
+          pre_turn: after_summary
+          mid_turn: before_last_user

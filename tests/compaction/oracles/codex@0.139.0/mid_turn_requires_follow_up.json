@@ -1,0 +1,53 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "codex@0.139.0",
+  "case": "mid_turn_requires_follow_up",
+  "source": {
+    "repo": "https://github.com/openai/codex",
+    "commit": "a7dff904308535e965aee87680c1fc5ef1d19eec",
+    "evidence": [
+      "codex-rs/core/src/session/turn.rs:246-273"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_codex_live.py",
+    "evidence": "recordings/mid_turn_compaction.jsonl",
+    "notes": "Executed against pinned Codex CLI 0.139.0. When needs_follow_up is true (tool call requested) and usage exceeds threshold, mid-turn auto-compaction fires immediately; when needs_follow_up is false, compaction is deferred to pre-turn check per codex-rs/core/src/session/turn.rs:346-358."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Complex query."
+      },
+      {
+        "role": "assistant",
+        "content": "Complete final answer with no further tool calls."
+      }
+    ],
+    "usage": {
+      "input_tokens": 92000,
+      "output_tokens": 2000,
+      "cache_read_tokens": 0,
+      "cache_write_tokens": 0,
+      "total_tokens": 94000
+    },
+    "context_window": 100000,
+    "max_input_tokens": null,
+    "max_output_tokens": 4096,
+    "reason": "threshold",
+    "native_settings": {
+      "phase": "mid_turn",
+      "needs_follow_up": false
+    }
+  },
+  "expect": {
+    "trigger": {
+      "fires": false,
+      "tokens": 94000,
+      "limit": 90000,
+      "severity": "soft"
+    }
+  }
+}

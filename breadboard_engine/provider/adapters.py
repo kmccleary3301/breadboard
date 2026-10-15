@@ -3,7 +3,7 @@ Provider-specific adapters for handling tool calling formats, ID matching, and r
 
 Handles the translation between our internal tool calling system and provider-specific formats.
 """
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Mapping
 from abc import ABC, abstractmethod
 import json
 import re
@@ -95,6 +95,13 @@ class OpenAIAdapter(ProviderAdapter):
             if isinstance(provider_routing, dict)
             else {}
         )
+        # Dated native catalogs may carry a complete Responses tool, including
+        # hosted tools and namespaces that cannot be expressed as Chat functions.
+        responses_schema = provider_config.get("responses_tool_schema")
+        if isinstance(responses_schema, dict):
+            from copy import deepcopy
+
+            return deepcopy(responses_schema)
         additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
             additional_props = None
@@ -185,6 +192,13 @@ class OpenAIAdapter(ProviderAdapter):
     
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         """Create OpenAI-expected tool result message"""
+        if (isinstance(result, dict) and result.get("__mvi_native_responses_output") is True
+                and isinstance(result.get("__mvi_content_output"), list)):
+            from .contract_messages import responses_image_tool_result_message
+
+            return responses_image_tool_result_message(
+                call_id, result["__mvi_content_output"], provider_id=self.get_provider_id(),
+            )
         content: str
         if isinstance(result, dict) and isinstance(result.get("__mvi_text_output"), str):
             content = str(result["__mvi_text_output"])
@@ -214,7 +228,8 @@ class OpenRouterAdapter(OpenAIAdapter):
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
         msg = super().create_tool_result_message(call_id, tool_name, result)
         # Some OpenRouter upstream providers (e.g. Azure) expect `call_id` for tool results.
-        msg["call_id"] = call_id
+        if msg.get("role") == "tool":
+            msg["call_id"] = call_id
         return msg
 
     def get_provider_id(self) -> str:
@@ -243,6 +258,11 @@ class AnthropicAdapter(ProviderAdapter):
             if isinstance(provider_routing, dict)
             else {}
         )
+        messages_schema = provider_config.get("messages_tool_schema")
+        if isinstance(messages_schema, dict):
+            from copy import deepcopy
+
+            return deepcopy(messages_schema)
 
         additional_props = provider_config.get("additional_properties")
         if not isinstance(additional_props, bool):
@@ -313,9 +333,136 @@ class AnthropicAdapter(ProviderAdapter):
         # based on their actual response format
         return []
     
+    def to_native_image_source(
+        self, media: Any, *, context: Any = None,
+    ) -> Dict[str, str]:
+        """Encode resolved image bytes or a validated URL as an Anthropic source."""
+        from .input_media import parse_provider_image_url
+
+        if media.wire_url is not None:
+            state = getattr(context, "session_state", None)
+            config = getattr(state, "config", {}) or {}
+            native_codex = (
+                (config.get("tools") or {}).get("native_semantics")
+                == "codex_0_139"
+            )
+            if media.wire_url.startswith("data:") or native_codex:
+                media = parse_provider_image_url(
+                    media.wire_url,
+                    detail=media.detail or "high",
+                )
+        if media.wire_url is not None:
+            return {"type": "url", "url": media.wire_url}
+        return {
+            "type": "base64",
+            "media_type": media.mime,
+            "data": media.base64_data,
+        }
+
+    def to_native_tool_result_content(
+        self, content: Any, session_state: Any,
+    ) -> Any:
+        """Convert observed tool output into ordered Anthropic result content."""
+        from .contract_messages import canonical_json
+        from .contracts import ProviderRuntimeContext
+        from .input_media import (
+            is_provider_image_part,
+            parse_provider_image_url,
+            portable_image_media,
+            resolve_input_media,
+        )
+        from .contract_wire import ProviderContractError
+
+        if isinstance(content, str):
+            return content
+        if content is None or not isinstance(content, list):
+            return canonical_json(content)
+
+        context = ProviderRuntimeContext(
+            session_state=session_state,
+            agent_config={},
+            stream=False,
+        )
+
+        def image_source(block: Mapping[str, Any]) -> Dict[str, str]:
+            media_block = portable_image_media(block)
+            if media_block.get("kind") == "codex_image_url":
+                uri = media_block.get("uri")
+                if not isinstance(uri, str):
+                    raise ProviderContractError("provider image URL is malformed")
+                media = parse_provider_image_url(uri)
+            else:
+                media = resolve_input_media(media_block, context)
+            return self.to_native_image_source(media)
+
+        native: List[Dict[str, Any]] = []
+        for part in content:
+            if isinstance(part, str):
+                native.append({"type": "text", "text": part})
+            elif isinstance(part, Mapping) and is_provider_image_part(part):
+                native.append({
+                    "type": "image",
+                    "source": image_source(part),
+                })
+            elif isinstance(part, Mapping) and part.get("type") in {
+                "text", "input_text", "output_text",
+            } and isinstance(part.get("text"), str):
+                native.append({"type": "text", "text": part["text"]})
+            elif isinstance(part, Mapping) and part.get("type") == "document":
+                native.append(dict(part))
+            elif isinstance(part, Mapping):
+                native.append({"type": "text", "text": canonical_json(dict(part))})
+            else:
+                native.append({"type": "text", "text": canonical_json(part)})
+        return native
+
+
+    def create_tool_result_batch_message(self, messages: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Bind all stock results to one lossless continuation in stock order."""
+        from .anthropic_replay import TOOL_RESULT_SCHEMA, replay_messages
+        from .contract_messages import canonical_json
+        from .contract_wire import ProviderContractError
+
+        if not isinstance(messages, list):
+            raise ProviderContractError("native tool continuation requires a message list")
+        blocks = []
+        for message in messages:
+            for native in message.get("content", []):
+                if isinstance(native, dict) and native.get("type") == "tool_result":
+                    content = native["content"]
+                    blocks.append({"type": "tool_result", "call_id": native["tool_use_id"],
+                                   "content": content if isinstance(content, str) else canonical_json(content),
+                                   "is_error": native.get("is_error", False)})
+        blocks.append({"type": "provider_replay", "provider_id": "anthropic",
+                       "schema_version": TOOL_RESULT_SCHEMA, "replay_scope": "same_provider",
+                       "payload": {"messages": messages}})
+        replay_messages(blocks)
+        return {"role": "tool", "content": blocks}
+
     def create_tool_result_message(self, call_id: str, tool_name: str, result: Any) -> Dict[str, Any]:
-        """Create Anthropic-expected tool result message"""
-        # Anthropic uses different format for tool results
+        """Record a correlated tool result; the runtime encodes Anthropic wire blocks."""
+        if isinstance(result, dict) and "__claude_tool_result_messages" in result:
+            from .anthropic_replay import TOOL_RESULT_SCHEMA, replay_messages
+            from .contract_messages import canonical_json
+            from .contract_wire import ProviderContractError
+
+            messages = result["__claude_tool_result_messages"]
+            if not isinstance(messages, list):
+                raise ProviderContractError("native tool continuation requires a message list")
+            native_results = [block for message in messages for block in message.get("content", [])
+                              if isinstance(block, dict) and block.get("type") == "tool_result"]
+            if len(native_results) != 1 or native_results[0].get("tool_use_id") != call_id:
+                raise ProviderContractError("native tool continuation call id mismatch")
+            native = native_results[0]
+            content = native["content"]
+            blocks = [{"type": "tool_result", "call_id": call_id,
+                       "content": content if isinstance(content, str) else canonical_json(content),
+                       "is_error": native.get("is_error", False)},
+                      {"type": "provider_replay", "provider_id": "anthropic",
+                       "schema_version": TOOL_RESULT_SCHEMA, "replay_scope": "same_provider",
+                       "payload": {"messages": messages}}]
+            replay_messages(blocks)
+            return {"role": "tool", "content": blocks}
         if isinstance(result, dict) and isinstance(result.get("__mvi_text_output"), str):
             content = str(result["__mvi_text_output"])
         elif isinstance(result, dict):
@@ -324,14 +471,9 @@ class AnthropicAdapter(ProviderAdapter):
             content = str(result)
         
         return {
-            "role": "user",  # Anthropic typically expects user role for tool results
-            "content": [
-                {
-                    "type": "tool_result",
-                    "tool_use_id": call_id,
-                    "content": content
-                }
-            ]
+            "role": "tool",
+            "tool_call_id": call_id,
+            "content": content,
         }
     
     def get_provider_id(self) -> str:

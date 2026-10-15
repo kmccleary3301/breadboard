@@ -1,0 +1,92 @@
+{
+  "assets": [
+    {
+      "bytes": 5960,
+      "path": "harness.yaml",
+      "sha256": "sha256:849820bc94c168c08bf07a26ec42347fa8ec28a885d44443483de5b7c9523ee6"
+    },
+    {
+      "bytes": 2030,
+      "path": "prompts/system-prompt.md",
+      "sha256": "sha256:223ae5bd2b036f97abc63b55ecbecf698b1b284176e62a012cbc982042263005"
+    },
+    {
+      "bytes": 1554,
+      "path": "native-config.json",
+      "sha256": "sha256:fad3e8d14f97b4503946f211c5f200186607dbbd6c7b7ad84d4c8e2a92f95fbd"
+    },
+    {
+      "bytes": 6229,
+      "path": "tool-surface.json",
+      "sha256": "sha256:2933949d4e449f32a19d862cfe5d899190f9aea780dd3c97a0b6d13365c19e36"
+    },
+    {
+      "bytes": 1069,
+      "path": "LICENSE.txt",
+      "sha256": "sha256:0457f5bcec3b3b211605dfb5d1a49042fd638f3686a410fe099c24a25af13c48"
+    },
+    {
+      "bytes": 2947,
+      "path": "source.json",
+      "sha256": "sha256:6e1f4cb8ff9f5d1cd30a9fad84588a43cd90f94f287263aad5794860b48f988f"
+    }
+  ],
+  "execution": {
+    "config_asset": "harness.yaml",
+    "system_prompt_asset": "prompts/system-prompt.md",
+    "tool_surface_asset": "tool-surface.json"
+  },
+  "family": "pi",
+  "overlay": {
+    "argv": [
+      "--mode",
+      "json",
+      "--no-session",
+      "--thinking",
+      "off",
+      "--tools",
+      "read,bash,edit,write,grep,find,ls",
+      "--no-extensions",
+      "--no-skills",
+      "--no-prompt-templates"
+    ],
+    "overlay_id": "breadboard.pi.r5-headless.v0.57.1",
+    "settings": [
+      {
+        "name": "retry.enabled",
+        "value": false
+      },
+      {
+        "name": "retry.maxRetries",
+        "value": 0
+      },
+      {
+        "name": "agent.request_cap",
+        "value": 100000
+      },
+      {
+        "name": "model.thinking_level",
+        "value": "off"
+      },
+      {
+        "name": "model.stream",
+        "value": true
+      },
+      {
+        "name": "model.timeout_seconds",
+        "value": 45
+      },
+      {
+        "name": "model.retry_enabled",
+        "value": false
+      },
+      {
+        "name": "model.images_enabled",
+        "value": false
+      }
+    ]
+  },
+  "schema_version": "bb.e4.target.v2",
+  "target_id": "pi-r5@0.57.1",
+  "version": "0.57.1"
+}

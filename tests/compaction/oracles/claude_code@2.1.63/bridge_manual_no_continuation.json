@@ -1,0 +1,50 @@
+{
+  "schema": "bb.compaction_oracle_case.v1",
+  "preset": "claude_code@2.1.63",
+  "case": "bridge_manual_no_continuation",
+  "source": {
+    "repo": "https://registry.npmjs.org/@anthropic-ai/claude-code/-/claude-code-2.1.63.tgz",
+    "package": "@anthropic-ai/claude-code@2.1.63",
+    "sha256": "12809142119cce671afbd9d422b524778de786752aeef2ba1f70879b5d4dce0d",
+    "commit": null,
+    "evidence": [
+      "package/cli.js:2199-2206 (function $Q6)",
+      "package/cli.js:3728 ($Q6(X,!1,I))",
+      "package/cli.js:2199-2206 [bytes 5937514-5938117]"
+    ]
+  },
+  "capture": {
+    "kind": "executed",
+    "script": "scripts/compaction_oracles/capture_claude_code.js",
+    "notes": "Executed function $Q6 sliced directly from cli.js (bytes 5937514-5938117) in node vm with continuation=false (matching call at C:3728: \"$Q6(X,!1,I)\"). The continuation sentence is omitted, allowing prompt control to return to the interactive user."
+  },
+  "input": {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Manual task"
+      },
+      {
+        "role": "assistant",
+        "content": "Response"
+      }
+    ],
+    "usage": null,
+    "context_window": 200000,
+    "max_input_tokens": null,
+    "max_output_tokens": 32000,
+    "reason": "manual",
+    "native_settings": {},
+    "summary_responses": [
+      "<summary>Completed manual review.</summary>"
+    ]
+  },
+  "expect": {
+    "projected_view": [
+      {
+        "role": "user",
+        "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary:\nCompleted manual review."
+      }
+    ]
+  }
+}

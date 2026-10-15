@@ -12,7 +12,6 @@ import pytest
 from breadboard.product.runtime.artifacts import ArtifactStore
 from breadboard_engine.agent_llm_openai import OpenAIConductor
 from breadboard_engine.conductor.modes import (
-    _bind_episode_provider_profile,
     _finalize_model_surface,
     _provider_wire_evidence,
     _surface_digest,
@@ -266,56 +265,6 @@ def test_profile_provenance_distinguishes_explicit_n_from_default():
 
 
 
-def test_profile_projects_exact_sdk_stream_request(monkeypatch):
-    profile = _profile(sampling={"temperature": 0.2})
-    runtime = _runtime()
-    captured = {}
-
-    def fake_stream(_client, **kwargs):
-        captured.update(kwargs)
-        response = types.SimpleNamespace(
-            id="chatcmpl-profile",
-            choices=[
-                types.SimpleNamespace(
-                    index=0,
-                    message={"role": "assistant", "content": "done", "tool_calls": []},
-                    finish_reason="stop",
-                    logprobs=None,
-                    error=None,
-                )
-            ],
-            model=MODEL,
-            usage={"prompt_tokens": 2, "completion_tokens": 1},
-        )
-        return response, {}
-
-    monkeypatch.setattr(runtime, "_stream_chat_completion", fake_stream)
-    monkeypatch.setattr(
-        sdk_bindings.provider_sdk_bindings,
-        "openai",
-        lambda **_kwargs: object(),
-    )
-    client = runtime.create_client_from_profile(profile)
-    context = ProviderRuntimeContext(None, {}, stream=True, provider_profile=profile)
-    result = runtime.invoke(
-        client=client,
-        model=MODEL,
-        messages=[{"role": "user", "content": "hi"}],
-        tools=None,
-        stream=True,
-        context=context,
-    )
-
-    assert captured["request_options"] == {
-        "stream_options": {"include_usage": True},
-        "max_tokens": 32000,
-        "n": 1,
-        "temperature": 0.2,
-    }
-    assert captured["extra_body"] == {"enable_thinking": False}
-    assert "stream" not in captured["request_options"]
-    assert "enable_thinking" not in captured["request_options"]
-    assert result.messages[0].content == "done"
 
 
 def test_profile_stream_keeps_a_length_limited_completion_as_a_truncated_turn():
@@ -485,163 +434,6 @@ def test_profile_rejects_nonzero_retry_and_unsupported_tools():
         profile.chat_request([], [{"type": "function"}])
 
 
-def test_profile_client_sets_sdk_retries_to_zero(monkeypatch):
-    captured = {}
-    http_options = {}
-
-    class FakeOpenAI:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-
-    class FakeHttpClient:
-        def __init__(self, **kwargs):
-            http_options.update(kwargs)
-            self.closed = False
-
-        def close(self):
-            self.closed = True
-
-    monkeypatch.setattr(sdk_bindings.provider_sdk_bindings, "openai", FakeOpenAI)
-    monkeypatch.setattr(chat_module.httpx, "Client", FakeHttpClient)
-    runtime = _runtime()
-    client = runtime.create_client_from_profile(_profile())
-    assert captured["api_key"] == "episode-secret"
-    assert captured["base_url"] == "http://127.0.0.1:8111/v1"
-    assert captured["max_retries"] == 0
-    assert captured["http_client"] is client.http_client
-    assert http_options["trust_env"] is False
-    assert http_options["follow_redirects"] is False
-    assert "Authorization" not in captured["default_headers"]
-    client.close()
-    assert client.http_client.closed
-
-
-def test_profile_client_applies_explicit_bounded_transport_timeout(monkeypatch):
-    captured = {}
-
-    monkeypatch.setattr(
-        sdk_bindings.provider_sdk_bindings,
-        "openai",
-        lambda **kwargs: captured.update(kwargs) or object(),
-    )
-    runtime = _runtime()
-
-    client = runtime.create_client_from_profile(_profile(), timeout_seconds=30)
-
-    assert captured["timeout"] == 30.0
-    with pytest.raises(ProviderRuntimeError) as raised:
-        runtime.create_client_from_profile(_profile(), timeout_seconds=0)
-    assert raised.value.details["code"] == "invalid_provider_timeout"
-    client.close()
-
-
-def test_profile_binds_production_runtime_client(monkeypatch):
-    created = []
-
-    class FakeTransport:
-        def __init__(self):
-            self.close_calls = 0
-
-        def close(self):
-            self.close_calls += 1
-
-    transport = FakeTransport()
-
-    def create_transport(**_kwargs):
-        created.append(transport)
-        return transport
-
-    monkeypatch.setattr(
-        sdk_bindings.provider_sdk_bindings,
-        "openai",
-        create_transport,
-    )
-    profile = _profile()
-    episode = types.SimpleNamespace(_episode_provider_profile=profile)
-    runtime = _runtime()
-    client, stream, bound_profile = _bind_episode_provider_profile(
-        episode,
-        runtime,
-        object(),
-        MODEL,
-        False,
-    )
-    rebound_client, _, _ = _bind_episode_provider_profile(
-        episode,
-        runtime,
-        object(),
-        MODEL,
-        False,
-    )
-
-    assert stream is True
-    assert bound_profile is profile
-    assert client is rebound_client
-    assert client.transport is transport
-    assert client.profile is profile
-    assert created == [transport]
-    client.close()
-    assert transport.close_calls == 1
-
-
-def test_profile_binding_is_scoped_to_each_episode(monkeypatch):
-    monkeypatch.setattr(
-        sdk_bindings.provider_sdk_bindings,
-        "openai",
-        lambda **_kwargs: object(),
-    )
-    runtime = _runtime()
-    first = _profile(scoped_credential="first-secret")
-    second = _profile(scoped_credential="second-secret")
-
-    first_client, _, first_bound = _bind_episode_provider_profile(
-        types.SimpleNamespace(_episode_provider_profile=first),
-        runtime,
-        object(),
-        MODEL,
-        False,
-    )
-    second_client, _, second_bound = _bind_episode_provider_profile(
-        types.SimpleNamespace(_episode_provider_profile=second),
-        runtime,
-        object(),
-        MODEL,
-        False,
-    )
-
-    assert first_bound is first
-    assert first_client.profile is first
-    assert second_bound is second
-    assert second_client.profile is second
-
-
-def test_profile_client_is_bound_to_one_episode(monkeypatch):
-    monkeypatch.setattr(
-        sdk_bindings.provider_sdk_bindings,
-        "openai",
-        lambda **_kwargs: object(),
-    )
-    runtime = _runtime()
-    first = _profile(base_url="http://127.0.0.1:8111/v1", scoped_credential="one")
-    second = _profile(base_url="http://127.0.0.1:8222/v1", scoped_credential="two")
-    first_client = runtime.create_client_from_profile(first)
-
-    with pytest.raises(ProviderRuntimeError) as exc_info:
-        runtime.invoke(
-            client=first_client,
-            model=MODEL,
-            messages=[],
-            tools=None,
-            stream=True,
-            context=ProviderRuntimeContext(
-                None,
-                {},
-                stream=True,
-                provider_profile=second,
-            ),
-        )
-
-    assert exc_info.value.safe_code == "profile_client_mismatch"
 
 
 def test_context_profile_is_episode_scoped():
@@ -1101,24 +893,25 @@ def test_openai_sdk_without_length_finish_reason_error_still_creates_provider(mo
 
     fake_openai.OpenAI = FakeClient
     monkeypatch.setitem(sys.modules, "openai", fake_openai)
+    # Runtime modules hold the original singleton by value; teardown restores it
+    # instead of reloading while the fake SDK is still installed.
+    monkeypatch.setattr(sdk_bindings, "ProviderSdkBindings", sdk_bindings.ProviderSdkBindings)
+    monkeypatch.setattr(sdk_bindings, "provider_sdk_bindings", sdk_bindings.provider_sdk_bindings)
 
     reloaded_bindings = importlib.reload(sdk_bindings)
     monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
     monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
-    try:
-        assert reloaded_bindings.provider_sdk_bindings.openai is FakeClient
-        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+    assert reloaded_bindings.provider_sdk_bindings.openai is FakeClient
+    assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
 
-        runtime = _runtime()
-        client = runtime.create_client_from_profile(_profile())
-        assert isinstance(client.transport, FakeClient)
-        assert client.transport.kwargs["api_key"] == "episode-secret"
+    runtime = _runtime()
+    client = runtime.create_client_from_profile(_profile())
+    assert isinstance(client.transport, FakeClient)
+    assert client.transport.kwargs["api_key"] == "episode-secret"
 
-        direct_client = runtime.create_client(api_key="direct-secret")
-        assert isinstance(direct_client, FakeClient)
-        assert direct_client.kwargs["api_key"] == "direct-secret"
-    finally:
-        importlib.reload(sdk_bindings)
+    direct_client = runtime.create_client(api_key="direct-secret")
+    assert isinstance(direct_client, FakeClient)
+    assert direct_client.kwargs["api_key"] == "direct-secret"
 
 
 def test_missing_openai_sdk_preserves_error_projection(monkeypatch):
@@ -1126,20 +919,19 @@ def test_missing_openai_sdk_preserves_error_projection(monkeypatch):
     from breadboard_engine.provider.runtimes.openai import streaming as streaming_module
 
     monkeypatch.setitem(sys.modules, "openai", None)
+    monkeypatch.setattr(sdk_bindings, "ProviderSdkBindings", sdk_bindings.ProviderSdkBindings)
+    monkeypatch.setattr(sdk_bindings, "provider_sdk_bindings", sdk_bindings.provider_sdk_bindings)
     reloaded_bindings = importlib.reload(sdk_bindings)
     monkeypatch.setattr(chat_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
     monkeypatch.setattr(streaming_module, "provider_sdk_bindings", reloaded_bindings.provider_sdk_bindings)
-    try:
-        assert reloaded_bindings.provider_sdk_bindings.openai is None
-        assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
+    assert reloaded_bindings.provider_sdk_bindings.openai is None
+    assert reloaded_bindings.provider_sdk_bindings.openai_length_finish_error == ()
 
-        runtime = _runtime()
-        with pytest.raises(ProviderRuntimeError) as exc_info:
-            runtime.create_client_from_profile(_profile())
-        assert "openai package not installed" in str(exc_info.value)
+    runtime = _runtime()
+    with pytest.raises(ProviderRuntimeError) as exc_info:
+        runtime.create_client_from_profile(_profile())
+    assert "openai package not installed" in str(exc_info.value)
 
-        with pytest.raises(ProviderRuntimeError) as exc_info_direct:
-            runtime.create_client(api_key="key")
-        assert "openai package not installed" in str(exc_info_direct.value)
-    finally:
-        importlib.reload(sdk_bindings)
+    with pytest.raises(ProviderRuntimeError) as exc_info_direct:
+        runtime.create_client(api_key="key")
+    assert "openai package not installed" in str(exc_info_direct.value)

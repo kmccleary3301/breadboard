@@ -253,7 +253,13 @@ class NullEventSink:
 
 
 _OBSERVATION_EVENT_KINDS = frozenset({"assistant_message", "tool_call", "tool_result"})
+_OBSERVATION_ACTIONS = frozenset(
+    {"observe assistant", "observe tool call", "observe tool result"}
+)
 _ADOPTION_EVENT_KIND = "session.adoption_committed"
+# Frozen at Session start by native stock profiles whose broker demultiplexes
+# simultaneous prompts; pending approvals are then keyed by request_id.
+_CONCURRENT_APPROVALS = "concurrent_approvals"
 _EVENT_KINDS = (
     frozenset(
         {
@@ -302,6 +308,18 @@ _ALLOWED = MappingProxyType(
         "session.canceled": ("running", "awaiting_approval", "paused"),
     }
 )
+_CONCURRENT_APPROVAL_REQUEST_STATES = ("running", "awaiting_approval")
+
+
+def runtime_observations_admissible(
+    status: str, concurrent_approvals: bool
+) -> bool:
+    """Whether runtime observations may be appended in this Product status."""
+    return status == "running" or (
+        concurrent_approvals and status == "awaiting_approval"
+    )
+
+
 _STATUSES, _DECISIONS = (
     frozenset(
         {"running", "awaiting_approval", "paused", "completed", "failed", "canceled"}
@@ -537,6 +555,10 @@ def _validate_payload(kind: str, payload: Mapping[str, Any]) -> None:
     core = set(payload) - {"lineage"}
     if kind == "session.started":
         _sha256(payload.get("effective_lock_hash"), "effective_lock_hash")
+        if _CONCURRENT_APPROVALS in payload:
+            if payload[_CONCURRENT_APPROVALS] is not True:
+                raise ValueError("concurrent_approvals must be true when present")
+            core.discard(_CONCURRENT_APPROVALS)
         if "module_input" in payload:
             expected = {
                 "effective_lock_hash",
@@ -1165,6 +1187,8 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
     if not rows or rows[0].kind != "session.started":
         raise ValueError("event stream must begin with session.started")
     start, status, pending, outcome = rows[0], "running", None, None
+    concurrent_approvals = start.payload.get(_CONCURRENT_APPROVALS) is True
+    pending_ids: list[str] = []
     lock_hash = start.payload["effective_lock_hash"]
     generation_index = 0
     lineage_payload = start.payload.get("lineage")
@@ -1198,7 +1222,19 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             raise ValueError("event stream is not contiguous for one session")
         if expected == 1:
             continue
-        if status not in _ALLOWED.get(event.kind, ()):
+        if event.kind in _OBSERVATION_EVENT_KINDS:
+            admissible = runtime_observations_admissible(
+                status, concurrent_approvals
+            )
+        else:
+            allowed = _ALLOWED.get(event.kind, ())
+            if concurrent_approvals and event.kind in {
+                "approval.requested",
+                "context.compacted",
+            }:
+                allowed = _CONCURRENT_APPROVAL_REQUEST_STATES
+            admissible = status in allowed
+        if not admissible:
             raise ValueError(f"invalid {event.kind} transition from {status}")
         if event.kind == _ADOPTION_EVENT_KIND:
             adoption_id = event.payload["adoption_id"]
@@ -1300,7 +1336,19 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
             last_compaction_sequence = event.sequence
             retained_raw_fact_order = current_raw_fact_order
             last_compaction_context_hash = event.payload["context_sha256"]
-        if event.kind == "approval.requested":
+        if event.kind == "approval.requested" and concurrent_approvals:
+            if event.payload["request_id"] in pending_ids:
+                raise ValueError("approval request is already pending")
+            pending_ids.append(event.payload["request_id"])
+            pending, status = pending_ids[0], "awaiting_approval"
+        elif event.kind == "approval.resolved" and concurrent_approvals:
+            if event.payload["request_id"] not in pending_ids:
+                raise ValueError("approval does not match any pending request")
+            pending_ids.remove(event.payload["request_id"])
+            pending, status = (
+                (pending_ids[0], "awaiting_approval") if pending_ids else (None, "running")
+            )
+        elif event.kind == "approval.requested":
             pending, status = event.payload["request_id"], "awaiting_approval"
         elif event.kind == "approval.resolved":
             if pending != event.payload["request_id"]:
@@ -1317,6 +1365,7 @@ def rebuild(events: Iterable[KernelEvent]) -> SessionView:
         elif event.kind == "session.resumed":
             status = "running"
         elif event.kind.startswith("session."):
+            pending_ids.clear()
             pending, status, outcome = (
                 None,
                 event.kind.removeprefix("session."),
@@ -1585,6 +1634,9 @@ class Session:
             Callable[[AnnotationRecord], tuple[KernelEvent, ...]] | None
         ) = None
         self._view = rebuild(self._events)
+        self._concurrent_approvals = (
+            self._events[0].payload.get(_CONCURRENT_APPROVALS) is True
+        )
         if session_ids and next(iter(session_ids)) != self._view.session_id:
             raise ValueError("retained checkpoint belongs to another Session")
         if any(
@@ -1621,6 +1673,7 @@ class Session:
         ids: IdSource | None = None,
         sink: EventSink | None = None,
         lineage: SessionLineage | None = None,
+        concurrent_approvals: bool = False,
     ) -> "Session":
         if not isinstance(lock, EffectiveHarnessLock):
             raise TypeError("Session.start requires an EffectiveHarnessLock")
@@ -1633,6 +1686,8 @@ class Session:
             if not isinstance(module_input, ModuleInput):
                 raise TypeError("module_input must be a ModuleInput")
             _validate_module_input_sequence(module_input_sequence, expected=0)
+        if type(concurrent_approvals) is not bool:
+            raise TypeError("concurrent_approvals must be a boolean")
         active_clock, active_ids = (
             clock if clock is not None else SystemClock(),
             ids if ids is not None else UUIDSource(),
@@ -1661,6 +1716,8 @@ class Session:
             ):
                 raise ValueError("child Session cannot be its own parent or root")
             payload["lineage"] = lineage.as_dict()
+        if concurrent_approvals:
+            payload[_CONCURRENT_APPROVALS] = True
         event = KernelEvent.create(
             active_session_id,
             1,
@@ -1706,6 +1763,25 @@ class Session:
     def read_model(self) -> SessionView:
         with self._transition_lock:
             return self._view
+
+    @property
+    def concurrent_approvals(self) -> bool:
+        """Whether this Session was started with request-keyed approvals."""
+        return self._concurrent_approvals
+
+    @property
+    def pending_approvals(self) -> tuple[str, ...]:
+        """Every pending approval request id, oldest first."""
+        with self._transition_lock:
+            pending: list[str] = []
+            for event in self._events:
+                if event.kind == "approval.requested":
+                    pending.append(event.payload["request_id"])
+                elif event.kind == "approval.resolved":
+                    pending.remove(event.payload["request_id"])
+                elif event.kind in _TERMINAL:
+                    pending.clear()
+            return tuple(pending)
 
     def checkpoint_frontier(self) -> SessionCheckpointFrontier:
         """Return the exact source frontier currently owned by this Session."""
@@ -2753,7 +2829,17 @@ class Session:
     def _require(self, action: str) -> None:
         if self._appending:
             raise RuntimeError("cannot mutate session while an append is in progress")
-        if self._view.status not in _SESSION_ACTIONS[action]:
+        if (
+            action in _OBSERVATION_ACTIONS
+            and runtime_observations_admissible(
+                self._view.status, self._concurrent_approvals
+            )
+        ):
+            return
+        allowed = _SESSION_ACTIONS[action]
+        if self._concurrent_approvals and action in {"request approval", "compact"}:
+            allowed = _CONCURRENT_APPROVAL_REQUEST_STATES
+        if self._view.status not in allowed:
             raise RuntimeError(f"cannot {action} while session is {self._view.status}")
 
     def _append_event(
