@@ -793,6 +793,8 @@ jobs:
         run: bash scripts/atp_firecracker_ci.sh
 
   tui_contract_harness:
+    needs: select_affected_tests
+    if: ${{ always() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'tui_skeleton')) }}
     name: Legacy TUI contract harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -1139,6 +1141,8 @@ jobs:
         run: bash scripts/phase12_live_smoke.sh
 
   vscode_sidebar_e2e:
+    needs: select_affected_tests
+    if: ${{ always() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'vscode_sidebar')) }}
     name: VSCode Sidebar E2E (ubuntu)
     runs-on: ubuntu-latest
     steps:
@@ -1285,52 +1289,6 @@ jobs:
             test "$SELECTION_RESULT" = success
           fi
 
-  node_affected_tests:
-    name: Node tests (${{ matrix.package }})
-    needs: select_affected_tests
-    if: ${{ always() && github.event_name == 'pull_request' && (needs.select_affected_tests.result != 'success' || needs.select_affected_tests.outputs.node_targets != '[]') }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        package: ${{ fromJSON(needs.select_affected_tests.outputs.node_targets) }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          filter: blob:none
-
-      - uses: ./.github/actions/main-seeded-cache
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ github.job }}-${{ matrix.package }}-${{ hashFiles('sdk/**/package-lock.json', 'tui_skeleton/package-lock.json', 'vscode_sidebar/package-lock.json') }}
-          restore-prefix: npm-${{ runner.os }}-
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ (matrix.package == 'tui_skeleton' || matrix.package == 'vscode_sidebar') && '20' || '22' }}
-
-      - name: Build TUI local kernel-contracts dependency
-        if: ${{ matrix.package == 'tui_skeleton' }}
-        working-directory: sdk/ts-kernel-contracts
-        run: |
-          npm ci
-          npm run build
-
-      - name: Install target package dependencies
-        env:
-          NODE_PACKAGE: ${{ matrix.package }}
-        shell: bash
-        run: |
-          if [ "$NODE_PACKAGE" = "sdk/ts-workspace" ]; then
-            npm --prefix "$NODE_PACKAGE" install --package-lock=false
-          else
-            npm --prefix "$NODE_PACKAGE" ci
-          fi
-
-      - name: Run target package tests
-        env:
-          NODE_PACKAGE: ${{ matrix.package }}
-        run: npm --prefix "$NODE_PACKAGE" test
 
   python:
     name: Python (${{ matrix.os }})

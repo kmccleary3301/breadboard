@@ -14,6 +14,7 @@ runs:
         restore-prefix: pip-${{ runner.os }}-
 
     - name: Set up Python
+      id: setup_python
       if: always()
       continue-on-error: true
       uses: actions/setup-python@v5
@@ -825,6 +826,7 @@ runs:
       shell: bash
       env:
         CACHE_RESTORE: ${{ steps.main_cache.outcome }}
+        SETUP_PYTHON: ${{ steps.setup_python.outcome }}
         GUARD_DEPENDENCIES: ${{ steps.guard_dependencies.outcome }}
         COMPAT_BREAK_ENABLED: ${{ github.event_name == 'pull_request' }}
         COMPAT_BREAK: ${{ steps.compat_break_guard.outcome }}
@@ -861,6 +863,7 @@ runs:
         E4_TARGET_FREEZE_TEST: ${{ steps.e4_target_freeze_test.outcome }}
         CONFORMANCE_ENABLED: ${{ steps.conformance_prereqs.outputs.ready == 'true' || steps.conformance_prereqs.outcome == 'failure' }}
         CONFORMANCE_PREREQUISITES: ${{ steps.conformance_prereqs.outcome }}
+        CONFORMANCE_OVERRIDE: ${{ steps.conformance_override.outcome }}
         CONFORMANCE_SCOREBOARD: ${{ steps.conformance_scoreboard_strict.outcome }}
         CONFORMANCE_SCOREBOARD_REPORT: ${{ steps.conformance_scoreboard_report.outcome }}
         PROVIDER_CONFORMANCE_REPORT: ${{ steps.provider_conformance_report.outcome }}
@@ -912,6 +915,7 @@ runs:
           fi
         }
         report_guard "Dependency cache restore" advisory true "$CACHE_RESTORE"
+        report_guard "Python setup" blocking true "$SETUP_PYTHON"
         report_guard "Guard dependencies" blocking true "$GUARD_DEPENDENCIES"
         report_guard "Compat break acknowledgement" blocking "$COMPAT_BREAK_ENABLED" "$COMPAT_BREAK" "$COMPAT_BREAK_UPLOAD"
         report_guard "Zero-importer advisory" advisory true "$ZERO_IMPORTER_DIFF" "$ZERO_IMPORTER_REPORT" "$ZERO_IMPORTER_UPLOAD"
@@ -923,7 +927,7 @@ runs:
         report_guard "Tool-schema hash stability" blocking "$TOOL_SCHEMA_HASH_ENABLED" "$TOOL_SCHEMA_HASH" "$TOOL_SCHEMA_HASH_UPLOAD"
         report_guard "Event-envelope snapshot stability" blocking "$EVENT_ENVELOPE_ENABLED" "$EVENT_ENVELOPE" "$EVENT_ENVELOPE_UPLOAD"
         report_guard "E4 target-freeze manifest" blocking true "$E4_TARGET_FREEZE" "$E4_TARGET_FREEZE_TEST"
-        report_guard "Conformance gate" blocking "$CONFORMANCE_ENABLED" "$CONFORMANCE_PREREQUISITES" "$CONFORMANCE_SCOREBOARD" "$CONFORMANCE_SCOREBOARD_REPORT" "$PROVIDER_CONFORMANCE_REPORT" "$CONFORMANCE_DOCS" "$CONFORMANCE_UPLOAD"
+        report_guard "Conformance gate" blocking "$CONFORMANCE_ENABLED" "$CONFORMANCE_PREREQUISITES" "$CONFORMANCE_OVERRIDE" "$CONFORMANCE_SCOREBOARD" "$CONFORMANCE_SCOREBOARD_REPORT" "$PROVIDER_CONFORMANCE_REPORT" "$CONFORMANCE_DOCS" "$CONFORMANCE_UPLOAD"
         report_guard "Extension-disabled regression" blocking "$EXTENSION_DISABLED_ENABLED" "$EXTENSION_DISABLED_PREREQUISITES" "$EXTENSION_DISABLED_BOUNDARY" "$EXTENSION_DISABLED_MATRIX" "$EXTENSION_DISABLED_TESTS"
         report_guard "Replay determinism" blocking "$REPLAY_DETERMINISM_ENABLED" "$REPLAY_DETERMINISM_PREREQUISITES" "$REPLAY_DETERMINISM_TESTS" "$REPLAY_DETERMINISM_GATE" "$REPLAY_DETERMINISM_UPLOAD"
         report_guard "Evidence bundle contract" blocking "$EVIDENCE_BUNDLE_ENABLED" "$EVIDENCE_BUNDLE_TESTS"

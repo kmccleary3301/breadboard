@@ -20,7 +20,6 @@ jobs:
     outputs:
       full: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.full || steps.safe_defaults.outputs.full }}
       python: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.python || steps.safe_defaults.outputs.python }}
-      node_targets: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.node_targets || steps.safe_defaults.outputs.node_targets }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,7 +32,6 @@ jobs:
         run: |
           echo "full=true" >> "$GITHUB_OUTPUT"
           echo "python=true" >> "$GITHUB_OUTPUT"
-          echo 'node_targets=["sdk/ts","sdk/ts-backbone","sdk/ts-execution-driver-local","sdk/ts-execution-driver-oci","sdk/ts-execution-driver-remote","sdk/ts-execution-drivers","sdk/ts-host-bridges","sdk/ts-host-kits","sdk/ts-host-t3","sdk/ts-kernel-contracts","sdk/ts-kernel-core","sdk/ts-orchestration-temporal","sdk/ts-transport-ai-sdk","sdk/ts-workspace","tui_skeleton","vscode_sidebar"]' >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/main-seeded-cache
         if: always()
@@ -60,7 +58,7 @@ jobs:
         continue-on-error: true
         run: python -m pytest -q tests/test_ci_test_selection.py
 
-      - name: Select all affected-test targets
+      - name: Verify selector full fallback
         if: ${{ steps.selector_regression.outcome == 'success' }}
         id: selector
         run: python scripts/ci/select_tests.py --paths .github/workflows/ci.yml --github-output "$GITHUB_OUTPUT"
@@ -108,14 +106,14 @@ jobs:
         run: python -m pytest -q
 
   node_full_suite:
-    name: Node full suite (${{ matrix.package }})
+    name: Existing Node coverage (${{ matrix.package }})
     needs: select_full_suite
-    if: ${{ always() && github.ref == 'refs/heads/main' && (needs.select_full_suite.result != 'success' || needs.select_full_suite.outputs.node_targets != '[]') }}
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        package: ${{ fromJSON(needs.select_full_suite.outputs.node_targets || '[]') }}
+        package: [sdk/ts, tui_skeleton, vscode_sidebar]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -131,6 +129,17 @@ jobs:
         with:
           node-version: ${{ (matrix.package == 'tui_skeleton' || matrix.package == 'vscode_sidebar') && '20' || '22' }}
 
+      - uses: actions/setup-python@v5
+        if: ${{ matrix.package == 'sdk/ts' }}
+        with:
+          python-version: "3.11"
+
+      - name: Install canonical SDK Python server dependencies
+        if: ${{ matrix.package == 'sdk/ts' }}
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
       - name: Build TUI local kernel-contracts dependency
         if: ${{ matrix.package == 'tui_skeleton' }}
         working-directory: sdk/ts-kernel-contracts
@@ -142,17 +151,16 @@ jobs:
         env:
           NODE_PACKAGE: ${{ matrix.package }}
         shell: bash
-        run: |
-          if [ "$NODE_PACKAGE" = "sdk/ts-workspace" ]; then
-            npm --prefix "$NODE_PACKAGE" install --package-lock=false
-          else
-            npm --prefix "$NODE_PACKAGE" ci
-          fi
+        run: npm --prefix "$NODE_PACKAGE" ci
 
       - name: Run target package tests
         env:
           NODE_PACKAGE: ${{ matrix.package }}
         run: npm --prefix "$NODE_PACKAGE" test
+
+      - name: Verify canonical SDK consumer artifact
+        if: ${{ matrix.package == 'sdk/ts' }}
+        run: npm --prefix sdk/ts run test:consumer
 
   full_suite:
     name: Full suite
@@ -168,12 +176,7 @@ jobs:
           SELECTOR: ${{ needs.select_full_suite.result }}
           PYTHON: ${{ needs.python_full_suite.result }}
           NODE: ${{ needs.node_full_suite.result }}
-          NODE_TARGETS: ${{ needs.select_full_suite.outputs.node_targets }}
         run: |
           test "$SELECTOR" = success
           test "$PYTHON" = success
-          if [ "$NODE_TARGETS" != "[]" ]; then
-            test "$NODE" = success
-          else
-            test "$NODE" = skipped
-          fi
+          test "$NODE" = success

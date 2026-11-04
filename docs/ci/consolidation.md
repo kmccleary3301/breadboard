@@ -2,21 +2,23 @@
 
 ## Pull requests
 
-`.github/workflows/ci.yml` runs the selector regression test on every push and pull request. On pull requests, the same job runs the selector only after that regression passes, using a blobless checkout with full commit history. If the regression or selector fails, CI falls back to the full PR test set and all Node targets, then reports the selector job as failed.
+`.github/workflows/ci.yml` runs the selector regression test on every push and pull request. On pull requests, the same job selects affected tests after the regression passes, using a blobless checkout with full commit history. If the regression, selector, or selector job fails, safe defaults run the existing PR Python tests and leave the existing TUI and Sidebar test jobs enabled; the selector job itself remains red.
 
-The selector owns changed-path policy and emits `full`, `python`, and `node_targets`. CI consumes those outputs without a second path map:
+The selector owns changed-path policy and emits `full`, `python`, and `node_targets`. CI consumes those outputs without a second path map. In PR CI, `node_targets` only narrows the existing multi-OS TUI and VSCode Sidebar jobs; it does not add per-package SDK test coverage. The existing `product-spine` SDK test steps are unchanged.
 
-- `full=true` or `python=true` runs the existing PR Python test set (targeted tests plus stream chaos) and, for `full`, all 16 Node targets. Python paths always take this conservative path because the repository has no demonstrated Python test ownership map.
-- Otherwise, CI skips those Python test steps and runs only the selected Node targets. The existing product, cross-platform, typecheck, build, and smoke jobs remain in place.
+- `full=true` or `python=true` runs the existing PR Python test set (targeted tests plus stream chaos). Python paths always take this conservative path because the repository has no demonstrated Python test ownership map. A full selection also enables the existing TUI and Sidebar jobs.
+- Otherwise, CI skips those Python test steps and runs an existing TUI or Sidebar job only when its package appears in `node_targets`. The product-spine tests, including `npm --prefix sdk/ts test` and `npm --prefix sdk/ts run test:consumer`, remain unchanged, as do the other product, build, typecheck, and smoke jobs. Pushes use safe defaults and retain existing tests.
 - Pushes always run the existing Python test set.
 
 The whole-repository `python -m pytest -q` sweep is not a PR gate; it runs in the nightly full suite.
 
-The Node matrix runs each package's existing `npm test` script. Locked packages use `npm ci`; `sdk/ts-workspace` has no lockfile, so CI uses `npm install --package-lock=false`. The TUI target builds its local kernel-contracts dependency before installing and testing the TUI package. The required `product-spine` status keeps its name and its existing dependencies (product spine checks and product compilation). New selector, guard, and Node jobs report separately; adding them to the required status is a branch-protection decision outside this change.
+The pull-request workflow adds no per-package SDK Node test matrix. The selector only narrows the pre-existing TUI and Sidebar jobs; both still run their existing coverage when selected, and selector failure enables them. `product-spine` keeps its existing dependencies, including its canonical SDK tests.
 
 ## Full suite
 
-`.github/workflows/full-suite-nightly.yml` runs at 04:17 UTC on `main` and supports manual dispatch on `main`. A non-main dispatch skips the jobs. The workflow asks the selector for the global CI-config path, which selects full Python and every Node target. It runs the selector regression before consuming that result, then runs `python -m pytest -q` and every Node package test. It passes no provider secrets or provider environment variables and does not run live-provider jobs.
+`.github/workflows/full-suite-nightly.yml` runs at 04:17 UTC on `main` and supports manual dispatch on `main`. A non-main dispatch skips the jobs. It checks the selector's global fallback, runs `python -m pytest -q`, and exercises the established canonical SDK, TUI and Sidebar Node packages. The canonical SDK gets the same Python dependencies as its existing product-spine job. It passes no provider secrets or provider environment variables and does not enable live-provider jobs.
+
+S2 explicitly limited the nightly Node scope to the established coverage after the initial 16-package matrix exposed missing sibling devDependencies and Python server dependencies. Expanding to all SDK packages requires a separately validated dependency-bootstrap plan; it is not shipped as a known setup-red nightly here.
 
 ## Guard consolidation
 
