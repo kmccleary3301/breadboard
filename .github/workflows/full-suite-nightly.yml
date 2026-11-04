@@ -16,7 +16,7 @@ jobs:
   select_full_suite:
     name: Resolve full-suite targets
     if: ${{ github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       full: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.full || steps.safe_defaults.outputs.full }}
       python: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.python || steps.safe_defaults.outputs.python }}
@@ -81,7 +81,7 @@ jobs:
     name: Python full suite
     needs: select_full_suite
     if: ${{ always() && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,7 +109,7 @@ jobs:
     name: Existing Node coverage (${{ matrix.package }})
     needs: select_full_suite
     if: ${{ always() && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -176,7 +176,7 @@ jobs:
       - python_full_suite
       - node_full_suite
     if: ${{ always() && github.ref == 'refs/heads/main' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Require full-suite targets
         env:

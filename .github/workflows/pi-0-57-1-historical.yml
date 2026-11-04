@@ -10,7 +10,7 @@ on:
 jobs:
   pi-0-57-1-historical:
     name: pi-0-57-1-historical
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
       PI057_CODING_AGENT_NODE_MODULES: ${{ github.workspace }}/tests/fixtures/pi_0_57_1_node/node_modules

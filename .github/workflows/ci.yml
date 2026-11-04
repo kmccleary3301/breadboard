@@ -11,7 +11,7 @@ concurrency:
 jobs:
   product-spine-checks:
     name: Product spine checks
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
@@ -104,7 +104,7 @@ jobs:
 
   product-compilation:
     name: Product compilation
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
@@ -140,7 +140,7 @@ jobs:
       - product-spine-checks
       - product-compilation
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Require every product-spine lane
         env:
@@ -152,7 +152,7 @@ jobs:
 
   ci_guards:
     name: Consolidated CI guards
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -162,7 +162,7 @@ jobs:
       - uses: ./.github/actions/ci-guards
   conformance_matrix_sync_guard:
     name: Conformance matrix sync guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -347,7 +347,7 @@ jobs:
 
   extension_enabled_smoke:
     name: Extension-enabled smoke lane
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BREADBOARD_EXTENSIONS_ENABLED: "1"
     steps:
@@ -421,7 +421,7 @@ jobs:
 
   compat_core:
     name: Compat core (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -709,7 +709,7 @@ jobs:
           contains(github.event.pull_request.body || '', '[X] Compat break')
         )
       }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -796,7 +796,7 @@ jobs:
     needs: select_affected_tests
     if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'tui_skeleton')) }}
     name: Legacy TUI contract harness (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'blacksmith-4vcpu-ubuntu-2404' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -1087,7 +1087,7 @@ jobs:
 
   live_smoke:
     name: Live smoke (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1144,7 +1144,7 @@ jobs:
     needs: select_affected_tests
     if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'vscode_sidebar')) }}
     name: VSCode Sidebar E2E (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1219,7 +1219,7 @@ jobs:
 
   select_affected_tests:
     name: Test selector regression and selection
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     outputs:
       full: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.full || steps.safe_defaults.outputs.full }}
       python: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.python || steps.safe_defaults.outputs.python }}
@@ -1294,7 +1294,7 @@ jobs:
     name: Python (${{ matrix.os }})
     needs: select_affected_tests
     if: ${{ always() }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'blacksmith-4vcpu-ubuntu-2404' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -1449,7 +1449,7 @@ jobs:
 
   python_smoke:
     name: Python smoke (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.os == 'ubuntu-latest' && 'blacksmith-4vcpu-ubuntu-2404' || matrix.os }}
     strategy:
       fail-fast: false
       matrix:

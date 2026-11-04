@@ -11,7 +11,7 @@ on:
 jobs:
   e4-recalibration-snapshot:
     name: E4 snapshot-window recalibration
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 120
     env:
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
