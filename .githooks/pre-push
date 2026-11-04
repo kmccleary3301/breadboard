@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+remote_name="${1:?missing remote name}"
+: "${2:?missing remote URL}"
+
+python="${BB_PREPUSH_PYTHON:-}"
+if [[ -z "$python" ]]; then
+  if [[ -x .venv/bin/python ]]; then
+    python=".venv/bin/python"
+  else
+    python="python3"
+  fi
+fi
+
+exec "$python" scripts/quality/prepush.py "$remote_name"
