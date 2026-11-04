@@ -8,10 +8,10 @@ on:
 
 jobs:
   legacy-path-guard:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Enforce canonical QueryLake naming
         run: bash scripts/ci_guard_legacy_querylakebackend_refs.sh

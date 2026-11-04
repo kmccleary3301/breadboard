@@ -12,10 +12,10 @@ permissions:
 jobs:
   require-phase4-gate-before-release-tag:
     name: require phase4 fullpane gate before release tag
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Resolve target SHA
         run: |

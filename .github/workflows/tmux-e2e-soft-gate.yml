@@ -8,11 +8,11 @@ on:
 
 jobs:
   tmux-harness-selfcheck:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -176,14 +176,14 @@ jobs:
 
   tmux-phase4-replay:
     name: tmux phase4 replay (warn)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     env:
       # Keep pane + engine logs under the workspace so they can be uploaded as artifacts.
       BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Python
         uses: actions/setup-python@v5

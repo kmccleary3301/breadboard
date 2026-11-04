@@ -6,13 +6,13 @@ on:
 jobs:
   phase4-fullpane-gate:
     name: phase4 fullpane gate (strict)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
       TMUX_SOCKET_NAME: bbcap_fullpane_gate
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Python
         uses: actions/setup-python@v5

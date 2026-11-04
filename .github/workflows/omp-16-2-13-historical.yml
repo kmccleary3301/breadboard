@@ -10,13 +10,13 @@ on:
 jobs:
   omp-16-2-13-historical:
     name: omp-16-2-13-historical
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
       OMP16213_CODING_AGENT_NODE_MODULES: ${{ github.workspace }}/tests/fixtures/omp_16_2_13_node/node_modules
       BB_REQUIRE_PINNED_OMP16213_NODE: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: oven-sh/setup-bun@v2
         with:

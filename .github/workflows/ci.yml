@@ -11,11 +11,11 @@ concurrency:
 jobs:
   product-spine-checks:
     name: Product spine checks
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -91,11 +91,11 @@ jobs:
 
   product-compilation:
     name: Product compilation
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -121,7 +121,7 @@ jobs:
       - product-spine-checks
       - product-compilation
     if: ${{ always() }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Require every product-spine lane
         env:
@@ -134,7 +134,7 @@ jobs:
   compat_break_guard:
     name: Compat break guard
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/github-script@v7
         with:
@@ -237,10 +237,10 @@ jobs:
 
   zero_importer_advisory:
     name: Zero-importer advisory
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
@@ -275,9 +275,9 @@ jobs:
   danger_zone_acr_guard:
     name: Danger-zone ACR guard
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
@@ -351,9 +351,9 @@ jobs:
   atp_contract_governance_guard:
     name: ATP contract governance guard
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
         with:
           fetch-depth: 0
 
@@ -414,9 +414,9 @@ jobs:
 
   governance_v2_templates_guard:
     name: Governance v2 templates guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check governance template prerequisites
         id: governance_template_prereqs
@@ -465,9 +465,9 @@ jobs:
 
   kernel_ext_boundary_guard:
     name: Kernel-extension boundary guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check kernel-extension boundary prerequisites
         id: kernel_ext_boundary_prereqs
@@ -496,9 +496,9 @@ jobs:
 
   request_body_hash_stability:
     name: Request-body byte stability gate
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check request-body hash prerequisites
         id: request_body_hash_prereqs
@@ -548,9 +548,9 @@ jobs:
 
   tool_schema_hash_stability:
     name: Tool-schema hash stability gate
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check tool-schema hash prerequisites
         id: tool_schema_hash_prereqs
@@ -600,9 +600,9 @@ jobs:
 
   event_envelope_snapshot_stability:
     name: Event-envelope snapshot stability gate
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check event-envelope snapshot prerequisites
         id: event_envelope_snapshot_prereqs
@@ -650,9 +650,9 @@ jobs:
 
   e4_target_freeze_manifest_guard:
     name: E4 target-freeze manifest guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -673,9 +673,9 @@ jobs:
 
   conformance_matrix_sync_guard:
     name: Conformance matrix sync guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check conformance matrix sync prerequisites
         id: conformance_matrix_sync_prereqs
@@ -853,9 +853,9 @@ jobs:
 
   replay_determinism_guard:
     name: Replay determinism guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check replay determinism prerequisites
         id: replay_determinism_prereqs
@@ -909,9 +909,9 @@ jobs:
 
   evidence_bundle_contract_guard:
     name: Evidence bundle contract guard
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check evidence bundle prerequisites
         id: evidence_bundle_prereqs
@@ -940,11 +940,11 @@ jobs:
 
   extension_disabled_regression:
     name: Extension-disabled regression lane
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BREADBOARD_EXTENSIONS_ENABLED: "0"
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check extension-disabled prerequisites
         id: extension_disabled_prereqs
@@ -1000,11 +1000,11 @@ jobs:
 
   extension_enabled_smoke:
     name: Extension-enabled smoke lane
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BREADBOARD_EXTENSIONS_ENABLED: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check extension-enabled prerequisites
         id: extension_enabled_prereqs
@@ -1070,9 +1070,9 @@ jobs:
 
   conformance_gate:
     name: Conformance gate (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - name: Check conformance prerequisites
         id: conformance_prereqs
@@ -1186,9 +1186,9 @@ jobs:
 
   compat_core:
     name: Compat core (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -1471,9 +1471,9 @@ jobs:
           contains(github.event.pull_request.body || '', '[X] Compat break')
         )
       }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -1509,7 +1509,7 @@ jobs:
     if: ${{ vars.ATP_FIRECRACKER_SMOKE == '1' }}
     runs-on: [self-hosted, linux]
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -1552,7 +1552,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404, blacksmith-6vcpu-macos-15, blacksmith-4vcpu-windows-2025]
     steps:
       - uses: actions/checkout@v4
 
@@ -1831,9 +1831,9 @@ jobs:
 
   live_smoke:
     name: Live smoke (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -1879,9 +1879,9 @@ jobs:
 
   vscode_sidebar_e2e:
     name: VSCode Sidebar E2E (ubuntu)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-node@v4
         with:
@@ -1952,9 +1952,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404]
     steps:
-      - uses: actions/checkout@v4
+      - uses: useblacksmith/checkout@v1
 
       - uses: actions/setup-python@v5
         with:
@@ -2101,7 +2101,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [blacksmith-4vcpu-ubuntu-2404, blacksmith-6vcpu-macos-15, blacksmith-4vcpu-windows-2025]
     steps:
       - uses: actions/checkout@v4
 

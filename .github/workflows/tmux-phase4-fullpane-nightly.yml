@@ -8,14 +8,14 @@ on:
 jobs:
   phase4-fullpane-nightly-warn:
     name: phase4 fullpane nightly (warn-only)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     env:
       BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
       TMUX_SOCKET_NAME: bbcap_fullpane_nightly
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Python
         uses: actions/setup-python@v5

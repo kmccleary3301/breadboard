@@ -8,7 +8,7 @@ on:
 jobs:
   tier2_matrix_report:
     name: "Tier2 ${{ matrix.lane }} / ${{ matrix.tui_preset }} / w${{ matrix.width }} / ${{ matrix.mode }}"
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     strategy:
       fail-fast: false
@@ -70,7 +70,7 @@ jobs:
             no_color: "0"
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -158,10 +158,10 @@ jobs:
 
   runtime_triage_pack:
     name: "Runtime quick triage pack"
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -189,11 +189,11 @@ jobs:
 
   todo_preview_churn_gate:
     name: "Todo preview churn gate"
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: useblacksmith/checkout@v1
 
       - name: Setup Node
         uses: actions/setup-node@v4
