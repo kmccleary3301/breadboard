@@ -147,6 +147,13 @@ jobs:
           npm ci
           npm run build
 
+      - name: Build TUI canonical SDK dependency
+        if: ${{ matrix.package == 'tui_skeleton' }}
+        working-directory: sdk/ts
+        run: |
+          npm ci
+          npm run build
+
       - name: Install target package dependencies
         env:
           NODE_PACKAGE: ${{ matrix.package }}

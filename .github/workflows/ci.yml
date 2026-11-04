@@ -794,7 +794,7 @@ jobs:
 
   tui_contract_harness:
     needs: select_affected_tests
-    if: ${{ always() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'tui_skeleton')) }}
+    if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'tui_skeleton')) }}
     name: Legacy TUI contract harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -1142,7 +1142,7 @@ jobs:
 
   vscode_sidebar_e2e:
     needs: select_affected_tests
-    if: ${{ always() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'vscode_sidebar')) }}
+    if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'vscode_sidebar')) }}
     name: VSCode Sidebar E2E (ubuntu)
     runs-on: ubuntu-latest
     steps:
