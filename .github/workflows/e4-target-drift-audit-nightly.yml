@@ -53,7 +53,7 @@ jobs:
               "aligned_count": 0,
               "error_count": 0
             }
-            JSON
+          JSON
             exit 0
           fi
           python scripts/research/parity/audit_e4_target_drift.py \
