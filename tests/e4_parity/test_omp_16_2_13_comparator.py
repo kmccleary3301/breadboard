@@ -481,6 +481,60 @@ def test_macos_workstation_fields_normalized() -> None:
     assert report["passed"] is True
     assert report["verdict"] == "named_divergence"
 
+# From historical CI job 126503387406's first system-context mismatch.
+_CI_GPU_ROW = "- GPU: 03.0 VGA compatible controller: Amazon.com, Inc. Device 1111\n"
+
+
+def _trace_with_ci_gpu() -> dict:
+    trace = _bb_trace("declared__o0_text_stop")
+    system = trace["requests"][0]["messages"][0]
+    system["content"] = system["content"].replace("\n- Model:", "\n" + _CI_GPU_ROW + "- Model:", 1)
+    return trace
+
+
+def test_workstation_gpu_presence_is_ambient_hardware() -> None:
+    report = _report("declared__o0_text_stop", {"trace": _trace_with_ci_gpu()})
+    assert report["passed"] is True, report["findings"]
+    assert report["findings"] == []
+
+
+@pytest.mark.parametrize("difference", ["instruction", "tools", "request_option", "workstation_model"])
+def test_workstation_gpu_normalization_keeps_semantic_differences(difference: str) -> None:
+    trace = _trace_with_ci_gpu()
+    request = trace["requests"][0]
+    if difference == "instruction":
+        request["messages"][0]["content"] = request["messages"][0]["content"].replace(
+            "helpful assistant", "unhelpful assistant",
+        )
+    elif difference == "tools":
+        del request["tools"][0]
+    elif difference == "request_option":
+        request["store"] = False
+    else:
+        request["messages"][0]["content"] = request["messages"][0]["content"].replace(
+            "- Model: vllm-local/Qwen/Qwen3.5-35B-A3B", "- Model: different-model",
+        )
+    report = _report("declared__o0_text_stop", {"trace": trace})
+    assert report["verdict"] == "fail"
+    assert "requests" in {item["field"] for item in report["findings"]}
+
+
+@pytest.mark.parametrize("role", ["system", "user", "tool"])
+def test_gpu_prose_outside_system_workstation_is_preserved(role: str) -> None:
+    prose = _CI_GPU_ROW if role == "system" else "<workstation>\n" + _CI_GPU_ROW + "</workstation>"
+    trace = _trace_with_ci_gpu()
+    message = {"role": role, "content": prose}
+    if role == "tool":
+        message["tool_call_id"] = O1_READ_CALL
+    trace["requests"][0]["messages"].append(message)
+    expected = project_bb_trace(trace)["requests"][0]["messages"][-1]["content"]
+    message["content"] = prose.replace("Device 1111", "Device 2222")
+    observed = project_bb_trace(trace)["requests"][0]["messages"][-1]["content"]
+    assert expected == prose
+    assert observed == message["content"]
+    assert expected != observed
+
+
 
 def test_shortened_cwd_inside_home_normalized() -> None:
     case = "declared__o0_text_stop"
