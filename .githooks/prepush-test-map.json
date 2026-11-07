@@ -1,0 +1,5 @@
+{
+  ".githooks/pre-push": ["tests/test_prepush.py"],
+  ".githooks/prepush-test-map.json": ["tests/test_prepush.py"],
+  "scripts/quality/prepush.py": ["tests/test_prepush.py"]
+}
