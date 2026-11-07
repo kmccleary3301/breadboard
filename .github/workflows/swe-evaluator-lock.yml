@@ -14,7 +14,9 @@ permissions:
 
 jobs:
   locked-environment:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # Preserve the GitHub-hosted reference image for this byte-for-byte lock.
+    # Blacksmith measured 812c5b08… instead of the unchanged 84fcca1f… anchor.
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
