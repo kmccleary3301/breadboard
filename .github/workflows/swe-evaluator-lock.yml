@@ -14,8 +14,6 @@ permissions:
 
 jobs:
   locked-environment:
-    # Preserve the GitHub-hosted reference image for this byte-for-byte lock.
-    # Blacksmith measured 812c5b08… instead of the unchanged 84fcca1f… anchor.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
