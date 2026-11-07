@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -201,3 +204,32 @@ def test_build_report_live_mode_uses_cached_remote_lookup() -> None:
     assert report["aligned_count"] == 1
     assert report["drift_count"] == 1
     assert report["error_count"] == 0
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="GitHub workflow requires bash")
+def test_nightly_without_snapshot_writes_explicit_not_performed_report(tmp_path: Path) -> None:
+    workflow = yaml.safe_load(
+        (_repo_root() / ".github/workflows/e4-target-drift-audit-nightly.yml").read_text(encoding="utf-8")
+    )
+    step = next(
+        step
+        for step in workflow["jobs"]["e4_target_drift_audit"]["steps"]
+        if step.get("name") == "Run E4 snapshot drift audit (when explicitly selected)"
+    )
+    completed = subprocess.run(
+        ["bash", "-euo", "pipefail", "-c", step["run"]],
+        cwd=tmp_path,
+        env={**os.environ, "SNAPSHOT_JSON": ""},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    report = json.loads(
+        (tmp_path / "artifacts/e4_target_drift_snapshot_report.json").read_text(encoding="utf-8")
+    )
+    assert report["comparison_source"] == "snapshot_json"
+    assert report["comparison_performed"] is False
+    assert report["integrity_qualification"] == "not_performed"
+    assert report["skipped"] is True
+    assert report["reason"] == "snapshot_not_configured"
