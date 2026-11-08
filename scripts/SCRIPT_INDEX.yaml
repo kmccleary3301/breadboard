@@ -2,7 +2,7 @@
 # regenerable structure. CI runs --check (S-2): file-set drift fails.
 schema: bb.script_index.v1
 default_owner: kmccleary3301
-live_script_count: 449
+live_script_count: 450
 entries:
   - path: scripts/SCRIPT_INDEX.yaml
     class: live-wired
@@ -642,7 +642,7 @@ entries:
   - path: scripts/check_danger_zone_acr.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/check_darwin_lane_readiness_v0.py
     class: live-wired
@@ -667,12 +667,12 @@ entries:
   - path: scripts/check_e4_target_freeze_manifest.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, Makefile, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_e4_snapshot_recalibration.py, tests/test_e4_target_freeze_manifest.py]
+    callers: [.github/actions/ci-guards/action.yml, Makefile, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_e4_snapshot_recalibration.py, tests/test_e4_target_freeze_manifest.py]
     expiry: none (durable tooling)
   - path: scripts/check_event_envelope_snapshots.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/check_extension_audit_stream_semantics.py
     class: campaign
@@ -697,7 +697,7 @@ entries:
   - path: scripts/check_kernel_contract_pack_v1.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/check_kernel_primitive_ct.py
     class: live-wired
@@ -792,7 +792,7 @@ entries:
   - path: scripts/check_replay_determinism_gate.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/check_replay_placeholder_semantics.py
     class: campaign
@@ -832,7 +832,12 @@ entries:
   - path: scripts/check_zero_importer_advisory.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, tests/test_check_zero_importer_advisory.py]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml, tests/test_check_zero_importer_advisory.py]
+    expiry: none (durable tooling)
+  - path: scripts/ci/select_tests.py
+    class: live-wired
+    owner: kmccleary3301
+    callers: [.github/workflows/ci.yml, .github/workflows/full-suite-nightly.yml, scripts/SCRIPT_INDEX.yaml, tests/test_ci_test_selection.py]
     expiry: none (durable tooling)
   - path: scripts/ci_guard_legacy_querylakebackend_refs.sh
     class: live-wired
@@ -1757,7 +1762,7 @@ entries:
   - path: scripts/replay_opencode_session.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_parity_replays.py, tests/test_golden_replays.py]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_parity_replays.py, tests/test_golden_replays.py]
     expiry: none (durable tooling)
   - path: scripts/replay_session_from_records.py
     class: live-wired
@@ -2307,7 +2312,7 @@ entries:
   - path: scripts/run_conformance_matrix.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, scripts/SCRIPT_INDEX.yaml]
+    callers: [.github/actions/ci-guards/action.yml, scripts/SCRIPT_INDEX.yaml]
     expiry: none (durable tooling)
   - path: scripts/run_ct_scenarios.py
     class: live-wired
@@ -2447,7 +2452,7 @@ entries:
   - path: scripts/run_parity_replays.py
     class: live-wired
     owner: kmccleary3301
-    callers: [.github/workflows/ci.yml, Makefile, docs/reference/SAFE_MODE_EXECUTION_POLICY.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_e4_snapshot_recalibration.py]
+    callers: [.github/actions/ci-guards/action.yml, Makefile, docs/reference/SAFE_MODE_EXECUTION_POLICY.md, scripts/SCRIPT_INDEX.yaml, scripts/_inventory/python_scripts_inventory_20260401.csv, scripts/run_e4_snapshot_recalibration.py]
     expiry: none (durable tooling)
   - path: scripts/run_phase5_replay_reliability_bundle.sh
     class: campaign

@@ -1,0 +1,936 @@
+name: Consolidated CI guards
+
+description: Run the measured short CI guards on one runner and report every result.
+
+runs:
+  using: composite
+  steps:
+    - id: main_cache
+      continue-on-error: true
+      uses: ./.github/actions/main-seeded-cache
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+        restore-prefix: pip-${{ runner.os }}-
+
+    - name: Set up Python
+      id: setup_python
+      if: always()
+      continue-on-error: true
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.11"
+
+    - name: Install guard dependencies
+      if: always()
+      id: guard_dependencies
+      continue-on-error: true
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install -r requirements.txt
+
+    - name: Compat break acknowledgement guard
+      if: ${{ always() && github.event_name == 'pull_request' }}
+      id: compat_break_guard
+      continue-on-error: true
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const pr = context.payload.pull_request;
+          if (!pr) {
+            core.info('No pull_request context; skipping.');
+            return;
+          }
+          const labels = new Set((pr.labels || []).map(l => l.name));
+          const body = pr.body || '';
+          const bodyChecked = /\[x\]\s*\*\*Compat break\*\*/i.test(body) || /\[x\]\s*Compat break/i.test(body);
+          const bodyCompatReviewed = /Compat reviewed:\s*non-breaking/i.test(body);
+          const patterns = [
+            "breadboard_engine/state/session_state.py",
+            "breadboard_engine/api/cli_bridge/events.py",
+            "breadboard_engine/api/cli_bridge/service.py",
+            "breadboard_engine/api/cli_bridge/app.py",
+            "implementations/tools/defs/",
+            "implementations/system_prompts/",
+            "agent_configs/",
+            "breadboard_engine/tools.py",
+            "breadboard_engine/tool_calling/",
+            "breadboard_engine/tool_prompt_planner.py",
+            "breadboard_engine/guardrail_orchestrator.py",
+            "breadboard_engine/permission_broker.py",
+            "breadboard_engine/guardrails/",
+            "breadboard_engine/provider_runtime.py",
+            "breadboard_engine/provider_ir.py",
+            "breadboard_engine/agent_llm_openai.py",
+            "breadboard_engine/compilation/system_prompt_compiler.py",
+            "breadboard_engine/parity.py",
+            "scripts/run_parity_replays.py",
+            "scripts/replay_opencode_session.py",
+            "breadboard/ext/interfaces.py",
+            "breadboard/ext/registry.py",
+            "breadboard_engine/api/cli_bridge/extension_loader.py",
+            "tests/fixtures/compat/",
+          ];
+          const files = await github.paginate(github.rest.pulls.listFiles, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            pull_number: pr.number,
+            per_page: 100,
+          });
+          const touched = files.filter(f => patterns.some(p => f.filename === p || f.filename.startsWith(p)));
+          const fixtureTouched = files.filter(f => f.filename.startsWith("tests/fixtures/compat/"));
+          const hasLabel = labels.has('compat-break') || labels.has('compat_break') || labels.has('compat');
+          const hasCompatReviewedLabel = labels.has('compat-reviewed') || labels.has('compat_reviewed');
+          const hasKernelChanges = touched.length > 0 || fixtureTouched.length > 0;
+          const report = {
+            event: context.eventName,
+            repository: `${context.repo.owner}/${context.repo.repo}`,
+            pull_number: pr.number,
+            labels: Array.from(labels).sort(),
+            has_compat_break_label: hasLabel,
+            has_compat_reviewed_label: hasCompatReviewedLabel,
+            has_template_checkbox: bodyChecked,
+            has_compat_reviewed_body_marker: bodyCompatReviewed,
+            has_kernel_changes: hasKernelChanges,
+            requires_compat_acknowledgement: hasKernelChanges,
+            touched_paths: touched.map(f => f.filename),
+            compat_fixture_paths: fixtureTouched.map(f => f.filename),
+            ok: !hasKernelChanges || hasLabel || bodyChecked || hasCompatReviewedLabel || bodyCompatReviewed,
+          };
+          fs.mkdirSync('artifacts', { recursive: true });
+          fs.writeFileSync('artifacts/compat_break_guard_report.json', JSON.stringify(report, null, 2) + "\n");
+          if (!hasKernelChanges) {
+            core.info('No parity-kernel paths touched.');
+            return;
+          }
+          if (!report.ok) {
+            core.setFailed([
+              "Compat review acknowledgement required for parity-kernel changes.",
+              "Add label 'compat-break' for breaking changes, or add 'Compat reviewed: non-breaking' for reviewed non-breaking changes.",
+              "Touched paths:",
+              ...touched.map(f => `- ${f.filename}`),
+              ...(fixtureTouched.length ? ["Compat fixtures changed:", ...fixtureTouched.map(f => `- ${f.filename}`)] : []),
+            ].join("\n"));
+          } else {
+            core.info('Compat acknowledgement present for parity-kernel changes.');
+          }
+
+    - name: Upload compat-break guard report
+      if: ${{ always() && github.event_name == 'pull_request' }}
+      id: compat_break_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: compat-break-guard-report
+        path: artifacts/compat_break_guard_report.json
+        if-no-files-found: error
+
+    - name: Resolve changed files for zero-importer advisory
+      if: always()
+      id: zero_importer_diff
+      continue-on-error: true
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        PUSH_SHA: ${{ github.sha }}
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" > artifacts/changed_files.txt
+        else
+          git diff-tree --no-commit-id --name-only -r "$PUSH_SHA" > artifacts/changed_files.txt
+        fi
+
+    - name: Report new zero-importer modules (advisory)
+      if: always()
+      id: zero_importer_report
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/check_zero_importer_advisory.py \
+          --changed-files-file artifacts/changed_files.txt \
+          --json-out artifacts/zero_importer_advisory_report.json
+
+    - name: Upload zero-importer advisory report
+      if: always()
+      id: zero_importer_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: zero-importer-advisory-report
+        path: artifacts/zero_importer_advisory_report.json
+        if-no-files-found: error
+
+    - name: Check danger-zone ACR prerequisites
+      if: ${{ always() && github.event_name == 'pull_request' }}
+      id: danger_zone_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/check_danger_zone_acr.py \
+          scripts/check_kernel_contract_pack_v1.py \
+          docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
+          docs/contracts/policies/kernel_contract_pack_v1_manifest.json; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -ne 0 ]; then
+          echo "Danger-zone ACR guard prerequisites are missing; failing closed."
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          exit 1
+        fi
+        echo "ready=true" >> "$GITHUB_OUTPUT"
+
+    - name: Resolve changed files for PR guards
+      if: ${{ always() && github.event_name == 'pull_request' }}
+      id: pr_guard_diff
+      continue-on-error: true
+      shell: bash
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set -euo pipefail
+        mkdir -p artifacts
+        git diff --name-only "$BASE_SHA" "$HEAD_SHA" > artifacts/pr_changed_files.txt
+
+    - name: Enforce ACR artifact for danger-zone diffs
+      if: ${{ always() && github.event_name == 'pull_request' && steps.danger_zone_prereqs.outputs.ready == 'true' }}
+      id: danger_zone_acr
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/check_danger_zone_acr.py \
+          --manifest docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
+          --changed-files-file artifacts/pr_changed_files.txt \
+          --json-out artifacts/danger_zone_acr_report.json
+
+    - name: Validate Kernel Contract Pack v1 hash snapshot
+      if: ${{ always() && github.event_name == 'pull_request' && steps.danger_zone_prereqs.outputs.ready == 'true' }}
+      id: kernel_contract_pack
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/check_kernel_contract_pack_v1.py \
+          --manifest docs/contracts/policies/kernel_contract_pack_v1_manifest.json \
+          --repo-root . \
+          --json-out artifacts/kernel_contract_pack_report.json
+
+    - name: Danger-zone ACR guard failed closed (missing prerequisites)
+      if: ${{ always() && github.event_name == 'pull_request' && steps.danger_zone_prereqs.outputs.ready != 'true' }}
+      id: danger_zone_missing
+      continue-on-error: true
+      shell: bash
+      run: |
+        echo "Danger-zone ACR guard prerequisites were missing; the prerequisite step failed closed."
+        exit 1
+
+    - name: Upload danger-zone ACR report
+      if: ${{ always() && github.event_name == 'pull_request' && steps.danger_zone_prereqs.outputs.ready == 'true' }}
+      id: danger_zone_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: danger-zone-acr-guard-report
+        path: |
+          artifacts/danger_zone_acr_report.json
+          artifacts/kernel_contract_pack_report.json
+        if-no-files-found: error
+
+    - name: Check ATP contract governance prerequisites
+      if: ${{ always() && github.event_name == 'pull_request' }}
+      id: atp_contract_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in scripts/check_atp_contract_governance.py .github/PULL_REQUEST_TEMPLATE.md; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Enforce ATP contract governance policy
+      if: ${{ always() && github.event_name == 'pull_request' && steps.atp_contract_prereqs.outputs.ready == 'true' }}
+      id: atp_contract_governance
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/check_atp_contract_governance.py \
+          --changed-files-file artifacts/pr_changed_files.txt \
+          --pr-template .github/PULL_REQUEST_TEMPLATE.md \
+          --json-out artifacts/atp_contract_governance_report.json
+
+    - name: ATP contract governance guard skipped (missing prerequisites)
+      if: ${{ always() && github.event_name == 'pull_request' && steps.atp_contract_prereqs.outputs.ready != 'true' }}
+      id: atp_contract_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "ATP contract governance guard skipped on this branch."
+
+    - name: Upload ATP contract governance report
+      if: ${{ always() && github.event_name == 'pull_request' && steps.atp_contract_prereqs.outputs.ready == 'true' }}
+      id: atp_contract_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: atp-contract-governance-guard-report
+        path: artifacts/atp_contract_governance_report.json
+        if-no-files-found: error
+
+    - name: Check governance template prerequisites
+      if: always()
+      id: governance_template_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in scripts/check_governance_v2_templates.py .github/PULL_REQUEST_TEMPLATE.md; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Validate governance template bindings
+      if: ${{ always() && steps.governance_template_prereqs.outputs.ready == 'true' }}
+      id: governance_templates
+      continue-on-error: true
+      shell: bash
+      run: |
+        mkdir -p artifacts
+        python scripts/check_governance_v2_templates.py \
+          --repo-root . \
+          --pr-template .github/PULL_REQUEST_TEMPLATE.md \
+          --json-out artifacts/governance_v2_templates_report.json
+
+    - name: Governance templates guard skipped (missing prerequisites)
+      if: ${{ always() && steps.governance_template_prereqs.outputs.ready != 'true' }}
+      id: governance_templates_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Governance templates guard skipped on this branch."
+
+    - name: Upload governance templates report
+      if: ${{ always() && steps.governance_template_prereqs.outputs.ready == 'true' }}
+      id: governance_templates_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: governance-v2-templates-report
+        path: artifacts/governance_v2_templates_report.json
+        if-no-files-found: error
+
+    - name: Check kernel-extension boundary prerequisites
+      if: always()
+      id: kernel_ext_boundary_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        if [ -f scripts/validate_kernel_ext_boundaries.py ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "missing prerequisite: scripts/validate_kernel_ext_boundaries.py"
+        fi
+
+    - name: Validate kernel-to-extension import boundaries
+      if: ${{ always() && steps.kernel_ext_boundary_prereqs.outputs.ready == 'true' }}
+      id: kernel_ext_boundary
+      continue-on-error: true
+      shell: bash
+      run: python scripts/validate_kernel_ext_boundaries.py --json
+
+    - name: Kernel-extension boundary guard skipped (missing prerequisites)
+      if: ${{ always() && steps.kernel_ext_boundary_prereqs.outputs.ready != 'true' }}
+      id: kernel_ext_boundary_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Kernel-extension boundary guard skipped on this branch."
+
+    - name: Check request-body hash prerequisites
+      if: always()
+      id: request_body_hash_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/check_request_body_hashes.py \
+          tests/fixtures/compat/request_bodies \
+          docs/conformance/request_body_hashes_baseline_v1.json; do
+          if [ ! -e "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Enforce request-body hash stability baseline
+      if: ${{ always() && steps.request_body_hash_prereqs.outputs.ready == 'true' }}
+      id: request_body_hash
+      continue-on-error: true
+      shell: bash
+      run: |
+        mkdir -p artifacts
+        python scripts/check_request_body_hashes.py \
+          --root tests/fixtures/compat/request_bodies \
+          --baseline docs/conformance/request_body_hashes_baseline_v1.json \
+          --json-out artifacts/request_body_hash_gate_report.json
+
+    - name: Request-body hash gate skipped (missing prerequisites)
+      if: ${{ always() && steps.request_body_hash_prereqs.outputs.ready != 'true' }}
+      id: request_body_hash_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Request-body hash gate skipped on this branch."
+
+    - name: Upload request-body hash gate report
+      if: ${{ always() && steps.request_body_hash_prereqs.outputs.ready == 'true' }}
+      id: request_body_hash_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: request-body-hash-gate-report
+        path: artifacts/request_body_hash_gate_report.json
+        if-no-files-found: error
+
+    - name: Check tool-schema hash prerequisites
+      if: always()
+      id: tool_schema_hash_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/check_tool_schema_hashes.py \
+          implementations/tools/defs \
+          docs/conformance/tool_schema_hashes_baseline_v1.json; do
+          if [ ! -e "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Enforce tool-schema hash stability baseline
+      if: ${{ always() && steps.tool_schema_hash_prereqs.outputs.ready == 'true' }}
+      id: tool_schema_hash
+      continue-on-error: true
+      shell: bash
+      run: |
+        mkdir -p artifacts
+        python scripts/check_tool_schema_hashes.py \
+          --root implementations/tools/defs \
+          --baseline docs/conformance/tool_schema_hashes_baseline_v1.json \
+          --json-out artifacts/tool_schema_hash_gate_report.json
+
+    - name: Tool-schema hash gate skipped (missing prerequisites)
+      if: ${{ always() && steps.tool_schema_hash_prereqs.outputs.ready != 'true' }}
+      id: tool_schema_hash_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Tool-schema hash gate skipped on this branch."
+
+    - name: Upload tool-schema hash gate report
+      if: ${{ always() && steps.tool_schema_hash_prereqs.outputs.ready == 'true' }}
+      id: tool_schema_hash_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: tool-schema-hash-gate-report
+        path: artifacts/tool_schema_hash_gate_report.json
+        if-no-files-found: error
+
+    - name: Check event-envelope snapshot prerequisites
+      if: always()
+      id: event_envelope_snapshot_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/check_event_envelope_snapshots.py \
+          docs/conformance/event_envelope_snapshots_baseline_v1.json; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Enforce event-envelope snapshot baseline
+      if: ${{ always() && steps.event_envelope_snapshot_prereqs.outputs.ready == 'true' }}
+      id: event_envelope_snapshot
+      continue-on-error: true
+      shell: bash
+      run: |
+        mkdir -p artifacts
+        python scripts/check_event_envelope_snapshots.py \
+          --baseline docs/conformance/event_envelope_snapshots_baseline_v1.json \
+          --json-out artifacts/event_envelope_snapshot_gate_report.json
+
+    - name: Event-envelope snapshot gate skipped (missing prerequisites)
+      if: ${{ always() && steps.event_envelope_snapshot_prereqs.outputs.ready != 'true' }}
+      id: event_envelope_snapshot_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Event-envelope snapshot gate skipped on this branch."
+
+    - name: Upload event-envelope snapshot gate report
+      if: ${{ always() && steps.event_envelope_snapshot_prereqs.outputs.ready == 'true' }}
+      id: event_envelope_snapshot_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: event-envelope-snapshot-gate-report
+        path: artifacts/event_envelope_snapshot_gate_report.json
+        if-no-files-found: error
+
+    - name: Validate E4 target-freeze manifest coverage
+      if: always()
+      id: e4_target_freeze_manifest
+      continue-on-error: true
+      shell: bash
+      run: python scripts/check_e4_target_freeze_manifest.py --json
+
+    - name: Run E4 target-freeze manifest validator unit test
+      if: always()
+      id: e4_target_freeze_test
+      continue-on-error: true
+      shell: bash
+      run: pytest -q tests/test_e4_target_freeze_manifest.py
+
+    - name: Check conformance prerequisites
+      if: always()
+      id: conformance_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/conformance_scoreboard.py \
+          scripts/provider_conformance_report.py \
+          docs/conformance/scoreboard_baseline.json \
+          docs/conformance/provider_conformance_baseline.json; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Resolve conformance regression override context
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' && github.event_name == 'pull_request' }}
+      id: conformance_override
+      continue-on-error: true
+      shell: bash
+      run: |
+        python - <<'PY'
+        import json
+        import os
+        import re
+
+        with open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        pr = data.get("pull_request") or {}
+        labels = {str(item.get("name", "")) for item in (pr.get("labels") or []) if isinstance(item, dict)}
+        body = pr.get("body") or ""
+        match = re.search(r"Conformance override reason:\\s*(.+)", body, flags=re.IGNORECASE)
+        reason = match.group(1).strip() if match else ""
+        allow = bool(reason and "conformance-override" in labels)
+
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as handle:
+            handle.write(f"allow={str(allow).lower()}\n")
+            handle.write(f"reason={reason}\n")
+        PY
+
+    - name: Run strict conformance scoreboard gate
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
+      id: conformance_scoreboard_strict
+      continue-on-error: true
+      shell: bash
+      env:
+        SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
+        SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
+      run: |
+        EXTRA=()
+        if [[ "${SCORE_ALLOW:-}" == "true" && -n "${SCORE_REASON:-}" ]]; then
+          EXTRA+=(--allow-regression --override-reason "${SCORE_REASON}")
+        fi
+        python scripts/conformance_scoreboard.py \
+          --strict-all-five \
+          --baseline-json docs/conformance/scoreboard_baseline.json \
+          --require-no-regression \
+          "${EXTRA[@]}"
+
+    - name: Write conformance scoreboard report
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
+      id: conformance_scoreboard_report
+      continue-on-error: true
+      shell: bash
+      env:
+        SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
+        SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
+      run: |
+        mkdir -p artifacts/conformance
+        EXTRA=()
+        if [[ "${SCORE_ALLOW:-}" == "true" && -n "${SCORE_REASON:-}" ]]; then
+          EXTRA+=(--allow-regression --override-reason "${SCORE_REASON}")
+        fi
+        python scripts/conformance_scoreboard.py \
+          --baseline-json docs/conformance/scoreboard_baseline.json \
+          --require-no-regression \
+          "${EXTRA[@]}" \
+          --json-out artifacts/conformance/scoreboard.json \
+          --markdown-out artifacts/conformance/scoreboard.md
+
+    - name: Provider conformance report
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
+      id: provider_conformance_report
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/provider_conformance_report.py \
+          --baseline docs/conformance/provider_conformance_baseline.json \
+          --out artifacts/provider_conformance/report.json
+
+    - name: Docs references guard (core + conformance docs)
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
+      id: conformance_docs_refs
+      continue-on-error: true
+      shell: bash
+      run: |
+        python scripts/check_docs_references.py \
+          docs/INSTALL_AND_DEV_QUICKSTART.md \
+          docs/REPLAY_EVAL_LANE.md \
+          docs/PROVIDER_CONFORMANCE_MATRIX.md \
+          docs/EXECUTION_BUDGETS_AND_CANCELLATION.md \
+          docs/ORCHESTRATION_EVENT_TAXONOMY.md \
+          docs/SDK_DOCS_INDEX.md \
+          docs/MIGRATION_AND_COMPATIBILITY.md \
+          docs/KNOWN_LIMITS_AND_ROADMAP.md \
+          docs/CONFORMANCE_5_0_SPEC.md \
+          docs/CONFORMANCE_SCOREBOARD.md \
+          docs/CONFORMANCE_GOVERNANCE.md \
+          docs/CONFORMANCE_REGRESSION_PLAYBOOK.md \
+          docs/CONFORMANCE_DEV_GUIDE.md
+
+    - name: Conformance gate skipped (missing prerequisites)
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready != 'true' }}
+      id: conformance_skipped
+      continue-on-error: true
+      shell: bash
+      run: |
+        echo "Skipping conformance gate: prerequisite scripts/baselines are not present on this branch."
+
+    - name: Upload conformance artifacts
+      if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
+      id: conformance_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: conformance-scoreboard
+        path: |
+          artifacts/conformance/**
+          artifacts/provider_conformance/report.json
+        if-no-files-found: error
+
+    - name: Check extension-disabled regression prerequisites
+      if: always()
+      id: extension_disabled_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          scripts/validate_kernel_ext_boundaries.py \
+          scripts/run_conformance_matrix.py \
+          tests/test_validate_kernel_ext_boundaries.py \
+          tests/test_run_conformance_matrix.py \
+          tests/test_parity_manifest_hardening.py; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run extension-disabled boundary validator
+      if: ${{ always() && steps.extension_disabled_prereqs.outputs.ready == 'true' }}
+      id: extension_disabled_boundary
+      continue-on-error: true
+      shell: bash
+      env:
+        BREADBOARD_EXTENSIONS_ENABLED: "0"
+      run: python scripts/validate_kernel_ext_boundaries.py --json
+
+    - name: Run extension-disabled conformance matrix
+      if: ${{ always() && steps.extension_disabled_prereqs.outputs.ready == 'true' }}
+      id: extension_disabled_matrix
+      continue-on-error: true
+      shell: bash
+      env:
+        BREADBOARD_EXTENSIONS_ENABLED: "0"
+      run: |
+        python scripts/run_conformance_matrix.py \
+          --schema-dir docs/conformance/schemas \
+          --fixtures-dir tests/fixtures/conformance_v1/fixtures
+
+    - name: Run extension-disabled regression tests
+      if: ${{ always() && steps.extension_disabled_prereqs.outputs.ready == 'true' }}
+      id: extension_disabled_tests
+      continue-on-error: true
+      shell: bash
+      env:
+        BREADBOARD_EXTENSIONS_ENABLED: "0"
+      run: |
+        pytest -q \
+          tests/test_validate_kernel_ext_boundaries.py \
+          tests/test_run_conformance_matrix.py \
+          tests/test_parity_manifest_hardening.py
+
+    - name: Extension-disabled regression lane skipped (missing prerequisites)
+      if: ${{ always() && steps.extension_disabled_prereqs.outputs.ready != 'true' }}
+      id: extension_disabled_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Extension-disabled regression lane skipped on this branch."
+
+    - name: Check replay determinism prerequisites
+      if: always()
+      id: replay_determinism_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        missing=0
+        for p in \
+          tests/test_check_replay_determinism_gate.py \
+          scripts/check_replay_determinism_gate.py \
+          tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json; do
+          if [ ! -f "$p" ]; then
+            echo "missing prerequisite: $p"
+            missing=1
+          fi
+        done
+        if [ "$missing" -eq 0 ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Unit tests for replay determinism gate
+      if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready == 'true' }}
+      id: replay_determinism_tests
+      continue-on-error: true
+      shell: bash
+      run: pytest -q tests/test_check_replay_determinism_gate.py
+
+    - name: Run replay determinism gate against seeded fixture
+      if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready == 'true' }}
+      id: replay_determinism_gate
+      continue-on-error: true
+      shell: bash
+      run: |
+        mkdir -p artifacts/conformance
+        python scripts/check_replay_determinism_gate.py \
+          --glob "tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json" \
+          --json-out artifacts/conformance/replay_determinism_gate_report_v1.json
+
+    - name: Replay determinism guard skipped (missing prerequisites)
+      if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready != 'true' }}
+      id: replay_determinism_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Replay determinism guard skipped on this branch."
+
+    - name: Upload replay determinism gate artifact
+      if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready == 'true' }}
+      id: replay_determinism_upload
+      continue-on-error: true
+      uses: actions/upload-artifact@v4
+      with:
+        name: replay-determinism-gate-artifact
+        path: artifacts/conformance/replay_determinism_gate_report_v1.json
+        if-no-files-found: error
+
+    - name: Check evidence bundle prerequisites
+      if: always()
+      id: evidence_bundle_prereqs
+      continue-on-error: true
+      shell: bash
+      run: |
+        if [ -f tests/test_evidence_bundle_v1.py ]; then
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+          echo "missing prerequisite: tests/test_evidence_bundle_v1.py"
+        fi
+
+    - name: Evidence bundle unit tests
+      if: ${{ always() && steps.evidence_bundle_prereqs.outputs.ready == 'true' }}
+      id: evidence_bundle_tests
+      continue-on-error: true
+      shell: bash
+      run: pytest -q tests/test_evidence_bundle_v1.py
+
+    - name: Evidence bundle contract guard skipped (missing prerequisites)
+      if: ${{ always() && steps.evidence_bundle_prereqs.outputs.ready != 'true' }}
+      id: evidence_bundle_skipped
+      continue-on-error: true
+      shell: bash
+      run: echo "Evidence bundle contract guard skipped on this branch."
+
+    - name: Report each guard result
+      if: always()
+      shell: bash
+      env:
+        CACHE_RESTORE: ${{ steps.main_cache.outcome }}
+        SETUP_PYTHON: ${{ steps.setup_python.outcome }}
+        GUARD_DEPENDENCIES: ${{ steps.guard_dependencies.outcome }}
+        COMPAT_BREAK_ENABLED: ${{ github.event_name == 'pull_request' }}
+        COMPAT_BREAK: ${{ steps.compat_break_guard.outcome }}
+        COMPAT_BREAK_UPLOAD: ${{ steps.compat_break_upload.outcome }}
+        ZERO_IMPORTER_DIFF: ${{ steps.zero_importer_diff.outcome }}
+        ZERO_IMPORTER_REPORT: ${{ steps.zero_importer_report.outcome }}
+        ZERO_IMPORTER_UPLOAD: ${{ steps.zero_importer_upload.outcome }}
+        DANGER_ZONE_ENABLED: ${{ github.event_name == 'pull_request' && (steps.danger_zone_prereqs.outputs.ready == 'true' || steps.danger_zone_prereqs.outcome == 'failure') }}
+        DANGER_ZONE_PREREQUISITES: ${{ steps.danger_zone_prereqs.outcome }}
+        PR_GUARD_DIFF: ${{ steps.pr_guard_diff.outcome }}
+        DANGER_ZONE_MISSING: ${{ steps.danger_zone_missing.outcome }}
+        DANGER_ZONE_ACR: ${{ steps.danger_zone_acr.outcome }}
+        KERNEL_CONTRACT_PACK: ${{ steps.kernel_contract_pack.outcome }}
+        DANGER_ZONE_UPLOAD: ${{ steps.danger_zone_upload.outcome }}
+        ATP_CONTRACT_ENABLED: ${{ github.event_name == 'pull_request' && (steps.atp_contract_prereqs.outputs.ready == 'true' || steps.atp_contract_prereqs.outcome == 'failure') }}
+        ATP_CONTRACT_PREREQUISITES: ${{ steps.atp_contract_prereqs.outcome }}
+        ATP_CONTRACT_POLICY: ${{ steps.atp_contract_governance.outcome }}
+        ATP_CONTRACT_UPLOAD: ${{ steps.atp_contract_upload.outcome }}
+        GOVERNANCE_TEMPLATES_ENABLED: ${{ steps.governance_template_prereqs.outputs.ready == 'true' || steps.governance_template_prereqs.outcome == 'failure' }}
+        GOVERNANCE_TEMPLATES: ${{ steps.governance_templates.outcome }}
+        GOVERNANCE_TEMPLATES_UPLOAD: ${{ steps.governance_templates_upload.outcome }}
+        KERNEL_EXT_BOUNDARY_ENABLED: ${{ steps.kernel_ext_boundary_prereqs.outputs.ready == 'true' || steps.kernel_ext_boundary_prereqs.outcome == 'failure' }}
+        KERNEL_EXT_BOUNDARY: ${{ steps.kernel_ext_boundary.outcome }}
+        REQUEST_BODY_HASH_ENABLED: ${{ steps.request_body_hash_prereqs.outputs.ready == 'true' || steps.request_body_hash_prereqs.outcome == 'failure' }}
+        REQUEST_BODY_HASH: ${{ steps.request_body_hash.outcome }}
+        REQUEST_BODY_HASH_UPLOAD: ${{ steps.request_body_hash_upload.outcome }}
+        TOOL_SCHEMA_HASH_ENABLED: ${{ steps.tool_schema_hash_prereqs.outputs.ready == 'true' || steps.tool_schema_hash_prereqs.outcome == 'failure' }}
+        TOOL_SCHEMA_HASH: ${{ steps.tool_schema_hash.outcome }}
+        TOOL_SCHEMA_HASH_UPLOAD: ${{ steps.tool_schema_hash_upload.outcome }}
+        EVENT_ENVELOPE_ENABLED: ${{ steps.event_envelope_snapshot_prereqs.outputs.ready == 'true' || steps.event_envelope_snapshot_prereqs.outcome == 'failure' }}
+        EVENT_ENVELOPE: ${{ steps.event_envelope_snapshot.outcome }}
+        EVENT_ENVELOPE_UPLOAD: ${{ steps.event_envelope_snapshot_upload.outcome }}
+        E4_TARGET_FREEZE: ${{ steps.e4_target_freeze_manifest.outcome }}
+        E4_TARGET_FREEZE_TEST: ${{ steps.e4_target_freeze_test.outcome }}
+        CONFORMANCE_ENABLED: ${{ steps.conformance_prereqs.outputs.ready == 'true' || steps.conformance_prereqs.outcome == 'failure' }}
+        CONFORMANCE_PREREQUISITES: ${{ steps.conformance_prereqs.outcome }}
+        CONFORMANCE_OVERRIDE: ${{ steps.conformance_override.outcome }}
+        CONFORMANCE_SCOREBOARD: ${{ steps.conformance_scoreboard_strict.outcome }}
+        CONFORMANCE_SCOREBOARD_REPORT: ${{ steps.conformance_scoreboard_report.outcome }}
+        PROVIDER_CONFORMANCE_REPORT: ${{ steps.provider_conformance_report.outcome }}
+        CONFORMANCE_DOCS: ${{ steps.conformance_docs_refs.outcome }}
+        CONFORMANCE_UPLOAD: ${{ steps.conformance_upload.outcome }}
+        EXTENSION_DISABLED_ENABLED: ${{ steps.extension_disabled_prereqs.outputs.ready == 'true' || steps.extension_disabled_prereqs.outcome == 'failure' }}
+        EXTENSION_DISABLED_PREREQUISITES: ${{ steps.extension_disabled_prereqs.outcome }}
+        EXTENSION_DISABLED_BOUNDARY: ${{ steps.extension_disabled_boundary.outcome }}
+        EXTENSION_DISABLED_MATRIX: ${{ steps.extension_disabled_matrix.outcome }}
+        EXTENSION_DISABLED_TESTS: ${{ steps.extension_disabled_tests.outcome }}
+        REPLAY_DETERMINISM_ENABLED: ${{ steps.replay_determinism_prereqs.outputs.ready == 'true' || steps.replay_determinism_prereqs.outcome == 'failure' }}
+        REPLAY_DETERMINISM_PREREQUISITES: ${{ steps.replay_determinism_prereqs.outcome }}
+        REPLAY_DETERMINISM_TESTS: ${{ steps.replay_determinism_tests.outcome }}
+        REPLAY_DETERMINISM_GATE: ${{ steps.replay_determinism_gate.outcome }}
+        REPLAY_DETERMINISM_UPLOAD: ${{ steps.replay_determinism_upload.outcome }}
+        EVIDENCE_BUNDLE_ENABLED: ${{ steps.evidence_bundle_prereqs.outputs.ready == 'true' || steps.evidence_bundle_prereqs.outcome == 'failure' }}
+        EVIDENCE_BUNDLE_TESTS: ${{ steps.evidence_bundle_tests.outcome }}
+      run: |
+        set -euo pipefail
+        echo "### Consolidated CI guards" >> "$GITHUB_STEP_SUMMARY"
+        echo "| Guard | Result |" >> "$GITHUB_STEP_SUMMARY"
+        echo "| --- | --- |" >> "$GITHUB_STEP_SUMMARY"
+        failures=0
+        report_guard() {
+          local name="$1"
+          local policy="$2"
+          local enabled="$3"
+          shift 3
+          local result=skipped
+          local detail=""
+          for step_result in "$@"; do
+            if [ -z "$detail" ]; then
+              detail="$step_result"
+            else
+              detail="$detail, $step_result"
+            fi
+            if [ "$step_result" = failure ] || [ "$step_result" = cancelled ]; then
+              result=failure
+            elif [ "$step_result" = success ] && [ "$result" != failure ]; then
+              result=success
+            fi
+          done
+          if [ "$enabled" = true ] && [ "$result" = skipped ] && [ "$policy" = blocking ]; then
+            result=failure
+          fi
+          printf '| %s | %s (%s) |\n' "$name" "$result" "${detail:-not run}" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$policy" = blocking ] && [ "$result" = failure ]; then
+            failures=1
+          fi
+        }
+        report_guard "Dependency cache restore" advisory true "$CACHE_RESTORE"
+        report_guard "Python setup" blocking true "$SETUP_PYTHON"
+        report_guard "Guard dependencies" blocking true "$GUARD_DEPENDENCIES"
+        report_guard "Compat break acknowledgement" blocking "$COMPAT_BREAK_ENABLED" "$COMPAT_BREAK" "$COMPAT_BREAK_UPLOAD"
+        report_guard "Zero-importer advisory" advisory true "$ZERO_IMPORTER_DIFF" "$ZERO_IMPORTER_REPORT" "$ZERO_IMPORTER_UPLOAD"
+        report_guard "Danger-zone ACR and contract-pack checks" blocking "$DANGER_ZONE_ENABLED" "$DANGER_ZONE_PREREQUISITES" "$PR_GUARD_DIFF" "$DANGER_ZONE_MISSING" "$DANGER_ZONE_ACR" "$KERNEL_CONTRACT_PACK" "$DANGER_ZONE_UPLOAD"
+        report_guard "ATP contract governance" blocking "$ATP_CONTRACT_ENABLED" "$ATP_CONTRACT_PREREQUISITES" "$ATP_CONTRACT_POLICY" "$ATP_CONTRACT_UPLOAD"
+        report_guard "Governance v2 templates" blocking "$GOVERNANCE_TEMPLATES_ENABLED" "$GOVERNANCE_TEMPLATES" "$GOVERNANCE_TEMPLATES_UPLOAD"
+        report_guard "Kernel-extension boundary" blocking "$KERNEL_EXT_BOUNDARY_ENABLED" "$KERNEL_EXT_BOUNDARY"
+        report_guard "Request-body hash stability" blocking "$REQUEST_BODY_HASH_ENABLED" "$REQUEST_BODY_HASH" "$REQUEST_BODY_HASH_UPLOAD"
+        report_guard "Tool-schema hash stability" blocking "$TOOL_SCHEMA_HASH_ENABLED" "$TOOL_SCHEMA_HASH" "$TOOL_SCHEMA_HASH_UPLOAD"
+        report_guard "Event-envelope snapshot stability" blocking "$EVENT_ENVELOPE_ENABLED" "$EVENT_ENVELOPE" "$EVENT_ENVELOPE_UPLOAD"
+        report_guard "E4 target-freeze manifest" blocking true "$E4_TARGET_FREEZE" "$E4_TARGET_FREEZE_TEST"
+        report_guard "Conformance gate" blocking "$CONFORMANCE_ENABLED" "$CONFORMANCE_PREREQUISITES" "$CONFORMANCE_OVERRIDE" "$CONFORMANCE_SCOREBOARD" "$CONFORMANCE_SCOREBOARD_REPORT" "$PROVIDER_CONFORMANCE_REPORT" "$CONFORMANCE_DOCS" "$CONFORMANCE_UPLOAD"
+        report_guard "Extension-disabled regression" blocking "$EXTENSION_DISABLED_ENABLED" "$EXTENSION_DISABLED_PREREQUISITES" "$EXTENSION_DISABLED_BOUNDARY" "$EXTENSION_DISABLED_MATRIX" "$EXTENSION_DISABLED_TESTS"
+        report_guard "Replay determinism" blocking "$REPLAY_DETERMINISM_ENABLED" "$REPLAY_DETERMINISM_PREREQUISITES" "$REPLAY_DETERMINISM_TESTS" "$REPLAY_DETERMINISM_GATE" "$REPLAY_DETERMINISM_UPLOAD"
+        report_guard "Evidence bundle contract" blocking "$EVIDENCE_BUNDLE_ENABLED" "$EVIDENCE_BUNDLE_TESTS"
+        if [ "$failures" -ne 0 ]; then
+          exit 1
+        fi

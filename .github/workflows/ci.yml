@@ -16,20 +16,33 @@ jobs:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: |
+            ~/.cache/pip
+            ~/.cache/uv
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: false
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.job }}-${{ hashFiles('sdk/ts/package-lock.json') }}
+          restore-prefix: npm-${{ runner.os }}-
 
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: sdk/ts/package-lock.json
 
       - name: Bootstrap product-spine environment
         run: |
@@ -96,12 +109,18 @@ jobs:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       - name: Bootstrap compilation environment
         run: |
@@ -131,551 +150,23 @@ jobs:
           test "$PRODUCT_SPINE_CHECKS" = success
           test "$PRODUCT_COMPILATION" = success
 
-  compat_break_guard:
-    name: Compat break guard
-    if: ${{ github.event_name == 'pull_request' }}
+  ci_guards:
+    name: Consolidated CI guards
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const pr = context.payload.pull_request;
-            if (!pr) {
-              core.info('No pull_request context; skipping.');
-              return;
-            }
-            const labels = new Set((pr.labels || []).map(l => l.name));
-            const body = pr.body || '';
-            const bodyChecked = /\[x\]\s*\*\*Compat break\*\*/i.test(body) || /\[x\]\s*Compat break/i.test(body);
-            const bodyCompatReviewed = /Compat reviewed:\s*non-breaking/i.test(body);
-
-            const patterns = [
-              "breadboard_engine/state/session_state.py",
-              "breadboard_engine/api/cli_bridge/events.py",
-              "breadboard_engine/api/cli_bridge/service.py",
-              "breadboard_engine/api/cli_bridge/app.py",
-              "implementations/tools/defs/",
-              "implementations/system_prompts/",
-              "agent_configs/",
-              "breadboard_engine/tools.py",
-              "breadboard_engine/tool_calling/",
-              "breadboard_engine/tool_prompt_planner.py",
-              "breadboard_engine/guardrail_orchestrator.py",
-              "breadboard_engine/permission_broker.py",
-              "breadboard_engine/guardrails/",
-              "breadboard_engine/provider_runtime.py",
-              "breadboard_engine/provider_ir.py",
-              "breadboard_engine/agent_llm_openai.py",
-              "breadboard_engine/compilation/system_prompt_compiler.py",
-              "breadboard_engine/parity.py",
-              "scripts/run_parity_replays.py",
-              "scripts/replay_opencode_session.py",
-              "breadboard/ext/interfaces.py",
-              "breadboard/ext/registry.py",
-              "breadboard_engine/api/cli_bridge/extension_loader.py",
-              "tests/fixtures/compat/",
-            ];
-
-            const files = await github.paginate(github.rest.pulls.listFiles, {
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr.number,
-              per_page: 100,
-            });
-            const touched = files.filter(f => patterns.some(p => f.filename === p || f.filename.startsWith(p)));
-            const fixtureTouched = files.filter(f => f.filename.startsWith("tests/fixtures/compat/"));
-            const hasLabel = labels.has('compat-break') || labels.has('compat_break') || labels.has('compat');
-            const hasCompatReviewedLabel = labels.has('compat-reviewed') || labels.has('compat_reviewed');
-            const hasKernelChanges = touched.length > 0 || fixtureTouched.length > 0;
-            const report = {
-              event: context.eventName,
-              repository: `${context.repo.owner}/${context.repo.repo}`,
-              pull_number: pr.number,
-              labels: Array.from(labels).sort(),
-              has_compat_break_label: hasLabel,
-              has_compat_reviewed_label: hasCompatReviewedLabel,
-              has_template_checkbox: bodyChecked,
-              has_compat_reviewed_body_marker: bodyCompatReviewed,
-              has_kernel_changes: hasKernelChanges,
-              requires_compat_acknowledgement: hasKernelChanges,
-              touched_paths: touched.map(f => f.filename),
-              compat_fixture_paths: fixtureTouched.map(f => f.filename),
-              ok: !hasKernelChanges || hasLabel || bodyChecked || hasCompatReviewedLabel || bodyCompatReviewed,
-            };
-
-            fs.mkdirSync('artifacts', { recursive: true });
-            fs.writeFileSync('artifacts/compat_break_guard_report.json', JSON.stringify(report, null, 2) + "\n");
-
-            if (!hasKernelChanges) {
-              core.info('No parity-kernel paths touched.');
-              return;
-            }
-
-            if (!report.ok) {
-              core.setFailed(
-                [
-                  "Compat review acknowledgement required for parity-kernel changes.",
-                  "Add label 'compat-break' for breaking changes, or add 'Compat reviewed: non-breaking' for reviewed non-breaking changes.",
-                  "Touched paths:",
-                  ...touched.map(f => `- ${f.filename}`),
-                  ...(fixtureTouched.length ? ["Compat fixtures changed:", ...fixtureTouched.map(f => `- ${f.filename}`)] : []),
-                ].join("\\n")
-              );
-            } else {
-              core.info('Compat acknowledgement present for parity-kernel changes.');
-            }
-
-      - name: Upload compat-break guard report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: compat-break-guard-report
-          path: artifacts/compat_break_guard_report.json
-          if-no-files-found: error
-
-
-  zero_importer_advisory:
-    name: Zero-importer advisory
-    runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
+          filter: blob:none
           fetch-depth: 0
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Resolve changed files for advisory
-        shell: bash
-        run: |
-          mkdir -p artifacts
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            git diff --name-only "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}" > artifacts/changed_files.txt
-          else
-            git diff-tree --no-commit-id --name-only -r "${{ github.sha }}" > artifacts/changed_files.txt
-          fi
-
-      - name: Report new zero-importer modules
-        run: |
-          python scripts/check_zero_importer_advisory.py \
-            --changed-files-file artifacts/changed_files.txt \
-            --json-out artifacts/zero_importer_advisory_report.json
-
-      - name: Upload zero-importer advisory report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: zero-importer-advisory-report
-          path: artifacts/zero_importer_advisory_report.json
-          if-no-files-found: error
-
-  danger_zone_acr_guard:
-    name: Danger-zone ACR guard
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check danger-zone ACR prerequisites
-        id: danger_zone_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_danger_zone_acr.py \
-            scripts/check_kernel_contract_pack_v1.py \
-            docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
-            docs/contracts/policies/kernel_contract_pack_v1_manifest.json; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            echo "Danger-zone ACR guard prerequisites are missing; failing closed."
-            exit 1
-          fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/setup-python@v5
-        if: steps.danger_zone_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Resolve changed files for PR
-        if: steps.danger_zone_prereqs.outputs.ready == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
-          git diff --name-only "$base_sha" "$head_sha" > artifacts/changed_files.txt
-          echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
-
-      - name: Enforce ACR artifact for danger-zone diffs
-        if: steps.danger_zone_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/check_danger_zone_acr.py \
-            --manifest docs/contracts/policies/kernel_danger_zone_manifest_v1.json \
-            --changed-files-file artifacts/changed_files.txt \
-            --json-out artifacts/danger_zone_acr_report.json
-
-      - name: Validate Kernel Contract Pack v1 hash snapshot
-        if: steps.danger_zone_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/check_kernel_contract_pack_v1.py \
-            --manifest docs/contracts/policies/kernel_contract_pack_v1_manifest.json \
-            --repo-root . \
-            --json-out artifacts/kernel_contract_pack_report.json
-
-      - name: Danger-zone ACR guard failed closed (missing prerequisites)
-        if: failure() && steps.danger_zone_prereqs.outputs.ready != 'true'
-        run: echo "Danger-zone ACR guard prerequisites were missing; the prerequisite step failed closed."
-
-      - name: Upload danger-zone ACR report
-        if: ${{ always() && steps.danger_zone_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: danger-zone-acr-guard-report
-          path: |
-            artifacts/danger_zone_acr_report.json
-            artifacts/kernel_contract_pack_report.json
-          if-no-files-found: error
-
-  atp_contract_governance_guard:
-    name: ATP contract governance guard
-    if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Check ATP contract governance prerequisites
-        id: atp_contract_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_atp_contract_governance.py \
-            .github/PULL_REQUEST_TEMPLATE.md; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.atp_contract_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Resolve changed files for PR
-        if: steps.atp_contract_prereqs.outputs.ready == 'true'
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          head_sha="${{ github.event.pull_request.head.sha }}"
-          git diff --name-only "$base_sha" "$head_sha" > artifacts/changed_files.txt
-          echo "changed files count: $(wc -l < artifacts/changed_files.txt)"
-
-      - name: Enforce ATP contract governance policy
-        if: steps.atp_contract_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/check_atp_contract_governance.py \
-            --changed-files-file artifacts/changed_files.txt \
-            --pr-template .github/PULL_REQUEST_TEMPLATE.md \
-            --json-out artifacts/atp_contract_governance_report.json
-
-      - name: ATP contract governance guard skipped (missing prerequisites)
-        if: steps.atp_contract_prereqs.outputs.ready != 'true'
-        run: echo "ATP contract governance guard skipped on this branch."
-
-      - name: Upload ATP contract governance report
-        if: ${{ always() && steps.atp_contract_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: atp-contract-governance-guard-report
-          path: artifacts/atp_contract_governance_report.json
-          if-no-files-found: error
-
-  governance_v2_templates_guard:
-    name: Governance v2 templates guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check governance template prerequisites
-        id: governance_template_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_governance_v2_templates.py \
-            .github/PULL_REQUEST_TEMPLATE.md; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.governance_template_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Validate governance template bindings
-        if: steps.governance_template_prereqs.outputs.ready == 'true'
-        run: |
-          mkdir -p artifacts
-          python scripts/check_governance_v2_templates.py \
-            --repo-root . \
-            --pr-template .github/PULL_REQUEST_TEMPLATE.md \
-            --json-out artifacts/governance_v2_templates_report.json
-
-      - name: Governance templates guard skipped (missing prerequisites)
-        if: steps.governance_template_prereqs.outputs.ready != 'true'
-        run: echo "Governance templates guard skipped on this branch."
-
-      - name: Upload governance templates report
-        if: ${{ always() && steps.governance_template_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: governance-v2-templates-guard-report
-          path: artifacts/governance_v2_templates_report.json
-          if-no-files-found: error
-
-  kernel_ext_boundary_guard:
-    name: Kernel-extension boundary guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check kernel-extension boundary prerequisites
-        id: kernel_ext_boundary_prereqs
-        shell: bash
-        run: |
-          if [ -f scripts/validate_kernel_ext_boundaries.py ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "missing prerequisite: scripts/validate_kernel_ext_boundaries.py"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.kernel_ext_boundary_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Validate kernel->extension import boundaries
-        if: steps.kernel_ext_boundary_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/validate_kernel_ext_boundaries.py --json
-
-      - name: Kernel-extension boundary guard skipped (missing prerequisites)
-        if: steps.kernel_ext_boundary_prereqs.outputs.ready != 'true'
-        run: echo "Kernel-extension boundary guard skipped on this branch."
-
-  request_body_hash_stability:
-    name: Request-body byte stability gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check request-body hash prerequisites
-        id: request_body_hash_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_request_body_hashes.py \
-            tests/fixtures/compat/request_bodies \
-            docs/conformance/request_body_hashes_baseline_v1.json; do
-            if [ ! -e "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.request_body_hash_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Enforce request-body hash stability baseline
-        if: steps.request_body_hash_prereqs.outputs.ready == 'true'
-        run: |
-          mkdir -p artifacts
-          python scripts/check_request_body_hashes.py \
-            --root tests/fixtures/compat/request_bodies \
-            --baseline docs/conformance/request_body_hashes_baseline_v1.json \
-            --json-out artifacts/request_body_hash_gate_report.json
-
-      - name: Request-body hash gate skipped (missing prerequisites)
-        if: steps.request_body_hash_prereqs.outputs.ready != 'true'
-        run: echo "Request-body hash gate skipped on this branch."
-
-      - name: Upload request-body hash gate report
-        if: ${{ always() && steps.request_body_hash_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: request-body-hash-gate-report
-          path: artifacts/request_body_hash_gate_report.json
-          if-no-files-found: error
-
-  tool_schema_hash_stability:
-    name: Tool-schema hash stability gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check tool-schema hash prerequisites
-        id: tool_schema_hash_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_tool_schema_hashes.py \
-            implementations/tools/defs \
-            docs/conformance/tool_schema_hashes_baseline_v1.json; do
-            if [ ! -e "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.tool_schema_hash_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Enforce tool-schema hash stability baseline
-        if: steps.tool_schema_hash_prereqs.outputs.ready == 'true'
-        run: |
-          mkdir -p artifacts
-          python scripts/check_tool_schema_hashes.py \
-            --root implementations/tools/defs \
-            --baseline docs/conformance/tool_schema_hashes_baseline_v1.json \
-            --json-out artifacts/tool_schema_hash_gate_report.json
-
-      - name: Tool-schema hash gate skipped (missing prerequisites)
-        if: steps.tool_schema_hash_prereqs.outputs.ready != 'true'
-        run: echo "Tool-schema hash gate skipped on this branch."
-
-      - name: Upload tool-schema hash gate report
-        if: ${{ always() && steps.tool_schema_hash_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: tool-schema-hash-gate-report
-          path: artifacts/tool_schema_hash_gate_report.json
-          if-no-files-found: error
-
-  event_envelope_snapshot_stability:
-    name: Event-envelope snapshot stability gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check event-envelope snapshot prerequisites
-        id: event_envelope_snapshot_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/check_event_envelope_snapshots.py \
-            docs/conformance/event_envelope_snapshots_baseline_v1.json; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.event_envelope_snapshot_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Enforce event-envelope snapshot baseline
-        if: steps.event_envelope_snapshot_prereqs.outputs.ready == 'true'
-        run: |
-          mkdir -p artifacts
-          python scripts/check_event_envelope_snapshots.py \
-            --baseline docs/conformance/event_envelope_snapshots_baseline_v1.json \
-            --json-out artifacts/event_envelope_snapshot_gate_report.json
-
-      - name: Event-envelope snapshot gate skipped (missing prerequisites)
-        if: steps.event_envelope_snapshot_prereqs.outputs.ready != 'true'
-        run: echo "Event-envelope snapshot gate skipped on this branch."
-
-      - name: Upload event-envelope snapshot gate report
-        if: ${{ always() && steps.event_envelope_snapshot_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: event-envelope-snapshot-gate-report
-          path: artifacts/event_envelope_snapshot_gate_report.json
-          if-no-files-found: error
-
-  e4_target_freeze_manifest_guard:
-    name: E4 target-freeze manifest guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install lightweight validator deps
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pyyaml pytest
-
-      - name: Validate E4 target-freeze manifest coverage
-        run: |
-          python scripts/check_e4_target_freeze_manifest.py --json
-
-      - name: Run E4 manifest validator unit test
-        run: |
-          pytest -q tests/test_e4_target_freeze_manifest.py
-
+      - uses: ./.github/actions/ci-guards
   conformance_matrix_sync_guard:
     name: Conformance matrix sync guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
 
       - name: Check conformance matrix sync prerequisites
         id: conformance_matrix_sync_prereqs
@@ -699,15 +190,17 @@ jobs:
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/main-seeded-cache
+        if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-
       - name: Install dependencies
         if: steps.conformance_matrix_sync_prereqs.outputs.ready == 'true'
         run: |
@@ -851,152 +344,6 @@ jobs:
             artifacts/conformance/conformance_matrix_sync_summary_v1.md
           if-no-files-found: error
 
-  replay_determinism_guard:
-    name: Replay determinism guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check replay determinism prerequisites
-        id: replay_determinism_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            tests/test_check_replay_determinism_gate.py \
-            scripts/check_replay_determinism_gate.py \
-            tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Unit tests for replay determinism gate
-        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
-        run: |
-          pytest -q tests/test_check_replay_determinism_gate.py
-
-      - name: Run replay determinism gate against seeded fixture
-        if: steps.replay_determinism_prereqs.outputs.ready == 'true'
-        run: |
-          mkdir -p artifacts/conformance
-          python scripts/check_replay_determinism_gate.py \
-            --glob "tests/fixtures/conformance_v1/fixtures/valid/bb.replay_determinism_report.v1.valid.json" \
-            --json-out artifacts/conformance/replay_determinism_gate_report_v1.json
-
-      - name: Replay determinism guard skipped (missing prerequisites)
-        if: steps.replay_determinism_prereqs.outputs.ready != 'true'
-        run: echo "Replay determinism guard skipped on this branch."
-
-      - name: Upload replay determinism gate artifact
-        if: ${{ always() && steps.replay_determinism_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: replay-determinism-gate-artifact
-          path: artifacts/conformance/replay_determinism_gate_report_v1.json
-          if-no-files-found: error
-
-  evidence_bundle_contract_guard:
-    name: Evidence bundle contract guard
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check evidence bundle prerequisites
-        id: evidence_bundle_prereqs
-        shell: bash
-        run: |
-          if [ -f tests/test_evidence_bundle_v1.py ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            echo "missing prerequisite: tests/test_evidence_bundle_v1.py"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.evidence_bundle_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Evidence bundle unit tests
-        if: steps.evidence_bundle_prereqs.outputs.ready == 'true'
-        run: |
-          pytest -q tests/test_evidence_bundle_v1.py
-
-      - name: Evidence bundle contract guard skipped (missing prerequisites)
-        if: steps.evidence_bundle_prereqs.outputs.ready != 'true'
-        run: echo "Evidence bundle contract guard skipped on this branch."
-
-  extension_disabled_regression:
-    name: Extension-disabled regression lane
-    runs-on: ubuntu-latest
-    env:
-      BREADBOARD_EXTENSIONS_ENABLED: "0"
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check extension-disabled prerequisites
-        id: extension_disabled_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/validate_kernel_ext_boundaries.py \
-            scripts/run_conformance_matrix.py \
-            tests/test_validate_kernel_ext_boundaries.py \
-            tests/test_run_conformance_matrix.py \
-            tests/test_parity_manifest_hardening.py; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-
-      - name: Install dependencies
-        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
-
-      - name: Run extension-disabled core regression checks
-        if: steps.extension_disabled_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/validate_kernel_ext_boundaries.py --json
-          python scripts/run_conformance_matrix.py \
-            --schema-dir docs/conformance/schemas \
-            --fixtures-dir tests/fixtures/conformance_v1/fixtures
-          pytest -q \
-            tests/test_validate_kernel_ext_boundaries.py \
-            tests/test_run_conformance_matrix.py \
-            tests/test_parity_manifest_hardening.py
-
-      - name: Extension-disabled regression lane skipped (missing prerequisites)
-        if: steps.extension_disabled_prereqs.outputs.ready != 'true'
-        run: echo "Extension-disabled regression lane skipped on this branch."
 
   extension_enabled_smoke:
     name: Extension-enabled smoke lane
@@ -1005,6 +352,8 @@ jobs:
       BREADBOARD_EXTENSIONS_ENABLED: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
 
       - name: Check extension-enabled prerequisites
         id: extension_enabled_prereqs
@@ -1025,15 +374,17 @@ jobs:
           else
             echo "ready=false" >> "$GITHUB_OUTPUT"
           fi
+      - uses: ./.github/actions/main-seeded-cache
+        if: steps.extension_enabled_prereqs.outputs.ready == 'true'
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         if: steps.extension_enabled_prereqs.outputs.ready == 'true'
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            requirements.txt
-
       - name: Install dependencies
         if: steps.extension_enabled_prereqs.outputs.ready == 'true'
         run: |
@@ -1068,136 +419,23 @@ jobs:
             artifacts/evolake_minimal_campaign_v1/**
           if-no-files-found: error
 
-  conformance_gate:
-    name: Conformance gate (ubuntu)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check conformance prerequisites
-        id: conformance_prereqs
-        shell: bash
-        run: |
-          missing=0
-          for p in \
-            scripts/conformance_scoreboard.py \
-            scripts/provider_conformance_report.py \
-            docs/conformance/scoreboard_baseline.json \
-            docs/conformance/provider_conformance_baseline.json; do
-            if [ ! -f "$p" ]; then
-              echo "missing prerequisite: $p"
-              missing=1
-            fi
-          done
-          if [ "$missing" -eq 0 ]; then
-            echo "ready=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - uses: actions/setup-python@v5
-        if: steps.conformance_prereqs.outputs.ready == 'true'
-        with:
-          python-version: "3.11"
-
-      - name: Resolve conformance regression override context
-        if: ${{ steps.conformance_prereqs.outputs.ready == 'true' && github.event_name == 'pull_request' }}
-        id: conformance_override
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import re
-
-          data = json.loads(open(os.environ["GITHUB_EVENT_PATH"], "r", encoding="utf-8").read())
-          pr = data.get("pull_request") or {}
-          labels = {str(item.get("name", "")) for item in (pr.get("labels") or []) if isinstance(item, dict)}
-          body = pr.get("body") or ""
-          match = re.search(r"Conformance override reason:\\s*(.+)", body, flags=re.IGNORECASE)
-          reason = (match.group(1).strip() if match else "")
-          allow = bool(reason and "conformance-override" in labels)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
-              fh.write(f"allow={str(allow).lower()}\n")
-              fh.write(f"reason={reason}\n")
-          PY
-
-      - name: Conformance scoreboard strict+regression gate
-        if: steps.conformance_prereqs.outputs.ready == 'true'
-        env:
-          SCORE_ALLOW: ${{ steps.conformance_override.outputs.allow }}
-          SCORE_REASON: ${{ steps.conformance_override.outputs.reason }}
-        run: |
-          set -euo pipefail
-          EXTRA=()
-          if [[ "${SCORE_ALLOW:-}" == "true" && -n "${SCORE_REASON:-}" ]]; then
-            EXTRA+=(--allow-regression --override-reason "${SCORE_REASON}")
-          fi
-          python scripts/conformance_scoreboard.py \
-            --strict-all-five \
-            --baseline-json docs/conformance/scoreboard_baseline.json \
-            --require-no-regression \
-            "${EXTRA[@]}"
-          python scripts/conformance_scoreboard.py \
-            --baseline-json docs/conformance/scoreboard_baseline.json \
-            --require-no-regression \
-            "${EXTRA[@]}" \
-            --json-out artifacts/conformance/scoreboard.json \
-            --markdown-out artifacts/conformance/scoreboard.md
-      - name: Provider conformance report
-        if: steps.conformance_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/provider_conformance_report.py \
-            --baseline docs/conformance/provider_conformance_baseline.json \
-            --out artifacts/provider_conformance/report.json
-
-      - name: Docs references guard (core + conformance docs)
-        if: steps.conformance_prereqs.outputs.ready == 'true'
-        run: |
-          python scripts/check_docs_references.py \
-            docs/INSTALL_AND_DEV_QUICKSTART.md \
-            docs/REPLAY_EVAL_LANE.md \
-            docs/PROVIDER_CONFORMANCE_MATRIX.md \
-            docs/EXECUTION_BUDGETS_AND_CANCELLATION.md \
-            docs/ORCHESTRATION_EVENT_TAXONOMY.md \
-            docs/SDK_DOCS_INDEX.md \
-            docs/MIGRATION_AND_COMPATIBILITY.md \
-            docs/KNOWN_LIMITS_AND_ROADMAP.md \
-            docs/CONFORMANCE_5_0_SPEC.md \
-            docs/CONFORMANCE_SCOREBOARD.md \
-            docs/CONFORMANCE_GOVERNANCE.md \
-            docs/CONFORMANCE_REGRESSION_PLAYBOOK.md \
-            docs/CONFORMANCE_DEV_GUIDE.md
-
-      - name: Conformance gate skipped (missing prerequisites)
-        if: steps.conformance_prereqs.outputs.ready != 'true'
-        run: |
-          echo "Skipping conformance gate: prerequisite scripts/baselines are not present on this branch."
-
-      - name: Upload conformance artifacts
-        if: ${{ always() && steps.conformance_prereqs.outputs.ready == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: conformance-scoreboard
-          path: |
-            artifacts/conformance/**
-            artifacts/provider_conformance/report.json
-          if-no-files-found: error
-
   compat_core:
     name: Compat core (ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements-core.txt', 'requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            requirements-core.txt
-            requirements.txt
-
       - name: Install core dependencies
         run: |
           req_file="requirements-core.txt"
@@ -1474,15 +712,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements-core.txt', 'requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: |
-            requirements-core.txt
-            requirements.txt
-
       - name: Install core dependencies
         run: |
           req_file="requirements-core.txt"
@@ -1510,13 +751,18 @@ jobs:
     runs-on: [self-hosted, linux]
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
-
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
 
@@ -1547,6 +793,8 @@ jobs:
         run: bash scripts/atp_firecracker_ci.sh
 
   tui_contract_harness:
+    needs: select_affected_tests
+    if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'tui_skeleton')) }}
     name: Legacy TUI contract harness (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -1555,22 +803,30 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.job }}-${{ hashFiles('tui_skeleton/package-lock.json', 'sdk/ts/package-lock.json', 'sdk/ts-kernel-contracts/package-lock.json') }}
+          restore-prefix: npm-${{ runner.os }}-
+
+      - uses: ./.github/actions/main-seeded-cache
+        if: ${{ matrix.os == 'ubuntu-latest' }}
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            tui_skeleton/package-lock.json
-            sdk/ts/package-lock.json
-            sdk/ts-kernel-contracts/package-lock.json
 
       - uses: actions/setup-python@v5
         if: ${{ matrix.os == 'ubuntu-latest' }}
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       - name: Build kernel contracts package
         working-directory: sdk/ts-kernel-contracts
@@ -1834,12 +1090,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.job }}-${{ hashFiles('tui_skeleton/package-lock.json', 'sdk/ts/package-lock.json') }}
+          restore-prefix: npm-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       - name: Install engine dependencies
         run: python -m pip install -r requirements.txt
@@ -1847,11 +1115,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: |
-            tui_skeleton/package-lock.json
-            sdk/ts/package-lock.json
-
       - name: Build kernel contracts package
         working-directory: sdk/ts-kernel-contracts
         run: |
@@ -1878,16 +1141,24 @@ jobs:
         run: bash scripts/phase12_live_smoke.sh
 
   vscode_sidebar_e2e:
+    needs: select_affected_tests
+    if: ${{ !cancelled() && (needs.select_affected_tests.result != 'success' || contains(fromJSON(needs.select_affected_tests.outputs.node_targets || '[]'), 'vscode_sidebar')) }}
     name: VSCode Sidebar E2E (ubuntu)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.job }}-${{ hashFiles('vscode_sidebar/package-lock.json') }}
+          restore-prefix: npm-${{ runner.os }}-
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: npm
-          cache-dependency-path: vscode_sidebar/package-lock.json
 
       - name: Install sidebar dependencies
         working-directory: vscode_sidebar
@@ -1946,8 +1217,83 @@ jobs:
           path: docs_tmp/interfaces/ide_e2e_runs/run-*
           if-no-files-found: ignore
 
+  select_affected_tests:
+    name: Test selector regression and selection
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.full || steps.safe_defaults.outputs.full }}
+      python: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.python || steps.safe_defaults.outputs.python }}
+      node_targets: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.node_targets || steps.safe_defaults.outputs.node_targets }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+          fetch-depth: 0
+
+      - name: Set safe full-suite defaults
+        if: always()
+        id: safe_defaults
+        shell: bash
+        run: |
+          echo "full=true" >> "$GITHUB_OUTPUT"
+          echo "python=true" >> "$GITHUB_OUTPUT"
+          echo 'node_targets=["sdk/ts","sdk/ts-backbone","sdk/ts-execution-driver-local","sdk/ts-execution-driver-oci","sdk/ts-execution-driver-remote","sdk/ts-execution-drivers","sdk/ts-host-bridges","sdk/ts-host-kits","sdk/ts-host-t3","sdk/ts-kernel-contracts","sdk/ts-kernel-core","sdk/ts-orchestration-temporal","sdk/ts-transport-ai-sdk","sdk/ts-workspace","tui_skeleton","vscode_sidebar"]' >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/main-seeded-cache
+        if: always()
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt') }}
+          restore-prefix: pip-${{ runner.os }}-
+
+      - name: Set up Python
+        if: always()
+        continue-on-error: true
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install selector regression dependency
+        if: always()
+        continue-on-error: true
+        run: python -m pip install pytest
+
+      - name: Run selector regression unconditionally
+        if: always()
+        id: selector_regression
+        continue-on-error: true
+        run: python -m pytest -q tests/test_ci_test_selection.py
+
+      - name: Select affected tests
+        if: ${{ github.event_name == 'pull_request' && steps.selector_regression.outcome == 'success' }}
+        id: selector
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python scripts/ci/select_tests.py \
+            --base "$BASE_SHA" \
+            --head "$HEAD_SHA" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Require selector proof and selection
+        if: always()
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REGRESSION_RESULT: ${{ steps.selector_regression.outcome }}
+          SELECTION_RESULT: ${{ steps.selector.outcome }}
+        shell: bash
+        run: |
+          test "$REGRESSION_RESULT" = success
+          if [ "$EVENT_NAME" = pull_request ]; then
+            test "$SELECTION_RESULT" = success
+          fi
+
+
   python:
     name: Python (${{ matrix.os }})
+    needs: select_affected_tests
+    if: ${{ always() }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -1955,12 +1301,18 @@ jobs:
         os: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: requirements.txt
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
@@ -2019,7 +1371,7 @@ jobs:
           fi
 
       - name: Targeted tests
-        if: steps.python_targeted_test_prereqs.outputs.ready == 'true'
+        if: ${{ always() && steps.python_targeted_test_prereqs.outputs.ready == 'true' && (github.event_name != 'pull_request' || needs.select_affected_tests.result != 'success' || needs.select_affected_tests.outputs.full == 'true' || needs.select_affected_tests.outputs.python == 'true') }}
         run: >
           python -m pytest -q
           tests/test_cli_bridge_contract_exports.py
@@ -2052,7 +1404,7 @@ jobs:
           tests/test_evolake_campaign_route.py
 
       - name: Targeted tests skipped (missing prerequisites)
-        if: steps.python_targeted_test_prereqs.outputs.ready != 'true'
+        if: ${{ always() && steps.python_targeted_test_prereqs.outputs.ready != 'true' }}
         run: echo "Targeted tests skipped on this branch."
 
       - name: Check stream chaos prerequisites
@@ -2075,7 +1427,7 @@ jobs:
           fi
 
       - name: Stream chaos suite
-        if: steps.stream_chaos_prereqs.outputs.ready == 'true'
+        if: ${{ always() && steps.stream_chaos_prereqs.outputs.ready == 'true' && (github.event_name != 'pull_request' || needs.select_affected_tests.result != 'success' || needs.select_affected_tests.outputs.full == 'true' || needs.select_affected_tests.outputs.python == 'true') }}
         run: |
           mkdir -p artifacts/stream_chaos
           python -m pytest -q \
@@ -2084,11 +1436,11 @@ jobs:
             --junitxml artifacts/stream_chaos/pytest.xml
 
       - name: Stream chaos suite skipped (missing prerequisites)
-        if: steps.stream_chaos_prereqs.outputs.ready != 'true'
+        if: ${{ always() && github.event_name != 'pull_request' && steps.stream_chaos_prereqs.outputs.ready != 'true' }}
         run: echo "Stream chaos suite skipped on this branch."
 
       - name: Upload stream chaos artifact
-        if: ${{ always() && steps.stream_chaos_prereqs.outputs.ready == 'true' }}
+        if: ${{ always() && steps.stream_chaos_prereqs.outputs.ready == 'true' && (github.event_name != 'pull_request' || needs.select_affected_tests.result != 'success' || needs.select_affected_tests.outputs.full == 'true' || needs.select_affected_tests.outputs.python == 'true') }}
         uses: actions/upload-artifact@v4
         with:
           name: stream-chaos-${{ matrix.os }}
@@ -2104,6 +1456,14 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-minimal-${{ hashFiles('requirements.txt') }}
+          restore-prefix: pip-${{ runner.os }}-
 
       - uses: actions/setup-python@v5
         with:

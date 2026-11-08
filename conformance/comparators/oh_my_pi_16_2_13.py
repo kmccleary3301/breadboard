@@ -10,7 +10,8 @@ Typed normalizations (each application is reported with its JSON paths):
 * ``package_dir_documentation_path``: ``<package_dir>/{README.md,docs,examples}`` become ``<OMP_PACKAGE_DIR>/...``;
 * ``current_date_reminder``: the ``Today is <date>, and the current working directory is '<cwd>'.`` line of the
   system prompt, where ``<date>`` is the declared date (YYYY-MM-DD), becomes ``Today is <CURRENT_DATE>, and the current working directory is '<WORKSPACE>'.``;
-* ``workstation_os_release``: the release token in the system message line ``- OS: <platform> <release>`` becomes ``<OMP_OS_RELEASE>``;
+* ``workstation_os_release``: OS, Distro, Kernel, Arch, CPU and Terminal values inside the system
+  ``<workstation>`` block become typed placeholders; optional ambient GPU rows are removed.
 * ``bash_wall_time``: any ``Wall time: <time> seconds`` line in tool output becomes ``Wall time: <WALL_TIME> seconds``;
 * ``message_timestamp``: the ``timestamp`` member of each AgentMessage (pinned ``Date.now()``) is removed;
 * ``request_limit_cause``: a BB ``RequestLimitExceeded`` terminal that satisfies the declared request cap maps to
@@ -158,7 +159,8 @@ CANONICAL_FIELDS = ("requests", "request_count", "tool_calls", "observations", "
 _DATE_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DATE_LINE = re.compile(r"(?m)^Today is (?P<date>\d{4}-\d{2}-\d{2}), and the current working directory is '(?P<cwd>[^']*)'\.$")
 _DATE_TIME_LINE = re.compile(r"(?m)^Current date and time: (.*)$")
-_WORKSTATION_LINE = re.compile(r"(?m)^- (?P<label>OS|Distro|Kernel|Arch|CPU|Terminal): (?P<value>[^\n]+)$")
+_WORKSTATION_BLOCK = re.compile(r"(?ms)^<workstation>\n.*?^</workstation>$")
+_WORKSTATION_LINE = re.compile(r"(?m)^- (?P<label>OS|Distro|Kernel|Arch|CPU|GPU|Terminal): (?P<value>[^\n]+)\n")
 _BASH_WALL_TIME_LINE = re.compile(r"(?m)^Wall time: \d+\.\d{2} seconds$")
 
 
@@ -212,9 +214,12 @@ class _Normalizer:
             def replace_ws(match: re.Match[str]) -> str:
                 self.add("workstation_os_release", path)
                 label = match.group("label")
-                return f"- {label}: <OMP_{label.upper()}>"
+                # GPU is absent on hosts without a detected controller; normalize presence too.
+                return "" if label == "GPU" else f"- {label}: <OMP_{label.upper()}>\n"
 
-            value = _WORKSTATION_LINE.sub(replace_ws, value)
+            value = _WORKSTATION_BLOCK.sub(
+                lambda block: _WORKSTATION_LINE.sub(replace_ws, block.group(0)), value,
+            )
 
             def replace_date(match: re.Match[str]) -> str:
                 m_cwd = match.group("cwd")

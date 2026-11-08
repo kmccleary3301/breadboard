@@ -30,6 +30,7 @@ INDEX_PATH = REPO_ROOT / "scripts" / "SCRIPT_INDEX.yaml"
 
 REFERENCE_ROOTS = [
     ".github/workflows",
+    ".github/actions",
     "tests",
     "pyproject.toml",
     "docs/getting-started",

@@ -1,0 +1,189 @@
+name: Full suite nightly
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: full-suite-nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  select_full_suite:
+    name: Resolve full-suite targets
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.full || steps.safe_defaults.outputs.full }}
+      python: ${{ steps.selector.outcome == 'success' && steps.selector.outputs.python || steps.safe_defaults.outputs.python }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - name: Set safe full-suite defaults
+        if: always()
+        id: safe_defaults
+        shell: bash
+        run: |
+          echo "full=true" >> "$GITHUB_OUTPUT"
+          echo "python=true" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/main-seeded-cache
+        if: always()
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt') }}
+          restore-prefix: pip-${{ runner.os }}-
+
+      - name: Set up Python
+        if: always()
+        continue-on-error: true
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install selector regression dependency
+        if: always()
+        continue-on-error: true
+        run: python -m pip install pytest
+
+      - name: Run selector regression before selection
+        if: always()
+        id: selector_regression
+        continue-on-error: true
+        run: python -m pytest -q tests/test_ci_test_selection.py
+
+      - name: Verify selector full fallback
+        if: ${{ steps.selector_regression.outcome == 'success' }}
+        id: selector
+        run: python scripts/ci/select_tests.py --paths .github/workflows/ci.yml --github-output "$GITHUB_OUTPUT"
+
+      - name: Require selector proof and full-suite fallback
+        if: always()
+        env:
+          REGRESSION_RESULT: ${{ steps.selector_regression.outcome }}
+          SELECTOR_RESULT: ${{ steps.selector.outcome }}
+          SELECTOR_FULL: ${{ steps.selector.outputs.full }}
+          SELECTOR_PYTHON: ${{ steps.selector.outputs.python }}
+        shell: bash
+        run: |
+          test "$REGRESSION_RESULT" = success
+          test "$SELECTOR_RESULT" = success
+          test "$SELECTOR_FULL" = true
+          test "$SELECTOR_PYTHON" = true
+
+  python_full_suite:
+    name: Python full suite
+    needs: select_full_suite
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-${{ github.job }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-prefix: pip-${{ runner.os }}-
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python suite dependencies
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install mcp
+
+      - name: Run full Python suite without provider credentials
+        run: python -m pytest -q
+
+  node_full_suite:
+    name: Existing Node coverage (${{ matrix.package }})
+    needs: select_full_suite
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [sdk/ts, tui_skeleton, vscode_sidebar]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          filter: blob:none
+
+      - uses: ./.github/actions/main-seeded-cache
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ github.job }}-${{ matrix.package }}-${{ hashFiles('sdk/**/package-lock.json', 'tui_skeleton/package-lock.json', 'vscode_sidebar/package-lock.json') }}
+          restore-prefix: npm-${{ runner.os }}-
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ (matrix.package == 'tui_skeleton' || matrix.package == 'vscode_sidebar') && '20' || '22' }}
+
+      - uses: actions/setup-python@v5
+        if: ${{ matrix.package == 'sdk/ts' }}
+        with:
+          python-version: "3.11"
+
+      - name: Install canonical SDK Python server dependencies
+        if: ${{ matrix.package == 'sdk/ts' }}
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Build TUI local kernel-contracts dependency
+        if: ${{ matrix.package == 'tui_skeleton' }}
+        working-directory: sdk/ts-kernel-contracts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build TUI canonical SDK dependency
+        if: ${{ matrix.package == 'tui_skeleton' }}
+        working-directory: sdk/ts
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install target package dependencies
+        env:
+          NODE_PACKAGE: ${{ matrix.package }}
+        shell: bash
+        run: npm --prefix "$NODE_PACKAGE" ci
+
+      - name: Run target package tests
+        env:
+          NODE_PACKAGE: ${{ matrix.package }}
+        run: npm --prefix "$NODE_PACKAGE" test
+
+      - name: Verify canonical SDK consumer artifact
+        if: ${{ matrix.package == 'sdk/ts' }}
+        run: npm --prefix sdk/ts run test:consumer
+
+  full_suite:
+    name: Full suite
+    needs:
+      - select_full_suite
+      - python_full_suite
+      - node_full_suite
+    if: ${{ always() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require full-suite targets
+        env:
+          SELECTOR: ${{ needs.select_full_suite.result }}
+          PYTHON: ${{ needs.python_full_suite.result }}
+          NODE: ${{ needs.node_full_suite.result }}
+        run: |
+          test "$SELECTOR" = success
+          test "$PYTHON" = success
+          test "$NODE" = success

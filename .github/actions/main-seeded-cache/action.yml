@@ -1,0 +1,36 @@
+name: Main-seeded cache
+
+description: Restore dependency caches from main and save them only on main pushes.
+
+inputs:
+  key:
+    description: Unique cache key for this job and dependency set.
+    required: true
+  path:
+    description: Newline-separated cache paths.
+    required: true
+  restore-prefix:
+    description: Cache key prefix used to restore an older main seed.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Seed cache on main push
+      if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+      continue-on-error: true
+      uses: actions/cache@v4
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-prefix }}
+        save-always: true
+
+    - name: Restore cache without saving
+      if: ${{ github.event_name != 'push' || github.ref != 'refs/heads/main' }}
+      continue-on-error: true
+      uses: actions/cache/restore@v4
+      with:
+        path: ${{ inputs.path }}
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-prefix }}
