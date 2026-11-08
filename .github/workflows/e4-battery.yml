@@ -14,7 +14,7 @@ on:
 jobs:
   e4-battery:
     name: e4-battery
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     env:
       BB_WORKSPACE_ROOT: ${{ github.workspace }}/..
     steps:
@@ -43,7 +43,7 @@ jobs:
 
   fixed-point-clean-checkout:
     name: Fixed-point clean checkout (${{ matrix.pass }})
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     strategy:
       fail-fast: false
       matrix:
@@ -82,7 +82,7 @@ jobs:
   fixed-point-clean-checkout-compare:
     name: Compare independent fixed-point checkouts
     needs: fixed-point-clean-checkout
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - uses: actions/download-artifact@v4
         with:

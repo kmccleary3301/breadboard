@@ -8,7 +8,7 @@ on:
 jobs:
   phase4-fullpane-nightly-warn:
     name: phase4 fullpane nightly (warn-only)
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     continue-on-error: true
     env:
       BREADBOARD_PHASE4_REPLAY_LOG_ROOT: ${{ github.workspace }}/docs_tmp/tmux_captures/targets_logs
